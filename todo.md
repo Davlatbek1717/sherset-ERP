@@ -280,6 +280,11 @@ kuniga **3 sessiya** → **~6 hafta**.
       versiyalanmaydigan yengil qatlam, og'irlik ixtiyoriy). Reja —
       `docs/REJA-KPI-SODDALASHTIRISH-2026-08.md`. `kpi-target.ts` HALI ham chaqirilmaydi:
       dvigatel ko'prigi **KPI-03**, CRUD API **KPI-02**.
+      **2026-08-10 (KPI-02+KPI-04):** «o'lik kod» qarzi YOPILDI — CRUD API
+      (`employee-kpi-target.{schema,service,controller}.ts`, 6 route, hammasi `employees:full`,
+      append-only jurnal) + FE ikkala yuzasi: xodim kartasi **todo-ro'yxati** (katalog jadvali va
+      «og'irlik 100%» talabi olib tashlandi) va yangi **`/menejer/kpi`**. Og'irlik ixtiyoriy;
+      so'm→tiyin faqat serverda. Qolgani: **KPI-05** (ball normalizatsiyasi) · **KPI-06** (brauzer QA).
 - [ ] **4M Phase-2 QA** — rad→tushuntirish · eskalatsiya · majburiy yopish · tuzatma dialogi ·
       **RU-locale** · o'z-KPI dialogi · **xodim tomoni FE** (BE tayyor, FE yo'q)
 

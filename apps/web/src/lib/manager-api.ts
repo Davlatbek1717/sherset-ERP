@@ -59,6 +59,89 @@ export interface SaveKpiConfigInput {
   note?: string | null;
 }
 
+// ── Biriktirilgan KPI («todo» qatlami, KPI-02) ──────────────────────────────
+
+export type KpiTargetPeriod = 'daily' | 'weekly' | 'monthly';
+
+/**
+ * Bitta biriktirilgan KPI.
+ *
+ * 🔴 IKKI XIL BIRLIK, ATAYLAB IKKI XIL NOM:
+ *   · `targetMinor`/`lastFactMinor` — **minor** (pul = tiyin) — SERVERDAN;
+ *   · yozishda esa `targetValue` — **ko'rinish birligi** (pul = so'm), uni
+ *     serverning o'zi tiyinga o'giradi.
+ * Nom farqi ataylab: bir xil nomlansa FE ham o'girishga urinib, pul 100×
+ * noto'g'ri ketardi ([[manager-kpi-unit-vocabularies]]).
+ */
+export interface EmployeeKpiTarget {
+  id: string;
+  employeeId: string;
+  employeeName: string | null;
+  metricKey: string;
+  labelUz: string;
+  labelRu: string;
+  unit: KpiUnit;
+  direction: KpiDirection;
+  /** `false` — dvigatel hisoblay olmaydi: fakt «bajarildi» belgisidan. */
+  measurable: boolean;
+  period: KpiTargetPeriod;
+  /** Minor birlik. `null` = raqamsiz «todo». */
+  targetMinor: string | null;
+  currency: string | null;
+  /** `null` = oylik balldan tashqarida (0 EMAS — 0 «nolga arziydi» degani). */
+  weight: number | null;
+  manualDoneAt: string | null;
+  active: boolean;
+  /** Minor birlik. `null` = O'LCHANMAGAN (0 EMAS). */
+  lastFactMinor: string | null;
+  lastFactDate: string | null;
+  /** `null` = hisoblangan kun yo'q; `false` = qisman ma'lumot. */
+  lastFactComplete: boolean | null;
+}
+
+export interface CreateEmployeeKpiTargetInput {
+  metricKey: string;
+  period: KpiTargetPeriod;
+  /** KO'RINISH birligida (pul = so'm), matn. `null` = raqamsiz maqsad. */
+  targetValue?: string | null;
+  /** `null`/berilmagan = og'irliksiz (ballash yo'lidan tashqarida). */
+  weight?: number | null;
+}
+
+export interface UpdateEmployeeKpiTargetInput {
+  period?: KpiTargetPeriod;
+  targetValue?: string | null;
+  weight?: number | null;
+  active?: boolean;
+}
+
+export const employeeKpiTargetApi = {
+  /** Bitta xodimning biriktirilgan KPI'lari (xodim kartasi tabi). */
+  list: (employeeId: string) =>
+    api.get<EmployeeKpiTarget[]>(`/manager/kpi/employee/${employeeId}/targets`),
+
+  /** Barcha xodimlar (menejer ekrani `/menejer/kpi`). */
+  listAll: (filter: { employeeId?: string; period?: KpiTargetPeriod } = {}) => {
+    const qs = new URLSearchParams();
+    if (filter.employeeId) qs.set('employeeId', filter.employeeId);
+    if (filter.period) qs.set('period', filter.period);
+    const suffix = qs.toString();
+    return api.get<EmployeeKpiTarget[]>(`/manager/kpi/targets${suffix ? `?${suffix}` : ''}`);
+  },
+
+  create: (employeeId: string, data: CreateEmployeeKpiTargetInput) =>
+    api.post<EmployeeKpiTarget>(`/manager/kpi/employee/${employeeId}/targets`, data),
+
+  update: (id: string, data: UpdateEmployeeKpiTargetInput) =>
+    api.patch<EmployeeKpiTarget>(`/manager/kpi/targets/${id}`, data),
+
+  remove: (id: string) => api.delete<{ id: string; deleted: true }>(`/manager/kpi/targets/${id}`),
+
+  /** Qo'lda o'lchanadigan KPI uchun «bajarildi» / qayta ochish. */
+  setDone: (id: string, done: boolean) =>
+    api.post<EmployeeKpiTarget>(`/manager/kpi/targets/${id}/done`, { done }),
+};
+
 /** Hisoblangan kunlik natija — bitta ko'rsatkich. */
 export interface KpiDailyMetric {
   metricKey: string;

@@ -144,6 +144,17 @@ const COMMANDS: Command[] = [
     keywords: ['menejer', 'kpi', 'qabul', 'приемка', 'менеджер'],
   },
   {
+    // KPI-04 — «barcha xodimlar KPI'lari» ekrani. `m.manager-kpi` (kunlik
+    // QABUL navbati) dan alohida band: ikkisi boshqa savolga javob beradi.
+    id: 'm.manager-kpi-targets',
+    labelKey: 'go_manager_kpi_targets',
+    icon: 'menejer',
+    iconColorClass: 'text-indigo-600',
+    href: '/menejer/kpi',
+    group: 'modules',
+    keywords: ['kpi', 'maqsad', 'xodim', 'цель', 'сотрудник', 'менеджер'],
+  },
+  {
     id: 'm.settings',
     labelKey: 'go_settings',
     icon: 'settings',

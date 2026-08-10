@@ -1083,7 +1083,8 @@
       "briefing": "Бриф и итог",
       "sales_plan": "План продаж",
       "customer_assignment": "Распределение клиентов",
-      "price_policy": "Ценовая политика"
+      "price_policy": "Ценовая политика",
+      "kpi_targets": "KPI сотрудников"
     }
   },
   "counterparty_activity": {
@@ -8683,7 +8684,38 @@
       "br_block_revenue": "Выручка за сегодня",
       "br_block_shift_acceptance": "Смены на приёмке",
       "br_block_cash_variance": "Смены с расхождением по кассе",
-      "br_block_open_items": "Открытые элементы очереди"
+      "br_block_open_items": "Открытые элементы очереди",
+      "ekpi_title": "KPI сотрудников",
+      "ekpi_subtitle": "Назначенные KPI по сотрудникам: цель, период, факт",
+      "ekpi_hint": "Добавьте KPI как задачу: показатель, цель и период. Вес — необязательно.",
+      "ekpi_add": "Добавить KPI",
+      "ekpi_empty": "KPI пока не назначены. Добавьте первый.",
+      "ekpi_all_empty": "Ни одному сотруднику KPI не назначен",
+      "ekpi_metric": "Показатель",
+      "ekpi_target": "Цель",
+      "ekpi_target_optional": "необязательно",
+      "ekpi_fact": "Факт",
+      "ekpi_period": "Период",
+      "ekpi_period_daily": "День",
+      "ekpi_period_weekly": "Неделя",
+      "ekpi_period_monthly": "Месяц",
+      "ekpi_weight": "Вес",
+      "ekpi_weight_hint": "Без веса KPI отслеживается, но не входит в месячный балл.",
+      "ekpi_unscored": "Без балла",
+      "ekpi_manual": "Вручную",
+      "ekpi_partial": "неполные данные",
+      "ekpi_archived": "В архиве",
+      "ekpi_advanced": "Расширенно",
+      "ekpi_mark_done": "Отметить выполненным",
+      "ekpi_reopen": "Снять отметку",
+      "ekpi_edit": "Изменить",
+      "ekpi_remove": "Удалить",
+      "ekpi_save": "Сохранить",
+      "ekpi_cancel": "Отмена",
+      "ekpi_save_failed": "Не удалось сохранить",
+      "ekpi_invalid_amount": "Некорректное значение",
+      "ekpi_filter_employee": "Сотрудник",
+      "ekpi_filter_all": "Все"
     },
     "menejerLive": {
       "alert_count": "Требуют внимания: {count}",
@@ -9604,7 +9636,8 @@
       "settings_organizations": "Организации",
       "settings_email": "Настройки почты",
       "settings_exchange_rates": "Курсы валют",
-      "go_manager_kpi": "Менеджер — приёмка KPI"
+      "go_manager_kpi": "Менеджер — приёмка KPI",
+      "go_manager_kpi_targets": "KPI сотрудников"
     }
   },
   "task_create": {

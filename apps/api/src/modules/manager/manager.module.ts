@@ -28,6 +28,8 @@ import { DailyKpiDrilldownService } from './kpi/daily-kpi-drilldown.service.js';
 import { DataQualityService } from './kpi/data-quality.service.js';
 import { EmployeeDailyKpiCron } from './kpi/employee-daily-kpi.cron.js';
 import { EmployeeDailyKpiService } from './kpi/employee-daily-kpi.service.js';
+import { EmployeeKpiTargetController } from './kpi/employee-kpi-target.controller.js';
+import { EmployeeKpiTargetService } from './kpi/employee-kpi-target.service.js';
 import { KpiConfigController } from './kpi/kpi-config.controller.js';
 import { KpiConfigService } from './kpi/kpi-config.service.js';
 import { KpiMetricCatalogService } from './kpi/kpi-metric-catalog.service.js';
@@ -101,6 +103,12 @@ import { ManagerThresholdsService } from './thresholds/manager-thresholds.servic
   ],
   controllers: [
     KpiConfigController,
+    // KPI-02 — biriktirilgan KPI CRUD'i. Ro'yxatga tushmasa barcha route
+    // 404 qaytarardi (yetim-modul klassi, app-boot.test.ts qo'riqlaydi).
+    // ⚠️ Bu izohda YOPUVCHI KVADRAT QAVS ishlatma: wiring-testlarning
+    // `moduleArray()` parseri massivni birinchi yopuvchi qavsgacha o'qiydi
+    // (izohlarni tozalamaydi) va ro'yxatni erta kesib qo'yadi.
+    EmployeeKpiTargetController,
     ManagerKpiController,
     ManagerInventoryController,
     ManagerQueueController,
@@ -117,6 +125,7 @@ import { ManagerThresholdsService } from './thresholds/manager-thresholds.servic
     EmployeeDailyKpiService,
     EmployeeDailyKpiCron,
     KpiConfigService,
+    EmployeeKpiTargetService,
     KpiMetricCatalogService,
     DailyKpiAcceptanceService,
     OwnerWeeklySummaryService,

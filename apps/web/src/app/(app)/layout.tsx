@@ -490,6 +490,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     // Byudjetdan keyin ataylab: byudjet PUL CHIQISHI rejasi, bu esa PUL
     // KIRISHI rejasi; ikkalasi bir xil shaklda (reja/fakt/og'ish) qurilgan.
     { key: 'sales_plan', label: tMenejer('sales_plan'), href: '/menejer/plan' },
+    // KPI-04 — biriktirilgan KPI («todo» qatlami): xodim × metrika × davr.
+    // Sotuv rejasidan keyin ataylab: reja SOTUV raqamini, bu esa xodimning
+    // BAHOLANADIGAN ko'rsatkichlarini boshqaradi (og'irlik ixtiyoriy).
+    { key: 'kpi_targets', label: tMenejer('kpi_targets'), href: '/menejer/kpi' },
     // 4-bo'lim TZ §6 (MK38) — mijoz taqsimoti: egasini o'zgartirish + tarix.
     // Rejadan keyin ataylab: reja KIMGA qo'yilgani shu yerda hal bo'ladi
     // (mijoz portfeli sotuvchining rejasi bilan bir savolning ikki tomoni).

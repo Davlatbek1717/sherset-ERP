@@ -175,7 +175,7 @@ akkaunt B ning target'ini ko'rmaydi.
 
 ---
 
-### KPI-02 — CRUD API + ruxsat + append-only audit ☐ HISOBOT
+### KPI-02 — CRUD API + ruxsat + append-only audit ☑ HISOBOT (2026-08-10)
 **Bo'lim/blok:** KPI-soddalashtirish · **TZ:** §2.1 (katalog), §6.2 (xodim kartasi)
 **Ustuvorlik:** P0 · **Bog'liqlik:** KPI-01
 **Maqsad:** Menejer bitta xodim KPI'sini **mustaqil qator** sifatida CRUD qila olishi — profil versiyalamasdan,
@@ -248,7 +248,7 @@ kirmaydi. (4) qo'lda metrika: `manualDoneAt` bo'lsa fakt=to'liq, bo'lmasa 0. (5)
 
 ---
 
-### KPI-04 — Soddalashtirilgan UI: xodim kartasi todo-ro'yxati + menejer «barcha KPI» ekrani ☐ HISOBOT
+### KPI-04 — Soddalashtirilgan UI: xodim kartasi todo-ro'yxati + menejer «barcha KPI» ekrani ☑ HISOBOT (2026-08-10)
 **Bo'lim/blok:** KPI-soddalashtirish · **TZ:** §3.5 (tezlik), §6.2 (xodim kartasi)
 **Ustuvorlik:** P0 · **Bog'liqlik:** KPI-02
 **Maqsad:** «Todo kabi» UX — bitta KPI'ni bir bosishda qo'shish (metrika + maqsad + davr), og'irlik-100%
@@ -416,7 +416,58 @@ chaqirilmaydi, o'lik kod**; kungi maqsadni `EmployeeDailyKpiMetric` ga muhrlash 
 QILINMADI, mavjudligini KPI-03 kodda tasdiqlashi shart) · KPI-04 (UI) · KPI-05 (og'irlik
 normalizatsiyasi) · KPI-06 (brauzer QA). **Browser-smoke YO'Q.**
 
-### KPI-02 — _(kutilmoqda — 2026-08-10 da BOSHLANMADI, bloker)_
+### KPI-02 — ✅ 2026-08-10 (Phase-1: strukturaviy + unit + **mutant**-tasdiqlangan, browser-smoke YO'Q)
+
+**Nima qilindi.** KPI-01 ombori ustiga CRUD API. Menejer endi xodimga bitta KPI'ni **mustaqil
+qator** sifatida biriktiradi — profil versiyalamasdan va og'irliklarni 100% ga yig'masdan.
+Mavjud `manager/kpi/*` route'lariga TEGILMADI (regress yo'q).
+
+- **6 route** (`manager/kpi` prefiksi): `GET employee/:id/targets` · `GET targets` (menejer
+  ekrani, `employeeId`/`period` filtri) · `POST employee/:id/targets` · `PATCH targets/:id` ·
+  `DELETE targets/:id` · `POST targets/:id/done`.
+- **Ruxsat:** class `HrPermissionGuard` + **har** handlerda `@RequireHrPermission('employees','full')`.
+  O'QISH ham yopiq (`getConfig` dan farqli): ro'yxat maqsad bilan birga **oxirgi faktni** beradi,
+  ya'ni ochiq qolsa boshqa xodimning natijasini ko'rsatardi.
+- 🔴 **so'm → tiyin SERVERDA** (`Money.fromMajor`, float yaxlitlashsiz). Kirish maydoni
+  `targetValue` (ko'rinish birligi), chiqish maydoni `targetMinor` — **nom ataylab boshqa**, aks
+  holda FE ham o'girib pul 100× ketardi ([[manager-kpi-unit-vocabularies]]).
+- 🔴 **`unit`/`currency` KATALOGDAN**, klientdan emas (DTO'da umuman yo'q → Zod strip). Klient
+  `unit: 'money'` yuborsa ham katalog g'olib — DB'ning `currency ↔ unit` CHECK'i buzilmaydi.
+- 🔴 **`weight` NULL ≠ 0** — `input.weight ?? null` (`?? 0` EMAS). Sanoq/vaqt metrikasida kasrli
+  maqsad **rad etiladi** (jimgina yaxlitlash yo'q).
+- **Append-only audit:** har mutatsiya `EmployeeKpiTargetEvent` yozadi; payload — o'sha ondagi
+  qiymatlar **matni** (BigInt → string). `update` da `{before, after}`. `delete` da event
+  **o'chirishdan OLDIN** va `targetId: null` (havola baribir bo'shardi) — javob faqat payloadda.
+- **`/done` fail-closed:** o'lchanadigan metrikada 400; katalogda topilmagan kalit ham 400
+  («qo'ldami yo'qmi» aniqlanmasa belgilash mumkin emas).
+- `P2002` → 409 tushunarli xabar. Cross-tenant har amalda 404.
+
+**Fayllar.** `apps/api/src/modules/manager/kpi/employee-kpi-target.{schema,service,controller}.ts`
+(yangi) · `…/employee-kpi-target.{service,schema}.test.ts` (yangi) ·
+`kpi-permission-gate.test.ts` (**Edit**) · `app-boot.test.ts` (**Edit**, route skani) ·
+`manager.module.ts` (controller + provider).
+
+**Testlar.** TDD: avval 3 fayl RED (modul yo'q), keyin yashil. **96/96** (37 servis + 14 sxema +
+14 ruxsat + 9 app-boot + 22 mavjud). Ruxsat testida **vakuum qo'riqchisi**: prototipdagi HAR metod
+ro'yxatda borligi tekshiriladi (yangi handler `@RequireHrPermission`siz qo'shilsa `it.each` uni
+ko'rmasdi).
+
+**🔬 Mutant (vakuum emasligi o'lchandi).** Ikki mutant qo'llandi — `unit === 'money'` shoxi
+o'chirildi va `weight ?? null` → `?? 0`. **6 test yiqildi** (`5000n ≠ 500000n`, `+0 ≠ null`,
+`'5000' ≠ '500000'`). Revert `diff` bilan tasdiqlandi.
+
+**Gate.** api typecheck **0** · `lint:product` **0 error** · api vitest **7601 passed / 2 skipped
+(533 fayl)** — regress yo'q.
+
+**🐞 Yo'l-yo'lakay topilgan tuzoq (hujjatlandi).** `manager.module.ts` ning `controllers: [...]`
+massivi ichidagi izohga `[[wiki-havola]]` yozilsa, `money-map-wiring` / `briefing-wiring`
+testlarining `moduleArray()` parseri (u `indexOf(']')` ishlatadi va izohni TOZALAMAYDI) massivni
+erta kesib qo'yadi — ikkala test yiqildi. Izohdan kvadrat qavs olib tashlandi + ogohlantiruvchi
+izoh qoldirildi. `app-boot.test.ts` bu tuzoqqa tushmaydi (u `stripComments` qiladi).
+
+**Ochiq qarz.** Ruxsat qatorlari prodda seed qilinganini tekshirish
+([[stale-seeded-db-missing-permission-rows]] — `employees:full` qatori yo'q bo'lsa admin ham 403).
+**Browser-smoke YO'Q** (KPI-06).
 - **2026-08-10 13:53 · bloker qaydi (kod yozilmagan, hech narsaga tegilmagan).** KPI-02 sessiyasi
   ochildi, lekin bog'liqlik tasdiqlanmadi (O'ZGARMAS QOIDA №2):
   - `EmployeeKpiTarget` / `EmployeeKpiTargetEvent` `schema.prisma` da **YO'Q** (0 moslik);
@@ -509,6 +560,57 @@ muhrlanmaydi — KPI-02 `metricKey` ni katalogga tekshirgani uchun amalda yopiq,
 belgisi FAQAT o'sha kunga tushadi — takrorlanuvchi kunlik todo uchun har kun qayta belgilash
 kerak (KPI-04/06 da UX savoli). **Browser-smoke YO'Q.**
 
-### KPI-04 — _(kutilmoqda)_
+### KPI-04 — ✅ 2026-08-10 (Phase-1: strukturaviy + unit + **mutant**-tasdiqlangan, browser-smoke YO'Q)
+
+**Nima qilindi.** «Todo kabi» UX. Xodim kartasidagi **butun-katalog jadvali** va **«og'irlik
+100%»** talabi olib tashlandi; menejerga barcha xodimlar KPI'lari ustidan ekran berildi.
+
+- **Xodim kartasi** (`/hr/employees/[id]/kpi`, **Edit**): katalog jadvali → biriktirilgan KPI
+  ro'yxati. Versiya raqami olib tashlandi (qatlam versiyalanmaydi). Hisobning O'Z ko'rsatkichini
+  yaratish/tahrirlash **qoldi**, lekin ro'yxatdan PASTGA ko'chdi va «biriktirish» dan ajratildi:
+  u katalog amali (metrika TA'RIFI), biriktirish emas.
+- **Yangi `/menejer/kpi`** — xodimlar kesimida guruhlangan, xodim/davr filtri, inline CRUD.
+  Sahifa yupqa (`menejer/plan` naqshi), mantiq `_components/employee-kpi-screen.tsx` da.
+- **Bitta manba, ikki yuza:** `EmployeeKpiTodoList` (xodim kartasi) va `EmployeeKpiScreen`
+  (menejer) BIR faylda va bir `TargetRow`/`TargetForm` dan foydalanadi — nusxa qilinsa biri
+  jimgina bir shoxni yo'qotardi ([[copy-paste-loses-a-branch]]).
+- 🔴 **Og'irlik «▾ Kengaytirilgan» ostida** va yopiq turganda maydon **umuman render
+  qilinmaydi** — «ixtiyoriy» ning UI ifodasi. Yopiq bo'lsa so'rovga `weight` TUSHMAYDI.
+- 🔴 **Uch holat uch xil:** fakt `null` → `—`, `0` → `0`, qiymat → o'zi. DOM'da uch atribut:
+  `data-scored` (og'irlik bor/yo'q), `data-fact-complete` (`none|true|false`), `data-manual`.
+- 🔴 **Pul so'mda kiritiladi va SO'MDA yuboriladi** — FE faqat probel/vergulni tozalaydi,
+  o'girish serverda (yagona nuqta).
+- **«Bajarildi»** faqat `measurable: false` qatorda chiziladi; belgilangan bo'lsa «qayta ochish».
+- **Navigatsiya:** menejer subnav (`layout.tsx`) + command-palette (`m.manager-kpi-targets`,
+  mavjud kunlik-qabul bandidan ALOHIDA — ikkisi boshqa savolga javob beradi).
+- **i18n ru+uz:** `pages.menejer.ekpi_*` (31 kalit) + `subnav.menejer.kpi_targets` +
+  `command_palette.commands.go_manager_kpi_targets` — **har ikki tilda +33**, deterministik skript
+  bilan (mavjud kalitga tegmaydi).
+
+**Fayllar.** `apps/web/src/app/(app)/menejer/_components/employee-kpi-screen.{tsx,test.tsx}`
+(yangi) · `…/menejer/kpi/page.tsx` (yangi) · `…/hr/employees/[id]/kpi/page.tsx` (**Edit** —
+486→302 qator) · `src/lib/manager-api.ts` (tiplar + `employeeKpiTargetApi`) ·
+`src/components/command-palette.tsx` · `src/app/(app)/layout.tsx` · `src/messages/{ru,uz}.json`.
+
+**Testlar.** TDD: avval RED (modul yo'q) → **20/20** yashil (14 todo-ro'yxat + 6 menejer ekrani).
+
+**🔬 Mutant.** `showValue` ning `null → '—'` shoxi `'0'` ga, `weight` tashlab yuborish `?? 0` ga
+o'zgartirildi → **2 test yiqildi** (`'0' ≠ '—'`, `+0 ≠ null`). Revert `diff` bilan tasdiqlandi.
+
+**Gate.** web typecheck **0** · api typecheck **0** · `lint:product` **0 error** · `i18n:gate`
+**9/9** (12 962 kalit skanlandi) · web vitest **3146 passed / 26 skipped (218 fayl)** — regress
+yo'q · qo'lda hardcoded skan (`_components` + ikki sahifa) — **0 topilma**.
+
+**🔴 Rejadan CHEKINISH (asoslangan).** Reja `EmployeeKpiTodoList` uchun alohida joy
+ko'rsatmagan edi. U `menejer/_components/employee-kpi-screen.tsx` ichida qoldirildi (xodim
+kartasi undan nisbiy yo'l bilan import qiladi) — `src/components/` ga chiqarilsa **i18n
+key-existence gate uni ko'rmasdi** (gate faqat `app/(app)` ni skanlaydi,
+[[i18n-gate-blind-to-components]]).
+
+**Ochiq qarz.** Eski `PUT manager/kpi/employee/:id/config` route'i va `KpiConfigService`
+**hamon tirik**, lekin endi UI'dan chaqirilmaydi (`getConfig`/`saveConfig`/`daily` web klientida
+o'lik kod bo'lib qoldi) — KPI-05 dan keyin olib tashlash yoki ataylab qoldirish qarori kerak.
+**Browser-smoke YO'Q** (KPI-06).
+
 ### KPI-05 — _(kutilmoqda)_
 ### KPI-06 — _(kutilmoqda)_

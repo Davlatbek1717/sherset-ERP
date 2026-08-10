@@ -1083,7 +1083,8 @@
       "briefing": "Brifing va yakun",
       "sales_plan": "Sotuv rejasi",
       "customer_assignment": "Mijoz taqsimoti",
-      "price_policy": "Narx siyosati"
+      "price_policy": "Narx siyosati",
+      "kpi_targets": "Xodimlar KPI’si"
     }
   },
   "counterparty_activity": {
@@ -8683,7 +8684,38 @@
       "br_block_revenue": "Bugungi tushum",
       "br_block_shift_acceptance": "Qabul kutayotgan smenalar",
       "br_block_cash_variance": "Kassa farqi bo'lgan smenalar",
-      "br_block_open_items": "Ochiq qolgan navbat elementlari"
+      "br_block_open_items": "Ochiq qolgan navbat elementlari",
+      "ekpi_title": "Xodimlar KPI’si",
+      "ekpi_subtitle": "Xodimlarga biriktirilgan KPI: maqsad, davr, fakt",
+      "ekpi_hint": "KPI’ni todo kabi qo‘shing: ko‘rsatkich, maqsad va davr. Og‘irlik — ixtiyoriy.",
+      "ekpi_add": "KPI qo‘shish",
+      "ekpi_empty": "Hozircha KPI biriktirilmagan. Birinchisini qo‘shing.",
+      "ekpi_all_empty": "Hech bir xodimga KPI biriktirilmagan",
+      "ekpi_metric": "Ko‘rsatkich",
+      "ekpi_target": "Maqsad",
+      "ekpi_target_optional": "ixtiyoriy",
+      "ekpi_fact": "Fakt",
+      "ekpi_period": "Davr",
+      "ekpi_period_daily": "Kunlik",
+      "ekpi_period_weekly": "Haftalik",
+      "ekpi_period_monthly": "Oylik",
+      "ekpi_weight": "Og‘irlik",
+      "ekpi_weight_hint": "Og‘irliksiz KPI kuzatiladi, lekin oylik ballga kirmaydi.",
+      "ekpi_unscored": "Ballanmaydi",
+      "ekpi_manual": "Qo‘lda",
+      "ekpi_partial": "chala ma’lumot",
+      "ekpi_archived": "Arxivda",
+      "ekpi_advanced": "Kengaytirilgan",
+      "ekpi_mark_done": "Bajarildi deb belgilash",
+      "ekpi_reopen": "Belgini olib tashlash",
+      "ekpi_edit": "Tahrirlash",
+      "ekpi_remove": "O‘chirish",
+      "ekpi_save": "Saqlash",
+      "ekpi_cancel": "Bekor qilish",
+      "ekpi_save_failed": "Saqlab bo‘lmadi",
+      "ekpi_invalid_amount": "Qiymat noto‘g‘ri",
+      "ekpi_filter_employee": "Xodim",
+      "ekpi_filter_all": "Hammasi"
     },
     "menejerLive": {
       "alert_count": "Diqqat talab qiladi: {count}",
@@ -9604,7 +9636,8 @@
       "settings_organizations": "Tashkilotlar",
       "settings_email": "Pochta sozlamalari",
       "settings_exchange_rates": "Valyuta kurslari",
-      "go_manager_kpi": "Menejer — KPI qabuli"
+      "go_manager_kpi": "Menejer — KPI qabuli",
+      "go_manager_kpi_targets": "Xodimlar KPI’si"
     }
   },
   "task_create": {

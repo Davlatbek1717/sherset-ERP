@@ -107,6 +107,11 @@ describe('marshrutlar to`qnashmaydi (FST_ERR_DUPLICATED_ROUTE)', () => {
     // MK12 — xarajat byudjeti. Yangi modul: route skanerga ko'rinadi, moduli
     // esa pastdagi yetim-modul qo'riqchisi orqali AppModule'da tasdiqlanadi.
     expect(routes.some((r) => r.path === 'expense-budget')).toBe(true);
+    // KPI-02 — biriktirilgan KPI CRUD'i. Yangi controller `ManagerModule`
+    // ro'yxatiga tushmasa hamma route 404 qaytarardi ([[orphan-module-dead-feature]]);
+    // bu qator route'ning skanerga ko'rinishini qulflaydi.
+    expect(routes.some((r) => r.path === 'manager/kpi/employee/:p/targets')).toBe(true);
+    expect(routes.some((r) => r.path === 'manager/kpi/targets/:p/done')).toBe(true);
   });
 
   it('bitta `metod + yo`l` juftligi FAQAT bir marta e`lon qilingan', () => {
