@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="uz">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'"
+    />
+    <title>Sherset Kassa — sozlash</title>
+    <style>
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #0f172a;
+        color: #e2e8f0;
+        font-family: Segoe UI, system-ui, sans-serif;
+      }
+      .card {
+        width: 520px;
+        background: #1e293b;
+        border-radius: 16px;
+        padding: 40px;
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45);
+      }
+      h1 { margin: 0 0 8px; font-size: 26px; }
+      p { margin: 0 0 24px; color: #94a3b8; line-height: 1.5; }
+      label { display: block; margin-bottom: 8px; font-size: 15px; color: #cbd5e1; }
+      input {
+        width: 100%;
+        padding: 16px;
+        font-size: 20px;
+        border-radius: 10px;
+        border: 1px solid #334155;
+        background: #0f172a;
+        color: #f8fafc;
+      }
+      button {
+        margin-top: 20px;
+        width: 100%;
+        padding: 16px;
+        font-size: 18px;
+        font-weight: 600;
+        border: 0;
+        border-radius: 10px;
+        background: #10b981;
+        color: #04241a;
+        cursor: pointer;
+      }
+      button:disabled { opacity: 0.6; cursor: default; }
+      .error {
+        margin-top: 16px;
+        padding: 12px 14px;
+        border-radius: 10px;
+        background: #7f1d1d;
+        color: #fee2e2;
+        font-size: 15px;
+        display: none;
+      }
+      .hint { margin-top: 20px; font-size: 13px; color: #64748b; }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <h1>Sherset Kassa</h1>
+      <p>Birinchi ishga tushirish. Do'kon serverining manzilini kiriting — u shu kompyuterda saqlanadi.</p>
+      <label for="url">Server manzili</label>
+      <input id="url" type="text" placeholder="erp.sherset.uz" autocomplete="off" spellcheck="false" />
+      <button id="save" type="button">Saqlash va davom etish</button>
+      <div class="error" id="error"></div>
+      <div class="hint">Chiqish: Ctrl + Alt + Shift + Q</div>
+    </div>
+    <script>
+      const input = document.getElementById('url');
+      const button = document.getElementById('save');
+      const error = document.getElementById('error');
+      const bridge = window.shersetShell;
+
+      input.value = bridge ? bridge.getServerUrl() : '';
+      input.focus();
+
+      function show(message) {
+        error.textContent = message;
+        error.style.display = message ? 'block' : 'none';
+      }
+
+      async function save() {
+        show('');
+        button.disabled = true;
+        button.textContent = 'Tekshirilmoqda...';
+        try {
+          const res = await bridge.saveServerUrl(input.value);
+          if (!res || !res.ok) show((res && res.error) || 'Saqlab bo`lmadi.');
+        } catch (e) {
+          show(String((e && e.message) || e));
+        } finally {
+          button.disabled = false;
+          button.textContent = 'Saqlash va davom etish';
+        }
+      }
+
+      button.addEventListener('click', save);
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') save();
+      });
+    </script>
+  </body>
+</html>

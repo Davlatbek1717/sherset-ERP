@@ -3,3 +3,6 @@ packages:
   - "packages/*"
   - "tools/*"
   - "tests/*"
+  # Electron kassa o'rami (F2). Bog'liqliklari (electron/electron-builder)
+  # faqat shu paketda — `pnpm install --filter @moysklad/desktop`.
+  - "desktop"

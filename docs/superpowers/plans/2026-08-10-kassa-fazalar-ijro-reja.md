@@ -1341,16 +1341,94 @@ Tuzatish 4 parallel agent + o'zim (auth), har biri TDD (RED ko'rilgan → fix �
 
 ### F2 hisoboti
 
-- **Holat:** ⬜ bajarilmagan
-- **Sana:**
+- **Holat:** ✅ bajarildi (kod + qo'riqchi darajasida; Electron ishga TUSHIRILMAGAN)
+- **Sana:** 2026-08-11 · worktree `D:/projects/sherset-kassa-f2`, branch `kassa-f2`
 - **O'zgargan fayllar:**
+  - yangi `desktop/main.js` — kiosk oyna, klaviatura qulflari, IPC, offline ekran, tashqi havolalar
+  - yangi `desktop/preload.js` — `contextBridge` → `window.electronAPI` (+ qobiq sahifalari uchun `window.shersetShell`)
+  - yangi `desktop/device-store.js` — `safeStorage` (DPAPI) qurilma kaliti + server manzili (`kassa-config.json`)
+  - yangi `desktop/setup.html` (birinchi ishga tushish: server manzili) · `desktop/offline.html` (aloqa yo'q ekrani)
+  - yangi `desktop/package.json` (`@moysklad/desktop`, electron + electron-builder + electron-updater) · `desktop/README.md`
+  - yangi `apps/web/src/__tests__/electron-bridge-contract.test.ts` (26 test)
+  - `pnpm-workspace.yaml` — `desktop` workspace paketi sifatida qo'shildi
 - **Qilingan ish:**
+  - Yupqa kiosk o'ram (spec §3.1): `kiosk:true`, `frame:false`, menyu yo'q, `requestSingleInstanceLock`,
+    prod'da DevTools o'chiq (`devTools: isDev` + `F12`/`Ctrl+Shift+I` ushlanadi), `Ctrl+W` va `Alt+F4`
+    ushlanadi — `Alt+F4` uchun ishonchli to'siq `win.on('close')` da (OS darajasidagi yopishni
+    `before-input-event` doim ko'rmaydi). Operator chiqishi: `Ctrl+Alt+Shift+Q` (README'da).
+  - Tashqi havolalar: `setWindowOpenHandler` → `deny` + `shell.openExternal`; `will-navigate` faqat
+    server origini va `file://` ga ruxsat beradi.
+  - Aloqa uzilishi (spec §3.1): `did-fail-load` (mainFrame, `ERR_ABORTED` bundan mustasno) → `offline.html`;
+    fonda har 5 s `GET <server>/api/v1/health` (`apps/api/src/health.controller.ts` + `main.ts:72`
+    `setGlobalPrefix('api/v1')`), javob berishi bilan ilova o'zi qayta yuklanadi.
+  - Server manzili KODGA QOTIRILMAGAN (spec §3.2): konfiguratsiya → `SHERSET_SERVER_URL` (build/env
+    default) → `setup.html`. Saqlashdan oldin `/health` bilan tekshiriladi (xato manzil kassirni bo'sh
+    ekranga tashlamasin).
+  - DPAPI: `safeStorage` mavjud bo'lmasa qurilma kaliti **saqlanmaydi** va `dialog.showErrorBox` chiqadi —
+    ochiq matnda jimgina saqlash TAQIQ (web `setDevice` natijasini ko'rmaydi, shuning uchun xatoni qobiq ko'rsatadi).
+  - Chop etish/mijoz-ekran IPC ishlovchilari **ochiq xato** qaytaradi («F3 da ulanadi»), jim `ok` emas —
+    sabab: `print-agent.ts:105-118` ko'prik mavjud bo'lganda HTTP-agentga QAYTMAYDI.
 - **Shartnoma-testi nimani qo'riqlaydi:**
-- **Qo'lda o'lchash natijasi:**
-- **Gate natijasi:**
-- **Commit(lar):**
+  - Metod nomlari **ikki manbadan, manba-matndan** o'qiladi (qo'lda ro'yxat yo'q):
+    `print-agent.ts` → `interface ElectronBridge` (`isSherset`, `version`, `listPrinters`, `printSheet`,
+    `pushCart`, `toggleCustomerDisplay`, `customerDisplayStatus`) **VA** `pos-device.ts` → `interface ShellBridge`
+    (`getDevice`, `setDevice`, `clearDevice`). 🔴 Ikkinchisi F1 agentining ogohlantirishi bo'yicha qo'shildi:
+    metod tushib qolsa `pos-device.ts` jimgina `localStorage` ga tushadi — DPAPI umuman ishlamaydi va hech
+    narsa shikoyat qilmaydi. Spec'dagi `pair(...)` amalda `setDevice(creds)` (juftlashning o'zi web'da,
+    `kassa-kirish/juftlash/page.tsx:86`) — shuning uchun shartnomaga MANBADAGI nom kiritildi.
+  - Har nom `preload.js` da `contextBridge.exposeInMainWorld('electronAPI', {…})` obyektining **tashqi**
+    kalitlaridan biri ekani tekshiriladi (ichma-ich payload maydonlari sanalmaydi).
+  - `getDevice`/`setDevice`/`clearDevice` **sinxron** (`ipcRenderer.sendSync`, `async` emas) bo'lishi shart —
+    `pos-device.ts:44-47` natijani darhol `isComplete` bilan tekshiradi, Promise unga «juftlanmagan» bo'lib
+    ko'rinadi (abadiy juftlash sikli).
+  - `main.js` qattiqligi: `preload.js` oynaga ULANGAN, `contextIsolation:true`, `nodeIntegration:true` YO'Q,
+    `kiosk:true`, `frame:false`, `requestSingleInstanceLock`, `setApplicationMenu(null)`, va manbada
+    localhost'dan boshqa `http(s)://` **qotirilgan domen yo'q** (spec §3.2 qo'riqchisi).
+  - **Vacuity qo'riqchisi:** parser buzilsa (satr/izoh skaneri) manba-a'zolar bo'sh chiqib testlar «o'tib»
+    ketardi — shuning uchun ikki test langar nomlar topilganini alohida tasdiqlaydi.
+  - **Qanday yiqilardi (o'lchangan):** (a) `desktop/` yo'q holatida 26 testdan 23 tasi qizil edi;
+    (b) mutatsiya bilan tekshirildi — `preload.js` dan `getDevice` olib tashlanib, `setDevice`
+    `invoke` ga o'tkazilganda 4 test yiqildi (ya'ni qo'riqchi vakuum emas), keyin fayl tiklandi.
+- **Qo'lda o'lchash natijasi:** 🔴 **BAJARILMADI — ataylab.** Bu to'lqinda uch agent parallel ishlagan
+  (`pnpm dev` portlari 3100/4000 bitta sessiyaga tegishli), `pnpm install` esa butun monorepo uchun
+  taqiqlangan edi (electron ~100 MB yuklab olinadi). Ya'ni kiosk oyna ochilgani, PIN bilan `/sotuv` ga
+  kirilgani va `Alt+F4` ishlamasligi **o'lchanmagan**. O'lchash qadamlari (F3 yoki merge'dan keyingi QA):
+  1. `pnpm install --filter @moysklad/desktop`
+  2. `pnpm dev` (web 3100, api 4000) — `:4000` qaysi worktree'dan ekanini tekshir
+  3. `SHERSET_SERVER_URL=http://localhost:3100 pnpm --filter @moysklad/desktop dev` → kiosk oyna ochiladi va `/kassa-kirish` ko'rinadi
+  4. Juftlash → admin login → do'kon/kassa/tashkilot → `%APPDATA%/…/kassa-config.json` da `device` **shifrlangan** (base64, ochiq matn emas) ekanini ko'z bilan tasdiqla
+  5. PIN → `/sotuv` ochiladi (qurilma kaliti DPAPI'dan o'qildi degani)
+  6. `Alt+F4`, `Ctrl+W`, `F12` — oyna yopilmaydi/DevTools ochilmaydi; `Ctrl+Alt+Shift+Q` — yopiladi
+  7. `pnpm dev` ni to'xtat → offline ekrani chiqadi; qayta yoq → kassa **o'zi** qaytadi
+  8. Manzilsiz ishga tushir (`SHERSET_SERVER_URL` yo'q, konfiguratsiya o'chirilgan) → `setup.html`; noto'g'ri manzil → «Server javob bermadi»
+- **Gate natijasi (ketma-ket yugurtirildi):** `money build` OK · `api typecheck` 0 · `web typecheck` 0 ·
+  `biome check desktop apps/web/src/__tests__/electron-bridge-contract.test.ts pnpm-workspace.yaml` 0 ·
+  `api test` 551 fayl / 7784 test yashil, **5 yiqilish = yuk timeout'i** (`pos-device.service`,
+  `pos-pin.service`, `publication.service` — hammasi 5000ms argon2), **yolg'iz yugurtirilganda 3 fayl /
+  45 test yashil** · `web test` 239 fayl / 3338 test yashil (0 yiqilish; +26 shu fazadan) · `i18n:gate` OK.
+- **Commit(lar):** `e45770a` — `feat(kassa): electron kiosk o'rami (desktop/) + ko'prik shartnoma qo'riqchisi`
+  (+ shu hisobot commit'i). ⚠️ `docs/progress.json` commit'ga lint-staged orqali qo'shildi (hook qayta
+  generatsiya qilgan: `branch: kassa-f2`) — merge'da `climart-adoption` versiyasi olinsin.
 - **Kelgusi fazalarga qoldirilgan:**
-- **Yorliq:**
+  - **F3 (chop etish/mijoz-ekran):** `print:list` → `[]`, `print:sheet`/`cfd:toggle` → ochiq xato,
+    `cfd:push` → no-op. 🔴 `print-agent.ts:105-118` ko'prik mavjud bo'lganda HTTP-agentga **qaytmaydi**,
+    shuning uchun F3 gacha bu qobiqda chop etish umuman yo'q (jim emas, xato bilan).
+  - **F3:** mijoz-ekran oynasi uchun **ikkinchi ko'prik** kerak — `apps/web/src/app/customer-display/page.tsx:40-47`
+    `window.customerDisplay.onCart(cb)` ni kutadi (`preload-customer.js`). Shartnoma-testi hozir buni
+    QAMRAMAYDI — F3 da o'sha testga qo'shilsin (aks holda xuddi shu «jim eskirish» klassi qaytadi).
+  - **F4:** `build/icon.ico` yo'q (binar fayl — bu sessiyada yaratilmadi), `electron-builder` NSIS
+    konfiguratsiyasi, `electron-updater` simlari, `latest.yml` uchun nginx `location /downloads/desktop/`.
+    `desktop/package.json` versiyasi ataylab `1.1.0-dev` — chop etish ulangach F3/F4 ko'taradi.
+  - **F1 dan kelgan qarz (yopilmadi):** `clearPosDevice()` ni hech kim chaqirmaydi — POS'da «qurilmani
+    bekor qilish» tugmasi YO'Q. F2 da UI qo'shilmadi (bu POS sahifasi ishi, F2 fayl chegarasidan tashqarida);
+    vaqtinchalik yo'l README'da (`kassa-config.json` dagi `device` maydonini o'chirish).
+  - **O'lchanmagan taxminlar (kod bilan tasdiqlanmagan, faqat hujjat bilan):** `sandbox: true` preload'da
+    `ipcRenderer.sendSync` ishlashi; `did-fail-load` xato kodlari; `dialog.showErrorBox` kiosk oynasi ustida
+    ko'rinishi. Birinchi qo'lda o'lchashda shular alohida tekshirilsin.
+  - `pnpm install` **yugurtirilmagan** — `desktop/` bog'liqliklari (electron) hali yuklab olinmagan,
+    `pnpm-lock.yaml` yangilanmagan. Merge'dan keyin bir marta `pnpm install` kerak.
+- **Yorliq:** **Phase-1 — strukturaviy, runtime-tasdiqlanmagan.** Electron o'rami hech qachon ishga
+  tushirilmagan; real kassa PC'da (va umuman brauzerdan tashqarida) sinalmagan.
 
 ### F3 hisoboti
 
