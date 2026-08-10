@@ -4,6 +4,8 @@ import { CurrentUser } from '../../auth/current-user.decorator.js';
 import { JwtAuthGuard } from '../../auth/jwt-auth.guard.js';
 import { HrPermissionGuard } from '../../hr/hr-auth/hr-permission.guard.js';
 import { RequireHrPermission } from '../../hr/hr-auth/require-hr-permission.decorator.js';
+import { LostCustomerQuerySchema, MarkLostReasonSchema } from './lost-customers.schema.js';
+import { LostCustomersService } from './lost-customers.service.js';
 import { CustomerListQuerySchema, ReassignBodySchema } from './manager-customers.schema.js';
 import { ManagerCustomersService } from './manager-customers.service.js';
 
@@ -16,13 +18,35 @@ import { ManagerCustomersService } from './manager-customers.service.js';
 @Controller('manager/customers')
 @UseGuards(JwtAuthGuard, HrPermissionGuard)
 export class ManagerCustomersController {
-  constructor(@Inject(ManagerCustomersService) private readonly svc: ManagerCustomersService) {}
+  constructor(
+    @Inject(ManagerCustomersService) private readonly svc: ManagerCustomersService,
+    @Inject(LostCustomersService) private readonly lost: LostCustomersService,
+  ) {}
 
   /** Mijozlar + havza manzarasi (kim nechta mijozga javobgar). */
   @Get()
   @RequireHrPermission('employees', 'read')
   async list(@CurrentUser() user: AuthenticatedUser, @Query() query: unknown) {
     return this.svc.list(user.accountId, CustomerListQuerySchema.parse(query ?? {}));
+  }
+
+  /**
+   * MK17 — yo'qolgan mijozlar signali. ATAYLAB shu kontrollerda: mijoz
+   * taqsimoti bilan bir sirt, ikkinchi `manager/customers` prefiksli
+   * kontroller ochilsa Fastify marshrutlari to'qnashardi
+   * ([[duplicate-route-prod-502]]).
+   */
+  @Get('lost')
+  @RequireHrPermission('employees', 'read')
+  async lostList(@CurrentUser() user: AuthenticatedUser, @Query() query: unknown) {
+    return this.lost.list(user.accountId, LostCustomerQuerySchema.parse(query ?? {}));
+  }
+
+  /** MK17 — ketish sababini belgilash (`counterparty_notes` jurnaliga). */
+  @Post('lost-reason')
+  @RequireHrPermission('employees', 'full')
+  async markLostReason(@CurrentUser() user: AuthenticatedUser, @Body() body: unknown) {
+    return this.lost.markReason(user.accountId, user.sub, MarkLostReasonSchema.parse(body ?? {}));
   }
 
   /** Bitta mijozning egalik tarixi. */

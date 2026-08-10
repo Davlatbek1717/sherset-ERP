@@ -1,5 +1,6 @@
 import { api } from '@/lib/api-client';
 import { renderWithProviders, screen } from '@/test-utils';
+import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { CustomerAssignmentScreen } from './customer-assignment-screen';
 
@@ -41,6 +42,50 @@ const LIST = {
     unassigned: 1,
     owners: [{ ownerId: 'emp-1', name: 'Anna', count: 1 }],
   },
+};
+
+/** MK17 paneli uchun eng kichik javob (to'liq qamrov o'z faylida). */
+const LOST = {
+  rows: [
+    {
+      counterpartyId: 'cp-9',
+      name: 'Lotos MChJ',
+      phone: null,
+      ownerId: null,
+      ownerName: null,
+      firstPurchaseAt: null,
+      lastPurchaseAt: '2026-05-01T00:00:00.000Z',
+      purchaseCount: 2,
+      inactiveDays: 101,
+      bucket: 'lost',
+      reasonCode: null,
+      reasonRaw: null,
+      reasonNote: null,
+      reasonAt: null,
+      reasonAuthorName: null,
+      releaseDue: false,
+    },
+  ],
+  summary: {
+    lostCount: 1,
+    activeCount: 0,
+    neverPurchasedCount: 0,
+    byOwner: [{ ownerId: null, ownerName: null, lostCount: 1 }],
+    byReason: [],
+    unmarkedCount: 1,
+    releaseDueCount: 0,
+    ownershipConflict: false,
+  },
+  config: {
+    lostDays: 60,
+    lostDaysConfigured: false,
+    lostSignalEnabled: true,
+    ownershipReleaseDays: 90,
+    lostDaysRejectReason: null,
+  },
+  totalCount: 1,
+  truncated: false,
+  generatedAt: '2026-08-10T09:00:00.000Z',
 };
 
 function mockApi(history: unknown = { counterpartyId: 'cp-1', events: [] }) {
@@ -87,5 +132,20 @@ describe('CustomerAssignmentScreen', () => {
   it('har qatordan TARIX ochish tugmasi bor', async () => {
     renderWithProviders(<CustomerAssignmentScreen />);
     expect(await screen.findByTestId('ca-history-cp-1')).not.toBeNull();
+  });
+
+  // MK17 — «yo'qolgan mijozlar» SHU ekranning ichida yashaydi (ikkinchi mijoz
+  // ekrani ataylab qurilmadi). Ulanish testsiz qolsa, prop/import uzilishi
+  // typecheck'dan jim o'tardi ([[documenteditor-prop-drop-bug]]).
+  it('MK17 «yo`qolgan mijozlar» bo`limi shu ekrandan ochiladi', async () => {
+    vi.mocked(api.get).mockImplementation(async (url: string) => {
+      if (url.startsWith('/manager/customers/lost')) return LOST;
+      if (url.includes('/owner-history')) return { counterpartyId: 'cp-1', events: [] };
+      return LIST;
+    });
+    renderWithProviders(<CustomerAssignmentScreen />);
+    await userEvent.click(await screen.findByTestId('ca-tab-lost'));
+    expect(await screen.findByTestId('lc-summary')).toBeTruthy();
+    expect(await screen.findByTestId('lc-row-cp-9')).toBeTruthy();
   });
 });

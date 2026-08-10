@@ -1824,6 +1824,16 @@ model CounterpartyNote {
 
   text      String
   archived  Boolean  @default(false)
+
+  /// MK17 — izohning TURI. `note` = oddiy CRM izohi (mavjud xulq, sukut) ·
+  /// `lost_reason` = «mijoz nega ketdi» belgisi. Yangi jadval ochilmadi:
+  /// MK16 `DebtNote.kind='reminder'` bilan AYNI naqsh — belgi mijozning
+  /// muloqot tarixida operator ko'radigan joyda paydo bo'ladi.
+  kind       String  @default("note") @db.VarChar(20)
+  /// MK17 yopiq ro'yxatidagi sabab kodi (`lost-customers.ts` → LOST_REASON_CODES).
+  /// Erkin matn `text` da qoladi — taqsimot esa BARQAROR kod bo'yicha chiziladi.
+  reasonCode String? @map("reason_code") @db.VarChar(30)
+
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz()
 
@@ -1832,6 +1842,9 @@ model CounterpartyNote {
   author       Employee?    @relation("CounterpartyNoteAuthor", fields: [authorId], references: [id], onDelete: SetNull)
 
   @@index([accountId, counterpartyId, createdAt(sort: Desc)])
+  /// MK17 o'quvchisi: `DISTINCT ON (counterparty_id) … ORDER BY counterparty_id,
+  /// created_at DESC` — indeks AYNAN shu shaklga mos ([[index-needs-matching-query-shape]]).
+  @@index([accountId, kind, counterpartyId, createdAt(sort: Desc)])
   @@map("counterparty_notes")
 }
 

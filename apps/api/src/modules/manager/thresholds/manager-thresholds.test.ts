@@ -51,12 +51,43 @@ describe('resolveManagerThresholds — registr va sukut qiymatlar', () => {
     expect(warn.value).toBe(90); // MK12 DEFAULT_WARN_PERCENT
   });
 
-  it('registrdagi har chegara `percent` birligida va oralig`i mantiqiy', () => {
+  it('registrdagi har chegara tanilgan birlikda va oralig`i mantiqiy', () => {
     for (const def of Object.values(MANAGER_THRESHOLDS)) {
-      expect(def.unit).toBe('percent');
+      // `manager_rule_configs.threshold_unit` da ruxsat etilgan lug'at.
+      expect(['percent', 'days']).toContain(def.unit);
       expect(def.min).toBeLessThanOrEqual(def.defaultValue);
       expect(def.defaultValue).toBeLessThanOrEqual(def.max);
     }
+  });
+
+  it('MK17 kun-chegaralari registrda: yo`qolish davri va egalik bo`shash muddati', () => {
+    const lost = resolved([], MANAGER_THRESHOLD.lostCustomerDays);
+    expect(lost.unit).toBe('days');
+    expect(lost.value).toBe(60);
+
+    // F005 ning «90-kun» taymeri ham SHU registrda — F005 qurilganda kodga
+    // 90 raqamini qaytadan yozmasligi uchun ([[sla-thresholds-in-rule-config-table]]).
+    const release = resolved([], MANAGER_THRESHOLD.ownershipReleaseDays);
+    expect(release.unit).toBe('days');
+    expect(release.value).toBe(90);
+  });
+
+  it('kun-chegarasiga `percent` qatori berilsa qiymat TALQIN QILINMAYDI', () => {
+    const lost = resolved(
+      [row({ ruleType: 'LOST_CUSTOMER_DAYS', thresholdValue: '30', thresholdUnit: 'percent' })],
+      MANAGER_THRESHOLD.lostCustomerDays,
+    );
+    expect(lost.value).toBe(60); // sukut
+    expect(lost.rejectReason).toBe('unit_mismatch');
+  });
+
+  it('kun-chegarasi sozlanadi (MK17 «davr sozlanadi» talabi)', () => {
+    const lost = resolved(
+      [row({ ruleType: 'LOST_CUSTOMER_DAYS', thresholdValue: '120', thresholdUnit: 'days' })],
+      MANAGER_THRESHOLD.lostCustomerDays,
+    );
+    expect(lost.value).toBe(120);
+    expect(lost.configured).toBe(true);
   });
 
   it('sozlangan qiymat registr sukutini almashtiradi', () => {

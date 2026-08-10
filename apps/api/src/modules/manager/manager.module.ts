@@ -16,6 +16,7 @@ import { DebtCollectionService } from './collection/debt-collection.service.js';
 import { ManagerCollectionController } from './collection/manager-collection.controller.js';
 import { ManagerCommentTemplateController } from './comments/manager-comment-template.controller.js';
 import { ManagerCommentTemplateService } from './comments/manager-comment-template.service.js';
+import { LostCustomersService } from './customers/lost-customers.service.js';
 import { ManagerCustomersController } from './customers/manager-customers.controller.js';
 import { ManagerCustomersService } from './customers/manager-customers.service.js';
 import { ManagerInventoryController } from './inventory/manager-inventory.controller.js';
@@ -39,6 +40,8 @@ import { ManagerQueueController } from './queue/manager-queue.controller.js';
 import { ManagerQueueService } from './queue/manager-queue.service.js';
 import { ManagerSlaController } from './sla/manager-sla.controller.js';
 import { ManagerSlaService } from './sla/manager-sla.service.js';
+import { ManagerThresholdsController } from './thresholds/manager-thresholds.controller.js';
+import { ManagerThresholdsService } from './thresholds/manager-thresholds.service.js';
 
 /**
  * Menejer bo'limi — 4-bo'lim TZ kengaytmasi.
@@ -108,6 +111,7 @@ import { ManagerSlaService } from './sla/manager-sla.service.js';
     MoneyMapController,
     ManagerBriefingController,
     ManagerCustomersController,
+    ManagerThresholdsController,
   ],
   providers: [
     EmployeeDailyKpiService,
@@ -131,6 +135,12 @@ import { ManagerSlaService } from './sla/manager-sla.service.js';
     MoneyMapService,
     DayBriefingService,
     ManagerCustomersService,
+    // MK17 — `LostCustomersService` `ManagerCustomersController` ga
+    // in'yeksiya qilinadi (ikkinchi `manager/customers` kontrolleri
+    // ochilmadi). Provayder unutilsa DI faqat RUNTIME'da yiqilardi
+    // ([[global-di-injection-unguarded]] — `app-boot.test.ts` shu uchun bor).
+    LostCustomersService,
+    ManagerThresholdsService,
   ],
   exports: [EmployeeDailyKpiService, DailyKpiAcceptanceService],
 })

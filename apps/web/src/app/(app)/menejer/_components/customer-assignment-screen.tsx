@@ -12,6 +12,9 @@
  *
  * «Egasiz qilish» va «tegmaslik» — IKKI BOSHQA amal: havzaga qaytarish
  * ataylab alohida tanlov.
+ *
+ * MK17 «Yo'qolgan mijozlar» SHU ekranning ikkinchi bo'limi sifatida yashaydi —
+ * reja ikkinchi mijoz ekranini qurishni ataylab taqiqladi.
  */
 
 import {
@@ -33,14 +36,18 @@ import {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { useState } from 'react';
+import { LostCustomersPanel } from './lost-customers-panel';
 
 /** Havzaga qaytarish — `<select>` da bo'sh qiymat bilan ifodalanadi. */
 const POOL = '';
+
+type Tab = 'assignment' | 'lost';
 
 export function CustomerAssignmentScreen() {
   const t = useTranslations('pages.menejer');
   const qc = useQueryClient();
 
+  const [tab, setTab] = useState<Tab>('assignment');
   const [ownerFilter, setOwnerFilter] = useState('');
   const [unassignedOnly, setUnassignedOnly] = useState(false);
   const [search, setSearch] = useState('');
@@ -61,6 +68,8 @@ export function CustomerAssignmentScreen() {
         search: search || undefined,
         limit: 200,
       }),
+    // Ikkinchi bo'lim ochilganda taqsimot ro'yxati bekorga so'ralmaydi.
+    enabled: tab === 'assignment',
   });
 
   const reassign = useMutation({
@@ -92,7 +101,29 @@ export function CustomerAssignmentScreen() {
         <p className="text-[var(--ms-text-muted)] text-sm">{t('ca_subtitle')}</p>
       </header>
 
-      {isLoading || !data ? (
+      {/* ── Ikki bo'lim: taqsimot (MK38) va yo'qolganlar (MK17) ───────── */}
+      <div className="flex gap-1 border-[var(--ms-border)] border-b" data-test-id="ca-tabs">
+        {(['assignment', 'lost'] as const).map((key) => (
+          <button
+            key={key}
+            type="button"
+            data-test-id={`ca-tab-${key}`}
+            aria-selected={tab === key}
+            className={`-mb-px border-b-2 px-3 py-1.5 text-sm ${
+              tab === key
+                ? 'border-[var(--ms-accent,#1a73e8)] text-[var(--ms-text-strong)]'
+                : 'border-transparent text-[var(--ms-text-muted)]'
+            }`}
+            onClick={() => setTab(key)}
+          >
+            {key === 'assignment' ? t('ca_tab_assignment') : t('ca_tab_lost')}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'lost' ? (
+        <LostCustomersPanel />
+      ) : isLoading || !data ? (
         <Skeleton className="h-64 w-full" />
       ) : (
         <>

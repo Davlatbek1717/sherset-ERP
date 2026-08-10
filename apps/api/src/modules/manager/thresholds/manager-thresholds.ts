@@ -32,17 +32,27 @@ export const MANAGER_THRESHOLD = {
   kpiScoreCap: 'KPI_SCORE_CAP',
   /** Xarajat byudjetida «ogohlantirish» chegarasi, rejaning % (MK12). */
   budgetWarnPercent: 'BUDGET_WARN_PERCENT',
+  /** Mijoz shuncha kun xarid qilmasa «yo'qolgan» deb belgilanadi (MK17). */
+  lostCustomerDays: 'LOST_CUSTOMER_DAYS',
+  /** Faolliksiz mijoz shuncha kundan keyin egalikdan chiqadi (F005 taymeri). */
+  ownershipReleaseDays: 'OWNERSHIP_RELEASE_DAYS',
 } as const;
 
 export type ManagerThresholdKey = (typeof MANAGER_THRESHOLD)[keyof typeof MANAGER_THRESHOLD];
+
+/**
+ * `manager_rule_configs.threshold_unit` dagi lug'at. **Birlik hech qachon
+ * talqin qilinmaydi** — mos kelmasa qator rad etiladi (pastga qara).
+ */
+export type ManagerThresholdUnit = 'percent' | 'days';
 
 export interface ManagerThresholdDefinition {
   readonly key: ManagerThresholdKey;
   /** `manager_rule_configs.rule_type` — kalitning o'zi (nusxa emas). */
   readonly ruleType: ManagerThresholdKey;
   readonly defaultValue: number;
-  /** Har doim `percent`: boshqa birlikdagi qator RAD ETILADI, talqin qilinmaydi. */
-  readonly unit: 'percent';
+  /** Boshqa birlikdagi qator RAD ETILADI, talqin qilinmaydi. */
+  readonly unit: ManagerThresholdUnit;
   readonly min: number;
   readonly max: number;
   /** Ekranda ko'rsatiladigan qisqa izoh (nega bu raqam bor). */
@@ -74,6 +84,36 @@ export const MANAGER_THRESHOLDS: Readonly<Record<ManagerThresholdKey, ManagerThr
       // 100% dan yuqorisi ma'nosiz: reja oshib ketgani allaqachon `over` statusi.
       max: 100,
       rationale: 'Xarajat moddasi rejaning shu foiziga yetganda ogohlantiriladi.',
+    },
+    [MANAGER_THRESHOLD.lostCustomerDays]: {
+      key: MANAGER_THRESHOLD.lostCustomerDays,
+      ruleType: MANAGER_THRESHOLD.lostCustomerDays,
+      // 2 oy — savdo davrasi uzun bo'lgan ulgurji mijoz uchun ham «to'xtadi»
+      // deyish uchun yetarli, lekin mavsumiy tanaffusni darhol signalga
+      // aylantirmaydi. Sozlanadi (MK17 talabi).
+      defaultValue: 60,
+      unit: 'days',
+      // 7 kundan qisqa davr har dam olish haftasini signalga aylantirardi.
+      min: 7,
+      max: 730,
+      rationale:
+        "Mijoz shuncha KALENDAR kun xarid qilmasa «yo'qolgan» ro'yxatiga tushadi. " +
+        'Hech narsani bloklamaydi — bu kuzatuv signali.',
+    },
+    [MANAGER_THRESHOLD.ownershipReleaseDays]: {
+      key: MANAGER_THRESHOLD.ownershipReleaseDays,
+      ruleType: MANAGER_THRESHOLD.ownershipReleaseDays,
+      // 2-bo'lim TZ §3 Qoida 4 dagi «90 kun». Raqam SHU YERDA yashaydi, chunki
+      // MK17 uni O'QIYDI (yo'qolish davri bilan ziddiyatni tekshirish uchun),
+      // F005 esa uni QO'LLAYDI. Ikki joyda yozilsa — ikki haqiqat.
+      defaultValue: 90,
+      unit: 'days',
+      min: 7,
+      max: 3650,
+      rationale:
+        'Faolliksiz mijoz shuncha kundan keyin egalikdan chiqadi (F005 taymeri). ' +
+        "MK17 buni faqat O'QIYDI: yo'qolish davri bundan uzun bo'lsa, «yo'qolgan» " +
+        "ro'yxatida egasi bo'lgan mijoz qolmaydi.",
     },
   };
 
