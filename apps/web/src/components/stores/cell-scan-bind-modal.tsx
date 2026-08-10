@@ -13,15 +13,24 @@
  *            card 2 the scanned product.
  *
  * If the scanned cell ALREADY holds another product, a separate dialog asks
- * what to do: «Birga qo'shish» (keep both) · «Bekor qilish» — the destructive
- * «Almashtirish» option was removed per owner 2026-07-21. Binding writes the
- * SAME record the manual picker writes (Product.attributes.__yacheyka via
- * POST cells/:id/products) — one source of truth, no new tables.
- * Camera pipeline lives in the shared useBarcodeCamera hook.
+ * what to do — TZ v3 §1.2 (owner 2026-08-10) restored the third option and
+ * put the OCCUPANT'S NAME on the buttons: «"Olma" bilan birga qo'shish» ·
+ * «"Olma"ni chiqarib, hozirgisini qo'shish» · «Bekor qilish». The answer is
+ * remembered PER CELL (`decisions`) so a burst of scans into one cell asks
+ * once, not once per item; eviction is a STAGED intent — nothing is written
+ * until «Saqlash», which deletes the recorded occupants first and only then
+ * posts the new rows. Binding writes the SAME record the manual picker writes
+ * (Product.attributes.__yacheyka via POST cells/:id/products) — one source of
+ * truth, no new tables.
+ * Camera pipeline lives in the shared useBarcodeCamera hook; every scan goes
+ * through useScanQueue so a burst is processed IN ORDER (TZ v3 §3).
  */
 
 import { useBarcodeCamera } from '@/components/stores/use-barcode-camera';
+import { useScanQueue } from '@/components/stores/use-scan-queue';
+import { usePermissions } from '@/hooks/use-permissions';
 import { api } from '@/lib/api-client';
+import { beep } from '@/lib/beep';
 import { normalizeScanInput } from '@/lib/scan';
 import { Button, Icons, Modal, useToast } from '@moysklad/ui';
 import { useTranslations } from 'next-intl';
@@ -52,11 +61,19 @@ interface PendingRow {
   cell: { id: string; name: string };
 }
 
-/** «Yacheyka band» dialog payload: the product just scanned + what the cell
- *  would hold at save time (server contents + already-staged rows). */
+/** «Yacheyka band» dialog payload: the product just scanned + the cell's
+ *  SERVER contents (staged rows are never offered for eviction). */
 interface Conflict {
   product: ProductHit;
   existing: Array<{ id: string; name: string }>;
+}
+
+/** The answer given once per cell (TZ v3 §1.2). `evict` is the snapshot of the
+ *  cell's SERVER contents at decision time — «Saqlash» deletes exactly these
+ *  and nothing else, so a row staged in this session can never evict itself. */
+interface CellDecision {
+  mode: 'together' | 'replace';
+  evict: Array<{ id: string; name: string }>;
 }
 
 export function CellScanBindModal({
@@ -78,6 +95,14 @@ export function CellScanBindModal({
   onBound: () => void;
 }) {
   const t = useTranslations('pages.stores.address_storage');
+  // TZ §3: bog'lash/sanash — `storecell` ruxsati, lekin CHIQARISH — `store.update`
+  // (T1 da DELETE .../products/:id ataylab shunda qoldirilgan), ya'ni omborchida
+  // yo'q. Tugma unga KO'RINMASIN: aks holda u qarorni tanlaydi, ro'yxatni
+  // to'ldiradi va faqat «Saqlash» da 403 oladi — butun mehnat kuyadi.
+  // Matritsa hali kelmagan bo'lsa fail-open (fayl/hook konvensiyasi) — server
+  // baribir yakuniy qaror qiluvchi.
+  const { matrix } = usePermissions();
+  const canEvict = matrix ? matrix.store?.update !== 'NO' : true;
   const [cell, setCell] = useState<{ id: string; name: string } | null>(initialCell);
   const [lastProduct, setLastProduct] = useState<string | null>(null);
   const [message, setMessage] = useState<{ kind: 'ok' | 'warn' | 'err'; text: string } | null>(
@@ -86,6 +111,11 @@ export function CellScanBindModal({
   const [conflict, setConflict] = useState<Conflict | null>(null);
   // Staged bindings — written ONLY by «Saqlash» (owner 2026-07-21).
   const [pending, setPending] = useState<PendingRow[]>([]);
+  /** TZ v3 §1.2: band yacheyka savoli HAR YACHEYKA UCHUN BIR MARTA so'raladi —
+   *  javob shu yerda yashaydi. `evict` — qaror qabul qilingan lahzadagi SERVER
+   *  tarkibi: «chiqarib qo'shish» saqlashda AYNAN shularni oladi (bu sessiyada
+   *  staged qilingan qatorlar hech qachon chiqarilmaydi). */
+  const [decisions, setDecisions] = useState<Map<string, CellDecision>>(new Map());
   const [saving, setSaving] = useState(false);
   const [value, setValue] = useState('');
   // What the camera/scanner last READ — always shown, so nothing is silent.
@@ -122,6 +152,7 @@ export function CellScanBindModal({
     setMessage(null);
     setConflict(null);
     setPending([]);
+    setDecisions(new Map());
     setSaving(false);
     setValue('');
     setLastRead(null);
@@ -175,22 +206,42 @@ export function CellScanBindModal({
   const save = useCallback(async () => {
     if (pending.length === 0 || saving) return;
     setSaving(true);
-    const rows = [...pending].reverse();
+    const rows = [...pending].reverse(); // scan order
+    // TZ v3 §1.3: har guruh o'z yacheykasiga yoziladi.
+    const byCell = new Map<string, PendingRow[]>();
+    for (const r of rows) {
+      const list = byCell.get(r.cell.id) ?? [];
+      list.push(r);
+      byCell.set(r.cell.id, list);
+    }
     let done = 0;
     try {
-      for (const r of rows) {
-        await api.post(`/admin/stores/${storeId}/cells/${r.cell.id}/products`, {
-          productIds: [r.product.id],
-        });
-        done += 1;
-        setPending((p) => p.filter((x) => x.key !== r.key));
+      for (const [cellId, cellRows] of byCell) {
+        // TZ v3 §1.2: «chiqarib qo'shish» — AVVAL eski chiqariladi (bir marta,
+        // qaror qabul qilingan lahzadagi SERVER ro'yxati bo'yicha), KEYIN
+        // yangilari yoziladi. `evict` qayta hisoblanmaydi — aks holda shu
+        // sessiyada staged qilingan qator o'zini-o'zi chiqarib yuborardi.
+        const decision = decisions.get(cellId);
+        if (decision?.mode === 'replace') {
+          for (const victim of decision.evict) {
+            await api.delete(`/admin/stores/${storeId}/cells/${cellId}/products/${victim.id}`);
+          }
+        }
+        for (const r of cellRows) {
+          await api.post(`/admin/stores/${storeId}/cells/${cellId}/products`, {
+            productIds: [r.product.id],
+          });
+          done += 1;
+          setPending((p) => p.filter((x) => x.key !== r.key));
+        }
       }
       setMessage({ kind: 'ok', text: t('scan_saved_n', { count: done }) });
       // Owner 2026-07-25: a full save also toasts «Saqlandi…».
       toast.success(t('scan_saved_n', { count: done }));
     } catch (e) {
       // Owner 2026-07-21: NOTHING resets silently — the failure names its cause
-      // and the unsaved rows stay in the list for a retry.
+      // and the unsaved rows stay in the list for a retry (TZ §3: + beep).
+      beep();
       setMessage({
         kind: 'err',
         text: t('scan_save_failed', { msg: e instanceof Error ? e.message : String(e) }),
@@ -199,7 +250,7 @@ export function CellScanBindModal({
     if (done > 0) onBound();
     setSaving(false);
     rearm();
-  }, [pending, saving, storeId, onBound, t, rearm, toast]);
+  }, [pending, saving, storeId, onBound, t, rearm, toast, decisions]);
 
   const resolve = useCallback(
     async (raw: string) => {
@@ -256,64 +307,102 @@ export function CellScanBindModal({
             return;
           }
           if (foreign) {
+            beep();
             setMessage({
               kind: 'warn',
               text: t('scan_cell_other_store', { store: foreign.storeName }),
             });
             return;
           }
+          beep();
           setMessage({ kind: 'err', text: t('scan_not_found') });
           return;
         }
         if (winners.length > 1) {
+          beep();
           setMessage({ kind: 'warn', text: t('scan_multiple') });
           return;
         }
         const product = winners[0];
         if (!product) return;
         if (!cell) {
+          beep();
           setMessage({ kind: 'warn', text: t('scan_no_cell_yet') });
           return;
         }
         // Owner 2026-07-20: an occupied cell must ASK, not silently append.
-        // The cell's contents AT SAVE TIME = server items − staged removals
-        // + staged additions (owner 2026-07-21: scans stage, save commits).
+        // The two sources are kept APART on purpose (TZ v3 §1.2/§1.4): the
+        // dialog — and therefore the eviction list — only ever names what the
+        // SERVER holds, while staged rows only produce the «already in the
+        // list» warning.
         const bound = await api
           .get<{ items: Array<{ id: string; name: string }> }>(
             `/admin/stores/${storeId}/cells/${cell.id}/products`,
           )
           .catch(() => null);
+        const serverItems = bound?.items ?? [];
         const stagedHere = pending.filter((r) => r.cell.id === cell.id);
-        const effective: Array<{ id: string; name: string }> = [
-          ...(bound?.items ?? []),
-          ...stagedHere.map((r) => r.product),
-        ];
-        if (effective.some((x) => x.id === product.id)) {
+
+        // §1.4: shu mahsulot ALLAQACHON RO'YXATDA (staged) — sariq, takror yo'q.
+        if (stagedHere.some((r) => r.product.id === product.id)) {
+          beep();
+          setMessage({ kind: 'warn', text: t('scan_already_staged') });
+          return;
+        }
+        // §1.4: serverda allaqachon bog'langan — yashil, qo'shilmaydi.
+        if (serverItems.some((x) => x.id === product.id)) {
           setLastProduct(product.name);
           flashTheCard('product');
           setMessage({ kind: 'ok', text: t('scan_already_bound') });
           return;
         }
-        if (effective.length > 0) {
-          setConflict({ product, existing: effective });
+
+        const decided = decisions.get(cell.id);
+        if (decided) {
+          // §1.2: qaror eslab qolingan — so'roqsiz davom etadi.
+          stage(product, cell);
           return;
         }
+        if (serverItems.length > 0) {
+          setConflict({ product, existing: serverItems });
+          return;
+        }
+        // Bo'sh yacheyka: birinchi qaror ham kerak emas, lekin keyingi
+        // skanlar uchun «together» deb muhrlanadi (dialog hech qachon
+        // sababsiz chiqmasin).
+        setDecisions((m) => new Map(m).set(cell.id, { mode: 'together', evict: [] }));
         stage(product, cell);
       } catch (e) {
+        beep();
         setMessage({ kind: 'err', text: e instanceof Error ? e.message : t('scan_not_found') });
       }
     },
-    [cells, cell, storeId, pending, stage, t, flashTheCard],
+    [cells, cell, storeId, pending, decisions, stage, t, flashTheCard],
   );
 
-  // «Birga qo'shish» — the ONLY affirmative choice for an occupied cell
-  // (owner 2026-07-21: the destructive «Almashtirish» option was removed).
-  const addTogether = useCallback(() => {
-    if (!conflict || !cell) return;
-    stage(conflict.product, cell);
-    setConflict(null);
-    rearm();
-  }, [conflict, cell, stage, rearm]);
+  /** Dialog tugmalari uchun qisqa nom: «Olma» yoki «Olma +2». */
+  const conflictLabel = conflict
+    ? conflict.existing.length > 1
+      ? `${conflict.existing[0]?.name ?? ''} +${conflict.existing.length - 1}`
+      : (conflict.existing[0]?.name ?? '')
+    : '';
+
+  // TZ v3 §1.2: the answer is sealed FOR THE CELL — later scans into the same
+  // cell never re-ask. `evict` freezes the server snapshot the user actually
+  // saw, so «Saqlash» removes exactly what the dialog named.
+  const decide = useCallback(
+    (mode: 'together' | 'replace') => {
+      if (!conflict || !cell) return;
+      setDecisions((m) =>
+        new Map(m).set(cell.id, { mode, evict: mode === 'replace' ? conflict.existing : [] }),
+      );
+      stage(conflict.product, cell);
+      if (mode === 'replace') setMessage({ kind: 'ok', text: t('scan_staged_replace') });
+      setConflict(null);
+      rearm();
+    },
+    [conflict, cell, stage, rearm, t],
+  );
 
   // The camera pipeline lives in the shared useBarcodeCamera hook (extracted
   // 2026-07-21). resolveRef keeps the LATEST resolve without camera restarts;
@@ -322,6 +411,22 @@ export function CellScanBindModal({
   useEffect(() => {
     resolveRef.current = resolve;
   }, [resolve]);
+
+  // TZ v3 §3: skanlar navbatga tushadi — hech biri yo'qolmaydi va tartib
+  // saqlanadi. `onError` SINXRON: `void enqueue(...)` qaytgan promise'ni hech
+  // kim kutmagani uchun bu tutqichsiz xato jim yo'qolardi («jim rad etish
+  // yo'q» talabiga zid). Async handler bersak, uning rejection'i zanjirdan
+  // TASHQARIDA qolardi — shuning uchun ataylab sinxron.
+  const enqueue = useScanQueue(
+    (code: string) => resolveRef.current(code),
+    (err) => {
+      beep();
+      setMessage({
+        kind: 'err',
+        text: err instanceof Error ? err.message : t('scan_not_found'),
+      });
+    },
+  );
 
   // Owner 2026-07-26 (kb-spec §1): scanning must work NO MATTER where the
   // cursor is. A keyboard-wedge scanner is just fast keystrokes — if focus
@@ -348,7 +453,7 @@ export function CellScanBindModal({
           e.stopPropagation();
           const v = buf.s;
           buf.s = '';
-          void resolveRef.current(v);
+          void enqueue(v);
         }
         return;
       }
@@ -359,12 +464,16 @@ export function CellScanBindModal({
     };
     document.addEventListener('keydown', onKey, true);
     return () => document.removeEventListener('keydown', onKey, true);
-  }, [open]);
+  }, [open, enqueue]);
 
-  const onCameraDecoded = useCallback((raw: string) => {
-    if (conflictRef.current) return;
-    void resolveRef.current(raw);
-  }, []);
+  // `enqueue` barqaror havola — kamera hooki qayta ishga tushmaydi.
+  const onCameraDecoded = useCallback(
+    (raw: string) => {
+      if (conflictRef.current) return;
+      void enqueue(raw);
+    },
+    [enqueue],
+  );
   const { videoRef, cameraOn, cameraError, diag, startCamera, stopCamera } = useBarcodeCamera({
     active: open,
     onDecoded: onCameraDecoded,
@@ -500,7 +609,7 @@ export function CellScanBindModal({
                 e.preventDefault();
                 const v = value;
                 setValue('');
-                void resolve(v);
+                void enqueue(v);
               }
             }}
             onBlur={() => {
@@ -567,6 +676,16 @@ export function CellScanBindModal({
                   <span className="text-[var(--ms-text-muted)]">•</span>
                   <span className="min-w-0 flex-1 truncate">{row.product.name}</span>
                   <span className="shrink-0 text-[var(--ms-text-muted)]">→ {row.cell.name}</span>
+                  {/* TZ v3 §1.2: «Saqlash» bu qatorni yozishdan oldin yacheykani
+                      bo'shatadi — bu belgi shuni oldindan ko'rsatadi. */}
+                  {decisions.get(row.cell.id)?.mode === 'replace' && (
+                    <span
+                      className="shrink-0 rounded bg-[var(--ms-error-50,#fdf0ef)] px-1.5 py-0.5 text-[11px] text-[var(--ms-text-destructive)]"
+                      data-test-id={`cell-scan-row-replaces-${row.key}`}
+                    >
+                      {t('scan_row_replaces')}
+                    </span>
+                  )}
                   <button
                     type="button"
                     onClick={() => {
@@ -664,17 +783,29 @@ export function CellScanBindModal({
         testId="cell-scan-conflict"
         footer={
           <>
-            {/* Owner 2026-07-21: «Almashtirish» removed — adding alongside is
-                the only affirmative choice for an occupied cell. */}
+            {/* TZ v3 §1.2: har ikkala tugmada EGALLOVCHINING NOMI turadi —
+                omborchi «nimani birga qo'shyapman / nimani chiqaryapman» ni
+                tugmaning o'zidan o'qiydi. */}
             <Button
               type="button"
               variant="success"
               size="sm"
-              onClick={() => void addTogether()}
+              onClick={() => decide('together')}
               data-test-id="cell-scan-add-together"
             >
-              {t('scan_add_together')}
+              {t('scan_add_together_named', { name: conflictLabel })}
             </Button>
+            {canEvict && (
+              <Button
+                type="button"
+                variant="destructive"
+                size="sm"
+                onClick={() => decide('replace')}
+                data-test-id="cell-scan-replace"
+              >
+                {t('scan_replace_named', { name: conflictLabel })}
+              </Button>
+            )}
             <Button
               type="button"
               variant="secondary"
@@ -690,10 +821,15 @@ export function CellScanBindModal({
           </>
         }
       >
-        <div className="px-4 py-3 text-sm" data-test-id="cell-scan-conflict-msg">
-          {t('scan_conflict_msg', {
-            name: conflict?.existing.map((x) => x.name).join(', ') ?? '',
-          })}
+        {/* Modal `testId` Radix'ga `data-testid` bo'lib tushadi, loyiha
+            konvensiyasi esa `data-test-id` — dialog ochiqligini shu o'ram
+            bilan belgilaymiz. */}
+        <div data-test-id="cell-scan-conflict">
+          <div className="px-4 py-3 text-sm" data-test-id="cell-scan-conflict-msg">
+            {t('scan_conflict_msg', {
+              name: conflict?.existing.map((x) => x.name).join(', ') ?? '',
+            })}
+          </div>
         </div>
       </Modal>
     </>
