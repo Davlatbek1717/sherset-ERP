@@ -315,7 +315,7 @@ git show --stat HEAD
 Yangi entity uchun DB'da ruxsat qatorlari yo'q. Lokal va prodda:
 
 ```bash
-node --import ./apps/api/node_modules/tsx/dist/loader.mjs scripts/topup-role-permissions.ts
+cd apps/api && npx tsx src/scripts/topup-role-permissions.ts
 ```
 Yugurtirilmaguncha **hech kim** (administrator ham) yacheyka amallarini bajara olmaydi. Buni sessiya hisobotida **ochiq** yoz.
 
@@ -1696,7 +1696,7 @@ git commit -m "docs(ombor): scan/sanash tz v3 matni repoga"
 
 Lokal:
 ```bash
-node --import ./apps/api/node_modules/tsx/dist/loader.mjs scripts/topup-role-permissions.ts
+cd apps/api && npx tsx src/scripts/topup-role-permissions.ts
 ```
 Prodda — deploy sessiyasida, `/deploy` skilida.
 
@@ -1730,5 +1730,5 @@ Prodda — deploy sessiyasida, `/deploy` skilida.
 2. **`variant="destructive"`** `@moysklad/ui` Button'da bor-yo'qligini T4 Step 6 da tekshir — yo'q bo'lsa mavjud qizil variantni ol, yangi variant **yaratma**.
 2a. **Ruxsat assimetriyasi (TZ §3, ataylab).** Omborchi bog'lay/sanay oladi, lekin **chiqara olmaydi** — unga band-yacheyka dialogida faqat ikki tugma ko'rinadi. Ya'ni omborchi band yacheykadagi xato bog'lashni o'zi tuzata olmaydi: u administratorga murojaat qiladi. QA'da (T6) bu «bug» emas — TZ shunday. Agar egasi buni noqulay desa, keyingi faza: `storecell.delete` amali.
 3. **`updateCell` metod nomi** T1 testida `store.controller.ts:281` dagi haqiqiy nom bilan mos bo'lishi shart.
-4. **`topup-role-permissions.ts`** skripti mavjudligini T1 Step 8 dan oldin tekshir (`ls scripts/topup-role-permissions.ts`); yo'q bo'lsa — ruxsat qatorlari `pnpm db:seed` orqali qanday to'ldirilishini aniqlab, hisobotda yoz.
+4. **Ops skripti — HAQIQIY yo'l:** `apps/api/src/scripts/topup-role-permissions.ts` (reja avval `scripts/…` deb yozgan edi — XATO, T1 da tuzatildi). Unda ikki pass bor: PASS 1 eski `isSystem` rollarni, **PASS 2** esa `templateSlug` li shablon rollarini (omborchi shu yerda) davolaydi; PASS 2 faqat `TOPUP_ENTITIES` allow-listidagi entity'ni ko'radi va mavjud qatorlarni O'ZGARTIRMAYDI. Yugurtirilmaguncha **hech kim** (administrator ham) yacheyka amallarini bajara olmaydi.
 5. **Parallel sessiya:** bu reja `apps/api/src/modules/permissions/*` ga tegadi — boshqa sessiya rol/ruxsat ustida ishlayotgan bo'lsa, T1 ni **worktree izolyatsiyasida** bajar (CLAUDE.md §6.5).
