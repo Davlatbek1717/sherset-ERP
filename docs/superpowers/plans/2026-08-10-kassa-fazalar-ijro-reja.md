@@ -1543,18 +1543,116 @@ Tuzatish 4 parallel agent + o'zim (auth), har biri TDD (RED ko'rilgan → fix �
 
 ### F7 hisoboti
 
-- **Holat:** ⬜ bajarilmagan
-- **Sana:**
+- **Holat:** ✅ Phase-1 bajarildi (runtime-tasdiqlanmagan)
+- **Sana:** 2026-08-11 · worktree `sherset-kassa-f7`, branch `kassa-f7`
 - **O'zgargan fayllar:**
-- **Qilingan ish:**
-- **Allowlist'ga qo'shilgan aniq yo'llar:**
-- **Ruxsat qanday berildi (prod qadami):**
-- **Rezerv qanday o'lchandi:**
-- **Brauzer o'lchovi:**
-- **Gate natijasi:**
+  - `apps/api/src/modules/auth/kiosk-policy.ts` — qoida modeli (`:param`, `exact`) + 3 yangi qator
+  - `apps/api/src/modules/auth/kiosk-policy.test.ts` — pozitiv 4 + negativ 22 + `:id` shakli izohi
+  - `apps/api/src/modules/permissions/role-templates.ts` — kassirga `customerorder {view, approve}`
+  - `apps/api/src/modules/permissions/role-templates.test.ts` — `entity.action` route-override, F7 qulfi
+  - `apps/api/src/modules/permissions/__snapshots__/role-templates.test.ts.snap` — 1 qator
+  - `apps/api/src/modules/permissions/template-topup.{ts,test.ts}` — `TOPUP_ENTITIES += customerorder`
+  - `apps/web/src/app/(app)/sotuv/page.tsx` — «Zakazlar» yorlig'i + `ZakazDetailPanel`
+  - `apps/web/src/app/(app)/sotuv/__tests__/sales-screen-orders.test.tsx` — YANGI, 12 test
+  - `apps/web/src/app/(app)/sotuv/__tests__/harness.tsx` — `/permissions/me` marshruti
+  - `apps/web/src/hooks/use-permissions.ts` — `can(entity, action)`
+  - `apps/web/src/messages/{ru,uz}.json` — 11 kalit × 2 til
+- **Qilingan ish:** POS'da «Zakazlar» yorlig'i — holat filtri (Yangi / Tasdiqlangan /
+  To'lov kutilmoqda) SERVER `state=` parametri bilan + `storeId` cheklovi; zakaz detali
+  (pozitsiyalar, miqdor, narx, **rezerv miqdori**); `draft` zakaz uchun «Tasdiqlash»
+  tugmasi. **Yangi qabul-FSM QO'SHILMADI** — mavjud `state` o'qiladi va mavjud
+  `POST /customer-orders/:id/transitions/:target` chaqiriladi. Rezervni FE qo'ymaydi:
+  server `confirmed` da o'zi qo'yadi (dalil: `customer-order.service.ts:1138-1165` —
+  `applicable = true` → `applyReservationInvariant(…, 'hold-remaining')`).
+- **Allowlist'ga qo'shilgan aniq yo'llar** (har biri — nega):
+  | yo'l | metod | nega |
+  |---|---|---|
+  | `/customer-orders` | GET (`exact`) | zakazlar ro'yxati — yorliqning o'zi |
+  | `/customer-orders/:id` | GET (`exact`) | detal: pozitsiyalar, summa, mijoz, rezerv |
+  | `/customer-orders/:id/transitions/confirmed` | POST (`exact`) | `draft → confirmed`; rezerv AYNAN shu o'tishda tushadi |
+
+  Buning uchun qoida modeli kengaytirildi: `:param` bitta segmentga mos keladi,
+  `exact: true` ichki yo'llarni OCHMAYDI. Oddiy prefiks-qoida bo'lganda bitta
+  `/customer-orders` GET qatori `:id/related`, `:id/supply-shortfall` va kelajakdagi
+  har qanday sub-resursni ham jimgina ochib yuborardi.
+
+  **Negativ test nimani bloklab turibdi** (`kiosk-policy.test.ts`, 22 yo'l):
+  `POST /customer-orders` (yaratish) · `PATCH`/`DELETE`/`:id/clone` ·
+  `bulk-delete`, `bulk-transition`, `bulk-set-status`, `bulk-reserve`,
+  `bulk-clear-reserve`, `bulk-mark-printed`, `bulk-print`, `merge`, `mass-edit` ·
+  `transitions/cancelled` (rezervni bo'shatadi), `transitions/paid` (F8 ishi),
+  `transitions/closed` · `:id/related`, `:id/supply-shortfall`, `:id/position` ·
+  segment-chegarasi `/customer-orders-archive`.
+  ⚠️ **Ochiq qolgani ochiq yozilgan:** `/customer-orders/kanban` va `/print-forms`
+  shaklan `:id` ga tushadi. Ataylab qoldirildi (ikkalasi ham ro'yxat bilan bir xil
+  `customerorder.view` ruxsatiga bog'langan, yozadigan hech narsa yo'q) va bu holat
+  alohida test bilan hujjatlangan — «jimgina ochilib qolgan» emas.
+- **Ruxsat qanday berildi (prod qadami):** rol-shabloni orqali (MK29 naqshi, qo'lda DB
+  tahriri EMAS) — `cashier` shabloniga `customerorder {view: ALL, approve: ALL}`;
+  `create`/`update`/`delete`/`print` ataylab `NO`. `PermissionEntity` unioniga TEGILMADI
+  (`customerorder` allaqachon bor) — ya'ni «izohda nuqtali vergul» tuzog'i bu fazada
+  qo'zg'almadi. Seed-sync holati: `role-templates.test.ts` (62), `permissions-seed-sync`,
+  `hr-role-seed-sync`, `template-topup.test.ts` (18) — hammasi yashil; kassir↔kiosk
+  moslik testi `entity.action` override bilan `approve` uchun aynan
+  `…/transitions/confirmed` yo'lini tekshiradi.
+  🔴 **Prod qadami (hali BAJARILMAGAN):** `TOPUP_ENTITIES` ga `customerorder` qo'shildi →
+  jonli serverda `npx tsx src/scripts/topup-role-permissions.ts --apply` (apps/api ichidan),
+  keyin api jarayonini restart (ruxsat cache 5 daqiqa TTL). Yugurtirilib tasdiqlangach
+  `customerorder` ro'yxatdan **OLIB TASHLANADI** — u yangi entity emas, va boshqa
+  shablonlarda (owner/admin/sales_manager/seller) ham musbat bo'lgani uchun ro'yxatda
+  qolsa «admin butunlay olib tashlagan» rolni keyingi run tiriltirib qo'yishi mumkin.
+  Sabab kodda ham yozilgan (`template-topup.ts`).
+- **Rezerv qanday o'lchandi:** 🔴 **O'LCHANMAGAN.** Bu to'lqinda dev-stack ko'tarilmadi
+  (portlar 3 parallel agent bilan band — sessiya promptining §4 chegarasi). O'lchangani —
+  faqat KOD dalili: `customer-order.service.ts:1138-1165`. Kutayotgan o'lchov quyidagi
+  «Brauzer o'lchovi» ro'yxatining 3-bandi.
+- **Brauzer o'lchovi:** 🔴 **BAJARILMAGAN.** O'lchanishi kerak bo'lgan stsenariylar:
+  1. **Kiosk-kassir yorliqni ko'radi** — kiosk rolli xodim `/sotuv` → «Zakazlar»;
+     kutilgan: ro'yxat 200 bilan keladi (403 EMAS — allowlist qatorining haqiqiy sinovi).
+  2. **Do'kon cheklovi** — boshqa do'konning `draft` zakazi ro'yxatda KO'RINMAYDI.
+  3. **Rezerv DB'da** (asosiy o'lchov) — `draft` zakaz, 2 pozitsiya, ombor qoldig'i yetarli:
+     tasdiqlashdan OLDIN `SELECT reserved_qty FROM customer_order_position` = 0 va
+     `Stock.reserved` = X; «Tasdiqlash» dan KEYIN `reserved_qty` = buyurtma miqdori,
+     `Stock.reserved` = X + miqdor, `CustomerOrder.state='confirmed'`, `applicable=true`.
+     Ekranda: detalda «Rezerv: N» raqami ko'tariladi.
+  4. **Qoldiq yetmaganda** — rezerv qisman/0 bo'lsa ekran nima ko'rsatadi (server
+     `hold-remaining` ni qanday hal qiladi — o'lchanmagan).
+  5. **Ruxsatsiz kassir** — `customerorder.approve` olib tashlangan rol: tugma yo'q VA
+     `curl -X POST …/transitions/confirmed` 403 qaytaradi.
+  6. **Yopiq yo'l** — `curl -X DELETE …/customer-orders/:id` kiosk tokeni bilan → 403.
+  7. **Xato yo'li** — `cancelled` zakazni tasdiqlashga urinish → toast'da server matni.
+- **Gate natijasi (ketma-ket yugurtirildi, parallel EMAS):**
+  `pnpm --filter @moysklad/money build` OK ·
+  `api typecheck` 0 · `web typecheck` 0 ·
+  `biome check <tegilgan yo'llar>` exit 0 ·
+  `api test` **554 fayl / 7818 test yashil** (0 yiqilish, 1 fayl + 2 test skip) ·
+  `web test` **239 fayl / 3323 test yashil** (0 yiqilish, 26 skip) ·
+  `pnpm i18n:gate` OK (9 test). Yuk timeouti kuzatilmadi.
+  Testlar: +26 API (kiosk-policy +5 blok, role-templates +1, template-topup +3) va
+  +12 web. Har biri avval QIZIL ko'rildi; ikki ruxsat testi mutatsiya bilan
+  tasdiqlandi (guard olib tashlansa qizaradi — vakuum emas).
 - **Commit(lar):**
+  - `215964f8` — `feat(kassa): kiosk zakaz yo'llari + kassirga customerorder.approve (f7 server)`
+  - `44ca0cb3` — `feat(kassa): pos «zakazlar» yorlig'i — ro'yxat, detal, tasdiqlash (f7 web)`
+  (ikkalasida ham hook `docs/progress.json` ni avtomat qo'shdi — repo konvensiyasi.)
 - **Kelgusi fazalarga qoldirilgan:**
-- **Yorliq:**
+  - **F8 (to'lash):** `RetailSale.customerOrderId` ga TEGILMADI; to'lov oqimi
+    o'zgartirilmadi. F8 ga kerak bo'ladi: (a) `transitions/awaiting_payment` va/yoki
+    `transitions/paid` uchun allowlist qatori — hozir ATAYLAB yopiq va negativ test bilan
+    qulflangan, ya'ni F8 o'sha testni ongli ravishda yangilashi kerak; (b) zakaz
+    detalidan «To'lash» yo'li; (c) ikki kassir bitta zakazni bir vaqtda to'lashi
+    (reja §5 «Zakaz (F7–F8)» bandi).
+  - **F9 (mijoz kartasi):** «jarayondagi zakazlari» ro'yxati shu yerdagi
+    `/customer-orders?state=…&storeId=…` so'rovini mijoz bo'yicha filtrlab qayta ishlatadi
+    — `agentId` filtri allowlist'ga qo'shimcha yo'l TALAB QILMAYDI (o'sha GET).
+  - **Prod:** `topup-role-permissions.ts --apply` + api restart, keyin `TOPUP_ENTITIES`
+    dan `customerorder` ni olib tashlash (yuqorida).
+  - **Kuzatilgan, tegilmagan:** `apps/web/src/app/(app)/sotuv/page.tsx` da eski
+    class-sort ogohlantirishlari (biome `warning`, `error` emas) — MK33 bo'linishida
+    ko'riladi. Worktree'da `lint-staged automatic backup` stash'i qoldi (o'z commitimdan,
+    tarkib commitga tushgan) — **o'chirilmadi** (CLAUDE.md §6.7 A qoidasi).
+- **Yorliq:** **Phase-1: strukturaviy, runtime-tasdiqlanmagan** · brauzer-smoke YO'Q ·
+  rezerv DB'da o'lchanmagan.
 
 ### F8 hisoboti
 
