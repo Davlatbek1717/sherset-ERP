@@ -25,6 +25,10 @@ interface Harness {
   /** Kunning MAVJUD holati va oldingi avtomat qiymatlari (eskirish testi uchun). */
   dayState?: string;
   priorMetrics?: Array<{ metricKey: string; autoValue: bigint | null }>;
+  /** KPI-01 «biriktirilgan KPI» qatorlari (KPI-03 ko'prigi). */
+  employeeTargets?: unknown[];
+  /** Hisobning O'Z (`manual`) ko'rsatkich ta'riflari. */
+  manualDefs?: unknown[];
 }
 
 function makeService(h: Harness = {}) {
@@ -52,7 +56,9 @@ function makeService(h: Harness = {}) {
     restockTaskLine: { groupBy: vi.fn().mockResolvedValue([]) },
     kpiProfile: { findMany: vi.fn().mockResolvedValue([]) },
     // Hisobning o'z (`manual`) ko'rsatkichlari — sukut bo'yicha yo'q.
-    kpiMetricDef: { findMany: vi.fn().mockResolvedValue([]) },
+    kpiMetricDef: { findMany: vi.fn().mockResolvedValue(h.manualDefs ?? []) },
+    // KPI-01 biriktirilgan KPI qatlami — sukut bo'yicha bo'sh (eski xulq).
+    employeeKpiTarget: { findMany: vi.fn().mockResolvedValue(h.employeeTargets ?? []) },
     account: { findMany: vi.fn().mockResolvedValue([{ id: ACCOUNT }]) },
     $transaction: vi
       .fn()
@@ -70,7 +76,14 @@ function makeService(h: Harness = {}) {
 /** Yozilgan ko'rsatkichni kalit bo'yicha topadi. */
 function written(metricUpsert: ReturnType<typeof vi.fn>, key: string) {
   const call = metricUpsert.mock.calls.find((c) => c[0]?.create?.metricKey === key);
-  return call?.[0]?.create as { autoValue: bigint | null; complete: boolean } | undefined;
+  return call?.[0]?.create as
+    | {
+        autoValue: bigint | null;
+        complete: boolean;
+        targetValue: bigint | null;
+        targetSource: string | null;
+      }
+    | undefined;
 }
 
 describe('kassa foydasi — NULL ≠ 0', () => {
@@ -436,5 +449,211 @@ describe('profil versiyasi vs SANA (2026-08-04 runtime QA topilmasi)', () => {
     client.kpiProfile.findMany.mockResolvedValue([]);
     await svc.computeDay(ACCOUNT, DAY);
     expect(dailyUpsert.mock.calls[0][0].create.profileVersionId).toBeNull();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// KPI-03 — dvigatel ko'prigi: maqsad yangi qatlamdan va KUNGA MUHRLANADI
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Bir versiyali profil (maqsadlari bilan) — `kpiProfile.findMany` javobi. */
+function profileWithTargets(targets: Array<[string, bigint | null]>) {
+  return [
+    {
+      positionId: null,
+      employeeId: EMP,
+      versions: [
+        {
+          id: 'ver-1',
+          effectiveFrom: new Date('2026-01-01T00:00:00Z'),
+          metrics: targets.map(([key, target]) => ({ target, metricDef: { key } })),
+        },
+      ],
+    },
+  ];
+}
+
+function empTarget(over: Record<string, unknown> = {}) {
+  return {
+    id: 'et-1',
+    employeeId: EMP,
+    metricKey: 'cash_revenue',
+    period: 'daily',
+    targetValue: 900_000n,
+    manualDoneAt: null,
+    active: true,
+    ...over,
+  };
+}
+
+describe('KPI-03 — maqsad manbai va kun muhri', () => {
+  it('biriktirilgan KPI maqsadi PROFIL maqsadidan ustun va muhrlanadi', async () => {
+    const { svc, metricUpsert, client } = makeService({ employeeTargets: [empTarget()] });
+    client.kpiProfile.findMany.mockResolvedValue(profileWithTargets([['cash_revenue', 500_000n]]));
+    await svc.computeDay(ACCOUNT, DAY);
+
+    expect(written(metricUpsert, 'cash_revenue')).toMatchObject({
+      targetValue: 900_000n,
+      targetSource: 'employee_target',
+    });
+  });
+
+  it('biriktirilgan KPI yo`q bo`lsa PROFIL maqsadi muhrlanadi (regress yo`li)', async () => {
+    const { svc, metricUpsert, client } = makeService({});
+    client.kpiProfile.findMany.mockResolvedValue(profileWithTargets([['cash_revenue', 500_000n]]));
+    await svc.computeDay(ACCOUNT, DAY);
+
+    expect(written(metricUpsert, 'cash_revenue')).toMatchObject({
+      targetValue: 500_000n,
+      targetSource: 'profile',
+    });
+  });
+
+  it('maqsad umuman yo`q bo`lsa `none` MUHRLANADI (0 EMAS)', async () => {
+    // 🔴 «Muhrlangan maqsadsizlik» ≠ «muhrlanmagan». Muhr `none` bo'lsa
+    // o'quvchi profilga QAYTA TUSHMAYDI — profil allaqachon so'ralgan edi.
+    const { svc, metricUpsert } = makeService({});
+    await svc.computeDay(ACCOUNT, DAY);
+    expect(written(metricUpsert, 'cash_revenue')).toMatchObject({
+      targetValue: null,
+      targetSource: 'none',
+    });
+  });
+
+  it('HAFTALIK biriktirilgan KPI kunlik maqsadga aylanmaydi (jim bo`linish yo`q)', async () => {
+    const { svc, metricUpsert, client } = makeService({
+      employeeTargets: [empTarget({ period: 'weekly', targetValue: 7_000_000n })],
+    });
+    client.kpiProfile.findMany.mockResolvedValue(profileWithTargets([['cash_revenue', 500_000n]]));
+    await svc.computeDay(ACCOUNT, DAY);
+
+    expect(written(metricUpsert, 'cash_revenue')).toMatchObject({
+      targetValue: 500_000n,
+      targetSource: 'profile',
+    });
+  });
+
+  it('ARXIVLANGAN (`active: false`) qator olinmaydi', async () => {
+    const { svc, metricUpsert } = makeService({
+      employeeTargets: [empTarget({ active: false })],
+    });
+    await svc.computeDay(ACCOUNT, DAY);
+    expect(written(metricUpsert, 'cash_revenue')?.targetSource).toBe('none');
+  });
+
+  it('BOSHQA xodimning qatori olinmaydi', async () => {
+    const { svc, metricUpsert } = makeService({
+      employeeTargets: [empTarget({ employeeId: 'emp-boshqa' })],
+    });
+    await svc.computeDay(ACCOUNT, DAY);
+    expect(written(metricUpsert, 'cash_revenue')?.targetSource).toBe('none');
+  });
+
+  it('faqat FAOL qatorlar so`raladi (hisob kesimida)', async () => {
+    const { svc, client } = makeService({});
+    await svc.computeDay(ACCOUNT, DAY);
+    expect(client.employeeKpiTarget.findMany.mock.calls[0][0].where).toMatchObject({
+      accountId: ACCOUNT,
+      active: true,
+    });
+  });
+});
+
+/**
+ * 🔴 TARIX MUZLAYDI — reja §KPI-03.2 ning butun mavjudlik sababi.
+ *
+ * `EmployeeKpiTarget` versiyalanmaydi, ya'ni «o'tgan oy qayta yozilmasin»
+ * kafolati FAQAT shu muhrga tayanadi. Qayta hisoblash muhrni yangilasa,
+ * bugungi tahrir o'tgan kunning bajarish foizini va ballini o'zgartirardi.
+ */
+describe('KPI-03 — muhr QAYTA hisoblashda o`zgarmaydi (tahrir faqat kelajakka)', () => {
+  it('`update` payload`ida maqsad ustunlari UMUMAN yo`q', async () => {
+    const { svc, metricUpsert } = makeService({ employeeTargets: [empTarget()] });
+    await svc.computeDay(ACCOUNT, DAY);
+    const update = metricUpsert.mock.calls[0][0].update;
+    expect(update).not.toHaveProperty('targetValue');
+    expect(update).not.toHaveProperty('targetSource');
+    // Qayta hisoblash FAQAT avtomat faktni yangilaydi.
+    expect(Object.keys(update).sort()).toEqual(['autoValue', 'complete']);
+  });
+
+  it('MUTANT: maqsad o`zgartirilsa yangi kun yangi qiymatni oladi (muhr vacuous emas)', async () => {
+    // Yuqoridagi test o'z-o'zidan «hech qachon yozilmaydi» degani bo'lishi
+    // mumkin edi. Bu test muhrning HAQIQATAN qatordan kelishini o'lchaydi.
+    const { svc, metricUpsert } = makeService({
+      employeeTargets: [empTarget({ targetValue: 123_456n })],
+    });
+    await svc.computeDay(ACCOUNT, DAY);
+    expect(written(metricUpsert, 'cash_revenue')?.targetValue).toBe(123_456n);
+  });
+});
+
+/**
+ * KPI-03 §4 — QO'LDA (o'lchanmaydigan) ko'rsatkich fakti `manualDoneAt` dan.
+ */
+describe('KPI-03 — qo`lda metrika fakti menejer belgisidan', () => {
+  const MANUAL_DEF = { key: 'mijoz_qongiroq', direction: 'higher_better' };
+  const manualTarget = (over: Record<string, unknown> = {}) =>
+    empTarget({ id: 'et-m', metricKey: 'mijoz_qongiroq', targetValue: null, ...over });
+
+  it('shu kunda belgilangan → fakt = maqsad (bajarildi)', async () => {
+    const { svc, metricUpsert } = makeService({
+      manualDefs: [MANUAL_DEF],
+      employeeTargets: [manualTarget({ manualDoneAt: new Date('2026-07-15T10:00:00Z') })],
+    });
+    await svc.computeDay(ACCOUNT, DAY);
+    expect(written(metricUpsert, 'mijoz_qongiroq')).toMatchObject({
+      autoValue: 1n,
+      targetValue: 1n,
+      targetSource: 'employee_target',
+    });
+  });
+
+  it('belgilanmagan → fakt 0 (o`lchanmagan EMAS — bajarilmadi)', async () => {
+    const { svc, metricUpsert } = makeService({
+      manualDefs: [MANUAL_DEF],
+      employeeTargets: [manualTarget()],
+    });
+    await svc.computeDay(ACCOUNT, DAY);
+    expect(written(metricUpsert, 'mijoz_qongiroq')?.autoValue).toBe(0n);
+  });
+
+  it('BOSHQA kunning belgisi shu kunni «bajarildi» qilmaydi (kun YORLIG`I)', async () => {
+    // 23:30 UTC = ertangi kun Toshkentda. Instant bo'yicha taqqoslansa belgi
+    // noto'g'ri kunga tushardi (`hr-kpi` bir-kun-orqada bug-klassi).
+    const { svc, metricUpsert } = makeService({
+      manualDefs: [MANUAL_DEF],
+      employeeTargets: [manualTarget({ manualDoneAt: new Date('2026-07-15T23:30:00Z') })],
+    });
+    await svc.computeDay(ACCOUNT, DAY);
+    expect(written(metricUpsert, 'mijoz_qongiroq')?.autoValue).toBe(0n);
+  });
+
+  it('biriktirilmagan qo`lda ko`rsatkich avvalgidek O`LCHANMAGAN qoladi', async () => {
+    const { svc, metricUpsert } = makeService({ manualDefs: [MANUAL_DEF] });
+    await svc.computeDay(ACCOUNT, DAY);
+    expect(written(metricUpsert, 'mijoz_qongiroq')?.autoValue).toBeNull();
+  });
+
+  it('`lower_better` qo`lda ko`rsatkichda fakt TO`QILMAYDI', async () => {
+    // «Bajarilmadi» → fakt 0 bo'lsa, kam-yaxshi ko'rsatkichda bu 200% bo'lib
+    // ballni OSHIRARDI, ya'ni ishlamaslik mukofotlanardi. Bunday ko'rsatkich
+    // o'lchanmagan bo'lib qoladi va menejer buni ekranda ochiq ko'radi.
+    const { svc, metricUpsert } = makeService({
+      manualDefs: [{ key: 'mijoz_qongiroq', direction: 'lower_better' }],
+      employeeTargets: [manualTarget()],
+    });
+    await svc.computeDay(ACCOUNT, DAY);
+    expect(written(metricUpsert, 'mijoz_qongiroq')?.autoValue).toBeNull();
+  });
+
+  it('O`LCHANADIGAN ko`rsatkichda `manualDoneAt` E`TIBORSIZ qoladi', async () => {
+    // Fakt har doim dvigateldan — ikki manba = ikki haqiqat.
+    const { svc, metricUpsert } = makeService({
+      employeeTargets: [empTarget({ manualDoneAt: new Date('2026-07-15T10:00:00Z') })],
+      sessions: [{ cashierId: EMP, salesSumMinor: 750_000n, salesCount: 2, discrepancyMinor: 0n }],
+    });
+    await svc.computeDay(ACCOUNT, DAY);
+    expect(written(metricUpsert, 'cash_revenue')?.autoValue).toBe(750_000n);
   });
 });

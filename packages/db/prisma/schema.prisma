@@ -10396,6 +10396,23 @@ model EmployeeDailyKpiMetric {
   /// Shu ko'rsatkich to'liq manbadan hisoblanganmi.
   complete Boolean @default(true)
 
+  /// 🔴 KPI-03 — O'SHA KUN uchun hal qilingan maqsad, QATOR ICHIDA MUHRLANGAN.
+  /// Ko'rsatkichning o'z birligida (pul = tiyin). NULL = maqsad yo'q (0 EMAS).
+  ///
+  /// Nega muhr: `EmployeeKpiTarget` qatlami VERSIYALANMAYDI, ya'ni «o'tgan oy
+  /// qayta yozilmasin» kafolati (§2.3) aynan shu ustunda yashaydi. Maqsad
+  /// tahrir qilinsa faqat KELAJAK kunlar o'zgaradi — muhrlangan kun o'z
+  /// raqamini saqlaydi (tan-narx muzlatish klassi).
+  targetValue BigInt? @map("target_value")
+  /// Maqsad qaysi pog'onadan kelgani: `employee_target` | `target_override` |
+  /// `profile` | `none` (`kpi-target.ts` `TargetSource`).
+  ///
+  /// **NULL = MUHR YO'Q** — migratsiyadan oldin hisoblangan qator. O'quvchi
+  /// bunday qatorda avvalgidek profil versiyasidagi maqsadga tushadi. Bu ustun
+  /// bo'lmasa «muhrlangan maqsadsizlik» (`none`) va «umuman muhrlanmagan»
+  /// holatlari farqlanmasdi va eski kunlar ballari nolga tushib ketardi.
+  targetSource String? @map("target_source") @db.VarChar(20)
+
   account  Account          @relation(fields: [accountId], references: [id], onDelete: Cascade)
   dailyKpi EmployeeDailyKpi @relation(fields: [dailyKpiId], references: [id], onDelete: Cascade)
 

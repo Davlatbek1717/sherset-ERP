@@ -34,9 +34,16 @@
  * chiqadi.
  */
 
+/**
+ * Davr lug'ati — §2.5. **YAGONA manba**: `employee_kpi_targets.period` CHECK'i
+ * ham aynan shu uchtani qabul qiladi. Ikkinchi lug'at ochilsa birlik/davr
+ * so'zlari ikki joyda ikki xil bo'lib ketardi (xotira:
+ * `manager-kpi-unit-vocabularies`).
+ */
 export const TARGET_PERIOD = {
   daily: 'daily',
   weekly: 'weekly',
+  monthly: 'monthly',
 } as const;
 
 export type TargetPeriod = (typeof TARGET_PERIOD)[keyof typeof TARGET_PERIOD];
@@ -109,7 +116,15 @@ export interface TargetSubject {
   departmentId: string | null;
 }
 
-export type TargetSource = 'target_override' | 'profile' | 'none';
+/**
+ * Maqsad qaysi pog'onadan keldi. Tartib — ustuvorlik tartibi:
+ * `employee_target` (KPI-01 biriktirilgan KPI) > `target_override` (MK13
+ * `KpiTarget`) > `profile` > `none`.
+ *
+ * Bu qiymat `EmployeeDailyKpiMetric.targetSource` ga MUHRLANADI — ekranda
+ * «nega bu raqam», o'quvchida esa «muhr bormi» savoliga javob beradi.
+ */
+export type TargetSource = 'employee_target' | 'target_override' | 'profile' | 'none';
 
 export interface ResolvedTarget {
   metricKey: string;
@@ -243,22 +258,124 @@ export function targetRowBeats(candidate: KpiTargetRow, current: KpiTargetRow): 
   return candidate.id < current.id;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// KPI-01 qatlami — «biriktirilgan KPI» (`EmployeeKpiTarget`)
+// ─────────────────────────────────────────────────────────────────────────────
+
 /**
- * Kunlik ball uchun yakuniy maqsadlar: `KpiTarget` ustamasi + profil maqsadi.
+ * `EmployeeKpiTarget` qatorining shu modulga keraklik qismi (KPI-03 ko'prigi).
  *
- * `profileTargets` — `KpiProfileMetric.target` (ko'rsatkich kaliti → maqsad).
- * Ustama qator bo'lmasa profil qiymati olinadi; ikkalasi ham bo'lmasa
- * `value: null` (**`source: 'none'`**) — bu «maqsad 0» EMAS va ballga
+ * **Nega alohida tur:** bu qatlam VERSIYALANMAYDI — unda `effectiveFrom/To`
+ * ham, kun maskasi ham yo'q. Tarix butunligi qatorning oynasi bilan emas,
+ * `EmployeeDailyKpiMetric` dagi KUN MUHRI bilan ta'minlanadi (§2.3 →
+ * per-kun snapshot). Shuning uchun uni `KpiTargetRow` ga «siqib» kiritish
+ * soxta maydonlar (`effectiveFrom: '1970-01-01'`, `weekdayMask: 127`) yozishni
+ * talab qilardi va ular bir kun kelib haqiqiy qoida deb o'qilardi.
+ */
+export interface EmployeeTargetRow {
+  id: string;
+  employeeId: string;
+  /** `kpi_metric_defs.key` — built-in YOKI hisobning o'z (qo'lda) kaliti. */
+  metricKey: string;
+  period: TargetPeriod;
+  /** Ko'rsatkichning O'Z birligida. **NULL = RAQAMSIZ «todo»**, 0 EMAS. */
+  targetValue: bigint | null;
+  /**
+   * `manualDoneAt` ning MAHALLIY KUN YORLIG'I (`YYYY-MM-DD`), NULL =
+   * belgilanmagan. Instant EMAS: bu modul tz'siz, taqqoslash yorliq ustidan
+   * (xotira: `month-bounds-label-vs-instant`).
+   */
+  manualDoneDate: string | null;
+  /** `false` = arxiv: tarixda qoladi, yangi kunlarga ta'sir qilmaydi. */
+  active: boolean;
+}
+
+/**
+ * Raqamsiz («todo») maqsadning shartli birligi: bajarildi = 1, aks holda 0.
+ *
+ * NEGA KERAK: `kpi-score.ts` maqsadi NULL ko'rsatkichni `no_target` deb ballab
+ * o'tkazib yuboradi. Ya'ni birliksiz «bajarildi» belgisi hech qachon ballga
+ * aylanmasdi va menejer buni ekranda ham ko'rmasdi.
+ */
+export const MANUAL_DONE_UNIT = 1n;
+
+/**
+ * Biriktirilgan KPI qatorlaridan shu davr uchun amaldagi maqsadlar.
+ *
+ * Qamrov savoli yo'q — qator allaqachon BITTA xodimniki. Determinizm uchun
+ * teng qatorlar orasidan `id` bo'yicha kichigi olinadi: bazada
+ * `@@unique([employeeId, metricKey, period])` teng qatorni imkonsiz qiladi,
+ * lekin sof funksiya kirish tartibiga bog'liq bo'lmasligi kerak.
+ */
+export function resolveEmployeeTargets(
+  rows: readonly EmployeeTargetRow[],
+  employeeId: string,
+  period: TargetPeriod,
+): Map<string, ResolvedTarget> {
+  const best = new Map<string, EmployeeTargetRow>();
+  for (const row of rows) {
+    if (!row.active || row.employeeId !== employeeId || row.period !== period) continue;
+    const current = best.get(row.metricKey);
+    if (current == null || row.id < current.id) best.set(row.metricKey, row);
+  }
+
+  const out = new Map<string, ResolvedTarget>();
+  for (const [metricKey, row] of best) {
+    out.set(metricKey, {
+      metricKey,
+      // NULL bu yerda «maqsad yo'q» EMAS — «raqamsiz maqsad». Qator MAVJUD,
+      // shuning uchun u pastdagi pog'onalarni baribir to'sadi.
+      value: row.targetValue,
+      source: 'employee_target',
+      rowId: row.id,
+      scope: TARGET_SCOPE.employee,
+    });
+  }
+  return out;
+}
+
+/**
+ * Qo'lda (o'lchanmaydigan) ko'rsatkichning shu KUNDAGI fakti va maqsadi.
+ *
+ * Dvigatel bunday ko'rsatkichni hisoblay olmaydi — fakt yagona manbadan,
+ * menejerning «bajarildi» belgisidan keladi (ikki manba = ikki haqiqat).
+ * Belgi **kun yorlig'iga** taqqoslanadi: aks holda bugun bosilgan tugma butun
+ * tarixni «bajarildi» qilib ko'rsatardi.
+ *
+ * Fakt = maqsad (bajarish 100%) yoki 0 (0%). Oraliq qiymat yo'q — «yarim
+ * bajarildi» degan ma'lumot manbada umuman mavjud emas.
+ */
+export function manualDailyOutcome(
+  row: EmployeeTargetRow,
+  date: string,
+): { fact: bigint; target: bigint } {
+  const target = row.targetValue ?? MANUAL_DONE_UNIT;
+  return { fact: row.manualDoneDate === date ? target : 0n, target };
+}
+
+/**
+ * Kunlik ball uchun yakuniy maqsadlar — uch pog'ona bitta joyda.
+ *
+ * `employeeTargets` (KPI-01 biriktirilgan KPI) > `rows` (MK13 `KpiTarget`
+ * ustamasi) > `profileTargets` (`KpiProfileMetric.target`). Hech birida
+ * bo'lmasa `value: null` (**`source: 'none'`**) — bu «maqsad 0» EMAS va ballga
  * kirmaydi (`kpi-score.ts` `skipReason: 'no_target'` beradi).
+ *
+ * `employeeTargets` ATAYLAB ixtiyoriy: mavjud chaqiruvchilar (MK22 kaskadi,
+ * testlar) shartnomani o'zgartirmasdan ishlashda davom etadi.
  */
 export function resolveDailyTargets(
   rows: readonly KpiTargetRow[],
   subject: TargetSubject,
   date: string,
   profileTargets: ReadonlyMap<string, bigint | null>,
+  employeeTargets: readonly EmployeeTargetRow[] = [],
 ): Map<string, ResolvedTarget> {
-  const overrides = resolveTargets(rows, subject, date, TARGET_PERIOD.daily);
-  const out = new Map<string, ResolvedTarget>(overrides);
+  const out = resolveEmployeeTargets(employeeTargets, subject.employeeId, TARGET_PERIOD.daily);
+
+  for (const [metricKey, resolved] of resolveTargets(rows, subject, date, TARGET_PERIOD.daily)) {
+    if (!out.has(metricKey)) out.set(metricKey, resolved);
+  }
 
   for (const [metricKey, value] of profileTargets) {
     if (out.has(metricKey)) continue;

@@ -122,9 +122,7 @@ export class DailyKpiAcceptanceService {
         scorePercent: true,
         scoreCoverage: true,
         employee: { select: EMPLOYEE_SELECT },
-        metrics: {
-          select: { metricKey: true, autoValue: true, adjustValue: true, complete: true },
-        },
+        metrics: { select: SCORABLE_METRIC_SELECT },
         profileVersion: { select: PROFILE_METRIC_SELECT },
       },
       orderBy: [{ date: 'desc' }],
@@ -538,9 +536,7 @@ export class DailyKpiAcceptanceService {
     const row = await this.prisma.client.employeeDailyKpi.findFirst({
       where: { id, accountId },
       select: {
-        metrics: {
-          select: { metricKey: true, autoValue: true, adjustValue: true, complete: true },
-        },
+        metrics: { select: SCORABLE_METRIC_SELECT },
         profileVersion: { select: PROFILE_METRIC_SELECT },
       },
     });
@@ -946,12 +942,29 @@ const PROFILE_METRIC_SELECT = {
   metrics: { select: { weight: true, target: true, metricDef: { select: { key: true } } } },
 } as const;
 
+/**
+ * Kun qatoridan ball uchun o'qiladigan maydonlar — MUHRLANGAN maqsad bilan
+ * (KPI-03). `detail()` butun qatorni oladi, list/`computeScore` shu selektni.
+ */
+const SCORABLE_METRIC_SELECT = {
+  metricKey: true,
+  autoValue: true,
+  adjustValue: true,
+  complete: true,
+  targetValue: true,
+  targetSource: true,
+} as const;
+
 interface ScorableRow {
   metrics: ReadonlyArray<{
     metricKey: string;
     autoValue: bigint | null;
     adjustValue: bigint | null;
     complete: boolean;
+    /** O'sha kunga muhrlangan maqsad (KPI-03). */
+    targetValue?: bigint | null;
+    /** NULL = MUHR YO'Q → profil maqsadiga tushiladi. */
+    targetSource?: string | null;
   }>;
   profileVersion: {
     metrics: ReadonlyArray<{
@@ -960,6 +973,24 @@ interface ScorableRow {
       metricDef: { key: string };
     }>;
   } | null;
+}
+
+/**
+ * Shu kun uchun amaldagi maqsad — MUHR ustun, profil esa zaxira.
+ *
+ * 🔴 `targetSource != null` = kun hisoblanganda maqsad muhrlangan; undan
+ * keyingi tahrir bu kunga tegmaydi (§2.3 snapshot). `targetSource == null` =
+ * KPI-03 migratsiyasidan OLDIN hisoblangan qator — u hech qachon muhrlanmagan,
+ * shuning uchun avvalgidek profil versiyasidan o'qiladi. Ikkalasini
+ * `targetValue == null` bilan farqlab bo'lmaydi: muhrlangan «maqsad yo'q» ham
+ * NULL beradi (NULL ≠ 0 intizomining shu fazadagi ko'rinishi).
+ */
+function effectiveTarget(
+  metric: ScorableRow['metrics'][number],
+  profileTarget: bigint | null | undefined,
+): bigint | null {
+  if (metric.targetSource != null) return metric.targetValue ?? null;
+  return profileTarget ?? null;
 }
 
 /**
@@ -978,7 +1009,7 @@ function scoreRow(row: ScorableRow, catalog: MetricCatalog = BUILT_IN_CATALOG): 
     metricKey: m.metricKey,
     autoValue: m.autoValue,
     adjustValue: m.adjustValue,
-    target: cfg.get(m.metricKey)?.target ?? null,
+    target: effectiveTarget(m, cfg.get(m.metricKey)?.target),
     weight: cfg.get(m.metricKey)?.weight ?? 0,
     complete: m.complete,
   }));

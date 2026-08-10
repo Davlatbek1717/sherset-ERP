@@ -1,10 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
+  type EmployeeTargetRow,
   type KpiTargetRow,
+  MANUAL_DONE_UNIT,
   TARGET_PERIOD,
   TARGET_SCOPE,
   type TargetSubject,
+  manualDailyOutcome,
   resolveDailyTargets,
+  resolveEmployeeTargets,
   resolveTargets,
   weekdayBit,
 } from './kpi-target.js';
@@ -286,5 +290,184 @@ describe('resolveDailyTargets — profil maqsadi bilan birlashishi', () => {
     expect(r.get('late_minutes')?.value).toBe(0n); // nol-tolerantlik maqsadi haqiqiy qiymat
     expect(r.get('late_minutes')?.source).toBe('target_override');
     expect(r.get('cash_revenue')?.source).toBe('profile');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// KPI-03 — `EmployeeKpiTarget` («biriktirilgan KPI») qatlami
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * KPI-03 · reja §KPI-03.1 — yangi qatlam **eng yuqori** manba.
+ *
+ * Bu qatorlar `KpiTargetRow` dan farq qiladi: amal qilish oynasi ham, kun
+ * maskasi ham YO'Q (versiyalanmaydi — tarix `EmployeeDailyKpiMetric` muhrida).
+ * Shuning uchun ular alohida turda va alohida funksiyada hal qilinadi.
+ */
+function empTarget(over: Partial<EmployeeTargetRow> & { id: string }): EmployeeTargetRow {
+  return {
+    employeeId: EMPLOYEE,
+    metricKey: 'cash_revenue',
+    period: TARGET_PERIOD.daily,
+    targetValue: 777n,
+    manualDoneDate: null,
+    active: true,
+    ...over,
+  };
+}
+
+describe('resolveEmployeeTargets — biriktirilgan KPI qatori', () => {
+  it('o`sha xodimning FAOL kunlik qatori qaytadi', () => {
+    const r = resolveEmployeeTargets([empTarget({ id: 't1' })], EMPLOYEE, TARGET_PERIOD.daily);
+    expect(r.get('cash_revenue')).toEqual({
+      metricKey: 'cash_revenue',
+      value: 777n,
+      source: 'employee_target',
+      rowId: 't1',
+      scope: TARGET_SCOPE.employee,
+    });
+  });
+
+  it('BOSHQA xodimning qatori olinmaydi', () => {
+    const rows = [empTarget({ id: 'x', employeeId: 'emp-2' })];
+    expect(resolveEmployeeTargets(rows, EMPLOYEE, TARGET_PERIOD.daily).size).toBe(0);
+  });
+
+  it('arxivlangan (`active: false`) qator olinmaydi', () => {
+    const rows = [empTarget({ id: 'a', active: false })];
+    expect(resolveEmployeeTargets(rows, EMPLOYEE, TARGET_PERIOD.daily).size).toBe(0);
+  });
+
+  it('RAQAMSIZ maqsad (`targetValue: null`) qaytadi — «yo`q» EMAS', () => {
+    // 🔴 NULL ≠ «qator yo'q»: raqamsiz «todo» ham biriktirilgan KPI, va u
+    // profil maqsadini ALMASHTIRADI. Aks holda menejer raqamsiz KPI qo'yganda
+    // eski profil raqami jimgina qaytib kelardi.
+    const r = resolveEmployeeTargets(
+      [empTarget({ id: 'n', targetValue: null })],
+      EMPLOYEE,
+      TARGET_PERIOD.daily,
+    );
+    expect(r.get('cash_revenue')).toMatchObject({ value: null, source: 'employee_target' });
+  });
+
+  it('hammasi teng bo`lsa `id` bo`yicha BARQAROR tanlov', () => {
+    const a = empTarget({ id: 'aaa', targetValue: 100n });
+    const b = empTarget({ id: 'bbb', targetValue: 200n });
+    expect(
+      resolveEmployeeTargets([a, b], EMPLOYEE, TARGET_PERIOD.daily).get('cash_revenue')?.rowId,
+    ).toBe('aaa');
+    expect(
+      resolveEmployeeTargets([b, a], EMPLOYEE, TARGET_PERIOD.daily).get('cash_revenue')?.rowId,
+    ).toBe('aaa');
+  });
+});
+
+describe('resolveEmployeeTargets — haftalik/oylik KUNGA BO`LINMAYDI (reja §KPI-03.3)', () => {
+  it('haftalik qator kunlik so`rovda qaytmaydi', () => {
+    const rows = [empTarget({ id: 'w', period: TARGET_PERIOD.weekly, targetValue: 7_000_000n })];
+    expect(resolveEmployeeTargets(rows, EMPLOYEE, TARGET_PERIOD.daily).size).toBe(0);
+    expect(
+      resolveEmployeeTargets(rows, EMPLOYEE, TARGET_PERIOD.weekly).get('cash_revenue')?.value,
+    ).toBe(7_000_000n);
+  });
+
+  it('oylik qator ham kunlik so`rovda qaytmaydi', () => {
+    const rows = [empTarget({ id: 'm', period: TARGET_PERIOD.monthly, targetValue: 30_000_000n })];
+    expect(resolveEmployeeTargets(rows, EMPLOYEE, TARGET_PERIOD.daily).size).toBe(0);
+    expect(
+      resolveEmployeeTargets(rows, EMPLOYEE, TARGET_PERIOD.monthly).get('cash_revenue')?.value,
+    ).toBe(30_000_000n);
+  });
+});
+
+describe('resolveDailyTargets — biriktirilgan KPI eng yuqori manba', () => {
+  const profile = new Map<string, bigint | null>([['cash_revenue', 500n]]);
+
+  it('biriktirilgan KPI profil maqsadini yengadi', () => {
+    const r = resolveDailyTargets([], subject, MONDAY, profile, [empTarget({ id: 'e1' })]);
+    expect(r.get('cash_revenue')).toMatchObject({
+      value: 777n,
+      source: 'employee_target',
+      rowId: 'e1',
+    });
+  });
+
+  it('biriktirilgan KPI `KpiTarget` ustamasini ham yengadi (eng yuqori pog`ona)', () => {
+    // Xodim qamrovidagi eski MK13 qatori bilan to'qnashuv — yangi qatlam ustun.
+    const legacy = target({
+      id: 'ov',
+      scope: TARGET_SCOPE.employee,
+      scopeRef: EMPLOYEE,
+      targetValue: 900n,
+    });
+    const r = resolveDailyTargets([legacy], subject, MONDAY, profile, [empTarget({ id: 'e1' })]);
+    expect(r.get('cash_revenue')?.value).toBe(777n);
+    expect(r.get('cash_revenue')?.source).toBe('employee_target');
+  });
+
+  it('biriktirilgan KPI yo`q ko`rsatkich eski tartibda hal qilinadi (regress)', () => {
+    const r = resolveDailyTargets([], subject, MONDAY, profile, [
+      empTarget({ id: 'e1', metricKey: 'tasks_done' }),
+    ]);
+    expect(r.get('cash_revenue')).toMatchObject({ value: 500n, source: 'profile' });
+    expect(r.get('tasks_done')).toMatchObject({ value: 777n, source: 'employee_target' });
+  });
+
+  it('RAQAMSIZ biriktirilgan KPI profil raqamini QAYTARIB kelmaydi', () => {
+    const r = resolveDailyTargets([], subject, MONDAY, profile, [
+      empTarget({ id: 'e1', targetValue: null }),
+    ]);
+    expect(r.get('cash_revenue')).toMatchObject({ value: null, source: 'employee_target' });
+  });
+
+  it('haftalik biriktirilgan KPI kunlik maqsadga aralashmaydi', () => {
+    const r = resolveDailyTargets([], subject, MONDAY, profile, [
+      empTarget({ id: 'w', period: TARGET_PERIOD.weekly, targetValue: 7_000_000n }),
+    ]);
+    expect(r.get('cash_revenue')).toMatchObject({ value: 500n, source: 'profile' });
+  });
+});
+
+/**
+ * KPI-03 §4 — QO'LDA (o'lchanmaydigan) metrikaning fakti `manualDoneAt` dan.
+ *
+ * Dvigatel bunday ko'rsatkichni hisoblay olmaydi, shuning uchun fakt yagona
+ * manbadan — menejerning «bajarildi» belgisidan — keladi. Belgi **kun
+ * yorlig'iga** taqqoslanadi (instant emas): aks holda bugun belgilangan KPI
+ * butun tarixni «bajarildi» qilib yozardi.
+ */
+describe('manualDailyOutcome — qo`lda metrika fakti', () => {
+  it('shu kunda belgilangan → fakt = maqsad (bajarish 100%)', () => {
+    const o = manualDailyOutcome(
+      empTarget({ id: 'm', targetValue: 5n, manualDoneDate: MONDAY }),
+      MONDAY,
+    );
+    expect(o).toEqual({ fact: 5n, target: 5n });
+  });
+
+  it('belgilanmagan → fakt 0, maqsad saqlanadi (bajarish 0%)', () => {
+    const o = manualDailyOutcome(empTarget({ id: 'm', targetValue: 5n }), MONDAY);
+    expect(o).toEqual({ fact: 0n, target: 5n });
+  });
+
+  it('BOSHQA kunda belgilangan → shu kun uchun 0 (tarix qayta yozilmaydi)', () => {
+    const o = manualDailyOutcome(
+      empTarget({ id: 'm', targetValue: 5n, manualDoneDate: SATURDAY }),
+      MONDAY,
+    );
+    expect(o.fact).toBe(0n);
+  });
+
+  it('RAQAMSIZ «todo» birlik maqsad oladi — aks holda ballanmay qolardi', () => {
+    // Maqsad NULL bo'lsa `kpi-score.ts` uni `no_target` deb tashlab yuborardi,
+    // ya'ni «bajarildi» belgisi hech qachon ballga aylanmasdi.
+    const numberless = { id: 'm', targetValue: null };
+    expect(
+      manualDailyOutcome(empTarget({ ...numberless, manualDoneDate: MONDAY }), MONDAY),
+    ).toEqual({ fact: MANUAL_DONE_UNIT, target: MANUAL_DONE_UNIT });
+    expect(manualDailyOutcome(empTarget(numberless), MONDAY)).toEqual({
+      fact: 0n,
+      target: MANUAL_DONE_UNIT,
+    });
   });
 });

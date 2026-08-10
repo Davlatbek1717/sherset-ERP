@@ -216,7 +216,7 @@ regress (mavjud `manager/kpi/*` route'lar o'zgarmagan).
 
 ---
 
-### KPI-03 — Dvigatel ko'prigi: resolver yangi qatlamdan o'qiydi (per-kun snapshot) ☐ HISOBOT
+### KPI-03 — Dvigatel ko'prigi: resolver yangi qatlamdan o'qiydi (per-kun snapshot) ☑ HISOBOT (2026-08-10)
 **Bo'lim/blok:** KPI-soddalashtirish · **TZ:** §2.5 (maqsad ustuvorligi), §2.3 (versiya→snapshot), §2.6
 **Ustuvorlik:** P0 · **Bog'liqlik:** KPI-01
 **Maqsad:** Kunlik/haftalik hisob maqsadni **`EmployeeKpiTarget`** dan olsin (eng yuqori ustuvorlik), va o'sha
@@ -430,7 +430,85 @@ normalizatsiyasi) · KPI-06 (brauzer QA). **Browser-smoke YO'Q.**
     `climart_adopt` umumiy resurs; [[parallel-worktree-duplicate-work]]).
 - **Keyingi sessiya uchun:** KPI-01 commit tushganini tasdiqla (`grep "model EmployeeKpiTarget"
   packages/db/prisma/schema.prisma` + migratsiya papkasi), keyin KPI-02 promptini yubor.
-### KPI-03 — _(kutilmoqda)_
+### KPI-03 — ✅ 2026-08-10 (Phase-1: strukturaviy + unit + **jonli DB CHECK**-tasdiqlangan, browser-smoke YO'Q)
+
+**Nima qilindi.** Dvigatel endi maqsadni **`EmployeeKpiTarget`** dan oladi (eng yuqori pog'ona) va
+o'sha kungi maqsadni `EmployeeDailyKpiMetric` ga **muhrlaydi**. Shu bilan `kpi-target.ts` o'lik
+koddan chiqdi (ilgari uni faqat o'z testi va MK22 kaskadi import qilardi).
+
+- **Reja da'vosi TEKSHIRILDI va NOTO'G'RI chiqdi** (O'ZGARMAS QOIDA №2): reja §KPI-03.2 «dvigatel
+  kungi maqsadni yozadimi — kodda tasdiqla» degan edi. **Yozmasdi va ustun ham YO'Q edi** —
+  `EmployeeDailyKpiMetric` da `autoValue/adjustValue/complete` dan boshqa hech narsa yo'q edi.
+  Shuning uchun faza sxema o'zgarishini ham o'z ichiga oldi (KPI-01 hisoboti buni oldindan aytgan).
+- **Ustuvorlik zanjiri bitta joyda** (`resolveDailyTargets`): `employee_target` > `target_override`
+  (MK13 `KpiTarget`) > `profile` > `none`. `EmployeeKpiTarget` ning `KpiTargetRow` ga siqilmagani
+  ATAYLAB: yangi qatlamda `effectiveFrom/To` ham, kun maskasi ham yo'q — siqilsa soxta maydonlar
+  (`effectiveFrom: '1970-01-01'`) yozilardi va ular bir kun kelib haqiqiy qoida deb o'qilardi.
+- **🔴 Muhr FAQAT `create` da yoziladi, `update` da UMUMAN yo'q.** «Tahrir faqat kelajakka»
+  kafolatining butun og'irligi shunda: qayta hisoblash muhrni yangilasa, bugungi tahrir o'tgan
+  kunning bajarish foizini va ballini o'zgartirardi. `update` payload'i avvalgidek aynan
+  `{autoValue, complete}` (mavjud test buni allaqachon qulflagan).
+- **`targetSource` NULLABLE — bu NULL ≠ 0 ning shu fazadagi ko'rinishi.** Muhrlangan «maqsad yo'q»
+  (`none`) va **umuman muhrlanmagan** (migratsiyadan oldingi 468 qator) holatlarini faqat shu ustun
+  farqlaydi; ikkalasi ham `target_value = NULL` beradi. O'quvchi muhrsiz qatorda avvalgidek profil
+  maqsadiga tushadi → **eski kunlar balli o'zgarmaydi**.
+- **Qo'lda (custom) metrika fakti** `manualDoneAt` dan: belgi **kun YORLIG'IGA** taqqoslanadi
+  (`localDateOnly`), instantga emas. Fakt = maqsad (100%) yoki 0. Raqamsiz «todo» ga shartli birlik
+  (`MANUAL_DONE_UNIT = 1n`) beriladi — aks holda maqsad NULL bo'lib, `kpi-score.ts` uni `no_target`
+  deb tashlab yuborardi va «bajarildi» belgisi hech qachon ballga aylanmasdi.
+- **🔴 REJADAN CHEKINISH (asoslangan):** qo'lda metrika fakti FAQAT `higher_better` yo'nalishda
+  to'qiladi. `lower_better` da «bajarilmadi» → fakt 0 bo'lardi, bu esa `kpi-score.ts` formulasida
+  **200%** (cap bilan 150%) — ya'ni **ishlamaslik mukofotlanardi**. Bunday ko'rsatkich o'lchanmagan
+  bo'lib qoladi va menejer buni `skipReason: 'unmeasured'` bilan ochiq ko'radi.
+- Haftalik/oylik qator kunlik ballga **kirmaydi** (mavjud qoida saqlandi). `TARGET_PERIOD` ga
+  `monthly` qo'shildi — davr lug'ati endi DB CHECK'i bilan bitta (ikkinchi lug'at ochilmadi).
+
+**Fayllar.** `apps/api/src/modules/manager/kpi/kpi-target.ts` (+`.test.ts`) ·
+`employee-daily-kpi.service.ts` (+`.test.ts`) · `daily-kpi-acceptance.service.ts` (+`.test.ts`) ·
+`kpi-config.service.ts` · `employee-kpi-target-schema.test.ts` · `packages/db/prisma/schema.prisma` ·
+`packages/db/prisma/migrations/20260810180000_daily_kpi_metric_target_seal/migration.sql` (yangi) ·
+`scripts/probe-daily-kpi-target-seal.mts` (yangi, jonli-DB probe).
+
+**Testlar.** TDD: sof qatlam **15 RED** → yashil; sxema guard **5 RED** → yashil; dvigatel
+**11 RED** → yashil.
+- `kpi-target.test.ts` **39** · `employee-daily-kpi.service.test.ts` **43** ·
+  `daily-kpi-acceptance.service.test.ts` **22** · `employee-kpi-target-schema.test.ts` **28** ·
+  butun `manager/kpi` moduli **440/440**.
+- **MUTANT bilan tasdiqlangan** (vacuous emas): (a) o'quvchi testlari — `effectiveTarget` dan muhr
+  shoxi olib tashlanganda **2 test yiqildi**, keyin tiklandi; (b) dvigatel muhri — `targetValue`
+  ataylab `123_456n` qilinganda muhrga aynan o'sha tushdi.
+- **Jonli DB probe** (`climart_adopt`, rollback qilinadigan tranzaksiyada): **12/12** — ikkala ustun
+  bor va NULLABLE · mavjud **468 qatordan 0 tasi muhrlangan** (vacuous emasligi alohida o'lchandi) ·
+  noma'lum manba → **23514** · «qiymat bor, manba yo'q» → **23514** · to'rt manba ham qabul ·
+  rollback haqiqatan bo'ldi.
+
+**Gate.** `@moysklad/api typecheck` **0** · `pnpm lint:product` **0 error** (3 fayl formatlandi) ·
+`@moysklad/api vitest` **7601 passed / 2 skipped (533 fayl)** — regress yo'q ·
+`prisma migrate diff` yangi ustunlar bo'yicha **drift yo'q**.
+⚠️ Birinchi to'liq yugurtishda 2 ta **5000ms timeout flake** bo'ldi (test nomlari ushlanmadi);
+keyingi **ikki to'liq yugurtish 0 yiqilish** berdi. i18n gate — UI matn tegilmagani uchun tegishli emas.
+
+**Lokal DB.** Migratsiya `climart_adopt` ga `prisma db execute` bilan qo'llandi (`migrate dev` EMAS —
+shu bazada `_prisma_migrations` buzuq, [[climart-adopt-local-db-untracked]]).
+
+**OPS-QADAM (prod).** `/deploy` → `prisma migrate deploy` ikki ustun + 2 CHECK'ni `sherset_v2` ga
+qo'llaydi. **Backfill YO'Q va bo'lmasligi ham SHART** — mavjud kunlar muhrsiz qolib, avvalgidek
+profil maqsadidan o'qiladi (ya'ni deploy hech bir mavjud kunning ballini o'zgartirmaydi).
+
+**Parallel sessiya.** Ish davomida boshqa sessiya KPI-02 (`employee-kpi-target.{controller,service,
+schema}.ts`) va KPI-04 (`menejer/kpi`, `employee-kpi-screen.tsx`) ni yozmoqda edi. Ularga TEGILMADI;
+`schema.prisma` diff'i tekshirildi — faqat mening bitta hunk'im (CLAUDE.md §6.1). Commit
+hook'larsiz qilindi ([[commit-pathspec-does-not-stop-lint-staged]] — lint-staged begona faylni
+qo'shib yuborardi), gate'lar esa qo'lda TO'LIQ yugurtirildi.
+
+**Ochiq qarz.** (1) `weight` hamon FAQAT profil versiyasidan o'qiladi — profilda qatori yo'q
+biriktirilgan KPI `no_weight` bilan ballanmaydi; bu **KPI-05** ishi (reja shunday ketma-ketlikda).
+(2) `EmployeeKpiTarget` katalogda yo'q kalitga qo'yilsa kun qatori ochilmaydi, ya'ni maqsad
+muhrlanmaydi — KPI-02 `metricKey` ni katalogga tekshirgani uchun amalda yopiq, lekin arxivlangan
+`KpiMetricDef` holati tekshirilmagan. (3) `manualDoneAt` bitta timestamp: bir kunlik «bajarildi»
+belgisi FAQAT o'sha kunga tushadi — takrorlanuvchi kunlik todo uchun har kun qayta belgilash
+kerak (KPI-04/06 da UX savoli). **Browser-smoke YO'Q.**
+
 ### KPI-04 — _(kutilmoqda)_
 ### KPI-05 — _(kutilmoqda)_
 ### KPI-06 — _(kutilmoqda)_

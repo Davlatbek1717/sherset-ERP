@@ -6,6 +6,13 @@ import { DATA_QUALITY, aggregateQuality, countSamples } from '../../report/metri
 import { CASHIER_EVENT } from '../../retail-sale/cashier-audit.js';
 import { DailyKpiAcceptanceService } from './daily-kpi-acceptance.service.js';
 import { KPI_METRICS, type MetricValue, measured, unmeasured } from './kpi-metrics.js';
+import {
+  type EmployeeTargetRow,
+  type ResolvedTarget,
+  TARGET_PERIOD,
+  manualDailyOutcome,
+  resolveDailyTargets,
+} from './kpi-target.js';
 
 /**
  * Kunlik xodim KPI snapshot (menejer TZ kengaytmasi, 4M.1).
@@ -47,33 +54,54 @@ export class EmployeeDailyKpiService {
 
     const employees = await this.prisma.client.employee.findMany({
       where: { accountId, archived: false },
-      select: { id: true, positionId: true },
+      select: { id: true, positionId: true, departmentId: true },
     });
     if (employees.length === 0) return { written: 0, stale: 0 };
 
-    const [cashier, cashProfit, sales, attendance, tasks, picking, profileVersions] =
-      await Promise.all([
-        this.cashierMetrics(accountId, dayStart, dayEnd),
-        this.cashierProfit(accountId, dayStart, dayEnd),
-        this.salesMetrics(accountId, dayStart, dayEnd),
-        this.attendanceMetrics(accountId, dayStart, dayEnd),
-        this.taskMetrics(accountId, dayStart, dayEnd),
-        this.pickingMetrics(accountId, dayStart, dayEnd),
-        this.resolveProfileVersions(accountId, dateOnly),
-      ]);
+    const [
+      cashier,
+      cashProfit,
+      sales,
+      attendance,
+      tasks,
+      picking,
+      profileVersions,
+      employeeTargets,
+    ] = await Promise.all([
+      this.cashierMetrics(accountId, dayStart, dayEnd),
+      this.cashierProfit(accountId, dayStart, dayEnd),
+      this.salesMetrics(accountId, dayStart, dayEnd),
+      this.attendanceMetrics(accountId, dayStart, dayEnd),
+      this.taskMetrics(accountId, dayStart, dayEnd),
+      this.pickingMetrics(accountId, dayStart, dayEnd),
+      this.resolveProfileVersions(accountId, dateOnly),
+      this.loadEmployeeTargets(accountId),
+    ]);
 
     // Hisobning O'Z ko'rsatkichlari — tizim hisoblamaydi, lekin qatori bo'lishi
-    // kerak (menejer faktni faqat mavjud qatorga kiritadi).
-    const manualKeys = (
-      await this.prisma.client.kpiMetricDef.findMany({
-        where: { accountId, source: 'manual', archived: false },
-        select: { key: true },
-      })
-    ).map((m) => m.key);
+    // kerak (menejer faktni faqat mavjud qatorga kiritadi). `direction` KPI-03
+    // uchun kerak: fakt faqat «ko'p = yaxshi» ko'rsatkichda to'qiladi.
+    const manualDefs = await this.prisma.client.kpiMetricDef.findMany({
+      where: { accountId, source: 'manual', archived: false },
+      select: { key: true, direction: true },
+    });
+
+    // Kun YORLIG'I (`YYYY-MM-DD`) — maqsad qatlami tz'siz, taqqoslash yorliq
+    // ustidan (`kpi-target.ts` shartnomasi).
+    const dateLabel = dayLabel(dateOnly);
 
     let written = 0;
     const staleCandidates: string[] = [];
     for (const emp of employees) {
+      const targetRows = employeeTargets.get(emp.id) ?? [];
+      // Qo'lda ko'rsatkichning fakti biriktirilgan qatordan keladi — faqat
+      // KUNLIK qator (haftalik/oylik kunga bo'linmaydi).
+      const manualRows = new Map(
+        targetRows
+          .filter((t) => t.period === TARGET_PERIOD.daily && t.active)
+          .map((t) => [t.metricKey, t]),
+      );
+
       const values: MetricValue[] = [
         ...(cashier.get(emp.id) ?? emptyFor('cashier')),
         ...(cashProfit.get(emp.id) ?? [unmeasured('cash_gross_profit')]),
@@ -82,10 +110,17 @@ export class EmployeeDailyKpiService {
         ...(tasks.get(emp.id) ?? emptyFor('task')),
         ...(picking.get(emp.id) ?? emptyFor('warehouse')),
         // Hisobning O'Z ko'rsatkichlari (`manual`): tizim ularni hisoblay
-        // olmaydi, shuning uchun O'LCHANMAGAN qator ochiladi. Qator BO'LISHI
-        // shart — menejer faktni faqat mavjud qatorga kirita oladi; qatorsiz
+        // olmaydi, shuning uchun qator ochiladi. Qator BO'LISHI shart —
+        // menejer faktni faqat mavjud qatorga kirita oladi; qatorsiz
         // ko'rsatkich ekranda ko'rinib turib, tegib bo'lmaydigan bo'lardi.
-        ...manualKeys.map((key) => unmeasured(key)),
+        //
+        // KPI-03: biriktirilgan KPI bo'lsa fakt menejer belgisidan keladi
+        // (`manualDoneAt`), aks holda avvalgidek O'LCHANMAGAN qoladi.
+        ...manualDefs.map((def) => {
+          const row = manualRows.get(def.key);
+          if (row == null || !isManualScorable(def.direction)) return unmeasured(def.key);
+          return measured(def.key, manualDailyOutcome(row, dateLabel).fact);
+        }),
       ];
 
       const workedMinutes = numberOf(values.find((v) => v.key === 'worked_minutes')?.value);
@@ -100,17 +135,36 @@ export class EmployeeDailyKpiService {
       // ketishi mumkin edi.
       const dataComplete = aggregateQuality(countSamples(values)) !== DATA_QUALITY.partial;
       // Profil tanlash: XODIM (individual) → LAVOZIM → hisob sukut profili.
-      const profileVersionId =
+      const profile =
         profileVersions.byEmployee.get(emp.id) ??
         (emp.positionId ? profileVersions.byPosition.get(emp.positionId) : undefined) ??
         profileVersions.byPosition.get(DEFAULT_PROFILE_KEY) ??
         null;
 
+      // Maqsad pog'onalari: biriktirilgan KPI > `KpiTarget` ustamasi > profil.
+      // `KpiTarget` DB modeli hali YO'Q (MK13 sof funksiya bo'lib qolgan) —
+      // shuning uchun o'rta pog'ona bo'sh massiv bilan uzatiladi; qatlam
+      // qo'shilganda faqat shu argument to'ladi, ustuvorlik mantiqi esa
+      // yagona joyda (`kpi-target.ts`) qoladi.
+      const resolved = resolveDailyTargets(
+        [],
+        {
+          accountId,
+          employeeId: emp.id,
+          positionId: emp.positionId,
+          departmentId: emp.departmentId,
+        },
+        dateLabel,
+        profile?.targets ?? new Map(),
+        targetRows,
+      );
+
       const { staleCandidate } = await this.upsertDay(accountId, emp.id, dateOnly, {
-        profileVersionId,
+        profileVersionId: profile?.versionId ?? null,
         dataComplete,
         workedMinutes,
         values,
+        targets: sealTargets(values, resolved, manualRows, manualDefs, dateLabel),
       });
       if (staleCandidate) staleCandidates.push(emp.id);
       written++;
@@ -471,7 +525,47 @@ export class EmployeeDailyKpiService {
     return out;
   }
 
-  // ── Profil versiyasi ──────────────────────────────────────────────────────
+  // ── Maqsad qatlamlari ─────────────────────────────────────────────────────
+
+  /**
+   * Biriktirilgan KPI qatorlari (KPI-01) — xodim bo'yicha guruhlangan.
+   *
+   * FAQAT `active` qatorlar: arxivlangani tarixda qoladi (muhrlangan kunlar
+   * uni ko'rsatib turadi), lekin yangi kunlarga ta'sir qilmaydi.
+   */
+  private async loadEmployeeTargets(accountId: string): Promise<Map<string, EmployeeTargetRow[]>> {
+    const rows = await this.prisma.client.employeeKpiTarget.findMany({
+      where: { accountId, active: true },
+      select: {
+        id: true,
+        employeeId: true,
+        metricKey: true,
+        period: true,
+        targetValue: true,
+        manualDoneAt: true,
+        active: true,
+      },
+    });
+
+    const out = new Map<string, EmployeeTargetRow[]>();
+    for (const r of rows) {
+      const list = out.get(r.employeeId) ?? [];
+      list.push({
+        id: r.id,
+        employeeId: r.employeeId,
+        metricKey: r.metricKey,
+        period: r.period as EmployeeTargetRow['period'],
+        targetValue: r.targetValue,
+        // Instant → MAHALLIY KUN YORLIG'I. Sof modul tz bilmaydi, va bu
+        // aylantirish aynan `localDateOnly` bilan qilinadi: instant bo'yicha
+        // taqqoslash belgini bir kunga surib yuborardi.
+        manualDoneDate: r.manualDoneAt == null ? null : dayLabel(localDateOnly(r.manualDoneAt)),
+        active: r.active,
+      });
+      out.set(r.employeeId, list);
+    }
+    return out;
+  }
 
   /**
    * Lavozim → o'sha kunda AMAL QILGAN profil versiyasi (TZ §2.3).
@@ -496,7 +590,7 @@ export class EmployeeDailyKpiService {
   private async resolveProfileVersions(
     accountId: string,
     day: Date,
-  ): Promise<{ byEmployee: Map<string, string>; byPosition: Map<string, string> }> {
+  ): Promise<{ byEmployee: Map<string, ProfilePick>; byPosition: Map<string, ProfilePick> }> {
     const profiles = await this.prisma.client.kpiProfile.findMany({
       where: { accountId, archived: false },
       select: {
@@ -507,20 +601,31 @@ export class EmployeeDailyKpiService {
         // Prisma bermaydi).
         versions: {
           orderBy: [{ effectiveFrom: 'asc' }, { version: 'asc' }],
-          select: { id: true, effectiveFrom: true },
+          select: {
+            id: true,
+            effectiveFrom: true,
+            // KPI-03: maqsad ENG PAST pog'ona sifatida shu yerdan o'qiladi —
+            // ilgari uni faqat o'quvchi (`scoreRow`) join qilardi, ya'ni har
+            // o'qishda qayta hisoblanardi.
+            metrics: { select: { target: true, metricDef: { select: { key: true } } } },
+          },
         },
       },
     });
-    const byEmployee = new Map<string, string>();
-    const byPosition = new Map<string, string>();
+    const byEmployee = new Map<string, ProfilePick>();
+    const byPosition = new Map<string, ProfilePick>();
     for (const p of profiles) {
       const effective = [...p.versions].reverse().find((v) => v.effectiveFrom <= day);
-      const versionId = effective?.id ?? p.versions[0]?.id;
-      if (!versionId) continue;
+      const version = effective ?? p.versions[0];
+      if (!version) continue;
+      const pick: ProfilePick = {
+        versionId: version.id,
+        targets: new Map((version.metrics ?? []).map((m) => [m.metricDef.key, m.target])),
+      };
       // Individual (employeeId) profil lavozim profilidan ustun — u byEmployee'ga
       // tushadi va resolution xodimni avval shu yerdan qidiradi.
-      if (p.employeeId) byEmployee.set(p.employeeId, versionId);
-      else byPosition.set(p.positionId ?? DEFAULT_PROFILE_KEY, versionId);
+      if (p.employeeId) byEmployee.set(p.employeeId, pick);
+      else byPosition.set(p.positionId ?? DEFAULT_PROFILE_KEY, pick);
     }
     return { byEmployee, byPosition };
   }
@@ -536,6 +641,8 @@ export class EmployeeDailyKpiService {
       dataComplete: boolean;
       workedMinutes: number | null;
       values: MetricValue[];
+      /** Ko'rsatkich kaliti → o'sha kunga MUHRLANADIGAN maqsad (KPI-03). */
+      targets: Map<string, SealedTarget>;
     },
   ): Promise<{ staleCandidate: boolean }> {
     let staleCandidate = false;
@@ -568,6 +675,7 @@ export class EmployeeDailyKpiService {
       const before = new Map(day.metrics.map((m) => [m.metricKey, m.autoValue]));
 
       for (const v of data.values) {
+        const seal = data.targets.get(v.key) ?? NO_TARGET;
         await tx.employeeDailyKpiMetric.upsert({
           where: { dailyKpiId_metricKey: { dailyKpiId: day.id, metricKey: v.key } },
           create: {
@@ -576,9 +684,17 @@ export class EmployeeDailyKpiService {
             metricKey: v.key,
             autoValue: v.value,
             complete: v.complete,
+            // 🔴 MUHR FAQAT SHU YERDA (`create`) — reja §KPI-03.2.
+            targetValue: seal.value,
+            targetSource: seal.source,
           },
           // FAQAT avtomat qiymat yangilanadi. `adjustValue` va `reasonCode`
           // menejerniki — tungi cron ularni o'chirib yubormaydi.
+          //
+          // 🔴 MAQSAD HAM YO'Q: `EmployeeKpiTarget` versiyalanmaydi, ya'ni
+          // «o'tgan oy qayta yozilmasin» kafolati (§2.3) faqat shu muhrda
+          // yashaydi. Maqsad bu yerga qo'shilsa, bugungi tahrir qayta hisoblash
+          // paytida o'tgan kunning bajarish foizini va ballini o'zgartirardi.
           update: { autoValue: v.value, complete: v.complete },
         });
       }
@@ -606,6 +722,73 @@ export class EmployeeDailyKpiService {
 const FROZEN_STATES: readonly string[] = ['accepted', 'force_accepted'];
 
 const DEFAULT_PROFILE_KEY = '__default__';
+
+/** O'sha kunda amal qilgan profil versiyasi va uning maqsadlari. */
+interface ProfilePick {
+  versionId: string;
+  /** Ko'rsatkich kaliti → profil maqsadi (NULL = qo'yilmagan). */
+  targets: Map<string, bigint | null>;
+}
+
+/** Kun qatoriga muhrlanadigan maqsad (`EmployeeDailyKpiMetric`). */
+interface SealedTarget {
+  value: bigint | null;
+  source: ResolvedTarget['source'];
+}
+
+/** Hech bir pog'onada maqsad topilmagani — MUHRLANADI, bo'sh qoldirilmaydi. */
+const NO_TARGET: SealedTarget = { value: null, source: 'none' };
+
+/** `Date` (UTC yarim tun yorlig'i) → `YYYY-MM-DD`. */
+function dayLabel(d: Date): string {
+  return d.toISOString().slice(0, 10);
+}
+
+/**
+ * Qo'lda ko'rsatkichga fakt TO'QISH mumkinmi.
+ *
+ * Faqat «ko'p = yaxshi» yo'nalishida: `lower_better` da «bajarilmadi» → fakt 0
+ * bo'lardi, bu esa `kpi-score.ts` formulasida 200% (ya'ni ishlamaslik
+ * MUKOFOTLANARDI). Bunday ko'rsatkich o'lchanmagan bo'lib qoladi va menejer
+ * buni ekranda `skipReason: 'unmeasured'` bilan ochiq ko'radi.
+ */
+function isManualScorable(direction: string): boolean {
+  return direction === 'higher_better';
+}
+
+/**
+ * Har ko'rsatkich uchun muhrlanadigan maqsad.
+ *
+ * Qo'lda ko'rsatkich ISTISNO: uning maqsadi `manualDailyOutcome` dan keladi,
+ * chunki raqamsiz («todo») KPI ga shartli birlik beriladi — aks holda maqsad
+ * NULL bo'lib, «bajarildi» belgisi hech qachon ballga aylanmasdi.
+ */
+function sealTargets(
+  values: readonly MetricValue[],
+  resolved: ReadonlyMap<string, ResolvedTarget>,
+  manualRows: ReadonlyMap<string, EmployeeTargetRow>,
+  manualDefs: ReadonlyArray<{ key: string; direction: string }>,
+  dateLabel: string,
+): Map<string, SealedTarget> {
+  const manualScorable = new Set(
+    manualDefs.filter((d) => isManualScorable(d.direction)).map((d) => d.key),
+  );
+
+  const out = new Map<string, SealedTarget>();
+  for (const v of values) {
+    const manual = manualScorable.has(v.key) ? manualRows.get(v.key) : undefined;
+    if (manual) {
+      out.set(v.key, {
+        value: manualDailyOutcome(manual, dateLabel).target,
+        source: 'employee_target',
+      });
+      continue;
+    }
+    const r = resolved.get(v.key);
+    out.set(v.key, r == null ? NO_TARGET : { value: r.value, source: r.source });
+  }
+  return out;
+}
 
 /** Manba bo'yicha «o'lchanmagan» to'plam — xodimda o'sha faoliyat bo'lmasa. */
 function emptyFor(source: string): MetricValue[] {

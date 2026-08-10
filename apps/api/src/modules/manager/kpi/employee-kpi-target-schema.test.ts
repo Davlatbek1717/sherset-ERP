@@ -181,3 +181,68 @@ describe('KPI-01 migratsiya — CHECK lar va idempotent backfill', () => {
     expect(sql).toMatch(/'daily'/);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// KPI-03 — KUN MUHRI (`employee_daily_kpi_metrics.target_value/target_source`)
+// ─────────────────────────────────────────────────────────────────────────────
+
+const SEAL_MIGRATION = join(
+  REPO_ROOT,
+  'packages/db/prisma/migrations/20260810180000_daily_kpi_metric_target_seal/migration.sql',
+);
+
+/**
+ * KPI-03 sxema shartnomasi — `EmployeeKpiTarget` VERSIYALANMAGANI uchun tarix
+ * butunligi AYNAN shu ikki ustunga tayanadi. Ular yo'qolsa (yoki `target_source`
+ * NOT NULL qilinsa) «tahrir faqat kelajakka» kafolati jimgina yo'qoladi.
+ */
+describe('KPI-03 sxema — kunlik ko`rsatkichga MUHRLANGAN maqsad', () => {
+  const model = modelBlock('EmployeeDailyKpiMetric');
+  const sealSql = stripSqlComments(
+    existsSync(SEAL_MIGRATION) ? readFileSync(SEAL_MIGRATION, 'utf8') : '',
+  );
+
+  it('`targetValue BigInt?` — o`sha kungi maqsad qator ICHIDA muhrlanadi', () => {
+    // Ustun bo'lmasa maqsad har o'qishda profil/target qatoridan QAYTA
+    // hisoblanardi, ya'ni bugungi tahrir o'tgan kunning ballini o'zgartirardi
+    // (tan-narx muzlatish klassi).
+    expect(model).toMatch(/targetValue\s+BigInt\?\s+@map\("target_value"\)/);
+  });
+
+  it('`targetSource` NULLABLE — NULL = MUHR YO`Q (migratsiyadan oldingi qator)', () => {
+    // 🔴 NULL ≠ 0 ning aynan shu fazadagi ko'rinishi: muhrlangan «maqsad yo'q»
+    // (`none`) va umuman muhrlanmagan qatorni farqlash SHU ustun bilan bo'ladi.
+    // NOT NULL + default qilinsa eski kunlar «maqsadsiz muhrlangan» bo'lib
+    // qolar va profil maqsadidan hisoblangan ballari nolga tushardi.
+    expect(model).toMatch(/targetSource\s+String\?\s+@map\("target_source"\)\s+@db\.VarChar\(20\)/);
+  });
+
+  it('migratsiya ikki ustunni ham qo`shadi', () => {
+    expect(sealSql).toMatch(/ALTER TABLE "employee_daily_kpi_metrics"[\s\S]*"target_value" BIGINT/);
+    expect(sealSql).toMatch(
+      /ALTER TABLE "employee_daily_kpi_metrics"[\s\S]*"target_source" VARCHAR\(20\)/,
+    );
+  });
+
+  it('manba lug`ati YOPIQ (CHECK) — noma`lum manba muhr sifatida o`qilmaydi', () => {
+    expect(sealSql).toMatch(
+      /CHECK\s*\(\s*"target_source" IS NULL OR "target_source" IN \('employee_target', 'target_override', 'profile', 'none'\)\s*\)/,
+    );
+  });
+
+  it('muhr BUTUN — qiymat bor, manbasi yo`q holati CHECK bilan taqiqlanadi', () => {
+    // Aks holda `target_value` to'ldirilgan, `target_source` NULL qator paydo
+    // bo'lardi — o'quvchi uni «muhrlanmagan» deb o'qib profilga tushardi va
+    // muhrdagi raqam JIMGINA e'tiborsiz qolardi.
+    expect(sealSql).toMatch(
+      /CHECK\s*\(\s*"target_value" IS NULL OR "target_source" IS NOT NULL\s*\)/,
+    );
+  });
+
+  it('mavjud qatorlar BACKFILL QILINMAYDI — tarix qayta yozilmaydi', () => {
+    // Eski kunlarga bugungi maqsadni muhrlash aynan o'sha «o'tgan oyni qayta
+    // yozish» hodisasi bo'lardi. Ular muhrsiz qoladi va o'quvchi ular uchun
+    // avvalgidek profil maqsadiga tushadi (xulq o'zgarmaydi).
+    expect(sealSql).not.toMatch(/UPDATE "employee_daily_kpi_metrics"/);
+  });
+});

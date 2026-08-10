@@ -27,6 +27,9 @@ function makeService(opts: {
     autoValue: bigint | null;
     adjustValue: bigint | null;
     complete: boolean;
+    /** KPI-03 kun muhri; berilmasa — muhrlanmagan (eski) qator. */
+    targetValue?: bigint | null;
+    targetSource?: string | null;
   }>;
   profileVersion?: {
     metrics: Array<{ weight: number; target: bigint | null; metricDef: { key: string } }>;
@@ -303,5 +306,52 @@ describe('idempotentlik — takror bosish (birlashtirishda qo`shildi)', () => {
       svc.transition(MANAGER, ID, 'reopen', { reasonCode: 'correction' }),
     ).rejects.toThrow();
     expect(eventCreate).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * KPI-03 — BALL MUHRLANGAN MAQSADDAN o'qiladi.
+ *
+ * Muhr yozilib, o'quvchi uni ko'rmasa butun faza vacuous bo'lardi: kun
+ * `EmployeeKpiTarget` maqsadi bilan hisoblanib, ballda profil raqami turardi.
+ * Profil sukuti (1000n, og'irlik 100) barcha testlarda bir xil — farqni
+ * FAQAT muhr keltiradi.
+ */
+describe('KPI-03 — kun muhri profil maqsadidan USTUN', () => {
+  const metric = (over: Record<string, unknown> = {}) => ({
+    metricKey: 'cash_revenue',
+    autoValue: 800n,
+    adjustValue: null,
+    complete: true,
+    ...over,
+  });
+
+  it('muhrlangan maqsad bo`yicha ball hisoblanadi (profil raqami emas)', async () => {
+    // Muhr 800 → 800/800 = 100%. Profil 1000 bo'lsa 80% chiqardi.
+    const { svc, dayUpdateMany } = makeService({
+      state: 'pending',
+      metrics: [metric({ targetValue: 800n, targetSource: 'employee_target' })],
+    });
+    await svc.transition(MANAGER, ID, 'accept');
+    expect(dayUpdateMany.mock.calls[0][0].data.scorePercent).toBe(100);
+  });
+
+  it('MUHRLANMAGAN qator avvalgidek PROFIL maqsadiga tushadi (regress)', async () => {
+    // Migratsiyadan oldin hisoblangan kunlar: 800/1000 = 80%.
+    const { svc, dayUpdateMany } = makeService({ state: 'pending', metrics: [metric()] });
+    await svc.transition(MANAGER, ID, 'accept');
+    expect(dayUpdateMany.mock.calls[0][0].data.scorePercent).toBe(80);
+  });
+
+  it('muhrlangan «maqsad YO`Q» profilga QAYTA TUSHMAYDI (ball yo`q, 0 emas)', async () => {
+    // 🔴 Muhr `none` = «o'sha kuni bu ko'rsatkichga maqsad qo'yilmagan edi».
+    // Profilga qaytilsa bugungi profil maqsadi o'tgan kunga qo'llanardi — ya'ni
+    // aynan «tarixni qayta yozish». Ball NULL bo'ladi, 0 EMAS.
+    const { svc, dayUpdateMany } = makeService({
+      state: 'pending',
+      metrics: [metric({ targetValue: null, targetSource: 'none' })],
+    });
+    await svc.transition(MANAGER, ID, 'accept');
+    expect(dayUpdateMany.mock.calls[0][0].data.scorePercent).toBeNull();
   });
 });

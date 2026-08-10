@@ -171,7 +171,14 @@ export class KpiConfigService {
         dataComplete: true,
         workedMinutes: true,
         metrics: {
-          select: { metricKey: true, autoValue: true, adjustValue: true, complete: true },
+          select: {
+            metricKey: true,
+            autoValue: true,
+            adjustValue: true,
+            complete: true,
+            targetValue: true,
+            targetSource: true,
+          },
         },
         profileVersion: {
           select: {
@@ -198,11 +205,15 @@ export class KpiConfigService {
       workedMinutes: day.workedMinutes,
       metrics: day.metrics.map((m) => {
         const cfg = cfgByKey.get(m.metricKey);
+        // KPI-03: muhrlangan maqsad USTUN — o'sha kun nima bilan o'lchangan
+        // bo'lsa, ekranda ham o'sha ko'rinadi. `targetSource == null` =
+        // muhrlanmagan (migratsiyadan oldingi) qator → profil maqsadi.
+        const target = m.targetSource != null ? m.targetValue : cfg?.target;
         return {
           metricKey: m.metricKey,
           autoValue: m.autoValue == null ? null : m.autoValue.toString(),
           adjustValue: m.adjustValue == null ? null : m.adjustValue.toString(),
-          target: cfg?.target == null ? null : cfg.target.toString(),
+          target: target == null ? null : target.toString(),
           weight: cfg?.weight ?? null,
           complete: m.complete,
         };

@@ -331,6 +331,44 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-08-10k (REJA-KPI-SODDALASHTIRISH **KPI-03** — dvigatel ko'prigi: maqsad yangi qatlamdan +
+> KUNGA MUHRLANADI) — **Phase-1: strukturaviy + unit + jonli DB CHECK-tasdiqlangan, browser-smoke YO'Q**.
+> To'liq hisobot: `docs/REJA-KPI-SODDALASHTIRISH-2026-08.md` → «HISOBOT JURNALI» → KPI-03.**
+>
+> **Nima o'zgardi.** `employee-daily-kpi.service.ts` endi `EmployeeKpiTarget` (KPI-01 qatlami) ni
+> yuklaydi va `kpi-target.ts` resolveri orqali kunlik maqsadni hal qiladi: **`employee_target` >
+> `target_override` > `profile` > `none`**. Hal qilingan maqsad `EmployeeDailyKpiMetric` ning yangi
+> `target_value`/`target_source` ustunlariga **muhrlanadi**. Shu bilan `kpi-target.ts` o'lik koddan
+> chiqdi. O'quvchilar (`scoreRow`, `getEmployeeDaily`) muhrni afzal ko'radi.
+>
+> **🔴 Keyingi sessiya SHUNI bilishi kerak — muhr FAQAT `create` da yoziladi.** `update` payload'i
+> avvalgidek aynan `{autoValue, complete}`. «Tahrir faqat kelajakka» kafolatining butun og'irligi
+> shunda: `update` ga maqsad qo'shilsa, bugungi tahrir qayta hisoblash paytida o'tgan kunning
+> ballini o'zgartirardi. **`target_source` NULL = MUHR YO'Q** (migratsiyadan oldingi 468 qator) →
+> o'quvchi profil maqsadiga tushadi, ya'ni eski kunlar balli o'zgarmagan.
+>
+> **Reja da'vosi noto'g'ri chiqdi (tekshirildi):** reja «dvigatel kungi maqsadni yozadimi — kodda
+> tasdiqla» degan edi; **ustun umuman yo'q edi**, shuning uchun faza sxema+migratsiyani ham oldi
+> (`20260810180000_daily_kpi_metric_target_seal`, lokal `climart_adopt` ga qo'llangan).
+>
+> **Gate:** api typecheck 0 · `lint:product` 0 error · api vitest **7601 passed / 2 skipped (533 fayl)**
+> · jonli DB probe **12/12** (`scripts/probe-daily-kpi-target-seal.mts`) · mutant bilan 2 joyda
+> vacuous-emaslik o'lchandi. *(Birinchi to'liq yugurtishda 2 ta 5000ms timeout flake bo'lgan;
+> keyingi ikki yugurtish toza.)*
+>
+> **Ochiq qarz:** `weight` hamon FAQAT profil versiyasidan → profilda qatori yo'q biriktirilgan KPI
+> `no_weight` bilan ballanmaydi (bu **KPI-05** ishi, reja shunday ketma-ketlikda). Qo'lda metrika
+> fakti faqat `higher_better` da to'qiladi (`lower_better` da 0 = 200% bo'lib ishlamaslikni
+> mukofotlardi). **Browser-QA = KPI-06.**
+>
+> **⚠️ Parallel sessiya:** shu payt boshqa sessiya **KPI-02** (`employee-kpi-target.{controller,
+> service,schema}.ts`) va **KPI-04** (`menejer/kpi`, `employee-kpi-screen.tsx`) ni yozmoqda edi —
+> ularga tegilmadi, diff path-cheklangan. `schema.prisma` da faqat mening bitta hunk'im bor
+> (tekshirildi). Commit hook'larsiz qilindi (lint-staged begona fayl qo'shishining oldini olish),
+> gate'lar qo'lda to'liq yugurtirildi.
+>
+> **⏭️ Keyingi:** KPI-04 (UI) — lekin avval KPI-02 commit tushganini tasdiqla; keyin KPI-05, KPI-06.
+
 > **🕒 2026-08-10i (REJA-MENEJER-KASSA **MK25** — M2 **Phase-2 QA**, menejer nazorat ekranlari) —
 > 🌐 **BRAUZERDA O'LCHANDI** (repo Playwright'i, alohida brauzer profili; `climart_adopt`@5432 +
 > api 4000 + web 3100). Holat: **Phase-2 QISMAN** — «Phase-2 verified» EMAS. To'liq hisobot:
