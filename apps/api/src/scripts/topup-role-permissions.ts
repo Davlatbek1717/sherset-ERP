@@ -20,10 +20,24 @@
  * defaults for ALL accounts' system roles; only CREATES missing rows
  * (update:{} keeps any tenant scope override untouched).
  *
+ * 2026-08-10 (`storecell` — omborchi yacheyka amallari): the loop below only
+ * heals roles that are `isSystem:true` AND named Administrator/Manager/
+ * Employee/ReadOnly. MK29 template roles (`templateSlug` — Omborchi, Ombor
+ * menejeri, Kassir…) are created by `seed-role-templates.ts`, which does NOT
+ * update an existing role's matrix without `--rewrite`. So a newly added
+ * entity reached NOBODY: the feature shipped, the role 403'd. PASS 2 below
+ * closes that gap — see `../modules/permissions/template-topup.ts` for the
+ * two-layer «never overwrite, never resurrect a revoked entity» contract.
+ *
  * Run: `npx tsx src/scripts/topup-role-permissions.ts` (from apps/api).
  * After running on a live server, restart the api process (perm cache).
  */
 import { PrismaClient } from '@moysklad/db';
+import {
+  ROLE_TEMPLATE_SLUGS,
+  type RoleTemplateSlug,
+} from '../modules/permissions/role-templates.js';
+import { missingTemplateCells } from '../modules/permissions/template-topup.js';
 const prisma = new PrismaClient();
 const NEW_ENTITIES = [
   'product',
@@ -174,12 +188,47 @@ for (const role of roles) {
     }
   }
 }
-console.log(`roles: ${roles.length}, rows ensured: ${created}`);
+console.log(`PASS 1 (eski system rollar) — roles: ${roles.length}, rows ensured: ${created}`);
+
+// ── PASS 2: MK29 shablon rollari (`templateSlug`) ──────────────────────────
+// Faqat YETISHMAYOTGAN qatorlar qo'shiladi; mavjud qator o'zgarmaydi va
+// qo'lda sozlangan entity butunlay chetlab o'tiladi (template-topup.ts).
+const TEMPLATE_SLUGS = new Set<string>(ROLE_TEMPLATE_SLUGS);
+const templateRoles = await prisma.role.findMany({
+  where: { templateSlug: { not: null } },
+  select: { id: true, name: true, templateSlug: true, permissions: true },
+});
+let tplCreated = 0;
+let tplTouched = 0;
+for (const role of templateRoles) {
+  const slug = role.templateSlug;
+  if (!slug || !TEMPLATE_SLUGS.has(slug)) continue;
+  const missing = missingTemplateCells(slug as RoleTemplateSlug, role.permissions);
+  if (missing.length === 0) continue;
+  tplTouched++;
+  await prisma.rolePermission.createMany({
+    data: missing.map((c) => ({
+      roleId: role.id,
+      entity: c.entity,
+      action: c.action,
+      scope: c.scope,
+    })),
+    skipDuplicates: true,
+  });
+  tplCreated += missing.length;
+  console.log(
+    `   + ${role.name} (${slug}): ${missing.length} qator — ${[...new Set(missing.map((c) => c.entity))].join(', ')}`,
+  );
+}
+console.log(
+  `PASS 2 (MK29 shablon rollari) — roles: ${templateRoles.length}, touched: ${tplTouched}, rows created: ${tplCreated}`,
+);
 const check = await prisma.$queryRaw`
   SELECT r.name, rp.entity, rp.action, rp.scope FROM role_permissions rp
   JOIN roles r ON r.id = rp.role_id
   WHERE (rp.entity = 'currency' AND rp.action = 'view')
      OR (rp.entity = 'label' AND rp.action = 'create')
+     OR (rp.entity = 'storecell' AND rp.action = 'update')
   ORDER BY rp.entity, r.name`;
-console.log('spot-check (currency.view + label.create):', JSON.stringify(check));
+console.log('spot-check (currency.view + label.create + storecell.update):', JSON.stringify(check));
 await prisma.$disconnect();

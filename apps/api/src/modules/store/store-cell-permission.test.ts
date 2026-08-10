@@ -24,9 +24,18 @@ function permOf(method: keyof StoreController): RequiredPermission | undefined {
   return Reflect.getMetadata(PERMISSION_META, handler as object) as RequiredPermission | undefined;
 }
 
-const scopeOf = (slug: 'storekeeper' | 'warehouse_manager', entity: string, action: string) =>
-  resolveTemplateMatrix(slug).find((c) => c.entity === entity && c.action === action)?.scope ??
-  'NO';
+/**
+ * ⚠️ `?? 'NO'` ATAYLAB YO'Q. `resolveTemplateMatrix` TO'LIQ matritsani
+ * (`NO` katakchalar bilan) qaytaradi, shuning uchun katakcha topilmasligi —
+ * «ruxsat yo'q» EMAS, «entity nomi xato yozilgan» degani. Zaxira qiymat
+ * bo'lsa, «`NO` bo'lishi kerak» assertlari entity o'chib ketgan holatda ham
+ * yashil qolardi (review 2026-08-10 da o'lchangan vacuity).
+ */
+const scopeOf = (slug: 'storekeeper' | 'warehouse_manager', entity: string, action: string) => {
+  const cell = resolveTemplateMatrix(slug).find((c) => c.entity === entity && c.action === action);
+  expect(cell, `${slug} matritsasida ${entity}.${action} katakchasi YO'Q`).toBeDefined();
+  return cell?.scope;
+};
 
 describe('TZ v3 §3 — yacheyka amallari `storecell` ruxsatida', () => {
   const READ: Array<keyof StoreController> = ['cellStock', 'cellProducts'];
