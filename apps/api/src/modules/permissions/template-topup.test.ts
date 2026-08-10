@@ -25,6 +25,9 @@ import { type ExistingPermissionRow, missingTemplateCells } from './template-top
  * Aks holda skript adminning ataylab olib qo'ygan ruxsatini jimgina qaytarardi.
  */
 
+/** Joriy to'lqin — bugungi yagona yangi entity. */
+const WAVE = ['storecell'];
+
 /** Rolda `storecell` dan BOSHQA hamma narsa bor — ya'ni eski seed holati. */
 function storekeeperRowsWithoutStorecell(): ExistingPermissionRow[] {
   return resolveTemplateMatrix('storekeeper')
@@ -35,7 +38,7 @@ function storekeeperRowsWithoutStorecell(): ExistingPermissionRow[] {
 
 describe('missingTemplateCells — shablon roliga yetishmagan qatorlar', () => {
   it('yetishmagan `storecell` qatorlarini qo`shadi (omborchi)', () => {
-    const out = missingTemplateCells('storekeeper', storekeeperRowsWithoutStorecell());
+    const out = missingTemplateCells('storekeeper', WAVE, storekeeperRowsWithoutStorecell());
 
     expect(out).toEqual([
       { entity: 'storecell', action: 'view', scope: 'ALL' },
@@ -49,7 +52,7 @@ describe('missingTemplateCells — shablon roliga yetishmagan qatorlar', () => {
       .filter((c) => c.entity !== 'storecell')
       .map((c) => ({ entity: c.entity, action: c.action, scope: c.scope }));
 
-    expect(missingTemplateCells('warehouse_manager', rows)).toContainEqual({
+    expect(missingTemplateCells('warehouse_manager', WAVE, rows)).toContainEqual({
       entity: 'storecell',
       action: 'update',
       scope: 'ALL',
@@ -58,10 +61,10 @@ describe('missingTemplateCells — shablon roliga yetishmagan qatorlar', () => {
 
   it('IDEMPOTENT — ikkinchi yugurtirishda qo`shadigan narsa qolmaydi', () => {
     const rows = storekeeperRowsWithoutStorecell();
-    const first = missingTemplateCells('storekeeper', rows);
+    const first = missingTemplateCells('storekeeper', WAVE, rows);
     expect(first.length).toBeGreaterThan(0);
 
-    const second = missingTemplateCells('storekeeper', [...rows, ...first]);
+    const second = missingTemplateCells('storekeeper', WAVE, [...rows, ...first]);
     expect(second).toEqual([]);
   });
 
@@ -70,7 +73,7 @@ describe('missingTemplateCells — shablon roliga yetishmagan qatorlar', () => {
       .filter((c) => c.scope !== 'NO')
       .map((c) => ({ entity: c.entity, action: c.action, scope: c.scope }));
 
-    expect(missingTemplateCells('storekeeper', full)).toEqual([]);
+    expect(missingTemplateCells('storekeeper', WAVE, full)).toEqual([]);
   });
 
   /**
@@ -85,27 +88,14 @@ describe('missingTemplateCells — shablon roliga yetishmagan qatorlar', () => {
       { entity: 'storecell', action: 'view', scope: 'ALL' },
     ];
 
-    const out = missingTemplateCells('storekeeper', rows);
+    const out = missingTemplateCells('storekeeper', WAVE, rows);
     expect(out.filter((c) => c.entity === 'storecell')).toEqual([]);
   });
 
-  it('MAVJUD qatorni hech qachon qayta yozmaydi (scope tweak saqlanadi)', () => {
-    // Tenant `store.view` ni `OWN_GROUP` ga tushirgan — shablonda `ALL`.
-    const rows: ExistingPermissionRow[] = storekeeperRowsWithoutStorecell().map((r) =>
-      r.entity === 'store' && r.action === 'view' ? { ...r, scope: 'OWN_GROUP' } : r,
-    );
-
-    const out = missingTemplateCells('storekeeper', rows);
-    expect(out.some((c) => c.entity === 'store' && c.action === 'view')).toBe(false);
-  });
-
   it('`NO` katakchani HECH QACHON qator sifatida taklif qilmaydi', () => {
-    // Bo'sh roldan boshlaymiz — bu eng katta chiqish.
-    const out = missingTemplateCells('storekeeper', []);
+    const out = missingTemplateCells('storekeeper', WAVE, []);
     expect(out.length).toBeGreaterThan(0);
     expect(out.every((c) => c.scope !== 'NO')).toBe(true);
-    // Omborchida `store.update` YO'Q (TZ §3 chegarasi) — taklifga tushmasin.
-    expect(out.some((c) => c.entity === 'store' && c.action === 'update')).toBe(false);
   });
 
   it('chiqish har doim shablon matritsasining KICHIK to`plami', () => {
@@ -114,8 +104,67 @@ describe('missingTemplateCells — shablon roliga yetishmagan qatorlar', () => {
         .filter((c) => c.scope !== 'NO')
         .map((c) => `${c.entity}:${c.action}:${c.scope}`),
     );
-    for (const c of missingTemplateCells('storekeeper', [])) {
+    for (const c of missingTemplateCells('storekeeper', WAVE, [])) {
       expect(tplKeys.has(`${c.entity}:${c.action}:${c.scope}`)).toBe(true);
     }
+  });
+});
+
+/**
+ * ── RAUND 2 (review 2026-08-10) — «TIRILTIRISH» yorig'i ────────────────────
+ *
+ * Oldingi yechim faqat QISMAN sozlangan entity'ni himoya qilardi. Admin
+ * shablonli roldan biror entity'ning HAMMA katakchasini olib tashlasa
+ * (`roles.service.ts` matritsani `deleteMany` + `createMany` bilan yangilaydi
+ * — bu REAL yo'l), o'sha entity bo'yicha birorta qator qolmasdi ⇒ keyingi
+ * top-up run shablon scope'ini QAYTARARDI. Bu — `--rewrite` ning aynan
+ * yopmoqchi bo'lgan yorig'i, faqat sekinroq shaklda.
+ *
+ * Yechim: funksiya endi ANIQ entity ro'yxatini (`entities` allow-list) talab
+ * qiladi va faqat o'shalar bo'yicha ishlaydi. Xavf tarkibiy jihatdan
+ * yo'qoladi: skript boshqa entity'ni UMUMAN ko'rmaydi, shuning uchun uni
+ * tiriltira ham olmaydi.
+ */
+describe('allow-list — skript faqat aytilgan entity`ni ko`radi', () => {
+  it('(a) allow-listdan TASHQARIDAGI entity qatorsiz bo`lsa ham TIRILMAYDI', () => {
+    // Admin `label` ni omborchidan BUTUNLAY olib tashlagan (birorta qator yo'q).
+    const rows = storekeeperRowsWithoutStorecell().filter((r) => r.entity !== 'label');
+    expect(rows.some((r) => r.entity === 'label')).toBe(false);
+    // Shablonda `label` bor — ya'ni himoya bo'lmasa qaytarilardi.
+    expect(
+      resolveTemplateMatrix('storekeeper').some((c) => c.entity === 'label' && c.scope !== 'NO'),
+    ).toBe(true);
+
+    const out = missingTemplateCells('storekeeper', WAVE, rows);
+    expect(out.some((c) => c.entity === 'label')).toBe(false);
+    // Va faqat allow-listdagi entity qaytadi.
+    expect([...new Set(out.map((c) => c.entity))]).toEqual(['storecell']);
+  });
+
+  it('(b) allow-listdagi YANGI entity odatdagidek qo`shiladi', () => {
+    const rows = storekeeperRowsWithoutStorecell().filter((r) => r.entity !== 'label');
+    expect(missingTemplateCells('storekeeper', WAVE, rows)).toEqual([
+      { entity: 'storecell', action: 'view', scope: 'ALL' },
+      { entity: 'storecell', action: 'update', scope: 'ALL' },
+    ]);
+  });
+
+  it('(c) IDEMPOTENT — allow-list bilan ham ikkinchi run bo`sh', () => {
+    const rows = storekeeperRowsWithoutStorecell().filter((r) => r.entity !== 'label');
+    const first = missingTemplateCells('storekeeper', WAVE, rows);
+    expect(first.length).toBeGreaterThan(0);
+    expect(missingTemplateCells('storekeeper', WAVE, [...rows, ...first])).toEqual([]);
+  });
+
+  it('bo`sh allow-list = NO-OP (hatto bo`sh rolda ham)', () => {
+    expect(missingTemplateCells('storekeeper', [], [])).toEqual([]);
+  });
+
+  it('shablonda YO`Q entity so`ralsa ham hech narsa qaytmaydi', () => {
+    // Omborchida `store.update` YO'Q (TZ §3 chegarasi) — allow-listga
+    // qo'shilsa ham faqat shablonning MUSBAT katakchalari qaytadi.
+    const out = missingTemplateCells('storekeeper', ['store'], []);
+    expect(out.some((c) => c.action === 'update')).toBe(false);
+    expect(out).toEqual([{ entity: 'store', action: 'view', scope: 'ALL' }]);
   });
 });

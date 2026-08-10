@@ -18,15 +18,28 @@
  * bazada `NO` qatori YO'Q — «admin ataylab olib qo'ygan» katakcha va «hech
  * qachon seed qilinmagan» katakcha qator darajasida BIR XIL ko'rinadi.
  *
- * Shuning uchun top-up ikki qavatli qo'riqchi bilan ishlaydi:
- *   1. **Mavjud qator hech qachon o'zgartirilmaydi** — tenant qo'lda
- *      tushirgan scope (`ALL` → `OWN_GROUP`) saqlanadi, takroriy yugurtirish
- *      hech nima qilmaydi (idempotentlik).
- *   2. **Rolda o'sha ENTITY bo'yicha birorta ham qator bo'lsa — entity
- *      butunlay chetlab o'tiladi.** Bu `--rewrite` xulqiga qarshi qulf:
- *      admin `storecell.view` ni qoldirib `update` ni olib qo'ygan bo'lsa,
- *      skript uni QAYTA BERMAYDI. Qo'shish faqat «bu entity bu rolda umuman
- *      ko'rilmagan» holatda bo'ladi — aynan yangi entity holati.
+ * ── Himoya: BITTA tarkibiy qo'riqchi + bitta xulq qoidasi ──────────────────
+ * **1. Allow-list (tarkibiy).** Funksiya `entities` ro'yxatisiz ishlamaydi va
+ *    faqat o'sha entity'lar bo'yicha qator taklif qiladi. Qolgan hamma entity
+ *    — ko'rinmas. Bu «tiriltirish» xavfini TARKIBIY yo'q qiladi: admin biror
+ *    entity'ni roldan BUTUNLAY olib tashlagan bo'lsa (qator qolmaydi!),
+ *    skript uni qaytara olmaydi, chunki ro'yxatda yo'q.
+ *
+ *    Raund-1 da bu qo'riqchi YO'Q edi va aynan shu yoriq bor edi: «rolda bu
+ *    entity bo'yicha qator yo'q» sharti «hali seed qilinmagan» degani EMAS —
+ *    «admin hammasini o'chirgan» ham bo'lishi mumkin (rol matritsasi
+ *    deleteMany+createMany bilan yangilangani uchun bu REAL yo'l).
+ *
+ * **2. «Tegilmagan entity» qoidasi (xulq).** Allow-list ichida ham: rolda
+ *    o'sha entity bo'yicha birorta qator BO'LSA, entity butunlay chetlab
+ *    o'tiladi. Bu ikki ishni bir vaqtda qiladi — qo'lda qisman sozlangan
+ *    entity qayta yozilmaydi VA takroriy yugurtirish no-op bo'ladi
+ *    (idempotentlik), chunki birinchi run qator qoldirib ketadi.
+ *
+ * > Eslatma (raund-2 review): alohida «bu (entity, action) qatori bormi»
+ * > tekshiruvi ORTIQCHA edi — qator bo'lsa entity ham albatta «tegilgan»
+ * > hisoblanadi, ya'ni shart natijani hech qachon o'zgartirmasdi. Olib
+ * > tashlandi; qavat aslida BITTA.
  *
  * Bu funksiya SOF: DB kerak emas, testi `template-topup.test.ts`.
  */
@@ -44,23 +57,35 @@ export interface ExistingPermissionRow {
 }
 
 /**
+ * JORIY to'lqin — top-up qaysi entity'larni ko'rishi mumkin.
+ *
+ * ⚠️ Bu ro'yxat O'SIB BORMAYDI. Yangi `PermissionEntity` qo'shilganda shu
+ * yerga YOZ; prodda yugurtirilib tasdiqlangach — OLIB TASHLA. Eski entity'ni
+ * ro'yxatda qoldirish «tiriltirish» xavfini qaytaradi: admin o'sha entity'ni
+ * biror roldan butunlay olib tashlagan bo'lsa, keyingi run uni tiklab qo'yadi.
+ */
+export const TOPUP_ENTITIES: readonly string[] = ['storecell'];
+
+/**
  * Shablon matritsasidan roldagi YETISHMAYOTGAN qatorlar.
  *
- * @param slug   rolning `templateSlug` qiymati
+ * @param slug     rolning `templateSlug` qiymati
+ * @param entities allow-list — faqat shu entity'lar ko'riladi (`TOPUP_ENTITIES`)
  * @param existing rolning bazadagi barcha ruxsat qatorlari
  * @returns yaratilishi kerak bo'lgan katakchalar (hech qachon `NO` emas)
  */
 export function missingTemplateCells(
   slug: RoleTemplateSlug,
+  entities: ReadonlyArray<string>,
   existing: ReadonlyArray<ExistingPermissionRow>,
 ): TemplateCell[] {
-  // 1-qavat: aynan shu (entity, action) qatori bormi.
-  const haveCell = new Set(existing.map((r) => `${r.entity}:${r.action}`));
-  // 2-qavat: bu entity rolda umuman ko'rilganmi (qo'lda sozlangan bo'lishi mumkin).
+  const allow = new Set(entities);
+  if (allow.size === 0) return [];
+  // Rolda «ko'rilgan» entity'lar — ular chetlab o'tiladi (qo'lda sozlash
+  // himoyasi + idempotentlik).
   const touchedEntity = new Set(existing.map((r) => r.entity));
 
   return resolveTemplateMatrix(slug).filter(
-    (c) =>
-      c.scope !== 'NO' && !haveCell.has(`${c.entity}:${c.action}`) && !touchedEntity.has(c.entity),
+    (c) => allow.has(c.entity) && !touchedEntity.has(c.entity) && c.scope !== 'NO',
   );
 }

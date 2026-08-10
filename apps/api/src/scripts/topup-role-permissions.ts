@@ -37,7 +37,7 @@ import {
   ROLE_TEMPLATE_SLUGS,
   type RoleTemplateSlug,
 } from '../modules/permissions/role-templates.js';
-import { missingTemplateCells } from '../modules/permissions/template-topup.js';
+import { TOPUP_ENTITIES, missingTemplateCells } from '../modules/permissions/template-topup.js';
 const prisma = new PrismaClient();
 const NEW_ENTITIES = [
   'product',
@@ -191,8 +191,9 @@ for (const role of roles) {
 console.log(`PASS 1 (eski system rollar) — roles: ${roles.length}, rows ensured: ${created}`);
 
 // ── PASS 2: MK29 shablon rollari (`templateSlug`) ──────────────────────────
-// Faqat YETISHMAYOTGAN qatorlar qo'shiladi; mavjud qator o'zgarmaydi va
-// qo'lda sozlangan entity butunlay chetlab o'tiladi (template-topup.ts).
+// Faqat `TOPUP_ENTITIES` allow-listidagi entity'lar ko'riladi va faqat rolda
+// UMUMAN ko'rilmagan entity'ga qator qo'shiladi — shartnoma va uning sababi
+// `template-topup.ts` docblock'ida (tiriltirish xavfi).
 const TEMPLATE_SLUGS = new Set<string>(ROLE_TEMPLATE_SLUGS);
 const templateRoles = await prisma.role.findMany({
   where: { templateSlug: { not: null } },
@@ -203,10 +204,11 @@ let tplTouched = 0;
 for (const role of templateRoles) {
   const slug = role.templateSlug;
   if (!slug || !TEMPLATE_SLUGS.has(slug)) continue;
-  const missing = missingTemplateCells(slug as RoleTemplateSlug, role.permissions);
+  const missing = missingTemplateCells(slug as RoleTemplateSlug, TOPUP_ENTITIES, role.permissions);
   if (missing.length === 0) continue;
-  tplTouched++;
-  await prisma.rolePermission.createMany({
+  // `count` — CHINAKAM yozilgan qatorlar soni. `missing.length` ni sanash
+  // `skipDuplicates` tashlagan qatorlarni ham qo'shib yuborardi (log yolg'oni).
+  const { count } = await prisma.rolePermission.createMany({
     data: missing.map((c) => ({
       roleId: role.id,
       entity: c.entity,
@@ -215,9 +217,11 @@ for (const role of templateRoles) {
     })),
     skipDuplicates: true,
   });
-  tplCreated += missing.length;
+  if (count === 0) continue;
+  tplTouched++;
+  tplCreated += count;
   console.log(
-    `   + ${role.name} (${slug}): ${missing.length} qator — ${[...new Set(missing.map((c) => c.entity))].join(', ')}`,
+    `   + ${role.name} (${slug}): ${count} qator — ${[...new Set(missing.map((c) => c.entity))].join(', ')}`,
   );
 }
 console.log(
