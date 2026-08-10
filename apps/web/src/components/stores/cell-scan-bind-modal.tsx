@@ -125,8 +125,46 @@ export function CellScanBindModal({
   const [readFlash, setReadFlash] = useState(false);
   const flashTimerRef = useRef<number | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  // Mirror of the conflict dialog for the camera callbacks (stale-closure-safe).
+
+  // ——— BURST-SAFE MIRRORS (TZ v3 §3) ——————————————————————————————
+  // `resolve` is rebuilt every render and published to `resolveRef` by an
+  // EFFECT, but the scan queue drains in MICROTASKS: two codes from a single
+  // trigger-pull run back-to-back, and React has neither re-rendered nor run
+  // its passive effects in between. A `resolve` reading component STATE would
+  // therefore see the PREVIOUS scan's world — §1.4's staged-duplicate guard
+  // would miss (one product → two rows → two POSTs) and §1.2's remembered
+  // decision would not exist yet (a second dialog overwriting the first).
+  // Every value `resolve()` reads is mirrored into a ref written SYNCHRONOUSLY
+  // beside its setState, and `resolve()` reads ONLY the refs.
+  const pendingRef = useRef<PendingRow[]>([]);
+  const decisionsRef = useRef<Map<string, CellDecision>>(new Map());
+  const cellRef = useRef<{ id: string; name: string } | null>(initialCell);
   const conflictRef = useRef(false);
+  /** Row keys: a counter, not `Date.now()` — a burst stages several rows inside
+   *  the same millisecond, and two of the SAME product would collide on key. */
+  const keySeqRef = useRef(0);
+
+  const applyPending = useCallback((fn: (rows: PendingRow[]) => PendingRow[]) => {
+    const next = fn(pendingRef.current);
+    pendingRef.current = next;
+    setPending(next);
+  }, []);
+  const applyDecisions = useCallback(
+    (fn: (m: Map<string, CellDecision>) => Map<string, CellDecision>) => {
+      const next = fn(decisionsRef.current);
+      decisionsRef.current = next;
+      setDecisions(next);
+    },
+    [],
+  );
+  const applyCell = useCallback((next: { id: string; name: string } | null) => {
+    cellRef.current = next;
+    setCell(next);
+  }, []);
+  const applyConflict = useCallback((next: Conflict | null) => {
+    conflictRef.current = !!next;
+    setConflict(next);
+  }, []);
 
   // Step 1 = the cell label is still wanted; step 2 = scan products.
   const step = cell ? 2 : 1;
@@ -147,20 +185,21 @@ export function CellScanBindModal({
   // lands on the header close button), so the scanner needs no extra click.
   useEffect(() => {
     if (!open) return;
-    setCell(initialCell);
+    applyCell(initialCell);
     setLastProduct(null);
     setMessage(null);
-    setConflict(null);
-    setPending([]);
-    setDecisions(new Map());
+    applyConflict(null);
+    applyPending(() => []);
+    applyDecisions(() => new Map());
     setSaving(false);
     setValue('');
     setLastRead(null);
     setFlashCard(null);
     setManualKb(false);
+    keySeqRef.current = 0;
     const id = requestAnimationFrame(() => inputRef.current?.focus());
     return () => cancelAnimationFrame(id);
-  }, [open, initialCell]);
+  }, [open, initialCell, applyCell, applyConflict, applyPending, applyDecisions]);
 
   const rearm = useCallback(() => {
     requestAnimationFrame(() => inputRef.current?.focus());
@@ -176,10 +215,6 @@ export function CellScanBindModal({
     cardFlashTimerRef.current = window.setTimeout(() => setFlashCard(null), 1400);
   }, []);
 
-  useEffect(() => {
-    conflictRef.current = !!conflict;
-  }, [conflict]);
-
   // STAGE a binding (owner 2026-07-21: nothing is written on scan — rows
   // collect in the list and «Saqlash» commits them all; the list is uncapped
   // because every staged row must reach the save).
@@ -188,25 +223,23 @@ export function CellScanBindModal({
       setLastProduct(product.name);
       flashTheCard('product');
       setMessage({ kind: 'ok', text: t('scan_staged') });
-      setPending((rows) => [
-        {
-          key: `${Date.now()}-${product.id}`,
-          product: { id: product.id, name: product.name },
-          cell: targetCell,
-        },
+      keySeqRef.current += 1;
+      const key = `${keySeqRef.current}-${product.id}`;
+      applyPending((rows) => [
+        { key, product: { id: product.id, name: product.name }, cell: targetCell },
         ...rows,
       ]);
     },
-    [t, flashTheCard],
+    [t, flashTheCard, applyPending],
   );
 
   // «Saqlash» — commit every staged row in scan order: unbind the staged
   // replacements first, then bind. Committed rows leave the list one by one,
   // so a mid-save failure keeps the unsaved remainder visible.
   const save = useCallback(async () => {
-    if (pending.length === 0 || saving) return;
+    const rows = [...pendingRef.current].reverse(); // scan order
+    if (rows.length === 0 || saving) return;
     setSaving(true);
-    const rows = [...pending].reverse(); // scan order
     // TZ v3 §1.3: har guruh o'z yacheykasiga yoziladi.
     const byCell = new Map<string, PendingRow[]>();
     for (const r of rows) {
@@ -215,24 +248,32 @@ export function CellScanBindModal({
       byCell.set(r.cell.id, list);
     }
     let done = 0;
+    let evicted = 0;
     try {
       for (const [cellId, cellRows] of byCell) {
         // TZ v3 §1.2: «chiqarib qo'shish» — AVVAL eski chiqariladi (bir marta,
         // qaror qabul qilingan lahzadagi SERVER ro'yxati bo'yicha), KEYIN
         // yangilari yoziladi. `evict` qayta hisoblanmaydi — aks holda shu
         // sessiyada staged qilingan qator o'zini-o'zi chiqarib yuborardi.
-        const decision = decisions.get(cellId);
-        if (decision?.mode === 'replace') {
+        const decision = decisionsRef.current.get(cellId);
+        if (decision?.mode === 'replace' && decision.evict.length > 0) {
           for (const victim of decision.evict) {
             await api.delete(`/admin/stores/${storeId}/cells/${cellId}/products/${victim.id}`);
+            evicted += 1;
           }
+          // Chiqarish BAJARILDI — ro'yxatni darhol bo'shatamiz. Keyingi qadam
+          // (POST) yiqilsa foydalanuvchi «Saqlash»ni qayta bosadi va DELETE
+          // TAKRORLANMAYDI. (Server tomoni ham idempotent: `unassignProduct`
+          // topilmasa `{unassigned:false}` qaytaradi, throw qilmaydi —
+          // store-address.service.ts.)
+          applyDecisions((m) => new Map(m).set(cellId, { mode: 'replace', evict: [] }));
         }
         for (const r of cellRows) {
           await api.post(`/admin/stores/${storeId}/cells/${cellId}/products`, {
             productIds: [r.product.id],
           });
           done += 1;
-          setPending((p) => p.filter((x) => x.key !== r.key));
+          applyPending((p) => p.filter((x) => x.key !== r.key));
         }
       }
       setMessage({ kind: 'ok', text: t('scan_saved_n', { count: done }) });
@@ -241,16 +282,22 @@ export function CellScanBindModal({
     } catch (e) {
       // Owner 2026-07-21: NOTHING resets silently — the failure names its cause
       // and the unsaved rows stay in the list for a retry (TZ §3: + beep).
+      // Chiqarish o'tib, yozish yiqilgan bo'lsa yacheyka SERVERDA BO'SH qoldi —
+      // buni yashirish mumkin emas: xabar aynan shu holatni ataydi va qayta
+      // urinish xavfsizligini aytadi (aks holda omborchi oynani yopib,
+      // bog'lanishni butunlay yo'qotardi).
       beep();
+      const msg = e instanceof Error ? e.message : String(e);
       setMessage({
         kind: 'err',
-        text: t('scan_save_failed', { msg: e instanceof Error ? e.message : String(e) }),
+        text:
+          evicted > 0 ? t('scan_save_partial', { msg, evicted }) : t('scan_save_failed', { msg }),
       });
     }
     if (done > 0) onBound();
     setSaving(false);
     rearm();
-  }, [pending, saving, storeId, onBound, t, rearm, toast, decisions]);
+  }, [saving, storeId, onBound, t, rearm, toast, applyPending, applyDecisions]);
 
   const resolve = useCallback(
     async (raw: string) => {
@@ -263,11 +310,25 @@ export function CellScanBindModal({
       setReadFlash(true);
       if (flashTimerRef.current) window.clearTimeout(flashTimerRef.current);
       flashTimerRef.current = window.setTimeout(() => setReadFlash(false), 900);
+      // TZ v3 §3: «Yacheyka band» savoli ochiq turganda kelgan skan. The queue
+      // does NOT pause for the dialog, so without this the next code would run
+      // with the answer still missing and its `setConflict` would OVERWRITE the
+      // pending question — the first scanned product would vanish with no trace.
+      // The scan is REFUSED rather than queued-until-answered: a modal can sit
+      // open for minutes, and a silently stalled queue is exactly the «scanner
+      // died» failure `useScanQueue` warns about. Refusing is loud (beep + the
+      // code that was read is on screen) and re-scanning costs one second,
+      // while the answer itself decides what happens to later scans anyway.
+      if (conflictRef.current) {
+        beep();
+        setMessage({ kind: 'warn', text: t('scan_answer_conflict_first') });
+        return;
+      }
       // 1) cell label? (barcode first, exact name as a manual-typing fallback)
       const hitCell =
         cells.find((c) => c.barcode === code) ?? cells.find((c) => c.name === code) ?? null;
       if (hitCell) {
-        setCell({ id: hitCell.id, name: hitCell.name });
+        applyCell({ id: hitCell.id, name: hitCell.name });
         setLastProduct(null);
         flashTheCard('cell');
         setMessage({ kind: 'ok', text: `${t('scan_cell_label')}: ${hitCell.name}` });
@@ -300,7 +361,7 @@ export function CellScanBindModal({
           if (foreign && foreign.storeId === storeId) {
             // Same store but missing from the prop snapshot (created after the
             // card loaded) — accept it as the current cell.
-            setCell({ id: foreign.id, name: foreign.name });
+            applyCell({ id: foreign.id, name: foreign.name });
             setLastProduct(null);
             flashTheCard('cell');
             setMessage({ kind: 'ok', text: `${t('scan_cell_label')}: ${foreign.name}` });
@@ -325,7 +386,8 @@ export function CellScanBindModal({
         }
         const product = winners[0];
         if (!product) return;
-        if (!cell) {
+        const activeCell = cellRef.current;
+        if (!activeCell) {
           beep();
           setMessage({ kind: 'warn', text: t('scan_no_cell_yet') });
           return;
@@ -335,18 +397,55 @@ export function CellScanBindModal({
         // dialog — and therefore the eviction list — only ever names what the
         // SERVER holds, while staged rows only produce the «already in the
         // list» warning.
-        const bound = await api
-          .get<{ items: Array<{ id: string; name: string }> }>(
-            `/admin/stores/${storeId}/cells/${cell.id}/products`,
-          )
-          .catch(() => null);
-        const serverItems = bound?.items ?? [];
-        const stagedHere = pending.filter((r) => r.cell.id === cell.id);
+        //
+        // A FAILED read is NOT an empty cell. The old `.catch(() => null)`
+        // turned a 500/timeout into `serverItems = []`, which skipped the
+        // dialog AND sealed `{mode:'together'}` for the whole session — one
+        // dropped request silently locked in the wrong answer for every later
+        // scan into that cell. Nothing is sealed and nothing is staged now;
+        // the worker simply re-scans.
+        let serverItems: Array<{ id: string; name: string }>;
+        try {
+          const bound = await api.get<{ items: Array<{ id: string; name: string }> }>(
+            `/admin/stores/${storeId}/cells/${activeCell.id}/products`,
+          );
+          serverItems = bound?.items ?? [];
+        } catch {
+          beep();
+          setMessage({ kind: 'err', text: t('scan_cell_contents_failed') });
+          return;
+        }
+        const stagedHere = pendingRef.current.filter((r) => r.cell.id === activeCell.id);
+        const decided = decisionsRef.current.get(activeCell.id);
 
         // §1.4: shu mahsulot ALLAQACHON RO'YXATDA (staged) — sariq, takror yo'q.
         if (stagedHere.some((r) => r.product.id === product.id)) {
           beep();
           setMessage({ kind: 'warn', text: t('scan_already_staged') });
+          return;
+        }
+        // §1.2 FIKRDAN QAYTISH: yacheyka «chiqarib qo'shish» ga muhrlangan va
+        // foydalanuvchi aynan CHIQARILADIGAN mahsulotni qayta skanladi — bu
+        // «u qolsin» degani. Ilgari bu yerda yashil «allaqachon bog'langan»
+        // chiqardi-yu, `save()` uni baribir DELETE qilardi: omborchi
+        // «qoldirdim» degan tovar jim yo'qolardi. Mahsulot serverda ALLAQACHON
+        // turgani uchun uni ro'yxatga qo'shish (POST) shart emas — yetarlisi
+        // `evict` dan chiqarish. Ro'yxat bo'shab qolsa qaror «together» ga
+        // tushadi, ya'ni qatorlardagi «almashtiradi» belgisi ham yolg'on
+        // bo'lib qolmaydi.
+        if (decided?.mode === 'replace' && decided.evict.some((x) => x.id === product.id)) {
+          const nextEvict = decided.evict.filter((x) => x.id !== product.id);
+          applyDecisions((m) =>
+            new Map(m).set(
+              activeCell.id,
+              nextEvict.length > 0
+                ? { mode: 'replace', evict: nextEvict }
+                : { mode: 'together', evict: [] },
+            ),
+          );
+          setLastProduct(product.name);
+          flashTheCard('product');
+          setMessage({ kind: 'ok', text: t('scan_evict_cancelled', { name: product.name }) });
           return;
         }
         // §1.4: serverda allaqachon bog'langan — yashil, qo'shilmaydi.
@@ -357,27 +456,26 @@ export function CellScanBindModal({
           return;
         }
 
-        const decided = decisions.get(cell.id);
         if (decided) {
           // §1.2: qaror eslab qolingan — so'roqsiz davom etadi.
-          stage(product, cell);
+          stage(product, activeCell);
           return;
         }
         if (serverItems.length > 0) {
-          setConflict({ product, existing: serverItems });
+          applyConflict({ product, existing: serverItems });
           return;
         }
         // Bo'sh yacheyka: birinchi qaror ham kerak emas, lekin keyingi
         // skanlar uchun «together» deb muhrlanadi (dialog hech qachon
         // sababsiz chiqmasin).
-        setDecisions((m) => new Map(m).set(cell.id, { mode: 'together', evict: [] }));
-        stage(product, cell);
+        applyDecisions((m) => new Map(m).set(activeCell.id, { mode: 'together', evict: [] }));
+        stage(product, activeCell);
       } catch (e) {
         beep();
         setMessage({ kind: 'err', text: e instanceof Error ? e.message : t('scan_not_found') });
       }
     },
-    [cells, cell, storeId, pending, decisions, stage, t, flashTheCard],
+    [cells, storeId, stage, t, flashTheCard, applyCell, applyConflict, applyDecisions],
   );
 
   /** Dialog tugmalari uchun qisqa nom: «Olma» yoki «Olma +2». */
@@ -392,21 +490,25 @@ export function CellScanBindModal({
   // saw, so «Saqlash» removes exactly what the dialog named.
   const decide = useCallback(
     (mode: 'together' | 'replace') => {
-      if (!conflict || !cell) return;
-      setDecisions((m) =>
-        new Map(m).set(cell.id, { mode, evict: mode === 'replace' ? conflict.existing : [] }),
+      const target = cellRef.current;
+      if (!conflict || !target) return;
+      applyDecisions((m) =>
+        new Map(m).set(target.id, { mode, evict: mode === 'replace' ? conflict.existing : [] }),
       );
-      stage(conflict.product, cell);
+      stage(conflict.product, target);
       if (mode === 'replace') setMessage({ kind: 'ok', text: t('scan_staged_replace') });
-      setConflict(null);
+      applyConflict(null);
       rearm();
     },
-    [conflict, cell, stage, rearm, t],
+    [conflict, stage, rearm, t, applyDecisions, applyConflict],
   );
 
   // The camera pipeline lives in the shared useBarcodeCamera hook (extracted
-  // 2026-07-21). resolveRef keeps the LATEST resolve without camera restarts;
-  // reads are ignored while the occupied-cell dialog waits for a decision.
+  // 2026-07-21). resolveRef keeps the LATEST resolve without camera restarts.
+  // Reads that arrive while the occupied-cell dialog is open are NOT dropped
+  // here any more — `resolve()` refuses them out loud (TZ v3 §3); the camera
+  // hook's own 2.5s same-code de-dupe keeps a stationary label from beeping
+  // repeatedly.
   const resolveRef = useRef(resolve);
   useEffect(() => {
     resolveRef.current = resolve;
@@ -439,7 +541,6 @@ export function CellScanBindModal({
     if (!open) return;
     const buf = { s: '', at: 0 };
     const onKey = (e: KeyboardEvent) => {
-      if (conflictRef.current) return;
       if (document.activeElement === inputRef.current) return; // input handles itself
       const el = e.target as HTMLElement | null;
       if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable))
@@ -467,13 +568,7 @@ export function CellScanBindModal({
   }, [open, enqueue]);
 
   // `enqueue` barqaror havola — kamera hooki qayta ishga tushmaydi.
-  const onCameraDecoded = useCallback(
-    (raw: string) => {
-      if (conflictRef.current) return;
-      void enqueue(raw);
-    },
-    [enqueue],
-  );
+  const onCameraDecoded = useCallback((raw: string) => void enqueue(raw), [enqueue]);
   const { videoRef, cameraOn, cameraError, diag, startCamera, stopCamera } = useBarcodeCamera({
     active: open,
     onDecoded: onCameraDecoded,
@@ -689,7 +784,20 @@ export function CellScanBindModal({
                   <button
                     type="button"
                     onClick={() => {
-                      setPending((rows) => rows.filter((x) => x.key !== row.key));
+                      const next = pendingRef.current.filter((x) => x.key !== row.key);
+                      applyPending(() => next);
+                      // TZ v3 §1.2: yacheykaning OXIRGI qatori olib tashlansa
+                      // qaror ham kuchini yo'qotadi. Aks holda «replace» muhri
+                      // qolib ketardi: keyingi skan so'roqsiz staged bo'lar,
+                      // «Saqlash» esa eski mahsulotni baribir DELETE qilardi —
+                      // foydalanuvchi bekor qilgan amal jimgina bajarilardi.
+                      if (!next.some((x) => x.cell.id === row.cell.id)) {
+                        applyDecisions((m) => {
+                          const copy = new Map(m);
+                          copy.delete(row.cell.id);
+                          return copy;
+                        });
+                      }
                       rearm();
                     }}
                     className="shrink-0 rounded px-1 text-[var(--ms-text-muted)] hover:bg-[var(--ms-bg-hover)] hover:text-[var(--ms-text-destructive)]"
@@ -768,13 +876,13 @@ export function CellScanBindModal({
         </div>
       </Modal>
 
-      {/* «Yacheyka band» — the occupied-cell decision dialog (owner 2026-07-20):
-          Almashtirish · Birga qo'shish · Bekor qilish. */}
+      {/* «Yacheyka band» — the occupied-cell decision dialog (TZ v3 §1.2):
+          birga qo'shish · chiqarib qo'shish · bekor qilish. */}
       <Modal
         open={!!conflict}
         onOpenChange={(o) => {
           if (!o) {
-            setConflict(null);
+            applyConflict(null);
             rearm();
           }
         }}
@@ -811,7 +919,7 @@ export function CellScanBindModal({
               variant="secondary"
               size="sm"
               onClick={() => {
-                setConflict(null);
+                applyConflict(null);
                 rearm();
               }}
               data-test-id="cell-scan-conflict-cancel"
@@ -821,15 +929,10 @@ export function CellScanBindModal({
           </>
         }
       >
-        {/* Modal `testId` Radix'ga `data-testid` bo'lib tushadi, loyiha
-            konvensiyasi esa `data-test-id` — dialog ochiqligini shu o'ram
-            bilan belgilaymiz. */}
-        <div data-test-id="cell-scan-conflict">
-          <div className="px-4 py-3 text-sm" data-test-id="cell-scan-conflict-msg">
-            {t('scan_conflict_msg', {
-              name: conflict?.existing.map((x) => x.name).join(', ') ?? '',
-            })}
-          </div>
+        <div className="px-4 py-3 text-sm" data-test-id="cell-scan-conflict-msg">
+          {t('scan_conflict_msg', {
+            name: conflict?.existing.map((x) => x.name).join(', ') ?? '',
+          })}
         </div>
       </Modal>
     </>
