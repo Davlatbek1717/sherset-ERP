@@ -9,14 +9,23 @@
  *      highlights blue; a single product auto-selects. The qty input stays
  *      DISABLED until a product is selected;
  *   3. type the counted amount (e.g. 30) → «Saqlash» records it as the cell's
- *      ABSOLUTE count for that product (PUT cells/:cellId/stock) and closes.
- *      «Bekor qilish» closes without writing.
+ *      ABSOLUTE count for that product (PUT cells/:cellId/stock, `mode:'set'`)
+ *      and closes. «Bekor qilish» closes without writing.
  *
  * Scanning a PRODUCT label while a cell is open selects its card — count flows
  * hands-free: cell → product → number → Enter.
+ *
+ * TZ v3 §2 (2026-08-10) changed «Umumiy sanash»: the common number is no longer
+ * an absolute count but an amount ADDED to every scanned cell (`mode:'add'`,
+ * the delta is computed SERVER-side). Each row therefore shows «hozirgi → bo'ladi»,
+ * and both modes share ONE qty field that never moves when the mode flips.
+ *
+ * TZ v3 §3: every scan goes through `useScanQueue` so a burst is processed IN
+ * ORDER, and nothing is ever refused silently.
  */
 
 import { useBarcodeCamera } from '@/components/stores/use-barcode-camera';
+import { useScanQueue } from '@/components/stores/use-scan-queue';
 import { api } from '@/lib/api-client';
 import { beep } from '@/lib/beep';
 import { imageRawUrl } from '@/lib/image-url';
@@ -42,7 +51,18 @@ interface CellStockItem {
   qty: string;
 }
 
+/** A staged «Umumiy sanash» row: what will be ADDED to which cell, and what the
+ *  cell holds RIGHT NOW (§2.2.2 — «hozirgi → bo'ladi» must be visible). */
+interface BulkRow {
+  key: string;
+  cell: { id: string; name: string };
+  product: { id: string; name: string };
+  qty: string;
+  currentQty: string;
+}
+
 const fmtQty = (n: number) => (Number.isInteger(n) ? String(n) : String(Number(n.toFixed(3))));
+const qtyValidRe = /^\d+(\.\d{1,6})?$/;
 
 export function CellCountModal({
   open,
@@ -102,41 +122,101 @@ export function CellCountModal({
     bulkQtyRef.current = v;
     setBulkQty(v);
   }, []);
-  const [bulkRows, setBulkRows] = useState<
-    Array<{
-      key: string;
-      cell: { id: string; name: string };
-      product: { id: string; name: string };
-      qty: string;
-    }>
-  >([]);
+  const [bulkRows, setBulkRows] = useState<BulkRow[]>([]);
   // Single-mode guard (owner 2026-07-26 band 3): a second cell scanned before
   // the qty is entered → the qty field turns RED (+ beep + message).
   const [qtyMissing, setQtyMissing] = useState(false);
-  const qtyValidRe = /^\d+(\.\d{1,6})?$/;
   const qtyValid = qtyValidRe.test(qty.trim());
   const bulkQtyValid = qtyValidRe.test(bulkQty.trim());
-  const bulkRowsValid = bulkRows.length > 0 && bulkRows.every((r) => qtyValidRe.test(r.qty.trim()));
+
+  // ── Ref-mirrors (TZ v3 §3 burst) ───────────────────────────────────────────
+  // The scan queue drains in a MICROTASK: two scans in a row run back-to-back
+  // with no React render (and no passive effect) between them, so `resolveRef`
+  // still points at the PREVIOUS render's `resolve` — whose closure predates
+  // everything the first scan just wrote. Every piece of state that a scan
+  // writes and a later scan (or `save()`) READS therefore gets a ref written
+  // SYNCHRONOUSLY next to its setState:
+  //   cell / selectedId / qty  — the band-3 guard («oldin miqdor kiriting»);
+  //                              without mirrors a burst walks straight past it
+  //                              and the counted-but-unsaved cell is silently
+  //                              swapped for the next one;
+  //   items                    — the «product scanned into the open cell» lookup;
+  //   bulkRows                 — dedupe + `save()`'s snapshot;
+  //   bulkMode / bulkQty       — user-toggled, but read by a scan that can land
+  //                              in the commit→effect window right after the tap.
+  const cellRef = useRef<{ id: string; name: string } | null>(null);
+  const itemsRef = useRef<CellStockItem[]>([]);
+  const selectedIdRef = useRef<string | null>(null);
+  const qtyValueRef = useRef('');
+  const bulkRowsRef = useRef<BulkRow[]>([]);
+  const bulkModeRef = useRef(false);
+  const applyCell = useCallback((next: { id: string; name: string } | null) => {
+    cellRef.current = next;
+    setCell(next);
+  }, []);
+  const applyItems = useCallback((fn: (prev: CellStockItem[]) => CellStockItem[]) => {
+    const next = fn(itemsRef.current);
+    itemsRef.current = next;
+    setItems(next);
+  }, []);
+  const applySelectedId = useCallback((next: string | null) => {
+    selectedIdRef.current = next;
+    setSelectedId(next);
+  }, []);
+  const applyQty = useCallback((next: string) => {
+    qtyValueRef.current = next;
+    setQty(next);
+  }, []);
+  const applyBulkRows = useCallback((fn: (prev: BulkRow[]) => BulkRow[]) => {
+    const next = fn(bulkRowsRef.current);
+    bulkRowsRef.current = next;
+    setBulkRows(next);
+  }, []);
+  const applyBulkMode = useCallback((next: boolean) => {
+    bulkModeRef.current = next;
+    setBulkMode(next);
+  }, []);
+
+  /** §2.2.2: a row with an EMPTY own qty falls back to the common number — and
+   *  it does so at SAVE time, so typing the common number after the rows landed
+   *  still fills them. Reads the ref so `save()` is burst-safe. */
+  const effectiveRowQty = useCallback(
+    (row: { qty: string }) => row.qty.trim() || bulkQtyRef.current.trim(),
+    [],
+  );
+  const findInvalidBulkRow = useCallback(
+    () => bulkRowsRef.current.find((r) => !qtyValidRe.test(effectiveRowQty(r))),
+    [effectiveRowQty],
+  );
 
   // Reset per open; arm the wedge input after Radix's own autofocus.
   useEffect(() => {
     if (!open) return;
-    setCell(null);
-    setItems([]);
-    setSelectedId(null);
-    setQty('');
+    applyCell(null);
+    applyItems(() => []);
+    applySelectedId(null);
+    applyQty('');
     setMessage(null);
     setLastRead(null);
     setValue('');
     setSaving(false);
     setManualKb(false);
-    setBulkMode(false);
+    applyBulkMode(false);
     setBulkQtyClean('');
-    setBulkRows([]);
+    applyBulkRows(() => []);
     setQtyMissing(false);
     const id = requestAnimationFrame(() => inputRef.current?.focus());
     return () => cancelAnimationFrame(id);
-  }, [open, setBulkQtyClean]);
+  }, [
+    open,
+    setBulkQtyClean,
+    applyCell,
+    applyItems,
+    applySelectedId,
+    applyQty,
+    applyBulkMode,
+    applyBulkRows,
+  ]);
 
   const loadItems = useCallback(
     async (target: { id: string; name: string }) => {
@@ -146,26 +226,26 @@ export function CellCountModal({
           `/admin/stores/${storeId}/cells/${target.id}/stock`,
         );
         const list = (res.items ?? []).filter((i) => i.assortmentKind === 'product');
-        setItems(list);
+        applyItems(() => list);
         // A single product auto-selects (spec: cards are for the 2+ case).
-        setSelectedId(list.length === 1 ? (list[0]?.assortmentId ?? null) : null);
-        setQty('');
+        applySelectedId(list.length === 1 ? (list[0]?.assortmentId ?? null) : null);
+        applyQty('');
       } finally {
         setLoadingItems(false);
       }
     },
-    [storeId],
+    [storeId, applyItems, applySelectedId, applyQty],
   );
 
   const selectProduct = useCallback(
     (id: string) => {
-      setSelectedId(id);
-      setQty('');
+      applySelectedId(id);
+      applyQty('');
       // Touch: no qty autofocus — it would pop the keyboard uninvited
       // (owner 2026-07-25); the user taps the field when ready to type.
       if (!coarsePointer) requestAnimationFrame(() => qtyRef.current?.focus());
     },
-    [coarsePointer],
+    [coarsePointer, applySelectedId, applyQty],
   );
 
   // Owner 2026-07-23: the scan field ECHOES what was recognised — the cell's
@@ -188,10 +268,21 @@ export function CellCountModal({
   // single-product cell can ride the bulk lane — anything else answers loudly.
   const bulkAdd = useCallback(
     async (target: { id: string; name: string }) => {
-      const res = await api
-        .get<{ items: CellStockItem[] }>(`/admin/stores/${storeId}/cells/${target.id}/stock`)
-        .catch(() => null);
-      const list = (res?.items ?? []).filter((i) => i.assortmentKind === 'product');
+      // TZ v3 §3: the request FAILING and the cell being EMPTY are two different
+      // facts. They used to share one branch (`.catch(() => null)`), so a 500 or
+      // a dropped connection told the picker «Yacheyka bo'sh» — a lie that can
+      // cost a real recount. Each answers for itself now.
+      let res: { items: CellStockItem[] };
+      try {
+        res = await api.get<{ items: CellStockItem[] }>(
+          `/admin/stores/${storeId}/cells/${target.id}/stock`,
+        );
+      } catch {
+        beep();
+        setMessage({ kind: 'err', text: `${target.name}: ${t('scan_cell_contents_failed')}` });
+        return;
+      }
+      const list = (res.items ?? []).filter((i) => i.assortmentKind === 'product');
       if (list.length === 0) {
         beep();
         setMessage({ kind: 'err', text: `${target.name}: ${t('count_empty')}` });
@@ -204,19 +295,22 @@ export function CellCountModal({
       }
       const p = list[0];
       if (!p) return;
-      setBulkRows((rows) => [
+      applyBulkRows((rows) => [
         {
           key: `${target.id}-${p.assortmentId}`,
           cell: target,
           product: { id: p.assortmentId, name: p.name },
           qty: bulkQtyRef.current,
+          // §2.2.2: what the cell holds NOW — the row shows «hozirgi → bo'ladi»
+          // so the picker sees where the added number lands.
+          currentQty: String(p.qty ?? '0'),
         },
         ...rows.filter((r) => r.key !== `${target.id}-${p.assortmentId}`),
       ]);
       setMessage({ kind: 'ok', text: `${t('count_bulk_added', { name: p.name })}` });
       echoInInput(target.name, true);
     },
-    [storeId, t, echoInInput],
+    [storeId, t, echoInInput, applyBulkRows],
   );
 
   const resolve = useCallback(
@@ -228,20 +322,26 @@ export function CellCountModal({
       const hitCell =
         cells.find((c) => c.barcode === code) ?? cells.find((c) => c.name === code) ?? null;
       const onCell = async (target: { id: string; name: string }) => {
-        if (bulkMode) {
+        if (bulkModeRef.current) {
           await bulkAdd(target);
           return;
         }
         // Band 3 guard: a product is picked but its qty is still empty — the
-        // NEXT cell scan must not silently drop the unfinished count.
-        if (cell && selectedId && !qtyValid) {
+        // NEXT cell scan must not silently drop the unfinished count. Reads the
+        // REFS: in a burst the previous scan's cell/product never reached this
+        // closure, so a state read would walk right past the guard.
+        if (
+          cellRef.current &&
+          selectedIdRef.current &&
+          !qtyValidRe.test(qtyValueRef.current.trim())
+        ) {
           beep();
           setQtyMissing(true);
           setMessage({ kind: 'err', text: t('count_qty_first') });
           requestAnimationFrame(() => qtyRef.current?.focus());
           return;
         }
-        setCell(target);
+        applyCell(target);
         setMessage({ kind: 'ok', text: `${t('scan_cell_label')}: ${target.name}` });
         echoInInput(target.name, true);
         await loadItems(target);
@@ -261,7 +361,7 @@ export function CellCountModal({
         return;
       }
       // Bulk mode counts CELLS only — any other code answers loudly.
-      if (bulkMode) {
+      if (bulkModeRef.current) {
         beep();
         setMessage({ kind: 'err', text: t('count_bulk_cell_only') });
         return;
@@ -292,8 +392,8 @@ export function CellCountModal({
         );
         return exact.length > 0 ? exact : list;
       };
-      if (cell) {
-        const hit = items.find(
+      if (cellRef.current) {
+        const hit = itemsRef.current.find(
           (i) => i.barcode === code || i.code === code || i.assortmentId === code,
         );
         if (hit) {
@@ -305,7 +405,7 @@ export function CellCountModal({
         const winners = await searchProduct();
         const product = winners.length === 1 ? winners[0] : null;
         if (product) {
-          setItems((prev) =>
+          applyItems((prev) =>
             prev.some((x) => x.assortmentId === product.id)
               ? prev
               : [
@@ -331,37 +431,44 @@ export function CellCountModal({
           setMessage({ kind: 'warn', text: t('scan_multiple') });
           return;
         }
+        beep();
         setMessage({ kind: 'err', text: t('count_no_product') });
         return;
       }
       // No cell yet — if the code IS a product, explain the step order.
       const winners = await searchProduct();
       if (winners.length > 0) {
+        beep();
         setMessage({ kind: 'err', text: t('scan_no_cell_yet') });
         return;
       }
+      // TZ v3 §3: an unrecognised code is a REFUSAL — it is heard, not only read.
+      beep();
       setMessage({ kind: 'err', text: t('count_not_found') });
     },
-    [
-      cells,
-      storeId,
-      cell,
-      items,
-      t,
-      loadItems,
-      selectProduct,
-      echoInInput,
-      bulkMode,
-      bulkAdd,
-      selectedId,
-      qtyValid,
-    ],
+    [cells, storeId, t, loadItems, selectProduct, echoInInput, bulkAdd, applyCell, applyItems],
   );
 
   const resolveRef = useRef(resolve);
   useEffect(() => {
     resolveRef.current = resolve;
   }, [resolve]);
+
+  // TZ v3 §3: skanlar navbatga tushadi — hech biri yo'qolmaydi va tartib
+  // saqlanadi. `onError` SINXRON: `void enqueue(...)` qaytgan promise'ni hech
+  // kim kutmagani uchun bu tutqichsiz xato JIM yo'qolardi (masalan yacheyka
+  // tarkibi so'rovi 500 qaytarsa oddiy rejimda ekranda hech nima o'zgarmasdi).
+  // Async handler bersak, uning rejection'i zanjirdan TASHQARIDA qolardi.
+  const enqueue = useScanQueue(
+    (code: string) => resolveRef.current(code),
+    (err) => {
+      beep();
+      setMessage({
+        kind: 'err',
+        text: err instanceof Error ? err.message : t('count_not_found'),
+      });
+    },
+  );
 
   // Owner 2026-07-27 (real-device report): a keyboard-wedge scanner types into
   // WHATEVER field holds the cursor — after tapping «Umumiy miqdor» the next
@@ -416,13 +523,15 @@ export function CellCountModal({
           e.preventDefault();
           e.stopPropagation();
           setVal(base);
-          void resolveRef.current(burst);
+          // §3: through the QUEUE — a wedge burst can fire twice before React
+          // re-renders, and both reads must survive in order.
+          void enqueue(burst);
           return;
         }
         e.preventDefault();
         onPlainEnter?.();
       },
-    [],
+    [enqueue],
   );
 
   // Live name-search (owner 2026-07-28): letters in the scan input → word-start
@@ -469,7 +578,7 @@ export function CellCountModal({
         setMessage({ kind: 'err', text: t('scan_no_cell_yet') });
         return;
       }
-      setItems((prev) =>
+      applyItems((prev) =>
         prev.some((x) => x.assortmentId === p.id)
           ? prev
           : [
@@ -490,12 +599,11 @@ export function CellCountModal({
       setMessage({ kind: 'ok', text: p.name });
       echoInInput(p.name, false);
     },
-    [cell, selectProduct, echoInInput, t],
+    [cell, selectProduct, echoInInput, t, applyItems],
   );
 
-  const onCameraDecoded = useCallback((raw: string) => {
-    void resolveRef.current(raw);
-  }, []);
+  // `enqueue` barqaror havola — kamera hooki qayta ishga tushmaydi.
+  const onCameraDecoded = useCallback((raw: string) => void enqueue(raw), [enqueue]);
   const { videoRef, cameraOn, cameraError, diag, startCamera, stopCamera } = useBarcodeCamera({
     active: open,
     onDecoded: onCameraDecoded,
@@ -504,29 +612,50 @@ export function CellCountModal({
 
   // Owner 2026-07-23: the qty input is ALWAYS live and Save is clickable as
   // soon as a number is typed — a missing cell/product answers with a clear
-  // message instead of a silently dead form.
-  const canSave = bulkMode ? bulkRowsValid && !saving : qtyValid && !saving;
+  // message instead of a silently dead form. §2.2.4: in bulk mode the button is
+  // never SILENTLY dead either — a bad row is refused out loud on the click.
+  const canSave = bulkMode ? bulkRows.length > 0 && !saving : qtyValid && !saving;
 
   const save = useCallback(async () => {
     if (saving) return;
-    if (bulkMode) {
-      // Bulk: write every listed cell with its (common or edited) qty.
-      if (!bulkRowsValid) return;
+    // Reads the REFS, not the render's closure: an Enter inside the qty field
+    // can land in the same microtask as a queued scan (see the ref-mirror note).
+    if (bulkModeRef.current) {
+      // §2.2.4: EVERY row is checked BEFORE the first write — one bad row and
+      // nothing at all is written, with the offending CELL named. A half-applied
+      // batch is unrecoverable in a warehouse: the picker cannot tell which
+      // cells already moved.
+      const invalidRow = findInvalidBulkRow();
+      if (invalidRow) {
+        beep();
+        setMessage({
+          kind: 'err',
+          text: t('count_bulk_row_invalid', { cell: invalidRow.cell.name }),
+        });
+        return;
+      }
+      const rows = bulkRowsRef.current;
+      if (rows.length === 0) return;
       setSaving(true);
       let done = 0;
       try {
-        for (const r of [...bulkRows].reverse()) {
+        for (const r of [...rows].reverse()) {
+          // §2.2.3: bulk ADDS — the delta is computed SERVER-side, so the FE
+          // never reads «current» and writes back an absolute number (that race
+          // is exactly what double-counts a cell two pickers touch at once).
           await api.put(`/admin/stores/${storeId}/cells/${r.cell.id}/stock`, {
             assortmentId: r.product.id,
-            qty: r.qty.trim(),
+            qty: effectiveRowQty(r),
+            mode: 'add',
           });
           done += 1;
-          setBulkRows((rows) => rows.filter((x) => x.key !== r.key));
+          applyBulkRows((prev) => prev.filter((x) => x.key !== r.key));
         }
         toast.success(tCommonSaved);
         onSaved();
         onOpenChange(false);
       } catch (e) {
+        beep();
         setMessage({
           kind: 'err',
           text: t('scan_save_failed', { msg: e instanceof Error ? e.message : String(e) }),
@@ -536,20 +665,28 @@ export function CellCountModal({
       }
       return;
     }
-    if (!qtyValid) return;
-    if (!cell) {
+    const activeCell = cellRef.current;
+    const activeProduct = selectedIdRef.current;
+    const typedQty = qtyValueRef.current.trim();
+    if (!qtyValidRe.test(typedQty)) return;
+    if (!activeCell) {
+      beep();
       setMessage({ kind: 'err', text: t('scan_no_cell_yet') });
       return;
     }
-    if (!selectedId) {
+    if (!activeProduct) {
+      beep();
       setMessage({ kind: 'err', text: t('count_no_product') });
       return;
     }
     setSaving(true);
     try {
-      await api.put(`/admin/stores/${storeId}/cells/${cell.id}/stock`, {
-        assortmentId: selectedId,
-        qty: qty.trim(),
+      // §2.1: single mode stays ABSOLUTE — the picker counted the shelf and
+      // states what is there.
+      await api.put(`/admin/stores/${storeId}/cells/${activeCell.id}/stock`, {
+        assortmentId: activeProduct,
+        qty: typedQty,
+        mode: 'set',
       });
       // Owner 2026-07-25: a short top «Сохранено» note, then the window closes —
       // reopening starts a fresh, ready-to-scan count.
@@ -557,6 +694,7 @@ export function CellCountModal({
       onSaved();
       onOpenChange(false); // spec: Save closes the window
     } catch (e) {
+      beep();
       setMessage({
         kind: 'err',
         text: t('scan_save_failed', { msg: e instanceof Error ? e.message : String(e) }),
@@ -564,13 +702,6 @@ export function CellCountModal({
       setSaving(false);
     }
   }, [
-    bulkMode,
-    bulkRows,
-    bulkRowsValid,
-    cell,
-    selectedId,
-    qty,
-    qtyValid,
     saving,
     storeId,
     onSaved,
@@ -578,6 +709,9 @@ export function CellCountModal({
     t,
     toast,
     tCommonSaved,
+    findInvalidBulkRow,
+    effectiveRowQty,
+    applyBulkRows,
   ]);
 
   return (
@@ -608,15 +742,15 @@ export function CellCountModal({
               // (the scanned-but-unsaved cell / staged bulk rows); a second
               // press with nothing in progress closes the window.
               if (bulkMode && bulkRows.length > 0) {
-                setBulkRows([]);
+                applyBulkRows(() => []);
                 setMessage(null);
                 return;
               }
               if (!bulkMode && cell) {
-                setCell(null);
-                setItems([]);
-                setSelectedId(null);
-                setQty('');
+                applyCell(null);
+                applyItems(() => []);
+                applySelectedId(null);
+                applyQty('');
                 setQtyMissing(false);
                 setMessage(null);
                 inputRef.current?.focus();
@@ -670,7 +804,7 @@ export function CellCountModal({
               e.preventDefault();
               const v = value;
               setValue('');
-              void resolve(v);
+              void enqueue(v);
             }
           }}
           inputMode={coarsePointer && !manualKb ? 'none' : undefined}
@@ -773,45 +907,52 @@ export function CellCountModal({
             </ul>
           ))}
 
-        {/* Counted amount — ALWAYS live (owner 2026-07-23); saving without a
-            scanned product answers «mahsulot topilmadi». Hidden in bulk mode —
-            the common qty above rules there. */}
-        {!bulkMode && (
-          <label className="flex items-center justify-between gap-3">
-            <span className="text-[13px] text-[var(--ms-text-primary)]">
-              {t('count_qty_label')}
-            </span>
-            <Input
-              ref={qtyRef}
-              inputMode="decimal"
-              value={qty}
-              invalid={qtyMissing}
-              onChange={(e) => {
+        {/* TZ v3 §2: ONE number field — flipping the mode does not move it, only
+            its label and its target change. Two fields (one per mode) meant the
+            box jumped under the finger exactly when the picker was typing. */}
+        <label className="flex items-center justify-between gap-3">
+          <span className="text-[13px] text-[var(--ms-text-primary)]">
+            {bulkMode ? t('count_bulk_qty') : t('count_qty_label')}
+          </span>
+          <Input
+            ref={qtyRef}
+            inputMode="decimal"
+            value={bulkMode ? bulkQty : qty}
+            invalid={bulkMode ? bulkQty !== '' && !bulkQtyValid : qtyMissing}
+            onChange={(e) => {
+              if (bulkMode) {
+                setBulkQtyClean(e.target.value);
+                return;
+              }
+              setQtyMissing(false);
+              applyQty(e.target.value);
+            }}
+            onKeyDown={wedgeGuard(
+              'qty',
+              (v) => {
+                if (bulkMode) {
+                  setBulkQtyClean(v);
+                  return;
+                }
                 setQtyMissing(false);
-                setQty(e.target.value);
-              }}
-              onKeyDown={wedgeGuard(
-                'qty',
-                (v) => {
-                  setQtyMissing(false);
-                  setQty(v);
-                },
-                () => void save(),
-              )}
-              placeholder={selectedId ? '' : t('count_select_first')}
-              className="h-9 w-40 text-right tabular-nums"
-              data-test-id="cell-count-qty"
-            />
-          </label>
-        )}
+                applyQty(v);
+              },
+              () => void save(),
+            )}
+            placeholder={bulkMode ? '50' : selectedId ? '' : t('count_select_first')}
+            className="h-9 w-40 text-right tabular-nums"
+            data-test-id="cell-count-qty"
+          />
+        </label>
 
-        {/* «Umumiy sanash» (owner 2026-07-26): common qty once, then cells scan
-            back-to-back; each lands below with an editable qty + ✕. */}
+        {/* «Umumiy sanash» (owner 2026-07-26, TZ v3 §2.2): one common number,
+            then cells scan back-to-back; each lands below with an editable qty
+            + ✕. The number is ADDED to every listed cell on save. */}
         <label className="flex items-center gap-2 text-[13px]">
           <Checkbox
             checked={bulkMode}
             onCheckedChange={(n) => {
-              setBulkMode(n === true);
+              applyBulkMode(n === true);
               setMessage(null);
               setQtyMissing(false);
               inputRef.current?.focus();
@@ -822,61 +963,65 @@ export function CellCountModal({
         </label>
         {bulkMode && (
           <div className="flex flex-col gap-2" data-test-id="cell-count-bulk">
-            <label className="flex items-center justify-between gap-3">
-              <span className="text-[13px] text-[var(--ms-text-primary)]">
-                {t('count_bulk_qty')}
-              </span>
-              <Input
-                inputMode="decimal"
-                value={bulkQty}
-                invalid={bulkQty !== '' && !bulkQtyValid}
-                onChange={(e) => setBulkQtyClean(e.target.value)}
-                onKeyDown={wedgeGuard('bulkQty', setBulkQtyClean)}
-                placeholder="50"
-                className="h-9 w-40 text-right tabular-nums"
-                data-test-id="cell-count-bulk-qty"
-              />
-            </label>
             <p className="text-[12px] text-[var(--ms-text-muted)]">{t('count_bulk_hint')}</p>
             {bulkRows.length > 0 && (
               <ul
                 className="max-h-[220px] divide-y divide-[var(--ms-border-default)] overflow-y-auto rounded-[var(--ms-radius-default)] border border-[var(--ms-border-default)]"
                 data-test-id="cell-count-bulk-rows"
               >
-                {bulkRows.map((r) => (
-                  <li key={r.key} className="flex items-center gap-2 px-2.5 py-1.5">
-                    <span className="shrink-0 rounded bg-[var(--ms-bg-muted)] px-1.5 py-0.5 font-medium text-[12px] text-[var(--ms-text-muted)] tabular-nums">
-                      {r.cell.name}
-                    </span>
-                    <span className="min-w-0 flex-1 truncate text-[13px]">{r.product.name}</span>
-                    <Input
-                      inputMode="decimal"
-                      value={r.qty}
-                      invalid={r.qty !== '' && !qtyValidRe.test(r.qty.trim())}
-                      onChange={(e) =>
-                        setBulkRows((rows) =>
-                          rows.map((x) => (x.key === r.key ? { ...x, qty: e.target.value } : x)),
-                        )
-                      }
-                      onKeyDown={wedgeGuard(`row-${r.key}`, (v) =>
-                        setBulkRows((rows) =>
-                          rows.map((x) => (x.key === r.key ? { ...x, qty: v } : x)),
-                        ),
-                      )}
-                      className="h-8 w-24 shrink-0 text-right tabular-nums"
-                      data-test-id={`cell-count-bulk-qty-${r.cell.name}`}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setBulkRows((rows) => rows.filter((x) => x.key !== r.key))}
-                      className="shrink-0 rounded px-1 text-[14px] text-[var(--ms-text-muted)] hover:bg-[var(--ms-bg-hover)] hover:text-[var(--ms-text-destructive)]"
-                      aria-label={t('scan_cancel')}
-                      data-test-id={`cell-count-bulk-remove-${r.cell.name}`}
+                {bulkRows.map((r) => {
+                  const typed = r.qty.trim() || bulkQty.trim();
+                  const becomes = qtyValidRe.test(typed)
+                    ? fmtQty(Number(r.currentQty) + Number(typed))
+                    : '—';
+                  return (
+                    <li
+                      key={r.key}
+                      className="flex items-center gap-2 px-2.5 py-1.5"
+                      data-test-id={`cell-count-bulk-row-${r.cell.id}`}
                     >
-                      ✕
-                    </button>
-                  </li>
-                ))}
+                      <span className="shrink-0 rounded bg-[var(--ms-bg-muted)] px-1.5 py-0.5 font-medium text-[12px] text-[var(--ms-text-muted)] tabular-nums">
+                        {r.cell.name}
+                      </span>
+                      <span className="min-w-0 flex-1 truncate text-[13px]">{r.product.name}</span>
+                      {/* §2.2.2: the added number must be visibly LANDING somewhere. */}
+                      <span className="shrink-0 text-[11px] text-[var(--ms-text-muted)] tabular-nums">
+                        {t('count_bulk_current')}:{' '}
+                        <span data-test-id={`cell-count-bulk-current-${r.cell.id}`}>
+                          {fmtQty(Number(r.currentQty) || 0)}
+                        </span>{' '}
+                        → {t('count_bulk_becomes')}:{' '}
+                        <span data-test-id={`cell-count-bulk-becomes-${r.cell.id}`}>{becomes}</span>
+                      </span>
+                      <Input
+                        inputMode="decimal"
+                        value={r.qty}
+                        invalid={r.qty !== '' && !qtyValidRe.test(r.qty.trim())}
+                        onChange={(e) =>
+                          applyBulkRows((rows) =>
+                            rows.map((x) => (x.key === r.key ? { ...x, qty: e.target.value } : x)),
+                          )
+                        }
+                        onKeyDown={wedgeGuard(`row-${r.key}`, (v) =>
+                          applyBulkRows((rows) =>
+                            rows.map((x) => (x.key === r.key ? { ...x, qty: v } : x)),
+                          ),
+                        )}
+                        className="h-8 w-24 shrink-0 text-right tabular-nums"
+                        data-test-id={`cell-count-bulk-qty-${r.cell.id}`}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => applyBulkRows((rows) => rows.filter((x) => x.key !== r.key))}
+                        className="shrink-0 rounded px-1 text-[14px] text-[var(--ms-text-muted)] hover:bg-[var(--ms-bg-hover)] hover:text-[var(--ms-text-destructive)]"
+                        aria-label={t('scan_cancel')}
+                        data-test-id={`cell-count-bulk-remove-${r.cell.id}`}
+                      >
+                        ✕
+                      </button>
+                    </li>
+                  );
+                })}
               </ul>
             )}
           </div>
