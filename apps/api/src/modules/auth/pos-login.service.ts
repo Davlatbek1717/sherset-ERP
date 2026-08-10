@@ -48,7 +48,10 @@ export class PosLoginService {
   }> {
     const device = await this.devices.verify(input.deviceId, input.deviceSecret);
 
-    const found = await this.pins.findByPin(input.pin);
+    // Akkaunt qurilmadan keladi — PIN qidiruvi shu akkaunt ICHIDA bo'ladi
+    // (`findByPin` izohi: pepper global, shuning uchun filtrsiz qidiruv begona
+    // ijarachining qatoriga tushib, haqiqiy kassirni bloklardi).
+    const found = await this.pins.findByPin(device.accountId, input.pin);
     if (!found) {
       await this.devices.registerFailure(device.id);
       throw new UnauthorizedException(GENERIC);

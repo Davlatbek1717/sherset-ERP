@@ -107,18 +107,30 @@ export class PosPinService {
   }
 
   /**
-   * PIN bo'yicha xodimni topish — PIN-only kirish (kassa .exe) uchun.
+   * PIN bo'yicha xodimni topish va TASDIQLASH — PIN-only kirish (kassa .exe).
    *
-   * `accountId` bo'yicha filtrlanmaydi: kassir kirishdan OLDIN qaysi akkaunt
-   * ekanini ko'rsatmaydi. Akkaunt mosligini `PosLoginService` tekshiradi —
-   * qurilma yozuvi qaysi akkauntga tegishli ekanini biladi.
+   * 🔴 `accountId` MAJBURIY. Unique cheklov `[accountId, posPinLookup]` — ya'ni
+   * bir xil PIN ikki xil akkauntda bo'lishi MUMKIN, pepper esa global, demak
+   * ularning `posPinLookup` qiymati aynan bir xil. Akkaunt filtrisiz
+   * `findFirst` tartibsiz begona qatorni qaytarib, haqiqiy kassirni O'Z
+   * qurilmasidan bloklardi (5 urinishdan keyin qurilma 15 daqiqaga qulflanadi)
+   * — hujumchisiz, faqat ikki ijarachi bir xil PIN tanlagani uchun.
+   * Qurilma yozuvi akkauntni allaqachon biladi — chaqiruvchi shuni uzatadi.
+   *
+   * Ikki bosqich (sxema shartnomasi, `schema.prisma` `posPinLookup` izohi):
+   * lookup (HMAC) TOPADI — indeks bo'yicha O(1); `posPinHash` (argon2)
+   * TASDIQLAYDI. Argon2'siz butun kirish bitta tuzsiz keyed-hash'ga tayanardi
+   * va HMAC to'qnashuvi noto'g'ri odamni kiritardi.
    */
-  async findByPin(pin: string): Promise<{ employeeId: string } | null> {
+  async findByPin(accountId: string, pin: string): Promise<{ employeeId: string } | null> {
     const row = await this.prisma.client.employee.findFirst({
-      where: { posPinLookup: posPinLookupHash(pin, this.pepper), archived: false },
-      select: { id: true },
+      where: { accountId, posPinLookup: posPinLookupHash(pin, this.pepper), archived: false },
+      select: { id: true, posPinHash: true },
     });
-    return row ? { employeeId: row.id } : null;
+    if (!row?.posPinHash) return null;
+
+    const valid = await argon2.verify(row.posPinHash, pin).catch(() => false);
+    return valid ? { employeeId: row.id } : null;
   }
 
   /** PIN o'rnatilganmi — FE qulfni ko'rsatish/ko'rsatmaslikni shundan biladi. */

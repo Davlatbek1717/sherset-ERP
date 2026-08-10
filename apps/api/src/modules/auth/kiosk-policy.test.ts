@@ -63,7 +63,14 @@ describe('isKioskAllowed — RUXSAT ETILGANLAR', () => {
     ['POST', '/retail-sales'],
     ['POST', '/retail-sales/abc/post'],
     ['GET', '/cashier-sessions/current'],
-    ['GET', '/smena/mine'],
+    // `/sotuv` smenani AYNAN shu ikki yo'l orqali ochadi (controller —
+    // `@Controller('admin/smenas')`). Ilgari ro'yxatda mavjud bo'lmagan
+    // `/smena/mine` turardi: kiosk-kassir smena ocholmay 403 olardi.
+    ['GET', '/admin/smenas/mine'],
+    ['POST', '/admin/smenas/open-session'],
+    // Chek printeri nomi shu yerdan o'qiladi (`print-agent.ts`); yo'q bo'lsa
+    // native chop etish jimgina brauzer-popup'ga tushardi.
+    ['GET', '/sklad-keepers'],
     ['GET', '/products?q=viko'],
     ['GET', '/counterparties'],
     ['POST', '/counterparties'],
@@ -89,6 +96,13 @@ describe('isKioskAllowed — DEFAULT DENY', () => {
     ['GET', '/supplies'],
     ['GET', '/payments-in'],
     ['GET', '/stores'],
+    // 🔴 `/admin/smenas` ostidan FAQAT ikki aniq yo'l ochilgan — butun
+    // `/admin` emas. Bu qatorlar ro'yxat kengayib ketmasligini qo'riqlaydi.
+    ['GET', '/admin/smenas'],
+    ['POST', '/admin/smenas'],
+    ['DELETE', '/admin/smenas/abc'],
+    ['GET', '/admin/users'],
+    ['POST', '/admin/smenas/mine'],
   ])('%s %s → RAD (UI yashirish yetarli emas)', (method, path) => {
     expect(isKioskAllowed(method, normalizePath(path))).toBe(false);
   });

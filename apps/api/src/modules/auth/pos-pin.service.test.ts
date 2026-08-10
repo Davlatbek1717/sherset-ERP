@@ -1,4 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
+import * as argon2 from 'argon2';
 import { describe, expect, it, vi } from 'vitest';
 import { PosPinService } from './pos-pin.service.js';
 
@@ -70,9 +71,11 @@ describe('PosPinService.clearPin', () => {
 describe('PosPinService.findByPin', () => {
   it('lookup bo`yicha xodimni topadi', async () => {
     const { prisma, employee } = makePrisma();
-    employee.findFirst = vi.fn().mockResolvedValue({ id: 'emp-7' });
+    employee.findFirst = vi
+      .fn()
+      .mockResolvedValue({ id: 'emp-7', posPinHash: await argon2.hash('1234') });
     const svc = new PosPinService(prisma, CONFIG);
-    expect(await svc.findByPin('1234')).toEqual({ employeeId: 'emp-7' });
+    expect(await svc.findByPin('acc-1', '1234')).toEqual({ employeeId: 'emp-7' });
     // Qidiruv AYNAN lookup ustuni bo'yicha ketishi shart (jadval skanerlash emas).
     const where = employee.findFirst.mock.calls[0]?.[0]?.where;
     expect(where).toHaveProperty('posPinLookup');
@@ -81,19 +84,49 @@ describe('PosPinService.findByPin', () => {
     expect(where.archived).toBe(false);
   });
 
+  it('AKKAUNT bo`yicha filtrlaydi — pepper global, lookup akkauntlararo bir xil', async () => {
+    const { prisma, employee } = makePrisma();
+    employee.findFirst = vi
+      .fn()
+      .mockResolvedValue({ id: 'emp-7', posPinHash: await argon2.hash('1234') });
+    const svc = new PosPinService(prisma, CONFIG);
+    await svc.findByPin('acc-1', '1234');
+    // Unique cheklov [accountId, posPinLookup] — ya'ni bir xil PIN IKKI akkauntda
+    // bo'lishi mumkin. Filtrsiz `findFirst` tartibsiz begona qatorni qaytarib,
+    // haqiqiy kassirni o'z qurilmasidan bloklardi (qurilma qulfigacha).
+    expect(employee.findFirst.mock.calls[0]?.[0]?.where?.accountId).toBe('acc-1');
+  });
+
+  it('argon2 xeshi mos kelmasa RAD ETADI (HMAC to`qnashuviga qarshi ikkinchi to`siq)', async () => {
+    const { prisma, employee } = makePrisma();
+    employee.findFirst = vi
+      .fn()
+      .mockResolvedValue({ id: 'emp-7', posPinHash: await argon2.hash('9999') });
+    const svc = new PosPinService(prisma, CONFIG);
+    // Lookup topdi, lekin xesh boshqa PIN'niki — kirish berilmaydi.
+    expect(await svc.findByPin('acc-1', '1234')).toBeNull();
+  });
+
+  it('posPinHash NULL bo`lsa rad etadi (yarim yozilgan qator)', async () => {
+    const { prisma, employee } = makePrisma();
+    employee.findFirst = vi.fn().mockResolvedValue({ id: 'emp-7', posPinHash: null });
+    const svc = new PosPinService(prisma, CONFIG);
+    expect(await svc.findByPin('acc-1', '1234')).toBeNull();
+  });
+
   it('topilmasa null', async () => {
     const { prisma, employee } = makePrisma();
     employee.findFirst = vi.fn().mockResolvedValue(null);
     const svc = new PosPinService(prisma, CONFIG);
-    expect(await svc.findByPin('9999')).toBeNull();
+    expect(await svc.findByPin('acc-1', '9999')).toBeNull();
   });
 
   it('turli PIN — turli lookup (bir xil qiymat qidirilmaydi)', async () => {
     const { prisma, employee } = makePrisma();
     employee.findFirst = vi.fn().mockResolvedValue(null);
     const svc = new PosPinService(prisma, CONFIG);
-    await svc.findByPin('1111');
-    await svc.findByPin('2222');
+    await svc.findByPin('acc-1', '1111');
+    await svc.findByPin('acc-1', '2222');
     const a = employee.findFirst.mock.calls[0]?.[0]?.where?.posPinLookup;
     const b = employee.findFirst.mock.calls[1]?.[0]?.where?.posPinLookup;
     expect(a).not.toBe(b);

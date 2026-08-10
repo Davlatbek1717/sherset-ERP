@@ -199,6 +199,11 @@ const INTENTIONALLY_OPEN: Record<string, string> = {
   'AuthController#changePassword': 'o`z paroli (eski parol talab qilinadi)',
   'AuthController#setPosPin': 'o`z POS-PIN kodi',
   'AuthController#verifyPosPin': 'PIN tekshiruvi — kassa oynasi',
+  // Kassa .exe kirish nuqtasi: token SHU YERDA beriladi, demak ruxsat
+  // tekshirib bo'lmaydi. Ochiq emas — ikki omil talab qilinadi: juftlangan
+  // qurilma kaliti (argon2, `PosDeviceService.verify`) + PIN (lookup topadi,
+  // argon2 tasdiqlaydi). Qurilmasiz so'rov 401 oladi.
+  'AuthController#posLoginHandler': 'PIN-login — token shu yerda beriladi (qurilma kaliti + PIN)',
 
   // ── Webhook: autentifikatsiya = provayder imzosi / maxfiy token ──
   'ClickWebhookController#webhook': 'Click imzosi tekshiriladi',

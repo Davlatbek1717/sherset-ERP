@@ -49,7 +49,12 @@ export const KIOSK_ALLOWED: readonly Rule[] = [
   // ── Kassaning o'z ishi ────────────────────────────────────────────────────
   { prefix: '/retail-sales', methods: ['*'], why: 'kassa sotuvi — asosiy ish' },
   { prefix: '/cashier-sessions', methods: ['*'], why: "o'z smenasi: ochish/yopish/kirim/chiqim" },
-  { prefix: '/smena/mine', methods: ['GET'], why: "o'z jadvali" },
+  // 🔴 AYNAN ikki yo'l — butun `/admin` EMAS. `/sotuv` smenani shu yerdan
+  // ochadi (controller `@Controller('admin/smenas')`). Ilgari bu yerda
+  // mavjud bo'lmagan `/smena/mine` turardi: kiosk-kassir jadvalini ham
+  // ko'rmasdi, smenani ham ocholmasdi — har ikkala so'rov 403 olardi.
+  { prefix: '/admin/smenas/mine', methods: ['GET'], why: "o'z jadvali" },
+  { prefix: '/admin/smenas/open-session', methods: ['POST'], why: 'smena ochish' },
 
   // ── O'qish uchun ochiq ma'lumotnomalar ────────────────────────────────────
   { prefix: '/products', methods: ['GET'], why: 'tovar qidiruv va narx' },
@@ -60,6 +65,10 @@ export const KIOSK_ALLOWED: readonly Rule[] = [
   { prefix: '/currencies', methods: ['GET'], why: 'USD naqd uchun' },
   { prefix: '/exchange-rates', methods: ['GET'], why: 'USD kursi (muzlatiladi)' },
   { prefix: '/company-settings', methods: ['GET'], why: 'chek sozlamalari' },
+  // Chek printeri nomi (`receiptPrinterName`) shu yerdan o'qiladi —
+  // `print-agent.ts` uni har chop etishdan oldin so'raydi. Ro'yxatda
+  // bo'lmagani uchun kiosk'da native chop etish jimgina popup'ga tushardi.
+  { prefix: '/sklad-keepers', methods: ['GET'], why: 'chek printeri sozlamasi' },
 
   // ── Mijoz: o'qish + YARATISH (kassada yangi mijoz ochiladi) ───────────────
   { prefix: '/counterparties', methods: ['GET', 'POST'], why: 'mijoz qidirish va kassada ochish' },
