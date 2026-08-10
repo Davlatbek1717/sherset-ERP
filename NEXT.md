@@ -331,6 +331,58 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-08-10l (REJA-KPI-SODDALASHTIRISH **KPI-02 + KPI-04** — CRUD API + «todo» ekranlari) —
+> **Phase-1: strukturaviy + unit + MUTANT-tasdiqlangan, browser-smoke YO'Q**. Commit `9bd914d7`.
+> To'liq hisobot: `docs/REJA-KPI-SODDALASHTIRISH-2026-08.md` → «HISOBOT JURNALI» → KPI-02, KPI-04.**
+>
+> **Nega ikkitasi birga.** Sessiya KPI-04 uchun ochildi, lekin bog'liqlik (KPI-02 CRUD API) kodda
+> YO'Q edi (`grep EmployeeKpiTarget apps/api/src` = 0). Foydalanuvchi «ikkalasini birga» deb
+> tanladi (CLAUDE.md §0.3 dan chekinish — ataylab, so'ralgan).
+>
+> **KPI-02 (API).** 6 route `manager/kpi` prefiksida:
+> `GET employee/:id/targets` · `GET targets` (filtrli menejer kesimi) · `POST employee/:id/targets` ·
+> `PATCH targets/:id` · `DELETE targets/:id` · `POST targets/:id/done`. Har handler
+> `employees:full` (class guard + handler talabi BIRGA).
+>
+> **🔴 Keyingi sessiya SHUNI bilishi kerak — birlik shartnomasi ASIMMETRIK va bu ATAYLAB.**
+> Kirish maydoni **`targetValue` = ko'rinish birligi (pul → so'm)**, chiqish maydoni
+> **`targetMinor` = tiyin**. Nom farqi yagona himoya: bir xil nomlansa FE ham o'girishga urinib pul
+> **100×** ketardi. O'girish FAQAT serverda (`Money.fromMajor`). Eski `PUT …/config` yo'li hamon
+> so'mni FE'da tiyinga o'giradi — ikki yo'l ikki konvensiyada, aralashtirma.
+> Yana: `unit`/`currency` DTO'da UMUMAN yo'q (Zod strip qiladi) — katalogdan olinadi, aks holda
+> DB'ning `currency ↔ unit` CHECK'i buzilardi. `weight` NULL ≠ 0.
+>
+> **KPI-04 (UI).** Xodim kartasi KPI tabi (486→302 qator) butun-katalog jadvalidan biriktirilgan
+> KPI ro'yxatiga aylandi: «og'irlik 100%» talabi va versiya raqami YO'Q. Yangi `/menejer/kpi`
+> (subnav + command-palette). Og'irlik «Kengaytirilgan» ostida — yopiq bo'lsa so'rovga TUSHMAYDI.
+> Uch holat uch xil: `null → «—»`, `0 → «0»`. DOM bayroqlari: `data-scored`, `data-fact-complete`,
+> `data-manual`.
+>
+> **🐞 Yangi tuzoq (hujjatlandi, boshqa modullarga ham tegishli).** `*.module.ts` ning
+> `controllers:`/`providers:` massivi ICHIDAGI izohda **kvadrat qavs** ishlatilsa
+> (`[[wiki-havola]]`), `*-wiring.test.ts` fayllarining `moduleArray()` parseri (`indexOf(']')`,
+> izohni tozalamaydi) ro'yxatni erta kesadi va **begona testlar yiqiladi**. `app-boot.test.ts`
+> tushmaydi (u `stripComments` qiladi).
+>
+> **Gate.** api+web typecheck **0** · `lint:product` **0 error** · `i18n:gate` **9/9** ·
+> api vitest **7601 passed (533 fayl)** · web vitest **3146 passed (218 fayl)**.
+> **4 mutant** qo'llanib testlarning vakuum emasligi o'lchandi (8 test yiqildi; revert diff-toza).
+>
+> **⏭️ KEYINGI VAZIFA:** `docs/REJA-KPI-SODDALASHTIRISH-2026-08.md` → **KPI-05** (oylik ball
+> og'irlikni ixtiyoriy qabul qiladi: kompozit Σ(fakt%×w)÷Σ(w), `weight=NULL` ballanmaydi, hammasi
+> ballsiz → kompozit `null`, o'tgan oy `HrKpiMonthlyScore` qayta yozilmaydi). Keyin **KPI-06**
+> (brauzer QA — faqat undan keyin «verified» deyish mumkin).
+>
+> **Ochiq qarz.** Prodda `employees:full` ruxsat qatorlari seed qilinganini tekshirish
+> ([[stale-seeded-db-missing-permission-rows]] — yo'q bo'lsa admin ham 403) ·
+> `KpiConfigService`/`getConfig`/`saveConfig`/`daily` endi UI'dan chaqirilmaydi (o'lik kod qarzi,
+> KPI-05 dan keyin qaror).
+>
+> **Parallel sessiyalar.** Shu sessiya davomida ikkita boshqa sessiya ishladi: biri **KPI-03** ni
+> commit qildi (`cdd0112c`), ikkinchisi `retail-sale`/`sotuv` ustida (commit qilinmagan). Diff'im
+> yo'l-cheklangan; commitga faqat 19 fayl + hook qayta-yozgan `docs/progress.json` tushdi
+> (`git show --stat HEAD` bilan tasdiqlandi).
+
 > **🕒 2026-08-10k (REJA-KPI-SODDALASHTIRISH **KPI-03** — dvigatel ko'prigi: maqsad yangi qatlamdan +
 > KUNGA MUHRLANADI) — **Phase-1: strukturaviy + unit + jonli DB CHECK-tasdiqlangan, browser-smoke YO'Q**.
 > To'liq hisobot: `docs/REJA-KPI-SODDALASHTIRISH-2026-08.md` → «HISOBOT JURNALI» → KPI-03.**
