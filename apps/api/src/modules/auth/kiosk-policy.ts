@@ -84,8 +84,24 @@ export const KIOSK_ALLOWED: readonly Rule[] = [
   // bo'lmagani uchun kiosk'da native chop etish jimgina popup'ga tushardi.
   { prefix: '/sklad-keepers', methods: ['GET'], why: 'chek printeri sozlamasi' },
 
-  // ── Mijoz: o'qish + YARATISH (kassada yangi mijoz ochiladi) ───────────────
-  { prefix: '/counterparties', methods: ['GET', 'POST'], why: 'mijoz qidirish va kassada ochish' },
+  // ── Mijoz: o'qish + YARATISH + TOR tahrir (F9 mijoz kartasi) ─────────────
+  // 🔴 To'rt AYNIQ qator — ilgari bu yerda bitta PREFIKS qoida turardi
+  // (`/counterparties`, GET+POST, `exact`siz). U butun daraxtni ochardi:
+  // `POST /counterparties/bulk-delete`, `bulk-update`, `bulk-import`,
+  // `:id/archive`, `:id/clone`, `:id/bank-accounts`, `GET :id/metrics`
+  // (foyda/marja paneli) — hammasi kioskka yetib borardi va ularni faqat
+  // IKKINCHI qatlam (ruxsat matritsasi) to'xtatardi. Kiosk ro'yxati esa
+  // aynan «URL bilan kirish bloklansin» uchun bor (TZ §3.1).
+  { prefix: '/counterparties', methods: ['GET', 'POST'], exact: true, why: 'mijoz qidirish (telefon/ism) va kassada yangi mijoz ochish' },
+  { prefix: '/counterparties/:id', methods: ['GET'], exact: true, why: 'mijoz kartasi — nom, telefon, izoh' },
+  // Tahrir AYNAN shu tor yo'ldan: faqat `phone` va `description`. To'liq
+  // `PATCH /counterparties/:id` (nom, narx turi, egasi, teglar) YOPIQ qoladi.
+  {
+    prefix: '/counterparties/:id/pos-contact',
+    methods: ['PATCH'],
+    exact: true,
+    why: 'kassada telefon/izohni tuzatish — to`liq karta emas',
+  },
 
   // ── Zakazlar (F7): KO'RISH + `draft → confirmed` TASDIQLASH ──────────────
   // 🔴 Uch AYNIQ qator — `methods: ['*']` EMAS. `/customer-orders` ostida
