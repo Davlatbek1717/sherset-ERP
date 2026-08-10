@@ -129,7 +129,7 @@ Fazalar davomida to'planadigan prod-amallar. `/deploy` skript bilan bajariladi.
 
 ## FAZALAR
 
-### KPI-01 — `EmployeeKpiTarget` modeli + migratsiya + profil-maqsadlaridan backfill ☐ HISOBOT
+### KPI-01 — `EmployeeKpiTarget` modeli + migratsiya + profil-maqsadlaridan backfill ☑ HISOBOT (2026-08-10)
 **Bo'lim/blok:** KPI-soddalashtirish · **TZ:** `2026-08-02-menejer-kunlik-kpi-tz-design.md` §2.5, §9
 **Ustuvorlik:** P0 · **Bog'liqlik:** yo'q · **Holat:** ochiq (sxemada `KpiTarget`/`EmployeeKpiTarget` YO'Q — tasdiqlangan: `grep "model KpiTarget" schema.prisma` = 0)
 **Maqsad:** Mustaqil, versiyalanmaydigan KPI-maqsad qatlamini bazaga kiritish — **xulqni o'zgartirmasdan**:
@@ -347,8 +347,89 @@ buglar darhol (issiq-kontekst) tuzatiladi.
 > Har faza agenti o'z fazasini tugatgach shu yerga yozadi (append yoki aniq Edit — marker-kesish TAQIQ).
 > Shablon: **Nima qilindi · Fayllar · Testlar (yashil son) · Gate natijasi · OPS-QADAM (bo'lsa) · Ochiq qarz.**
 
-### KPI-01 — _(kutilmoqda)_
-### KPI-02 — _(kutilmoqda)_
+### KPI-01 — ✅ 2026-08-10 (Phase-1: strukturaviy + unit + **jonli DB xulq**-tasdiqlangan, browser-smoke YO'Q)
+
+**Nima qilindi.** Yengil, versiyalanmaydigan «biriktirilgan KPI» ombori bazaga kiritildi va mavjud
+profil maqsadlari unga idempotent ko'chirildi. **Xulq o'zgarmadi** — dvigatel hali eski yo'ldan
+o'qiydi (ko'prik KPI-03), API/servis bu fazada YOZILMADI.
+
+- `EmployeeKpiTarget` — xodim × metrika × davr → maqsad. `targetValue BigInt?` (NULL = raqamsiz
+  «todo»), `weight Decimal(5,2)?` (**NULL = oylik balldan tashqarida** — «og'irlik ixtiyoriy» ning
+  yagona manbai), `manualDoneAt`, `active`, `@@unique([employeeId, metricKey, period])`,
+  2 indeks (`[accountId, employeeId, active]`, `[accountId, metricKey]`).
+- `EmployeeKpiTargetEvent` — append-only jurnal; `targetId` **nullable + `onDelete: SetNull`**,
+  ya'ni maqsad qatori o'chsa event QOLADI; `payloadJson` — o'sha ondagi qiymatlar **matni**
+  ([[journal-copies-text-not-reference]]).
+- **🔴 Rejadan CHEKINISH (asoslangan):** rejada `unit` ustuni yo'q edi, lekin `money ↔ currency`
+  CHECK'ini **birliksiz yozib bo'lmaydi** — CHECK boshqa jadvalni (`kpi_metric_defs.unit`) ko'ra
+  olmaydi. Shuning uchun `unit VARCHAR(10)` qatorga **denormallashtirildi** (aynan
+  `sales_plans.plan_type` naqshi) va CHECK ikki tomonlama yozildi. Alternativalar rad etildi:
+  kompozit FK (`account_id, key, unit`) built-in metrikani bloklardi — ularning hisob bo'yicha
+  `kpi_metric_defs` qatori bo'lmasligi mumkin; trigger — repoda naqsh yo'q.
+- `metric_key` ga **FK ATAYLAB YO'Q** (built-in katalogning asl manbai — kod, `kpi-metrics.ts`).
+- CHECK'lar: `unit` yopiq lug'at · `period IN (daily, weekly, monthly)` · `currency ↔ unit`
+  ikki tomonlama · `target_value >= 0` (NULL ruxsat) · `weight 0…100` (NULL ruxsat) ·
+  event `action` yopiq lug'at.
+- **Backfill (migratsiya ichida, idempotent):** `employee_id` to'ldirilgan (xodimga biriktirilgan),
+  arxivlanmagan profillarning **eng oxirgi versiyasidan** (`LATERAL` + `version DESC`) →
+  `period='daily'`, `weight`/`target` **aynan** ko'chadi, valyuta `accounts.currency` dan va faqat
+  `money` birlikda. `ON CONFLICT … DO NOTHING` (DO UPDATE ATAYLAB EMAS — menejer tahririni jimgina
+  bekor qilardi). **Lavozim profillari ko'chirilmaydi** (ular KPI-03 resolveriga baza bo'lib qoladi).
+
+**Fayllar.** `packages/db/prisma/schema.prisma` (2 model + `Account`/`Employee` back-relation) ·
+`packages/db/prisma/migrations/20260810160000_employee_kpi_target/migration.sql` (yangi) ·
+`apps/api/src/modules/manager/kpi/employee-kpi-target-schema.test.ts` (yangi, 22 test) ·
+`scripts/probe-employee-kpi-target.mts` (yangi, jonli-DB probe) · `todo.md` (4M.10 qarz qaydi).
+
+**Testlar.** TDD: avval **22 RED** (sxema/migratsiya yo'q) va probe RED (`42P01 relation does not
+exist`), keyin implementatsiya → yashil.
+- Vitest guard: **22/22** — sxema shartnomasi + migratsiya CHECK/backfill matni.
+- Jonli DB probe (`climart_adopt`, hammasi rollback qilinadigan tranzaksiyada): **19/19** —
+  (1) `money`+currency NULL → **23514**, `count`+currency → **23514**, to'g'ri juftliklar qabul,
+  notanish birlik/davr → 23514; (2) takror `(xodim, metrika, davr)` → **23505**, boshqa davr qabul;
+  (3) backfill aynan ko'chgan (**14 qator · 4 xodim** — vacuous emasligi alohida o'lchandi),
+  lavozim-profil qatori 0, valyuta birlikka mos; (4) backfill bloki qayta yugurtirildi → dublikat
+  **yo'q** (18→18); (5) cross-tenant — B hisobining qatori A kesimida ko'rinmaydi;
+  (6) target o'chirilgach event qoldi (`target_id` → NULL), notanish `action` → 23514;
+  (7) **mutant**: ataylab yangi profil versiyasi qo'yildi → backfill **yangisini** oldi
+  (`target=987654 weight=42.00`), ya'ni «eng oxirgi versiya» da'vosi vacuous emas.
+
+**Gate.** `@moysklad/api typecheck` **0** · `pnpm lint:product` **0 error** · `@moysklad/api vitest`
+**7500 passed / 1 skipped (531 fayl)** — regress yo'q · `prisma migrate diff --from-url … `
+yangi jadvallar bo'yicha **drift yo'q**. i18n gate — UI matn tegilmagani uchun tegishli emas.
+
+**Lokal DB.** Migratsiya `climart_adopt` ga `prisma db execute` bilan qo'llandi (14 qator backfill).
+`prisma migrate dev` ISHLATILMADI: shu bazada `_prisma_migrations` **buzuq** — `20260419135104_init`
+`finished_at IS NULL` (failed) va jami 2 qator, ya'ni migratsiya tarixi bu yerda haqiqiy emas
+([[climart-adopt-local-db-untracked]] tasdiqlandi).
+
+**OPS-QADAM (prod).** `/deploy` → `prisma migrate deploy` migratsiyani `sherset_v2` ga qo'llaydi;
+backfill migratsiya ICHIDA va idempotent. Deploydan oldin **pre-deploy backup** (disk 93% —
+eski backuplarni tozalash, [[sherset-vps-deploy]]).
+
+**Parallel sessiya.** KPI-02 sessiyasi shu payt ochilgan va to'g'ri to'xtagan (pastdagi bloker
+qaydi). Uning `docs/` qaydi shu commitga qo'shildi (bir fayl, ikki hunk) — boshqa hech qanday
+begona o'zgarishga tegilmadi.
+
+**Ochiq qarz.** KPI-02 (CRUD API + ruxsat) · KPI-03 (dvigatel ko'prigi — **`kpi-target.ts` hamon
+chaqirilmaydi, o'lik kod**; kungi maqsadni `EmployeeDailyKpiMetric` ga muhrlash SHU FAZADA
+QILINMADI, mavjudligini KPI-03 kodda tasdiqlashi shart) · KPI-04 (UI) · KPI-05 (og'irlik
+normalizatsiyasi) · KPI-06 (brauzer QA). **Browser-smoke YO'Q.**
+
+### KPI-02 — _(kutilmoqda — 2026-08-10 da BOSHLANMADI, bloker)_
+- **2026-08-10 13:53 · bloker qaydi (kod yozilmagan, hech narsaga tegilmagan).** KPI-02 sessiyasi
+  ochildi, lekin bog'liqlik tasdiqlanmadi (O'ZGARMAS QOIDA №2):
+  - `EmployeeKpiTarget` / `EmployeeKpiTargetEvent` `schema.prisma` da **YO'Q** (0 moslik);
+    KPI migratsiyasi yo'q (oxirgisi `20260810150000_lost_customer_reason`); `main` va 3 ta
+    `worktree-wf_*` branchda ham yo'q (4/4 = 0). Ya'ni KPI-01 bajarilmagan.
+  - KPI-01 ni shu sessiyada bajarishga o'tilganda ma'lum bo'ldiki, **parallel sessiya aynan
+    KPI-01 ni yozmoqda**: `apps/api/src/modules/manager/kpi/employee-kpi-target-schema.test.ts`
+    (untracked, mtime 13:53:08 — tekshiruv paytidan 5 soniya oldin) — TDD RED bosqichi;
+    `schema.prisma` hali tegilmagan, `migrations/20260810160000_employee_kpi_target/` hali yo'q.
+  - Sessiya **to'xtatildi** (CLAUDE.md §6.1 — begona o'zgarishga tegma; §6.4 — migratsiya va lokal
+    `climart_adopt` umumiy resurs; [[parallel-worktree-duplicate-work]]).
+- **Keyingi sessiya uchun:** KPI-01 commit tushganini tasdiqla (`grep "model EmployeeKpiTarget"
+  packages/db/prisma/schema.prisma` + migratsiya papkasi), keyin KPI-02 promptini yubor.
 ### KPI-03 — _(kutilmoqda)_
 ### KPI-04 — _(kutilmoqda)_
 ### KPI-05 — _(kutilmoqda)_

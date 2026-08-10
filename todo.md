@@ -275,6 +275,11 @@ kuniga **3 sessiya** → **~6 hafta**.
       **QARZ:** `KpiTarget` Prisma modeli + migratsiya hamon **YO'Q** ⇒ `kpi-target.ts` chaqirilmaydi
       (o'lik kod) · servis/controller wiring yo'q · FE yo'q · §2.5 ta'til/ramp/yarim-stavka → MK43.
       Katakcha **MK13-ikkinchi qism** tugagach belgilanadi.
+      **2026-08-10 (KPI-01):** DB qatlami keldi, lekin `KpiTarget` EMAS —
+      `EmployeeKpiTarget` + `EmployeeKpiTargetEvent` (`20260810160000_employee_kpi_target`,
+      versiyalanmaydigan yengil qatlam, og'irlik ixtiyoriy). Reja —
+      `docs/REJA-KPI-SODDALASHTIRISH-2026-08.md`. `kpi-target.ts` HALI ham chaqirilmaydi:
+      dvigatel ko'prigi **KPI-03**, CRUD API **KPI-02**.
 - [ ] **4M Phase-2 QA** — rad→tushuntirish · eskalatsiya · majburiy yopish · tuzatma dialogi ·
       **RU-locale** · o'z-KPI dialogi · **xodim tomoni FE** (BE tayyor, FE yo'q)
 

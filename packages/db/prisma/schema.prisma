@@ -132,6 +132,8 @@ model Account {
   employeeDailyKpis              EmployeeDailyKpi[]
   employeeDailyKpiMetrics        EmployeeDailyKpiMetric[]
   employeeDailyKpiEvents         EmployeeDailyKpiEvent[]
+  employeeKpiTargets             EmployeeKpiTarget[]
+  employeeKpiTargetEvents        EmployeeKpiTargetEvent[]
   retailSalePayments             RetailSalePayment[]
   shiftSchedules                 ShiftSchedule[]
   smenas                         Smena[]
@@ -415,6 +417,10 @@ model Employee {
   cashierAuditEvents         CashierAuditEvent[]        @relation("CashierAuditEventEmployee")
   employeeDailyKpis          EmployeeDailyKpi[]         @relation("EmployeeDailyKpiEmployee")
   kpiProfiles                KpiProfile[]               @relation("KpiProfileEmployee")
+  kpiTargets                 EmployeeKpiTarget[]        @relation("EmployeeKpiTargetEmployee")
+  createdKpiTargets          EmployeeKpiTarget[]        @relation("EmployeeKpiTargetActor")
+  kpiTargetEvents            EmployeeKpiTargetEvent[]   @relation("EmployeeKpiTargetEventEmployee")
+  actedKpiTargetEvents       EmployeeKpiTargetEvent[]   @relation("EmployeeKpiTargetEventActor")
   smenaAssignments           SmenaEmployee[]            @relation("SmenaEmployees")
   ownedRetailSales           RetailSale[]               @relation("RetailSaleOwner")
   ownedOrganizations         Organization[]             @relation("OrganizationOwner")
@@ -10492,6 +10498,124 @@ model EmployeeDailyKpiEvent {
   // «Kim ko'p tuzatgan» va sabab-kodi statistikasi.
   @@index([accountId, action, createdAt(sort: Desc)])
   @@map("employee_daily_kpi_events")
+}
+
+/// EmployeeKpiTarget — 🆕 KPI-01: XODIMGA BIRIKTIRILGAN maqsad («todo» qatlami).
+///
+/// ## Nega yangi jadval
+/// Bugun bitta xodimga bitta KPI biriktirish TO'RT jadval talab qiladi:
+/// `KpiMetricDef` → `KpiProfile` → `KpiProfileVersion` → `KpiProfileMetric`,
+/// ustiga og'irliklar 100% ga yig'ilishi kerak (bitta KPI qo'shish = qolganini
+/// qayta muvozanatlash) va saqlash YANGI VERSIYA yozadi. Bu — «todo»ning aksi.
+/// Shu jadval mustaqil QATOR beradi: xodim × metrika × davr → maqsad.
+///
+/// ## 🔴 VERSIYALANMAYDI — tarixni per-kun snapshot muzlatadi
+/// `KpiProfileVersion` ning maqsadi «o'tgan oyning raqami o'zgarmasin» edi.
+/// O'sha kafolatni bu qatlam versiyasiz oladi: `EmployeeDailyKpiMetric`
+/// o'sha kungi maqsad+faktni allaqachon MUHRLAB saqlaydi (tan-narx muzlatish
+/// klassi). Shuning uchun bu yerdagi tahrir faqat **kelajak** kunlarga ta'sir
+/// qiladi; o'tgan kunlar o'z muhridan o'qiydi. (Muhrlash ko'prigi — KPI-03.)
+///
+/// ## Og'irlik IXTIYORIY — «todo» ning yagona manbai
+/// `weight = NULL` → KPI o'lchanadi/kuzatiladi, lekin oylik ballga KIRMAYDI.
+/// Og'irlik qo'yilsa — formal ballash yo'li (payroll) buzilmagan holda ishlaydi
+/// (normalizatsiya — KPI-05).
+model EmployeeKpiTarget {
+  id         String @id @default(uuid()) @db.Uuid
+  accountId  String @map("account_id") @db.Uuid
+  employeeId String @map("employee_id") @db.Uuid
+
+  /// `kpi_metric_defs.key` ga ishora — built-in katalog kaliti YOKI menejer
+  /// qo'lda kiritgan (custom) kalit. FK ATAYLAB YO'Q: built-in metrikaning
+  /// hisob bo'yicha `kpi_metric_defs` qatori bo'lmasligi mumkin (katalogning
+  /// asl manbai — kod, `kpi-metrics.ts`), FK esa ularni bloklardi.
+  metricKey String @map("metric_key") @db.VarChar(50)
+
+  /// 🔴 `money` | `count` | `percent` | `minutes` — metrikaning birligi QATORDA
+  /// DENORMALLASHTIRILGAN. Nega: `currency` ni birlik bilan bog'lovchi CHECK
+  /// boshqa jadvalni (`kpi_metric_defs.unit`) KO'RA OLMAYDI, ya'ni birliksiz
+  /// CHECK yozib bo'lmaydi. Naqsh `sales_plans.plan_type` bilan bir xil.
+  /// Yozuvchi (KPI-02 servisi) buni katalogdan oladi — qo'lda kiritilmaydi.
+  unit String @db.VarChar(10)
+
+  /// Maqsad — metrikaning O'Z birligida, butun son (pul = tiyin, dona = dona).
+  /// NULL = RAQAMSIZ maqsad («todo»: faqat bajarildi/bajarilmadi). 0 EMAS —
+  /// «maqsad 0» har qanday faktni «bajarildi» qilib ko'rsatardi.
+  targetValue BigInt? @map("target_value")
+
+  /// `daily` | `weekly` | `monthly` (TZ §2.5 lug'ati). Haftalik/oylik qator
+  /// kunlik ballga JIMGINA bo'linmaydi — u faqat o'z davri so'rovida qaytadi.
+  period String @db.VarChar(10)
+
+  /// Kompozit oylik balldagi og'irlik. NULL = **ballash yo'lidan tashqarida**
+  /// (faqat kuzatiladi). 0 dan farqi bor: 0 «ballandi va nolga arziydi» degani.
+  weight Decimal? @db.Decimal(5, 2)
+
+  /// FAQAT `unit = 'money'` da to'ldiriladi va o'shanda MAJBURIY (CHECK).
+  /// Sanoq/vaqt turida NULL bo'lishi SHART — aks holda «5 ta mijoz UZS da»
+  /// yozuvi paydo bo'lib, kimdir uni konvertatsiya qilishga urinardi.
+  currency String? @db.VarChar(3)
+
+  /// Dvigatel HISOBLAY OLMAYDIGAN (qo'lda/custom) metrika uchun menejerning
+  /// «bajarildi» belgisi. O'lchanadigan metrikada E'TIBORSIZ qoldiriladi —
+  /// fakt har doim dvigateldan keladi (ikki manba = ikki haqiqat).
+  manualDoneAt DateTime? @map("manual_done_at") @db.Timestamptz()
+
+  /// `false` = arxiv: qator tarixda qoladi, yangi kunlarga ta'sir qilmaydi.
+  active      Boolean  @default(true)
+  createdById String?  @map("created_by_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz()
+
+  account   Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  employee  Employee  @relation("EmployeeKpiTargetEmployee", fields: [employeeId], references: [id], onDelete: Cascade)
+  createdBy Employee? @relation("EmployeeKpiTargetActor", fields: [createdById], references: [id], onDelete: SetNull)
+
+  events EmployeeKpiTargetEvent[]
+
+  /// Takror maqsad yo'q — tahrir o'rniga in-place update (upsert kaliti).
+  @@unique([employeeId, metricKey, period])
+  /// Xodim kartasi: «shu xodimning faol KPI'lari».
+  @@index([accountId, employeeId, active])
+  /// Menejer ekrani: «shu metrika bo'yicha kimga qo'yilgan».
+  @@index([accountId, metricKey])
+  @@map("employee_kpi_targets")
+}
+
+/// EmployeeKpiTargetEvent — biriktirilgan KPI jurnali. APPEND-ONLY.
+///
+/// Nega kerak: ommaviy/bir martalik tahrir audit yozmasa «kim qachon maqsadni
+/// pasaytirdi» savoliga javob qolmaydi (bu repoda bir marta bo'lgan hodisa).
+///
+/// `targetId` NULLABLE va `onDelete: SetNull` — maqsad qatori O'CHIRILSA event
+/// QOLADI. Shu sababli payload HAVOLA emas, o'sha ondagi qiymatlar MATNI:
+/// qator ketgach ham «nima edi» savoliga javob shu ustundan chiqadi.
+model EmployeeKpiTargetEvent {
+  id        String  @id @default(uuid()) @db.Uuid
+  accountId String  @map("account_id") @db.Uuid
+  targetId  String? @map("target_id") @db.Uuid
+  /// Maqsad o'chsa ham «kimning KPI'si edi» ma'lum qolishi uchun ALOHIDA ustun.
+  employeeId String @map("employee_id") @db.Uuid
+
+  /// `created` | `updated` | `deleted` | `marked_done` | `reopened`.
+  action String @db.VarChar(20)
+
+  /// O'sha ondagi qiymatlar (metricKey, targetValue, period, weight, …).
+  payloadJson Json    @map("payload_json")
+  actorId     String? @map("actor_id") @db.Uuid
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  account  Account            @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  target   EmployeeKpiTarget? @relation(fields: [targetId], references: [id], onDelete: SetNull)
+  employee Employee           @relation("EmployeeKpiTargetEventEmployee", fields: [employeeId], references: [id], onDelete: Cascade)
+  actor    Employee?          @relation("EmployeeKpiTargetEventActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  /// Xodim kartasidagi «KPI tarixi».
+  @@index([accountId, employeeId, createdAt(sort: Desc)])
+  /// Bitta maqsad qatorining tarixi.
+  @@index([accountId, targetId, createdAt(sort: Desc)])
+  @@map("employee_kpi_target_events")
 }
 
 model HrKpiMonthlyScore {
