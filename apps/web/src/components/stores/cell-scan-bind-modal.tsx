@@ -109,6 +109,11 @@ export function CellScanBindModal({
     null,
   );
   const [conflict, setConflict] = useState<Conflict | null>(null);
+  /** Rad etilgan skan haqidagi xabar — u ASOSIY oynaning banneriga emas, KONFLIKT
+   *  DIALOGI ichiga chiqadi: dialog overlay'i asosiy oynani to'sib turadi, ya'ni
+   *  bannerdagi matnni foydalanuvchi ko'rmaydi va faqat beep eshitardi. Xabar
+   *  foydalanuvchi qarab turgan joyda bo'lishi kerak. */
+  const [conflictRefusal, setConflictRefusal] = useState<string | null>(null);
   // Staged bindings — written ONLY by «Saqlash» (owner 2026-07-21).
   const [pending, setPending] = useState<PendingRow[]>([]);
   /** TZ v3 §1.2: band yacheyka savoli HAR YACHEYKA UCHUN BIR MARTA so'raladi —
@@ -143,6 +148,13 @@ export function CellScanBindModal({
   /** Row keys: a counter, not `Date.now()` — a burst stages several rows inside
    *  the same millisecond, and two of the SAME product would collide on key. */
   const keySeqRef = useRef(0);
+  /** Last code refused while the dialog was open. The camera re-delivers the
+   *  SAME code every 2.5s while a label sits in the frame (`useBarcodeCamera`
+   *  de-dupes on code), so beeping on every delivery turns «thinking about the
+   *  question» into a metronome. A repeat of the same code stays SILENT — the
+   *  refusal text is already on screen inside the dialog, so nothing is hidden —
+   *  while any NEW code (the realistic wedge / re-typed case) beeps loudly. */
+  const refusedCodeRef = useRef<string | null>(null);
 
   const applyPending = useCallback((fn: (rows: PendingRow[]) => PendingRow[]) => {
     const next = fn(pendingRef.current);
@@ -163,6 +175,9 @@ export function CellScanBindModal({
   }, []);
   const applyConflict = useCallback((next: Conflict | null) => {
     conflictRef.current = !!next;
+    // Har yangi savol (va har yopilish) rad-etish holatini toza boshlaydi.
+    refusedCodeRef.current = null;
+    setConflictRefusal(null);
     setConflict(next);
   }, []);
 
@@ -261,12 +276,16 @@ export function CellScanBindModal({
             await api.delete(`/admin/stores/${storeId}/cells/${cellId}/products/${victim.id}`);
             evicted += 1;
           }
-          // Chiqarish BAJARILDI — ro'yxatni darhol bo'shatamiz. Keyingi qadam
-          // (POST) yiqilsa foydalanuvchi «Saqlash»ni qayta bosadi va DELETE
-          // TAKRORLANMAYDI. (Server tomoni ham idempotent: `unassignProduct`
-          // topilmasa `{unassigned:false}` qaytaradi, throw qilmaydi —
-          // store-address.service.ts.)
-          applyDecisions((m) => new Map(m).set(cellId, { mode: 'replace', evict: [] }));
+          // Chiqarish BAJARILDI — qaror `together` ga tushadi. Ikki ish bir
+          // yo'la: (1) keyingi qadam (POST) yiqilsa «Saqlash» qayta bosilganda
+          // DELETE TAKRORLANMAYDI (server tomoni ham idempotent:
+          // `unassignProduct` topilmasa `{unassigned:false}` qaytaradi, throw
+          // qilmaydi — store-address.service.ts); (2) chiqariladigan hech narsa
+          // qolmagani uchun `replace` muhri saqlansa, o'sha yacheykadagi qolgan
+          // va keyin skanlangan qatorlarda «almashtiradi» belgisi YOLG'ON bo'lib
+          // turaverardi (§1.2 fikrdan-qaytish shoxidagi qoida bilan bir xil:
+          // bo'sh `evict` ⇒ `together`).
+          applyDecisions((m) => new Map(m).set(cellId, { mode: 'together', evict: [] }));
         }
         for (const r of cellRows) {
           await api.post(`/admin/stores/${storeId}/cells/${cellId}/products`, {
@@ -319,9 +338,14 @@ export function CellScanBindModal({
       // died» failure `useScanQueue` warns about. Refusing is loud (beep + the
       // code that was read is on screen) and re-scanning costs one second,
       // while the answer itself decides what happens to later scans anyway.
+      // Xabar DIALOG ICHIGA chiqadi (asosiy banner overlay ostida qoladi), beep
+      // esa faqat YANGI kod uchun — kamera bir xil etiketkani har 2.5s qayta
+      // uzatadi, har safar beep qilish javobni o'ylayotgan odamga metronom
+      // bo'lardi. Matn ekranda turgani uchun jimlik = ma'lumotsizlik EMAS.
       if (conflictRef.current) {
-        beep();
-        setMessage({ kind: 'warn', text: t('scan_answer_conflict_first') });
+        if (refusedCodeRef.current !== code) beep();
+        refusedCodeRef.current = code;
+        setConflictRefusal(t('scan_answer_conflict_first'));
         return;
       }
       // 1) cell label? (barcode first, exact name as a manual-typing fallback)
@@ -929,10 +953,22 @@ export function CellScanBindModal({
           </>
         }
       >
-        <div className="px-4 py-3 text-sm" data-test-id="cell-scan-conflict-msg">
-          {t('scan_conflict_msg', {
-            name: conflict?.existing.map((x) => x.name).join(', ') ?? '',
-          })}
+        <div className="flex flex-col gap-2 px-4 py-3">
+          <div className="text-sm" data-test-id="cell-scan-conflict-msg">
+            {t('scan_conflict_msg', {
+              name: conflict?.existing.map((x) => x.name).join(', ') ?? '',
+            })}
+          </div>
+          {/* TZ v3 §3: savol ochiq turganda kelgan skan rad etilganini AYNAN shu
+              yerda ko'rsatamiz — asosiy oynadagi banner overlay ostida qoladi. */}
+          {conflictRefusal && (
+            <div
+              className="rounded-[var(--ms-radius-default)] border border-[var(--ms-warning-500,#d3a616)] bg-[var(--ms-warning-50,#fdf6e3)] px-3 py-2 font-semibold text-[13px] text-[var(--ms-warning-600,#8a6d1a)]"
+              data-test-id="cell-scan-conflict-refusal"
+            >
+              {conflictRefusal}
+            </div>
+          )}
         </div>
       </Modal>
     </>

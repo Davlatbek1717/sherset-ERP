@@ -25,13 +25,18 @@ vi.mock('@/lib/api-client', () => ({
 vi.mock('@/lib/beep', () => ({ beep: vi.fn() }));
 // `normalizeScanInput` — `resolve()` ning try/catch idan TASHQARIDA chaqiriladi,
 // ya'ni bu yerdan otilgan xato faqat `useScanQueue.onError` orqali ko'rinadi.
-// Aynan shu yo'lni qoplash uchun mock qilinadi (qolgan kodlar haqiqiy xulq).
-vi.mock('@/lib/scan', () => ({
-  normalizeScanInput: vi.fn((raw: string) => {
-    if (raw === 'BOOM') throw new Error('normalize portladi');
-    return raw.trim();
-  }),
-}));
+// Aynan shu yo'lni qoplash uchun BITTA sentinel kod (`BOOM`) otadi; qolgan
+// hamma kirish HAQIQIY funksiyaga uzatiladi, ya'ni `/scan?c=…` peel shoxi ham
+// haqiqiy kod bilan sinaladi (mock uni yashirib qo'ymaydi).
+vi.mock('@/lib/scan', async (importOriginal) => {
+  const real = await importOriginal<typeof import('@/lib/scan')>();
+  return {
+    normalizeScanInput: vi.fn((raw: string) => {
+      if (raw === 'BOOM') throw new Error('normalize portladi');
+      return real.normalizeScanInput(raw);
+    }),
+  };
+});
 vi.mock('@/components/stores/use-barcode-camera', () => ({
   useBarcodeCamera: () => ({
     videoRef: { current: null },
@@ -317,14 +322,60 @@ describe('CellScanBindModal — TZ v3 §1', () => {
     // Savolga javob berilmagan — skaner yana o'qidi (wedge yo'li).
     wedgeScan('X2');
 
-    await waitFor(() => expect(screen.getByTestId('cell-scan-status')).toHaveTextContent('Avval'));
-    expect(beep).toHaveBeenCalled();
+    // Xabar DIALOG ICHIDA — asosiy oynadagi banner overlay ostida qoladi.
+    await waitFor(() =>
+      expect(screen.getByTestId('cell-scan-conflict-refusal')).toHaveTextContent('Avval'),
+    );
+    expect(beep).toHaveBeenCalledTimes(1);
 
     // Savol HAMON birinchi skan uchun: javob berilsa ro'yxatga X1 tushadi, X2 emas.
     await userEvent.click(screen.getByTestId('cell-scan-add-together'));
     await waitFor(() => expect(logRows()).toHaveLength(1));
     expect(screen.getByTestId('cell-scan-log')).toHaveTextContent('Tovar X1');
     expect(screen.getByTestId('cell-scan-log')).not.toHaveTextContent('Tovar X2');
+    // Dialog yopilgach rad-etish xabari ham ketadi (eskirgan matn qolmaydi).
+    expect(screen.queryByTestId('cell-scan-conflict-refusal')).not.toBeInTheDocument();
+  });
+
+  /**
+   * Kamera bir xil etiketkani ramkada turganida har ~2.5s qayta uzatadi
+   * (`useBarcodeCamera` dedupi kod bo'yicha). Har uzatishda beep qilish —
+   * javobni o'ylayotgan odam uchun metronom. Takroriy KOD jim, YANGI kod esa
+   * baland: matn baribir ekranda turadi, ya'ni hech narsa yashirilmaydi.
+   */
+  it('§3 dialog ochiqda TAKRORIY kod jim, YANGI kod esa beep qiladi', async () => {
+    mockApi({ occupants: [{ id: 'prod-old', name: 'Olma' }] });
+    open();
+    await scan('CELLA');
+    await scan('X1');
+    await waitFor(() => expect(screen.getByTestId('cell-scan-conflict-msg')).toBeInTheDocument());
+
+    wedgeScan('X2');
+    await waitFor(() =>
+      expect(screen.getByTestId('cell-scan-conflict-refusal')).toBeInTheDocument(),
+    );
+    vi.mocked(beep).mockClear();
+
+    wedgeScan('X2'); // kamera takrori — jim
+    wedgeScan('X2');
+    await waitFor(() =>
+      expect(screen.getByTestId('cell-scan-conflict-refusal')).toBeInTheDocument(),
+    );
+    expect(beep).not.toHaveBeenCalled();
+
+    wedgeScan('X3'); // BOSHQA kod — baland
+    await waitFor(() => expect(beep).toHaveBeenCalledTimes(1));
+  });
+
+  it('haqiqiy `normalizeScanInput` — `/scan?c=…` deep-link kodi peel qilinadi', async () => {
+    mockApi({ occupants: [] });
+    open();
+    await scan('/scan?c=CELLA');
+
+    await waitFor(() =>
+      expect(screen.getByTestId('cell-scan-status')).toHaveTextContent('01-01-01-01'),
+    );
+    expect(screen.getByTestId('cell-scan-cell-card')).toHaveTextContent('01-01-01-01');
   });
 
   it('§3 yacheyka tarkibi so`rovi YIQILSA — qaror muhrlanmaydi, qator qo`shilmaydi', async () => {
@@ -426,11 +477,38 @@ describe('CellScanBindModal — TZ v3 §1', () => {
     expect(api.delete).toHaveBeenCalledTimes(1);
     // Qator ro'yxatda QOLDI — qayta urinish mumkin.
     expect(logRows()).toHaveLength(1);
+    // Chiqarish bajarilgan ⇒ «almashtiradi» belgisi YOLG'ON bo'lib qolmaydi.
+    expect(screen.queryByTestId(/^cell-scan-row-replaces-/)).not.toBeInTheDocument();
 
     await userEvent.click(screen.getByTestId('cell-scan-save'));
     await waitFor(() => expect(api.post).toHaveBeenCalledTimes(2));
     // Takroriy DELETE ketmadi.
     expect(api.delete).toHaveBeenCalledTimes(1);
+  });
+
+  /**
+   * N-1 ning ikkinchi yuzi: chiqarish bajarilgandan keyin o'sha yacheykaga
+   * skanlangan YANGI qatorda ham belgi turmasligi kerak (muhr `together` ga
+   * tushgani uchun) — aks holda omborchi «bu ham nimanidir chiqaradi» deb
+   * o'ylab qolardi.
+   */
+  it('§1.2 chiqarishdan keyin qo`shilgan YANGI qatorda belgi YO`Q', async () => {
+    mockApi({ occupants: [{ id: 'prod-old', name: 'Olma' }] });
+    open();
+    await scan('CELLA');
+    await scan('X1');
+    await waitFor(() => expect(screen.getByTestId('cell-scan-conflict-msg')).toBeInTheDocument());
+    await userEvent.click(screen.getByTestId('cell-scan-replace'));
+
+    vi.mocked(api.post).mockRejectedValueOnce(new Error('tarmoq uzildi'));
+    await userEvent.click(screen.getByTestId('cell-scan-save'));
+    await waitFor(() => expect(api.delete).toHaveBeenCalledTimes(1));
+
+    // Server endi bo'sh (chiqarildi) — yangi skan jimgina qo'shiladi.
+    mockApi({ occupants: [] });
+    await scan('X2');
+    await waitFor(() => expect(logRows()).toHaveLength(2));
+    expect(screen.queryByTestId(/^cell-scan-row-replaces-/)).not.toBeInTheDocument();
   });
 
   it('§3 chiqarish huquqi yo`q foydalanuvchida «chiqarib qo`shish» KO`RINMAYDI', async () => {

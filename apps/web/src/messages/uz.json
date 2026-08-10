@@ -5658,7 +5658,7 @@
         "scan_staged_replace": "Almashtirish ro'yxatga qo'shildi — «Saqlash» bosilganda yoziladi",
         "scan_saved_n": "Saqlandi: {count} ta bog'lash",
         "scan_save_failed": "Saqlashda xato: {msg} — saqlanmaganlar ro'yxatda qoldi",
-        "scan_save_partial": "Saqlashda xato: {msg}. Yacheykadan {evicted} ta mahsulot ALLAQACHON chiqarildi, lekin yangi bog'lash yozilmadi — «Saqlash» ni qayta bosing (takroriy urinish xavfsiz)",
+        "scan_save_partial": "Saqlashda xato: {msg}. Yacheykalardan jami {evicted} ta mahsulot ALLAQACHON chiqarildi, lekin bog'lashlarning hammasi yozilmadi — «Saqlash» ni qayta bosing (takroriy urinish xavfsiz)",
         "scan_row_replaces": "almashtiradi",
         "scan_row_remove": "Ro'yxatdan olib tashlash",
         "scan_camera": "Kamera",
