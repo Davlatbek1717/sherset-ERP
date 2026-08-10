@@ -1,4 +1,25 @@
 {
+  "kassaLogin": {
+    "title": "Вход в кассу",
+    "subtitle": "Введите PIN-код",
+    "device_label": "Устройство",
+    "pin_label": "PIN-код",
+    "submit": "Войти",
+    "submitting": "Проверка…",
+    "clear": "Очистить",
+    "backspace": "Стереть",
+    "error_generic": "Неверный PIN",
+    "not_paired_title": "Устройство не привязано",
+    "not_paired_body": "Администратор должен привязать устройство к складу и кассе.",
+    "pair_link": "Привязать устройство",
+    "admin_login": "Вход администратора",
+    "admin_password": "Пароль",
+    "pair_store": "Склад",
+    "pair_cash_desk": "Касса",
+    "pair_organization": "Организация",
+    "pair_device_name": "Название устройства",
+    "error_unknown": "Произошла ошибка"
+  },
   "unsaved_changes": {
     "title": "Несохранённые изменения",
     "description": "Изменения на этой странице не сохранены. Покинуть без сохранения?",
