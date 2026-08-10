@@ -96,6 +96,12 @@ function makeHarness(opts: Opts = {}) {
     employee: { findUnique: vi.fn(async () => null) },
     product: { findMany: vi.fn(async () => []) },
     priceType: { findMany: vi.fn(async () => []) },
+    // post() endi to'lov oynasidan kelgan agentId'ni tenant ichida tekshiradi
+    // (begona akkaunt mijozi 400 oladi) — bu testlarda mijozlar "o'z"
+    // akkauntdan deb qabul qilinadi.
+    counterparty: {
+      findFirst: vi.fn(async (args: { where: { id: string } }) => ({ id: args.where.id })),
+    },
     retailSale: {
       // DETACHED nusxa: smena holati o'qish ONIDAGI holat (bu yerda doim 'open').
       findFirst: vi.fn(async () => ({

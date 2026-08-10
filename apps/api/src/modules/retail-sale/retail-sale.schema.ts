@@ -178,6 +178,19 @@ export const RefundRetailSaleSchema = z.object({
 });
 export type RefundRetailSaleInput = z.infer<typeof RefundRetailSaleSchema>;
 
+// --- Z-report query ---
+
+/**
+ * GET /retail-sales/z-report?sessionId=… — controller query'ni validatsiyasiz
+ * uzatardi: noto'g'ri/berilmagan uuid Prisma'gacha yetib P2023 bilan 500
+ * qaytarardi. Endi servis kirishda shu sxema bilan tekshiradi — ZodError'ni
+ * global filtr 400 qiladi.
+ */
+export const ZReportQuerySchema = z.object({
+  sessionId: z.string().uuid(),
+});
+export type ZReportQueryInput = z.infer<typeof ZReportQuerySchema>;
+
 // --- List filter ---
 
 export const RetailSaleFilterSchema = z.object({

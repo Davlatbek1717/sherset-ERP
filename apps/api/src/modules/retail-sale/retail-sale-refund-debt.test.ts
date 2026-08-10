@@ -69,7 +69,9 @@ function makeHarness(opts: {
     retailSalePosition: { findMany: vi.fn().mockResolvedValue([]) },
     stockOperation: { findMany: vi.fn().mockResolvedValue([]) },
     cashierAuditEvent: { createMany: vi.fn().mockResolvedValue({ count: 0 }) },
-    cashierSession: { update: vi.fn().mockResolvedValue({}) },
+    // refund() endi smenani post() dagi SALES-07 naqshida SHARTLI claim
+    // qiladi (`updateMany where state:'open'`) — dublyor shu yuzani beradi.
+    cashierSession: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
   };
 
   const client = {

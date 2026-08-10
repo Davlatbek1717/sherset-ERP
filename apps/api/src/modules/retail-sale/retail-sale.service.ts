@@ -69,6 +69,7 @@ import {
   RefundRetailSaleSchema,
   RetailSaleFilterSchema,
   UpdateRetailSaleSchema,
+  ZReportQuerySchema,
 } from './retail-sale.schema.js';
 // Kassa TZ §6 — aralash to'lov qoidalari (sof, testlangan).
 import {
@@ -536,7 +537,14 @@ export class RetailSaleService {
           });
         }
         return tx.retailSale.update({
-          where: { id, accountId, version: parsed.version },
+          // `state: 'draft'` TX ICHIDA ham filtrlanadi: yuqoridagi holat
+          // tekshiruvi eskirgan nusxa ustida, post() flip'i esa versionni
+          // OSHIRMAYDI — ya'ni faqat version-filtr o'qish/saqlash oralig'ida
+          // POSTED bo'lib qolgan (pul olingan, stok yechilgan) chekni qayta
+          // yozilishdan SAQLAMASDI. Filtr mos kelmasa P2025 → quyidagi
+          // mapVersionedUpdateError 409 (OPTIMISTIC_LOCK) qiladi — mavjud
+          // optimistic-lock yo'li bilan bir uslub.
+          where: { id, accountId, version: parsed.version, state: 'draft' },
           data: {
             ...(parsed.agentId !== undefined ? { agentId: parsed.agentId ?? null } : {}),
             ...(parsed.description !== undefined
@@ -710,6 +718,22 @@ export class RetailSaleService {
       );
     }
 
+    // To'lov oynasidan kelgan mijoz TENANT ichida ekani tekshiriladi: FK
+    // faqat mavjudlikni tekshiradi, ya'ni begona akkauntning counterparty
+    // id'si chekka (qarz bo'lsa — qarz daftariga ham) jimgina yozilib
+    // ketishi mumkin edi. Faqat yangi yoziladigan holatda so'raladi —
+    // chekda allaqachon turgan mijoz create-yo'lida tekshirilgan hujjatning
+    // o'zi.
+    if (parsed.agentId && !sale.agentId) {
+      const agent = await this.prisma.client.counterparty.findFirst({
+        where: { id: parsed.agentId, accountId },
+        select: { id: true },
+      });
+      if (!agent) {
+        throw new BadRequestException(`Counterparty ${parsed.agentId} not found`);
+      }
+    }
+
     // Qarzga sotishda kontragent MAJBURIY — aks holda qarz kimningdir
     // balansiga emas, hech qayerga yozilgan bo'lardi (TZ §7.1).
     const debtAgentId = parsed.agentId ?? sale.agentId ?? null;
@@ -751,11 +775,13 @@ export class RetailSaleService {
         data: {
           state: 'posted',
           postedAt: new Date(),
-          // Qarz to'lov oynasida tanlangan mijozga yozilsa, MIJOZ CHEKDA HAM
-          // qolishi shart: `/sotuv` kontragentni faqat post payloadida
-          // yuboradi, chek qatorida esa `agentId` NULL bo'lib qolardi —
-          // keyin qaytarishda qarz kimniki ekani noma'lum edi (SALES-04).
-          ...(debtAmount > 0n && debtAgentId && !sale.agentId ? { agentId: debtAgentId } : {}),
+          // To'lov oynasida tanlangan mijoz CHEKKA YOZILADI — qarzli
+          // to'lovda ham (SALES-04: qaytarishda qarz kimniki ekani chekdan
+          // o'qiladi), NAQD/KARTA to'lovda ham. Ilgari shart
+          // `debtAmount > 0n` bilan tor edi: naqd to'lagan mijoz jimgina
+          // tashlanardi — chekda `agentId` NULL qolib, loyalty ball
+          // yozilmasdi (accrueLoyalty `sale.agentId` ga qaraydi).
+          ...(parsed.agentId && !sale.agentId ? { agentId: parsed.agentId } : {}),
           // TZ §6.3 — bu ikki ustun endi to'lov qatorlaridan HISOBLANADI
           // (terminal `card` yig'indisiga kiradi: ikkalasi ham naqdsiz).
           // Ustunlar saqlanadi, chunki mavjud hisobotlar va moysklad-compat
@@ -1122,6 +1148,16 @@ export class RetailSaleService {
     if (original.state !== 'posted') {
       throw new BadRequestException(`Can only refund a posted sale (current: ${original.state})`);
     }
+    // Vozvrat zanjiri qulfi: mirror chek ham `state:'posted'` bilan tug'iladi
+    // va unda to'lov qatorlari YO'Q — quyidagi settlement-hisob uni «qarz
+    // ulushi 0» deb o'qib butun summani naqdga ochadi. Bu guard bo'lmasa
+    // mirror'ni qayta-qayta refund qilib kassadan cheksiz pul (va omborga
+    // cheksiz stok) olish mumkin edi. Qaytarish faqat ASL chekdan yuradi.
+    if (original.refundedFromId) {
+      throw new BadRequestException(
+        `${original.name} — vozvrat cheki. Vozvrat chekini qaytarib bo'lmaydi — asl chekni qaytaring.`,
+      );
+    }
     if (original.session.state !== 'open') {
       throw new BadRequestException(`Session is ${original.session.state}. Cannot refund.`);
     }
@@ -1429,14 +1465,27 @@ export class RetailSaleService {
         );
       }
 
-      // Update session aggregates
-      await tx.cashierSession.update({
-        where: { id: original.sessionId },
+      // SMENA CLAIM'i — post() dagi SALES-07 bilan bir naqsh. Yuqoridagi
+      // `original.session.state !== 'open'` tekshiruvi tranzaksiyadan
+      // TASHQARIDA o'qilgan (eskirgan) nusxa ustida; o'sha o'qish bilan bu
+      // yer orasida `close()` yugursa, qaytarish YOPILGAN smenaga tushardi:
+      // pul yashiqdan chiqadi, `close()` esa uni sanamagan ⇒ smena naqdi
+      // hech qachon to'g'ri chiqmaydi. Shart `close()` flip'i bilan AYNI
+      // ustunda (`state`) — Postgres qator-qulfi ikkalasini
+      // ketma-ketlashtiradi, ikkinchi kelgan `count = 0` oladi va BUTUN
+      // qaytarish (pul/ombor/balans kaskadi bilan) orqaga qaytadi.
+      const sessionClaim = await tx.cashierSession.updateMany({
+        where: { id: original.sessionId, accountId, state: 'open' },
         data: {
           returnsCount: { increment: 1 },
           returnsSumMinor: { increment: refundPositions.totalMinor },
         },
       });
+      if (sessionClaim.count === 0) {
+        throw new ConflictException(
+          `Smena ${original.sessionId} yopilgan; qaytarish rasmiylashtirilmadi. Yangi smena oching.`,
+        );
+      }
 
       return refundSale;
     });
@@ -1451,7 +1500,10 @@ export class RetailSaleService {
     return refunded;
   }
 
-  async zReport(accountId: string, sessionId: string) {
+  async zReport(accountId: string, rawSessionId: string) {
+    // Controller query'ni xom holda uzatadi — noto'g'ri uuid ilgari Prisma
+    // P2023 bilan 500 bo'lardi; endi ZodError → global filtr → 400.
+    const { sessionId } = ZReportQuerySchema.parse({ sessionId: rawSessionId });
     const session = await this.prisma.client.cashierSession.findFirst({
       where: { id: sessionId, accountId },
       include: {
@@ -1480,6 +1532,10 @@ export class RetailSaleService {
           sumMinor: true,
           cashAmountMinor: true,
           cardAmountMinor: true,
+          // `cashAmountMinor` — mijoz BERGAN naqd; yashiqqa `cash − change`
+          // tushadi (money-ledger ham shuni yozadi). Qaytim so'ralmasa
+          // quyidagi ayirma uchun manba yo'q.
+          changeMinor: true,
         },
         _count: { id: true },
       }),
@@ -1516,7 +1572,12 @@ export class RetailSaleService {
       },
       salesCount: salesAgg._count.id,
       salesSumMinor: (salesAgg._sum.sumMinor ?? 0n).toString(),
-      cashSalesMinor: (salesAgg._sum.cashAmountMinor ?? 0n).toString(),
+      // Yashiqdagi HAQIQIY naqd: berilgan naqd MINUS qaytim (to'g'ri formula
+      // `cashier-session.service.ts` dagi bilan bir xil). Qaytim ayirilmasa
+      // Z-hisobot naqdi har qaytim summasicha ko'p ko'rinardi.
+      cashSalesMinor: (
+        (salesAgg._sum.cashAmountMinor ?? 0n) - (salesAgg._sum.changeMinor ?? 0n)
+      ).toString(),
       cardSalesMinor: (salesAgg._sum.cardAmountMinor ?? 0n).toString(),
       returnsCount: returnsAgg._count.id,
       returnsSumMinor: (returnsAgg._sum.sumMinor ?? 0n).toString(),

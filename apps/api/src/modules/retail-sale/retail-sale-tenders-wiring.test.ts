@@ -60,6 +60,11 @@ function makeHarness(
     loyaltyProgram: { findFirst: vi.fn(async () => null) },
     product: { findMany: vi.fn().mockResolvedValue([]) },
     priceType: { findMany: vi.fn().mockResolvedValue([]) },
+    // post() endi to'lov oynasidan kelgan agentId'ni tenant ichida tekshiradi
+    // (begona akkaunt mijozi 400 oladi) — bu testlarda mijoz "o'z" akkauntdan.
+    counterparty: {
+      findFirst: vi.fn(async (args: { where: { id: string } }) => ({ id: args.where.id })),
+    },
     retailSale: {
       findFirst: vi.fn().mockResolvedValue({
         id: SALE_ID,
