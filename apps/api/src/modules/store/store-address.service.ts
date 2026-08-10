@@ -461,8 +461,12 @@ export class StoreAddressService {
 
     // Store-level true-up hujjati (avto Оприходование/Списание) SANALGAN yacheyka
     // `cellId`'ini olib boradi ⇒ applyDeltas StockByCell[cellId]'ni AYNAN `delta`ga
-    // siljitadi va u absolyut sanoq qiymatiga (oldQty+delta = qty) tushadi. Hujjat —
-    // YAGONA per-cell yozuvchi: to'g'ridan-to'g'ri StockByCell.upsert QILMAYMIZ.
+    // siljitadi va u `finalQty` ga tushadi. Ikki rejimda `finalQty` ikki xil narsa:
+    //   · `set`  — `oldQty + (qty − oldQty) = qty`, ya'ni kiritilgan MUTLAQ sanoq;
+    //   · `add`  — `oldQty + qty`, ya'ni kiritilgan son QOLDIQQA QO'SHILADI
+    //              (26 + 100 = 126; hujjatga esa aynan `delta`=100 yoziladi).
+    // Hujjat — YAGONA per-cell yozuvchi: to'g'ridan-to'g'ri StockByCell.upsert
+    // QILMAYMIZ.
     //
     // ⚠️ 2026-07-29 drift-fix: ilgari cell to'g'ridan-to'g'ri absolyut yozilar,
     // KEYIN cellId'siz hujjat post qilinardi — applyDeltas o'sha (yoki uy-)yacheykani

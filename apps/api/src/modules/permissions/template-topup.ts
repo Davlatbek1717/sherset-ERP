@@ -43,6 +43,7 @@
  *
  * Bu funksiya SOF: DB kerak emas, testi `template-topup.test.ts`.
  */
+import type { PermissionEntity } from './permissions.types.js';
 import {
   type RoleTemplateSlug,
   type TemplateCell,
@@ -63,8 +64,15 @@ export interface ExistingPermissionRow {
  * yerga YOZ; prodda yugurtirilib tasdiqlangach — OLIB TASHLA. Eski entity'ni
  * ro'yxatda qoldirish «tiriltirish» xavfini qaytaradi: admin o'sha entity'ni
  * biror roldan butunlay olib tashlagan bo'lsa, keyingi run uni tiklab qo'yadi.
+ *
+ * ⚠️ Tipi ATAYLAB `PermissionEntity[]` — `string[]` emas (review 2026-08-10).
+ * Xato yozilgan slug (`'storecelll'`) hech qayerda yiqilmaydi: allow-list
+ * shablon matritsasidagi hech bir entity'ga mos kelmaydi ⇒ funksiya bo'sh
+ * ro'yxat qaytaradi, skript «0 qator qo'shildi» deb muvaffaqiyatli tugaydi va
+ * rol jimgina 403 beraveradi. Union tipi shu jim no-op'ni KOMPILYATSIYADA
+ * to'xtatadi.
  */
-export const TOPUP_ENTITIES: readonly string[] = ['storecell'];
+export const TOPUP_ENTITIES: readonly PermissionEntity[] = ['storecell'];
 
 /**
  * Shablon matritsasidan roldagi YETISHMAYOTGAN qatorlar.
@@ -76,7 +84,7 @@ export const TOPUP_ENTITIES: readonly string[] = ['storecell'];
  */
 export function missingTemplateCells(
   slug: RoleTemplateSlug,
-  entities: ReadonlyArray<string>,
+  entities: ReadonlyArray<PermissionEntity>,
   existing: ReadonlyArray<ExistingPermissionRow>,
 ): TemplateCell[] {
   const allow = new Set(entities);

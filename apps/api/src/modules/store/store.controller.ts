@@ -36,8 +36,15 @@ export class StoreController {
   /** Scan flow (owner 2026-07-19): resolve a CELL barcode account-wide →
    *  the cell (+store/zone) with its bound products and per-cell stock, so a
    *  phone scanning just the shelf label sees what lives there. Declared
-   *  BEFORE the :id routes so the literal segment never binds as :id. */
+   *  BEFORE the :id routes so the literal segment never binds as :id.
+   *
+   *  ⚠️ `storecell.view` (TZ v3 §3, review 2026-08-10): bu marshrut «Scan» va
+   *  «Sanash» oynalarining ZAXIRA yo'li — u yacheykani AKKAUNT BO'YLAB topadi
+   *  va tarkibi + qoldig'ini qaytaradi. Ruxsatsiz qolganda qolgan yacheyka-
+   *  o'qish qulflari (`cellStock`/`cellProducts`) ma'nosiz bo'lardi: bir
+   *  shtrix-kod bilan o'sha ma'lumot ochiq eshikdan olinaverardi. */
   @Get('cells/by-barcode')
+  @RequirePermission({ entity: 'storecell', action: 'view' })
   async cellByBarcode(@CurrentUser() user: AuthenticatedUser, @Query() query: unknown) {
     return this.addr.lookupCellByBarcode(user.accountId, query);
   }
@@ -162,8 +169,15 @@ export class StoreController {
     return this.addr.getCellStock(user.accountId, id, cellId);
   }
 
-  /** «Sanash» (owner 2026-07-21) — record a physical count for one product in
-   *  this cell (absolute value; 0 clears the row). */
+  /** «Sanash» (owner 2026-07-21, TZ v3 §2) — record a physical count for one
+   *  product in this cell. Body: `{ assortmentId, qty, mode? }` where
+   *  `mode: 'set' | 'add'` (default `'set'`):
+   *    · `'set'` — `qty` is the ABSOLUTE cell count (0 clears the row);
+   *    · `'add'` — `qty` is a DELTA added to the current count (0 = no-op, it
+   *      does NOT clear the row); the delta is computed SERVER-side so two
+   *      pickers counting at once cannot lose an update.
+   *  `qty` is a NON-negative decimal in both modes (schema), so `add` can only
+   *  raise a count — subtracting is not part of this contract. */
   @Put(':id/cells/:cellId/stock')
   @RequirePermission({ entity: 'storecell', action: 'update' })
   async setCellStock(

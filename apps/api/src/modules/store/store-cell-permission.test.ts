@@ -81,6 +81,41 @@ describe('TZ v3 §3 — yacheyka amallari `storecell` ruxsatida', () => {
     expect(scopeOf('warehouse_manager', 'storecell', 'update')).toBe('ALL');
   });
 
+  /**
+   * Review 2026-08-10 — ZAXIRA YO'L teshigi. `GET admin/stores/cells/by-barcode`
+   * da `@RequirePermission` UMUMAN yo'q edi: u yacheykani AKKAUNT BO'YLAB topib,
+   * tarkibi va qoldig'i bilan qaytaradi, ya'ni yuqoridagi `storecell.view`
+   * qulflarini bitta shtrix-kod bilan chetlab o'tsa bo'lardi. Ikkala oyna ham
+   * (kartochka yuklangandan KEYIN yaratilgan yacheyka uchun) aynan shu yo'ldan
+   * yuradi, shuning uchun u `view` darajasida turadi — `update` emas.
+   */
+  it('cellByBarcode — storecell.view (ruxsatsiz zaxira yo`l qolmaydi)', () => {
+    expect(permOf('cellByBarcode')).toEqual({ entity: 'storecell', action: 'view' });
+  });
+
+  /**
+   * Tarkibiy qo'riqchi: yuqoridagi ro'yxat QO'LDA yuritiladi, ya'ni yangi
+   * yacheyka marshruti qo'shilib, ruxsati unutilsa hech narsa yiqilmasdi
+   * (aynan `cells/by-barcode` bilan bo'lgan hodisa). Bu test marshrut yo'lida
+   * «cell» bor HAR BIR handlerni Nest metadatasidan topadi va har birida
+   * ruxsat deklaratsiyasi borligini talab qiladi.
+   */
+  it('yo`lida «cell» bor HAR BIR marshrutda ruxsat deklaratsiyasi bor', () => {
+    const proto = StoreController.prototype as Record<string, unknown>;
+    const cellRoutes = Object.getOwnPropertyNames(proto).filter((m) => {
+      if (m === 'constructor') return false;
+      const handler = proto[m];
+      if (typeof handler !== 'function') return false;
+      const path = Reflect.getMetadata('path', handler) as unknown;
+      return typeof path === 'string' && path.toLowerCase().includes('cell');
+    });
+    // Ro'yxat bo'sh chiqsa test VAKUUM bo'lardi (metadata kaliti o'zgargan…).
+    expect(cellRoutes.length).toBeGreaterThan(5);
+    for (const m of cellRoutes) {
+      expect(permOf(m as keyof StoreController), `${m} — ruxsatsiz marshrut`).toBeDefined();
+    }
+  });
+
   it('zona/yacheyka KONFIGURATSIYASI store.update da qoladi (omborchiga emas)', () => {
     expect(permOf('createZone')).toEqual({ entity: 'store', action: 'update' });
     expect(permOf('updateCell')).toEqual({ entity: 'store', action: 'update' });
