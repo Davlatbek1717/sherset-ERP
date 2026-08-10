@@ -3,7 +3,15 @@
 import { api } from '@/lib/api-client';
 import { login } from '@/lib/auth-store';
 import { writePosDevice } from '@/lib/pos-device';
-import { Alert, Button, Container, FormField, Input, PasswordInput } from '@moysklad/ui';
+import {
+  Alert,
+  Button,
+  Container,
+  FormField,
+  Input,
+  NativeSelect,
+  PasswordInput,
+} from '@moysklad/ui';
 import { useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
 import { type FormEvent, useState } from 'react';
@@ -173,20 +181,16 @@ function Selector({
   value: string;
   onChange: (v: string) => void;
 }) {
+  // Xom `<select>` TAQIQ (UI Convention 8, `raw-element-conventions.test.ts`) —
+  // DS primitivi kanonik ko'rinishni konstruksiya bo'yicha beradi.
   return (
-    <select
-      id={id}
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      className="w-full rounded-[var(--ms-radius-sm)] border border-[var(--ms-border-default)] p-2"
-      required
-    >
+    <NativeSelect id={id} value={value} onChange={(e) => onChange(e.target.value)} required>
       <option value="">—</option>
       {rows.map((r) => (
         <option key={r.id} value={r.id}>
           {r.name}
         </option>
       ))}
-    </select>
+    </NativeSelect>
   );
 }
