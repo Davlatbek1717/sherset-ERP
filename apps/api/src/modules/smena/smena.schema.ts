@@ -16,6 +16,13 @@ export type UpdateSmenaInput = z.infer<typeof UpdateSmenaSchema>;
 export const OpenSessionFromSmenaSchema = z.object({
   smenaId: uuid,
   outOfShiftReason: z.string().max(500).optional(),
-  openingCashMinor: z.coerce.bigint().default(0n),
+  // Asosiy `OpenSessionSchema` naqshi (cashier-session.schema.ts): faqat
+  // raqamlar — manfiy ochilish naqdi RAD etiladi. `z.coerce.bigint()`
+  // manfiyni qabul qilardi, bu esa «ochilishda kam edi» bahonasi bilan
+  // kamomadni yashirish yo'li edi. String saqlanadi, BigInt'ga servis o'giradi.
+  openingCashMinor: z.coerce
+    .string()
+    .regex(/^\d+$/, 'openingCashMinor must be a non-negative integer')
+    .default('0'),
 });
 export type OpenSessionFromSmenaInput = z.infer<typeof OpenSessionFromSmenaSchema>;

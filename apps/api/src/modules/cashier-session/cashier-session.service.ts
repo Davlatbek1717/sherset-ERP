@@ -3,6 +3,7 @@ import { scaleMinorByQty } from '@moysklad/money';
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Inject,
   Injectable,
   Logger,
@@ -1024,9 +1025,19 @@ export class CashierSessionService {
     const body = (raw ?? {}) as { note?: unknown };
     const row = await this.prisma.client.cashierSessionVariance.findFirst({
       where: { id, accountId },
-      select: { id: true, acknowledgedAt: true },
+      select: { id: true, acknowledgedAt: true, cashierId: true },
     });
     if (!row) throw new NotFoundException(`Variance ${id} not found`);
+
+    // O'z-o'zini tasdiqlash taqiqi. Endpoint faqat `cashiersession.update`
+    // talab qiladi va bu ruxsat kassir shablonida ham bor — ya'ni ruxsat
+    // qatlami bu yo'lni ushlamaydi. Aktdagi kassir o'z kamomadini o'zi
+    // «ko'rildi» qila olsa (yoki izoh-yangilash yo'li orqali menejer izohini
+    // yozsa), akt dalil bo'lishdan to'xtaydi — shuning uchun tekshiruv
+    // idempotent shoxdan OLDIN turadi.
+    if (row.cashierId === employeeId) {
+      throw new ForbiddenException("O'z smenangiz farq aktini o'zingiz tasdiqlay olmaysiz");
+    }
 
     const note = typeof body.note === 'string' ? body.note.trim() || null : undefined;
     if (row.acknowledgedAt) {

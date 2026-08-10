@@ -1,5 +1,11 @@
 import type { Prisma } from '@moysklad/db';
-import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service.js';
 // Kassa TZ §9 — the audit-event shapes live with the rest of the cashier
 // journal so every writer agrees on the payload.
@@ -13,11 +19,18 @@ import {
   UpdateSmenaSchema,
 } from './smena.schema.js';
 
-/** Returns true if current time (Tashkent UTC+5) falls within startTime..endTime */
-function isWithinShift(startTime: string, endTime: string): boolean {
-  const now = new Date();
-  const tzOffset = 5 * 60; // UTC+5
-  const local = new Date(now.getTime() + (tzOffset - now.getTimezoneOffset()) * 60000);
+/**
+ * Berilgan instant Toshkent devor-vaqtida (UTC+5) startTime..endTime ichidami.
+ *
+ * NEGA epoch + qat'iy +5 soat: epoch TZ-agnostik, shuning uchun devor-vaqtni
+ * olish uchun FAQAT kerakli offsetni qo'shish kifoya. Eski formuladagi
+ * `- now.getTimezoneOffset()` a'zosi natijani host mintaqasiga bog'lab
+ * qo'ygan edi: UTC+5 hostda +10 soat chiqib, kunduzgi 14:00 → 19:00 deb
+ * o'qilardi («vaqtdan tashqari» yolg'oni, tunda esa teskarisi). `now`
+ * parametri testlanish uchun — default hozirgi vaqt.
+ */
+export function isWithinShift(startTime: string, endTime: string, now: Date = new Date()): boolean {
+  const local = new Date(now.getTime() + 5 * 60 * 60000); // Toshkent = UTC+5
   const hh = local.getUTCHours().toString().padStart(2, '0');
   const mm = local.getUTCMinutes().toString().padStart(2, '0');
   const current = `${hh}:${mm}`;
@@ -130,6 +143,17 @@ export class SmenaService {
     });
     if (!smena) throw new NotFoundException('Smena topilmadi');
 
+    // Kassir shu smenaga BIRIKTIRILGAN bo'lishi shart. Aks holda istalgan
+    // smena id'sini yuborib (masalan, vaqti hozirga to'g'ri keladigan begona
+    // smenani tanlab) out-of-shift nazoratini butunlay chetlab o'tish mumkin
+    // edi — sabab yozdirish majburiyati ishlamay qolardi.
+    const membership = await this.prisma.client.smenaEmployee.findFirst({
+      where: { smenaId: smena.id, employeeId: cashierId },
+      // Jadval kompozit kalitli (`@@id([smenaId, employeeId])`) — `id` yo'q.
+      select: { smenaId: true },
+    });
+    if (!membership) throw new BadRequestException('Siz bu smenaga biriktirilmagansiz');
+
     const withinShift = isWithinShift(smena.schedule.startTime, smena.schedule.endTime);
     if (!withinShift && !input.outOfShiftReason) {
       throw new BadRequestException('Smena vaqtidan tashqari — sabab yozish shart');
@@ -184,43 +208,67 @@ export class SmenaService {
     // tashqari ochadi» deb so'raganda javob beradigan yagona manba (3-bo'lim).
     // Sessiya yaratish va hodisa yozish bitta tranzaksiyada: izsiz ochilgan
     // smena bo'lishi mumkin emas.
-    return this.prisma.client.$transaction(async (tx) => {
-      const session = await tx.cashierSession.create({
-        data: {
-          accountId,
-          cashierId,
-          cashDeskId: cashDesk.id,
-          storeId: store.id,
-          organizationId: smena.organizationId,
-          smenaId: smena.id,
-          outOfShiftReason: input.outOfShiftReason ?? null,
-          openingCashMinor: input.openingCashMinor,
-          state: 'open',
-        },
-        include: {
-          organization: { select: { id: true, name: true } },
-        },
-      });
-
-      if (!withinShift && input.outOfShiftReason) {
-        const event = planOutOfScheduleAuditEvent(session.id, {
-          smenaId: smena.id,
-          smenaName: smena.name,
-          reason: input.outOfShiftReason,
-        });
-        await tx.cashierAuditEvent.create({
+    //
+    // try/catch NEGA kerak: yuqoridagi pre-check (139-qator atrofidagi
+    // findFirst) parallel ikki ochilish poygasida ikkinchisini ushlamaydi —
+    // ikkalasi ham «ochiq sessiya yo'q» ko'radi. Yakuniy hakam DB'dagi
+    // partial-unique indeks (`cashier_sessions_open_per_cashier_idx`,
+    // WHERE state='open'): u ikkinchisini P2002 bilan uradi. Xom P2002
+    // mijozga 500 bo'lib chiqardi — asosiy `open()` naqshi bo'yicha 409
+    // (ConflictException) ga o'giramiz.
+    try {
+      return await this.prisma.client.$transaction(async (tx) => {
+        const session = await tx.cashierSession.create({
           data: {
             accountId,
-            sessionId: session.id,
-            employeeId: cashierId,
-            type: event.type,
-            docId: event.docId,
-            payload: event.payload as Prisma.InputJsonValue,
+            cashierId,
+            cashDeskId: cashDesk.id,
+            storeId: store.id,
+            organizationId: smena.organizationId,
+            smenaId: smena.id,
+            outOfShiftReason: input.outOfShiftReason ?? null,
+            // Sxema endi asosiy naqsh bo'yicha string beradi (manfiy rad
+            // etilgan) — BigInt'ga bu yerda o'giriladi.
+            openingCashMinor: BigInt(input.openingCashMinor),
+            state: 'open',
+          },
+          include: {
+            organization: { select: { id: true, name: true } },
           },
         });
-      }
 
-      return session;
-    });
+        if (!withinShift && input.outOfShiftReason) {
+          const event = planOutOfScheduleAuditEvent(session.id, {
+            smenaId: smena.id,
+            smenaName: smena.name,
+            reason: input.outOfShiftReason,
+          });
+          await tx.cashierAuditEvent.create({
+            data: {
+              accountId,
+              sessionId: session.id,
+              employeeId: cashierId,
+              type: event.type,
+              docId: event.docId,
+              payload: event.payload as Prisma.InputJsonValue,
+            },
+          });
+        }
+
+        return session;
+      });
+    } catch (e) {
+      if (
+        typeof e === 'object' &&
+        e !== null &&
+        'code' in e &&
+        (e as { code: string }).code === 'P2002'
+      ) {
+        throw new ConflictException(
+          'Allaqachon ochiq smena mavjud (parallel ochilish aniqlandi). Avval uni yoping.',
+        );
+      }
+      throw e;
+    }
   }
 }
