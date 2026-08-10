@@ -26,6 +26,7 @@
 
 import { useBarcodeCamera } from '@/components/stores/use-barcode-camera';
 import { useScanQueue } from '@/components/stores/use-scan-queue';
+import { useWedgeAnywhere } from '@/components/stores/use-wedge-anywhere';
 import { api } from '@/lib/api-client';
 import { beep } from '@/lib/beep';
 import { imageRawUrl } from '@/lib/image-url';
@@ -527,6 +528,20 @@ export function CellCountModal({
       setMessage({ kind: 'err', text: t('count_scan_failed'), detail: techDetail(err) });
     },
   );
+
+  // TZ v3 §3 kirish yo'li 1 — «kursor QAYERDA bo'lishidan qat'i nazar skan»
+  // (review 2026-08-10 I3: bu tutqich faqat «Scan» oynasida bor edi, shuning
+  // uchun bu yerda ✕ / «Kamera» / checkbox bosilgach fokus tugmada qolar va
+  // wedge-skaner kodi HECH QAYERGA tushmasdi — jim yo'qolish).
+  //
+  // `wedgeGuard` bilan TO'QNASHMAYDI: son-maydonlari `INPUT`, hook esa
+  // `INPUT/TEXTAREA/contentEditable` ni chetlab o'tadi ⇒ maydonga terilgan
+  // burst FAQAT `wedgeGuard` orqali (bir marta) navbatga tushadi.
+  useWedgeAnywhere({
+    enabled: open,
+    onCode: (code) => void enqueue(code),
+    inputRef,
+  });
 
   // Owner 2026-07-27 (real-device report): a keyboard-wedge scanner types into
   // WHATEVER field holds the cursor — after tapping «Umumiy miqdor» the next

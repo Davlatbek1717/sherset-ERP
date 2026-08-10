@@ -108,16 +108,18 @@ function mockApi({ occupants, contentsFails, gateFirstContents }: MockOpts) {
 }
 
 function open() {
+  const onOpenChange = vi.fn();
   renderWithProviders(
     <CellScanBindModal
       open
-      onOpenChange={vi.fn()}
+      onOpenChange={onOpenChange}
       storeId="store-1"
       cells={CELLS}
       initialCell={null}
       onBound={vi.fn()}
     />,
   );
+  return { onOpenChange };
 }
 
 async function scan(code: string) {
@@ -509,6 +511,48 @@ describe('CellScanBindModal — TZ v3 §1', () => {
     await scan('X2');
     await waitFor(() => expect(logRows()).toHaveLength(2));
     expect(screen.queryByTestId(/^cell-scan-row-replaces-/)).not.toBeInTheDocument();
+  });
+
+  /**
+   * TZ §1.1 b.5: «Muvaffaqiyat: „Saqlandi: N ta bog'lash" va oyna yopiladi».
+   * «Sanash» oynasi buni qilardi, «Scan» — yo'q (review 2026-08-10 I2): omborchi
+   * saqlagach oyna ochiq qolar, ro'yxat bo'shab turar va «yozildimi?» degan savol
+   * tug'ilardi (qayta «Saqlash» — endi bo'sh ro'yxat bilan — hech narsa qilmasdi).
+   */
+  it('§1.1 b.5 TO`LIQ saqlanganda oyna YOPILADI', async () => {
+    mockApi({ occupants: [] });
+    const { onOpenChange } = open();
+    await scan('CELLA');
+    await scan('X1');
+    await waitFor(() => expect(logRows()).toHaveLength(1));
+
+    await userEvent.click(screen.getByTestId('cell-scan-save'));
+
+    await waitFor(() => expect(api.post).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
+  });
+
+  /** Qisman yiqilishda oyna YOPILMASLIGI shart — yozilmagan qatorlar ekranda
+   *  qolsin va «Saqlash» qayta bosilsin (§1.4 oxirgi qatori). */
+  it('§1.1 b.5 QISMAN yiqilishda oyna YOPILMAYDI (qolgan qator ko`rinib turadi)', async () => {
+    mockApi({ occupants: [] });
+    const { onOpenChange } = open();
+    await scan('CELLA');
+    await scan('X1');
+    await scan('X2');
+    await waitFor(() => expect(logRows()).toHaveLength(2));
+
+    // Birinchi qator yoziladi, ikkinchisi yiqiladi.
+    vi.mocked(api.post)
+      .mockResolvedValueOnce({} as never)
+      .mockRejectedValueOnce(new Error('tarmoq uzildi'));
+    await userEvent.click(screen.getByTestId('cell-scan-save'));
+
+    await waitFor(() =>
+      expect(screen.getByTestId('cell-scan-status')).toHaveTextContent('tarmoq uzildi'),
+    );
+    expect(onOpenChange).not.toHaveBeenCalled();
+    expect(logRows()).toHaveLength(1);
   });
 
   it('§3 chiqarish huquqi yo`q foydalanuvchida «chiqarib qo`shish» KO`RINMAYDI', async () => {

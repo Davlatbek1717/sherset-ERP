@@ -158,6 +158,12 @@ export const ACCESS_SECTIONS: AccessSection[] = [
       doc('inventory', 'subnav.stock.inventories'),
       doc('internalorder', 'subnav.stock.internal_orders'),
       dict('store', 'subnav.stock.stores'),
+      // TZ v3 §3 (2026-08-10): yacheyka amallari — bog'lash («Scan») va sanash
+      // («Sanash») — omborga EMAS, alohida `storecell` obyektiga bog'langan
+      // (omborchi ombor kartochkasini tahrirlamasdan yacheyka bilan ishlaydi).
+      // Bu qator bo'lmasa admin o'sha ruxsatni hech qaysi ekrandan bera/ola
+      // olmasdi — faqat shablon yoki skript orqali (review 2026-08-10 I4).
+      dict('storecell', card('access_entity_storecell')),
     ],
   },
   {
