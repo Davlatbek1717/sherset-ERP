@@ -14,9 +14,10 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import type { FastifyReply } from 'fastify';
-import type { AuthenticatedUser } from '../../auth/auth.schema.js';
+import { type AuthenticatedUser, SetPosPinSchema } from '../../auth/auth.schema.js';
 import { CurrentUser } from '../../auth/current-user.decorator.js';
 import { JwtAuthGuard } from '../../auth/jwt-auth.guard.js';
+import { PosPinService } from '../../auth/pos-pin.service.js';
 import { BulkIdsSchema, runBulk } from '../../shared/bulk.js';
 import { HrPermissionGuard } from '../hr-auth/hr-permission.guard.js';
 import { RequireHrPermission } from '../hr-auth/require-hr-permission.decorator.js';
@@ -42,6 +43,8 @@ export class HrEmployeeController {
     @Inject(OffboardingService) private readonly offboarding: OffboardingService,
     @Inject(OnboardingService) private readonly onboarding: OnboardingService,
     @Inject(EmployeeCardService) private readonly card: EmployeeCardService,
+    // AuthModule'dan keladi (hr-employee.module.ts uni OSHKORA import qiladi).
+    @Inject(PosPinService) private readonly posPin: PosPinService,
   ) {}
 
   // ── Xodim kartasi 360° + suhbat jurnali (4M.4) ────────────────────────────
@@ -312,6 +315,34 @@ export class HrEmployeeController {
   ) {
     const input = SetPasswordSchema.parse(body);
     return this.svc.setPassword(user.accountId, id, input, user.sub);
+  }
+
+  // ─── Kassa PIN (kassa .exe kirishi) ──────────────────────────────────────
+  // Ruxsat `set-password` BILAN BIR XIL: PIN — kassaga kirish kaliti, undan
+  // zaifroq ruxsat qo'yilsa u parolni chetlab o'tish yo'li bo'lardi.
+  // PIN hech qachon O'QIB BO'LMAYDI — faqat «bor / yo'q» ko'rinadi.
+
+  @Get(':id/pos-pin')
+  @RequireHrPermission('employees', 'full')
+  async getPosPin(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    return this.posPin.hasPin(user.accountId, id);
+  }
+
+  @Post(':id/pos-pin')
+  @RequireHrPermission('employees', 'full')
+  async setPosPin(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ) {
+    const { pin } = SetPosPinSchema.parse(body);
+    return this.posPin.setPin(user.accountId, id, pin);
+  }
+
+  @Delete(':id/pos-pin')
+  @RequireHrPermission('employees', 'full')
+  async clearPosPin(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    return this.posPin.clearPin(user.accountId, id);
   }
 
   // ─── Telegram bog'lash (Faza D1) ─────────────────────────────────────────
