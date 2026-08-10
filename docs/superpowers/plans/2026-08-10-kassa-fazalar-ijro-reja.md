@@ -1528,18 +1528,198 @@ Tuzatish 4 parallel agent + o'zim (auth), har biri TDD (RED ko'rilgan → fix �
 
 ### F6 hisoboti
 
-- **Holat:** ⬜ bajarilmagan
-- **Sana:**
+- **Holat:** ✅ bajarildi (Phase-1)
+- **Sana:** 2026-08-11 · worktree `sherset-kassa-f6`, branch `kassa-f6`
+
 - **O'zgargan fayllar:**
-- **Qilingan ish:**
-- **Schema guard'lari:**
+  - *Server:*
+    - `apps/api/src/modules/debt/debt.schema.ts` — `PosDebtPaymentSchema` kengaytirildi
+    - `apps/api/src/modules/debt/debt-fifo.ts` — yangi `splitOriginalMinor`
+    - `apps/api/src/modules/debt/pos-debt-payment.service.ts` — USD→so'm o'girish, kurs muzlatish, chek maydonlari
+    - `apps/api/src/modules/cashier-session/cashier-session.service.ts` — §6 + §7 valyuta ajratmasi
+    - `apps/api/src/modules/cashier-session/cashier-session-reconciliation.ts` — `ShiftUsdCashInputs.debtUsdMinor`
+  - *Ekran:*
+    - `apps/web/src/components/pos/debt-payment-dialog.tsx` — valyuta tanlovi, kurs, ekvivalent
+    - `apps/web/src/app/print/debt-payment/[batchId]/page.tsx` — PKO dollar qatori
+    - `apps/web/src/messages/{ru,uz}.json` — 3 yangi kalit
+  - *Testlar:* `debt.schema.test.ts` (+6) · `debt-fifo.test.ts` (+6) ·
+    `pos-debt-payment.usd.test.ts` (yangi, 8) · `shift-usd-debt-currency.test.ts` (yangi, 6) ·
+    `foreign-cash-desk-guard.test.ts` (yangi, 7) · `debt-payment-usd.test.tsx` (yangi, 11) ·
+    `pko-usd.test.tsx` (yangi, 3) · `pos-debt-payment-wiring.test.ts` (+3, 2 tasi F6 uchun yangilandi) ·
+    `sales-screen-shift.test.tsx` (payload'ga `currency` qo'shildi)
+
+- **Qilingan ish (reja 8 bandi):**
+  1. **Sxema** — `currency` (`UZS|USD`, default UZS) + kanonik ×10⁸ `exchangeRate`;
+     USD'da kurs majburiy; **stale-scale guard** (`< 10⁹` → 400).
+     🔴 `amountMinor` endi **to'lov valyutasining minor birligida** (UZS→tiyin, USD→sent) —
+     `PostRetailSaleSchema.cashUsdAmountMinor` bilan bir xil konvensiya.
+     Klient so'mdagi ekvivalentni **umuman yubormaydi** (ikki manba muqarrar uzoqlashadi).
+  2. **Servis** — o'girish `usdCentsToSomTiyin` bilan (nusxa emas, `retail-tenders.ts` bilan
+     bitta funksiya). Qarzga tushadigan qiymat, kassa daftari va PKO cheki bir manbadan.
+  3. **Kurs muzlatiladi** — `DebtPayment.exchangeRate` (+ `amountOriginalMinor`); `receipt()`
+     ularni qaytaradi, ya'ni chek qayta chop etilganda AYNAN o'sha kurs chiqadi.
+     Migratsiya **kerak emas**: ustunlar `DebtPayment` da allaqachon bor
+     (`schema.prisma:11380-11382`, 2026-07-13 dan).
+  4. **Dialog** — So'm/Dollar tanlovi; kurs `GET /exchange-rates/rate?currency=USD` dan
+     (kanonik `rateMinor`, F5 merosi — masshtab FE'da qayta hisoblanmaydi); so'm ekvivalenti
+     jonli; kurssiz kunda USD **bloklanadi**. Qo'shimcha ikki qaror:
+     · valyuta almashganda summa **tozalanadi** (sent ≠ tiyin, bir bosishda ~12 000× xato);
+     · USD'da **terminal bloklanadi** (dollar terminal orqali kelmaydi) va usul naqdga qaytadi.
+  5. **PKO cheki** — «Dollar $100.00 × 12450.27» qatori; yorliq va formatlar
+     `lib/pos/receipt-payments.ts` dan (savdo cheki bilan **bitta lug'at**, F5 uslubi).
+  6. **§F6.6 AUDIT — YOPILDI** (pastda alohida).
+  7. **§F6.7 AUDIT — YOPILDI** (pastda alohida).
+  8. **i18n** — `debt_currency_uzs`, `debt_currency_usd`, `debt_usd_residual` (ru+uz);
+     `usd_rate_hint` / `usd_rate_missing` F5 dan qayta ishlatildi.
+
+- **Schema guard'lari** (`debt.schema.test.ts` → «PosDebtPaymentSchema — F6»):
+  | Guard | Xulq | Test |
+  |---|---|---|
+  | USD + kurssiz | 400 (jim 1:1 TAQIQ) | «🔴 KURSSIZ USD to'lovni RAD etadi» |
+  | USD + eski ×10⁴ kurs (`128000000`) | 400 | «🔴 ESKI (×10⁴) masshtabdagi kursni RAD etadi» |
+  | kurs `0` / manfiy | 400 | «nol yoki manfiy kursni RAD etadi» |
+  | `currency: 'EUR'` | 400 (kassa oqimi yo'q) | «noma'lum valyutani RAD etadi» |
+  | UZS kursisiz | o'tadi (regressiya yo'q) | «so'm to'lovi kursisiz ishlayveradi» |
+  Servisda **ikkinchi qatlam** ham bor: `currency==='USD'` bo'lib kurs yo'q bo'lsa servis
+  to'g'ridan-to'g'ri chaqirilganda ham `BadRequestException` (sent tiyin deb o'qilmasin).
+
 - **Qarz daftariga ta'siri qanday tekshirildi:**
-- **Smena USD hisobiga ta'siri:**
-- **Brauzer o'lchovi:**
-- **Gate natijasi:**
+  Simmetriya (`create +total` · `to'lov −paid`) **buzilmadi** — o'zgarish faqat «qancha so'm»
+  savolida, «qaysi ishorada» savolida emas. Dalil:
+  · `pos-debt-payment.usd.test.ts` → «qarz daftari simmetriyasi: to'lov MANFIY delta va
+  SO'MDA (sent emas)» — `balanceDeltas === [{ currency: 'UZS', deltaMinor: -128_000_000n }]`
+  ($100 × 12 800 kurs). Ya'ni delta **manfiy**, **so'mda** va **qarz valyutasida**
+  (`recalcDebt` `debt.currency` ni ishlatadi, to'lov valyutasini emas).
+  · «$100 to'lovi qarzni SO'M ekvivalentiga kamaytiradi» — `debt.paidMinor === 128 000 000n`.
+  · Tuzatishdan OLDIN bu ikkala test `10 000n` (sent tiyin deb o'qilgan) bilan **yiqilardi** —
+    non-vacuity o'lchandi (yiqilish ko'rildi, keyin tuzatildi).
+  · «bir necha qarzga bo'linsa har qator O'Z sentini oladi (Σ = asl summa)» — FIFO 2 qarzga
+    bo'lganda `amountOriginalMinor` bo'laklari `[5 000, 5 000]`, jami 10 000 sent.
+    Bu **storno** uchun hal qiluvchi: `debt.service.reverseCashDeskDelta` yashiqdan
+    chiqadigan JISMONIY summani aynan shu maydondan oladi.
+  · «SO'M to'lovi o'zgarmagan» — daftar ham, yashiq ham so'mda, `exchangeRate: null`.
+
+- **Smena USD hisobiga ta'siri (§F6.6 — KOD BILAN tekshirildi, taxmin emas):**
+  - **Muammo (o'lchangan):** `collectCashInputs` naqd qarz to'lovini `method:'cash'` bo'yicha
+    yig'ardi, **valyuta filtrisiz**; `DebtPayment.amountMinor` esa har doim so'm ekvivalenti.
+    ⇒ USD to'lovda yashiqqa **dollar** tushib, **so'm**-kutilgani dollarning so'm qiymatiga
+    oshardi, USD-kutilgani esa uni ko'rmasdi ⇒ **soxta so'm kamomadi + hisobga olinmagan dollar**.
+  - **Yechim:** so'm agregatiga `currency: BASE_CURRENCY` filtri; dollar to'lovlari
+    `collectUsdCashInputs` da **`amountOriginalMinor`** bo'yicha alohida yig'iladi
+    (`ShiftUsdCashInputs.debtUsdMinor`, `expectedUsdCashMinor` ga qo'shildi).
+    Ikki filtr **juft**: bir to'lov ikkala jamiga ham tushmaydi, birortasidan ham tushib qolmaydi.
+  - **Qo'riqchi:** `shift-usd-debt-currency.test.ts` — (1) manba-qulf: so'm agregatida
+    `currency: BASE_CURRENCY`, dollar agregatida `currency: 'USD'` + `amountOriginalMinor`
+    (🔴 `amountMinor` emas) + `method:'cash'` + `retailShiftId` + `reversedAt: null`;
+    (2) `BASE_CURRENCY === 'UZS'` konstantasi qulflandi; (3) sof formula testi
+    (`debtUsdMinor` kutilgan dollarni aynan o'sha summaga oshiradi, berilmasa 0).
+    Manba-qulf ATAYLAB: `debtUsdMinor` ixtiyoriy maydon ⇒ uzatish tushib qolsa **typecheck jim
+    o'tadi** va sof testlar yashil qoladi (`DocumentEditor` prop-drop klassi).
+  - **Kutilgan yon ta'sir (ijobiy):** `close()` da `expectedUsd !== 0n && closingCashUsd === null`
+    ⇒ 400. Ya'ni smenada **USD qarz to'lovi bo'lsa** kassir endi smenani dollarni sanamasdan
+    yopa olmaydi. Bu avtomatik ravishda `collectUsdCashInputs` orqali keldi.
+
+- **Valyutali kassa (§F6.7 — YOPILDI):**
+  - **Muammo (o'lchangan):** drawer-in/out va cash-out hujjatlariga `session.cashDesk.currency`
+    yoziladi (`:554`, `:588`, `:1143` — endi siljigan), `collectCashInputs` esa `sumMinor` ni
+    valyuta bo'yicha filtrlamasdi ⇒ so'm bo'lmagan kassada **sent so'm formulasiga** kirardi.
+  - **Yechim — ikki qatlam:** (1) `retailDrawerCashIn/Out` agregatlariga
+    `currency: BASE_CURRENCY`; (2) `loadOpenShiftForDrawer` (uch chaqiruvchining **yagona**
+    qo'riqchisi: `drawerCashIn`, `drawerCashOut`, `posCashOut`) so'm bo'lmagan kassada
+    **ochiq `BadRequestException`** beradi, xato matnida kassa valyutasi ko'rsatiladi.
+    Sabab: smena hisobining butun oqimi (opening · sales · expected · variance) so'm
+    semantikasida — USD-kassa **qo'llab-quvvatlanmaydi**, jim noto'g'ri hisobdan ko'ra ochiq
+    to'xtash. Dollar oqimi `CASH_USD` tenderi va F6 dollar qarz to'lovi orqali **alohida**
+    sanaladi.
+  - **Qo'riqchi:** `foreign-cash-desk-guard.test.ts` (7 test) — agregat filtrlari,
+    `kind` filtri **hamon yo'q** (§8.2 regressiyasi qaytmasin), USD kassada Внесение/Изъятие
+    bloklanadi, xato matni sababni aytadi, so'm kassada qo'riqchi **to'smaydi** (vacuity).
+  - **Bugungi bazada xulq o'zgarmaydi:** lokal `climart_adopt` da 1 ta valyuta bor —
+    UZS (default). Ya'ni filtr bugun hech narsani kesmaydi, kelajakdagi jim xatoni yopadi.
+
+- **🟠 KURS MANBAI DIVERGENSIYASI (ochiq biznes savoli — QAROR QILINMADI):**
+  - **Ikki manba, dalil bilan:**
+    | Manba | Kim o'qiydi | Margin |
+    |---|---|---|
+    | `ExchangeRate` jadvali → `GET /exchange-rates/rate` | **F5 dollar savdo**, **F6 dollar qarz to'lovi** | **YO'Q** — `exchange-rate.service.ts:44` `cbuRateToRateValue(r.rate, r.nominal, **0**)` |
+    | `Currency.rateValue` | hujjatlar (cash-in/out, contract, invoice, commission-report…) | **BOR** — `currency.service.ts:265` `cbuRateToRateValue(src.rate, src.nominal, **c.margin**)` |
+    Formula bitta (`currency-rate-source.ts:16`), farq faqat uchinchi argumentda.
+  - **F6 qarori:** manba **O'ZGARTIRILMADI** — F5 bilan bir xil (`/exchange-rates/rate`).
+    Izchillik muhimroq: kassadagi dollar savdo va dollar qarz to'lovi bir xil kursda yopilsin.
+  - **Amalda nima bo'ladi:** `margin > 0` bo'lsa `Currency.rateValue > CBU`, ya'ni mijozning
+    $100 i **ko'proq so'm** qarz yopardi ⇒ do'kon **kamroq oladi**. Margin sotuvda (chiqayotgan
+    tovarni chet valyutada narxlashda) ma'noli; **kiruvchi** naqdga qo'llanganda teskari ishlaydi.
+    Ya'ni hozirgi tanlov (xom CBU) kiruvchi to'lov uchun do'kon foydasiga **konservativ**.
+  - **Miqdoriy misol (lokal DB'dan o'lchangan):** `ExchangeRate` USD = **11 952.10**
+    (2026-08-10, `source: CBRU`, `nominal: 1`) ⇒ `rateMinor = 1195210000000`.
+    Mijoz $100 bersa qarz **1 195 210,00 so'm**ga kamayadi. Agar `Currency` da margin **2%** li
+    USD qatori bo'lsa, o'sha $100 **1 219 114,20 so'm** yopardi — bitta to'lovda
+    **23 904,20 so'm** farq (do'kon zarariga). *(2% — misol uchun olingan taxminiy qiymat;
+    haqiqiy `Currency.margin` prod bazada o'lchanmagan.)*
+  - **🔴 O'lchangan holat:** lokal `climart_adopt` bazasida `Currency` jadvalida **umuman
+    USD qatori YO'Q** (jami 1 qator: `860`/`UZS`, `MANUAL`, `margin: null`, default).
+    Ya'ni bugun divergensiya **latent** — hujjat yo'li USD kursini oladigan joy yo'q.
+    (Prod bazada o'lchanmagan.)
+  - **O'zgartirish kerak bo'lsa qayerda:** **bitta joy** — `exchange-rate.service.ts:44`
+    dagi `cbuRateToRateValue(r.rate, r.nominal, 0)` ning uchinchi argumenti (yoki bu endpoint
+    `Currency.rateValue` ni o'qishga o'tkaziladi). F5 ham, F6 ham shu bitta endpointdan
+    oziqlangani uchun ikkalasi birga o'zgaradi.
+  - ⚠️ **Bu pul qarori — foydalanuvchiniki.** Javob kelgunicha jim «to'g'irlash» qilinmadi.
+
+- **Brauzer o'lchovi:** ❌ **BAJARILMADI** (to'lqin qoidasi — `pnpm dev` portlari band, 3 agent
+  parallel). **Phase-2 da o'lchanadigan stsenariylar (kutilgan raqamlar bilan):**
+  | # | Stsenariy | Kutilgan natija |
+  |---|---|---|
+  | 1 | Qarz 2 000 000 so'm, kurs 11 952.10, mijoz **$100 naqd** | qarz `2 000 000 − 1 195 210 = 804 790` so'mga tushadi; PKO chekda «Dollar $100.00 × 11952.1» va «TO'LANDI 1 195 210» |
+  | 2 | O'sha to'lovdan keyin smenani yopish | so'm-kutilgan **o'zgarmaydi**; USD-kutilgan **+10 000 sent**; dollar sanalmasa `close()` **400** beradi («dollar naqd oqimi bor») |
+  | 3 | Qarz 1 000 so'm, mijoz $100 | tugma **bloklangan** (ortiqcha to'lov), server ham 400 |
+  | 4 | Kurs yo'q kun (`/exchange-rates/rate` 404) | «Dollar» tugmasi **disabled**, `usd_rate_missing` matni; so'm to'lovi ishlaydi |
+  | 5 | FIFO: 2 ta qarz (600 000 + 595 210 so'm), mijoz $100 | ikkala qarz yopiladi; ikkita `DebtPayment` qatori, `amountOriginalMinor` bo'laklari **jami 10 000 sent** |
+  | 6 | «Hammasi» dollarda, qarz 2 000 000 so'm | maydonga **`167.33`** ($167.33 = 1 999 944,89 so'm), yopilmagan **55,11 so'm** izohda ko'rinadi, to'lov **400 bermaydi** *(raqamlar shu sessiyada hisoblab tekshirildi: `200 000 000 × 10⁸ / 1 195 210 000 000 = 16 733` sent)* |
+  | 7 | Storno (dollar to'lovini qaytarish) | kassa daftaridan **10 000 sent** (USD) chiqadi, so'm qoldig'i tegilmaydi; qarz `paidMinor` tiklanadi |
+  | 8 | `CashDesk.currency = 'USD'` bo'lgan smenada Внесение | **400**, xato matnida «Kassa valyutasi USD» |
+  🔴 Migratsiya YOZILMADI va QO'LLANMADI — kerak emas edi (`DebtPayment.currency`,
+  `amountOriginalMinor`, `exchangeRate` ustunlari 2026-07-13 dan beri bor).
+
+- **Gate natijasi (to'liq, qisqartirilmagan):**
+  - `pnpm --filter @moysklad/money build` — OK
+  - `pnpm --filter @moysklad/api typecheck` — **0 xato**
+  - `pnpm --filter @moysklad/web typecheck` — **0 xato**
+  - `pnpm biome check <tegilgan yo'llar>` — **0 xato**
+  - `pnpm --filter @moysklad/api test` — **557 fayl · 7822 test · 0 yiqilish** (1 skip)
+  - `pnpm --filter @moysklad/web test` — **240 fayl · 3329 test · 0 yiqilish** (26 skip)
+  - `pnpm i18n:gate` — **9 test yashil** (12 971 kalit tekshirildi)
+  - Timeout/soxta-qizil hodisa **bo'lmadi** (yakka yugurtirish talab qilinmadi).
+  - ⚠️ Ikki mavjud test F6 tufayli **yangilandi** (yashirilmadi):
+    `pos-debt-payment-wiring.test.ts` dagi ikki manba-qulfi (`formatAmountInput(outstanding,
+    currency)` → `payAllInput`; `parseAmountToMinor(amountInput, currency)` → valyutali variant)
+    va `sales-screen-shift.test.tsx` payload'iga `currency: 'UZS'` qo'shildi. Ikkalasi ham
+    ataylab qilingan shartnoma o'zgarishi, niyat (float yo'q, umumiy parse) qulfda qoldi.
+
 - **Commit(lar):**
+  - `cd32636d` — `feat(kassa): f6 server — usd qarz to'lovi + smena valyuta ajratmasi`
+  - `66fb4035` — `feat(kassa): f6 ekran — qarz to'lovi oynasida dollar + pko chek qatori`
+  - *(har ikkisiga `docs/progress.json` ning avto-yangilangan 1 qatori ilashdi — hook
+    generatsiyasi, begona sessiya ishi emas; bu worktree izolyatsiyalangan.)*
+
 - **Kelgusi fazalarga qoldirilgan:**
-- **Yorliq:**
+  1. **🟠 Kurs manbai qarori** (yuqorida) — foydalanuvchi javobidan keyin **bitta** joyda
+     o'zgaradi. F6 hech narsani jim o'zgartirmadi.
+  2. **Dollar `CashDesk.balanceMinor` ga tushmaydi** — F5 dan meros ochiq qarz.
+     Endi dollar qarz to'lovi ham `MoneyOperation` ga `currency: 'USD'` bilan yozadi, ya'ni
+     pul-daftar va bank-balans hisobotlari kassadagi dollarni hamon **so'm bilan aralashtirmaydi**,
+     lekin uni **ko'rsatmaydi** ham. Alohida faza talab qiladi.
+  3. **Aralash (so'm + dollar) qarz to'lovi** — hozir bitta to'lov = bitta valyuta.
+     Mijoz $50 + 100 000 so'm bermoqchi bo'lsa kassir ikki marta qabul qiladi (ikki PKO cheki).
+  4. **Dollar bilan qarzni TIYIN-BA-TIYIN yopib bo'lmaydi** (1 sent ≈ 120 tiyin). «Hammasi»
+     pastga yaxlitlaydi va qoldiq ochiq ko'rsatiladi; to'liq yopish uchun qoldiqni so'mda
+     olish kerak. Avans (F10) kelganda bu tabiiy yechiladi.
+  5. **USD-kassa (`CashDesk.currency ≠ UZS`)** endi ochiq bloklangan — to'liq qo'llab-quvvatlash
+     (dollar opening/expected/variance) alohida ish.
+  6. `escalateOverdue`/`markStale` hamon chaqirilmaydi (F13 da).
+
+- **Yorliq:** **Phase-1: strukturaviy, runtime-tasdiqlanmagan** — brauzer-smoke **YO'Q**,
+  real DB bilan uchidan-uchiga to'lov **YO'Q**, fizik PKO chop etish **YO'Q**.
 
 ### F7 hisoboti
 
