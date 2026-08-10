@@ -171,6 +171,14 @@ export function salesRoutes(over: Route[] = []): Route[] {
   return [
     ...over,
     { match: /^\/cashier-sessions\/current$/, value: SESSION() },
+    // F7 — POS «Zakazlar» yorlig'i `usePermissions()` orqali `customerorder`
+    // katakchalarini o'qiydi. Marshrut shu yerda TURISHI SHART: yo'qligida
+    // router istisno otadi, matritsa `undefined` bo'lib qoladi va hook
+    // fail-open ishlaydi — ya'ni ruxsat testlari JIM yashil bo'lardi.
+    {
+      match: /^\/permissions\/me$/,
+      value: { matrix: { customerorder: { view: 'ALL', approve: 'ALL' } } },
+    },
     // MK31 — to'lov oynasi ochilganda kunlik dollar kursi so'raladi. Marshrut
     // shu yerda TURISHI SHART: yo'qligida router istisno otadi va har POS
     // testi kursi yo'q holatda ishlab, dollar tenderini jimgina o'chirardi.
