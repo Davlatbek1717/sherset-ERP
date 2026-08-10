@@ -85,6 +85,7 @@ model Account {
   auditLog                       AuditLog[]
   organizationAccounts           OrganizationAccount[]
   cashDesks                      CashDesk[]
+  posDevices                     PosDevice[]
   moneyOperations                MoneyOperation[]
   cashIns                        CashIn[]
   cashOuts                       CashOut[]
@@ -352,6 +353,16 @@ model Employee {
   /// qaytiladi — QAYTA LOGIN EMAS, chunki savat yo'qolib ketardi.
   /// NULL = PIN o'rnatilmagan (qulf ishlamaydi).
   posPinHash                 String?   @map("pos_pin_hash") @db.VarChar(255)
+  /// POS PIN bo'yicha xodimni TOPISH uchun HMAC-SHA256(pin, POS_PIN_PEPPER) hex.
+  ///
+  /// `posPinHash` (argon2) TASDIQLAYDI, bu esa TOPADI — argon2 tuzli bo'lgani
+  /// uchun PIN bo'yicha qidirib bo'lmaydi (sabab:
+  /// `apps/api/src/modules/auth/pos-pin-lookup.ts`). Kassa .exe kirishida
+  /// foydalanuvchi nomi kiritilmaydi, faqat PIN — shuning uchun topish kerak.
+  ///
+  /// NULL = PIN o'rnatilmagan. Postgres'da NULL'lar unique cheklovga
+  /// tushmaydi, ya'ni PIN'siz xodimlar bir-biriga xalaqit bermaydi.
+  posPinLookup               String?   @map("pos_pin_lookup") @db.VarChar(64)
 
   // === HR GPS-davomat (attendance geofence) ===
   // All nullable/defaulted — prod-safe, no backfill. Populated when an
@@ -535,12 +546,71 @@ model Employee {
   // one). The 2026-06-12 (11s) handoff misread this diff line as "uniqueness not enforced" —
   // it is. Guard: apps/api/src/modules/hr/hr-employee/employee-username-unique-index.test.ts.
   @@unique([accountId, username], name: "Employee_account_username_uk")
+  /// PIN-only kirishda (kassa .exe) PIN AYNIQLIK bermasligi shart: ikki
+  /// kassirda bir xil PIN bo'lsa kim kirgani noaniq bo'lardi va sotuv
+  /// noto'g'ri odamga yozilardi. Cheklov BAZA darajasida — servis tekshiruvi
+  /// yetarli emas (ikki parallel so'rov ikkalasi ham «bo'sh» ko'radi).
+  /// Bu indeks TO'LIQ (partial emas): NULL'lar Postgres'da to'qnashmaydi,
+  /// shuning uchun PIN'siz xodimlar filtrsiz ham cheklovga tushmaydi.
+  /// Indeks nomi ATAYLAB Prisma sukutida (`employees_account_id_pos_pin_lookup_key`):
+  /// yuqoridagi `username` cheklovi kabi maxsus nom berilsa `migrate diff` har
+  /// safar farq ko'rsatib turardi.
+  @@unique([accountId, posPinLookup])
   @@index([accountId, archived])
   @@index([accountId, groupId])
   @@index([accountId, departmentId])
   @@index([accountId, positionId])
   @@index([accountId, scheduleId])
   @@map("employees")
+}
+
+/// Kassa qurilmasi — kassa .exe o'rnatilgan kompyuter.
+///
+/// NEGA KERAK: PIN-only kirishda foydalanuvchi nomi kiritilmaydi, ya'ni
+/// 4 raqam = 10 000 variant. Qurilma kaliti bo'lmasa har kim ochiq
+/// internetdan PIN tera olardi. `POST /auth/pos-login` shu yozuvsiz va
+/// to'g'ri kalitsiz ISHLAMAYDI — hujum uchun avval kassa kompyuteriga
+/// jismonan kirish kerak.
+///
+/// Do'kon/kassa/tashkilot shu yerda muhrlanadi, chunki `CashierSession`
+/// uchalasini talab qiladi — kassir ularni har smenada qayta tanlamasin.
+model PosDevice {
+  id        String @id @default(uuid()) @db.Uuid
+  accountId String @map("account_id") @db.Uuid
+
+  /// Operator ko'radigan nom: «1-kassa, markaziy do'kon».
+  name String @db.VarChar(200)
+
+  storeId        String @map("store_id") @db.Uuid
+  cashDeskId     String @map("cash_desk_id") @db.Uuid
+  organizationId String @map("organization_id") @db.Uuid
+
+  /// argon2(qurilma maxfiy kaliti). Kalitning O'ZI faqat juftlash javobida
+  /// bir marta qaytadi va boshqa hech qachon o'qib bo'lmaydi.
+  secretHash String @map("secret_hash") @db.VarChar(255)
+
+  pairedById String    @map("paired_by_id") @db.Uuid
+  pairedAt   DateTime  @default(now()) @map("paired_at") @db.Timestamptz()
+  lastSeenAt DateTime? @map("last_seen_at") @db.Timestamptz()
+
+  /// Qurilma yo'qolsa/o'g'irlansa admin bekor qiladi. O'CHIRILMAYDI — audit
+  /// izi qolishi kerak (qaysi qurilmadan qaysi sotuv qilingani).
+  revokedAt DateTime? @map("revoked_at") @db.Timestamptz()
+
+  /// PIN brute-force qulfi. Xodim hisoblagichi (`pos-pin.service.ts`) ataylab
+  /// XOTIRADA turadi; bu esa BAZADA, chunki qurilma qulfi API qayta ishga
+  /// tushganda yo'qolmasligi kerak — aks holda qulfni restart bilan aylanib
+  /// o'tish mumkin bo'lardi.
+  failedAttempts Int       @default(0) @map("failed_attempts")
+  lockedUntil    DateTime? @map("locked_until") @db.Timestamptz()
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz()
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([accountId, revokedAt])
+  @@map("pos_devices")
 }
 
 // Role — per-account definition (e.g. Administrator, Manager, Cashier).
