@@ -60,6 +60,13 @@ yugurtirish uchun esa `pnpm --filter @moysklad/api exec vitest run <yo'l>`.
 🔴 **API testlarini o'tkazib yuborish TAQIQ** — xotira: «web-only gate `apps/api`
 qo'riqchilarini o'tkazib yuboradi» (bir faza 9 yiqilishni jim qoldirgan).
 
+🔴 **To'plamlarni KETMA-KET yugurtir, bir vaqtda EMAS** (2026-08-11 audit-to'lqini sabog'i):
+API va web to'plamlari bir vaqtda ishlaganda 9 ta test 5000ms chegarasida **timeout**
+bo'ldi (argon2 xesh testlari va og'ir React render testlari). Yolg'iz yugurtirilganda
+hammasi yashil edi. Ya'ni parallel yuklamadagi qizil natija **soxta signal** — uni bug deb
+qidirib vaqt ketadi. Shubhali yiqilishni **doim yolg'iz** qayta yugurtirib tasdiqla;
+5000ms atrofidagi davomiylik — timeout belgisi, defekt emas.
+
 Yiqilgan test bo'lsa: **meniki ekanini yoki oldindan qizil ekanini aniqlab**, hisobotda yoz.
 «Bog'liq emas» deb jim o'tish — taqiq.
 
