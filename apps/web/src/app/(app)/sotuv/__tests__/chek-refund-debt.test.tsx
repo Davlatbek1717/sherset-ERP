@@ -1,0 +1,179 @@
+import { api } from '@/lib/api-client';
+import { renderWithProviders, screen, userEvent, waitFor } from '@/test-utils';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import SotuvPage from '../page';
+import { type Route, SALE_DETAIL, SALE_ROW, at, norm, router, salesRoutes } from './harness';
+
+/**
+ * F5 (audit 2026-08-11) — QARZGA sotilgan chekni POS'dan qaytarish.
+ *
+ * Ilgari MUMKIN EMAS edi: ekran har doim to'liq naqd so'rardi
+ * (`cashAmountMinor` = butun qiymat), server esa `validateRefundSettlement`
+ * bilan «payout kassa olgan puldan ko'p» deb 400 qaytarardi (xom inglizcha
+ * matn). Kassir qarzli chekni umuman qaytara olmasdi.
+ *
+ * Endi ekran chekning qarz ulushini `payments` qatorlaridan o'qiydi va
+ * serverning `moneyCap` formulasi bilan naqd ulushini yuboradi; qarz
+ * ulushini ATAYLAB yubormaydi — server auto-split qiladi.
+ */
+
+vi.mock('@/lib/api-client', () => ({
+  api: { get: vi.fn(), post: vi.fn(), put: vi.fn(), patch: vi.fn(), delete: vi.fn() },
+}));
+
+vi.mock('@/lib/auth-store', () => ({
+  useAuth: () => ({
+    user: { id: 'u-1', name: 'Kassir Aliyev' },
+    accessToken: 't',
+    initialized: true,
+  }),
+  getAccessToken: () => 't',
+  refresh: async () => false,
+}));
+
+vi.mock('@/lib/print-agent', () => ({
+  printReceiptViaAgent: vi.fn(async () => ({ handled: true, ok: true })),
+  printPickingViaAgent: vi.fn(async () => ({ handled: true, printed: 1, skipped: 0, errors: 0 })),
+}));
+
+const LIST_ROW = SALE_ROW({
+  state: 'posted',
+  sumMinor: '1800000',
+  agent: { id: 'cp-1', name: 'Usta Vali' },
+});
+
+/** 18 000 so'mlik chek: 6 000 naqd olingan, 12 000 qarzga qoldirilgan. */
+const PART_DEBT = [
+  {
+    method: 'CASH_UZS',
+    amountMinor: '600000',
+    currency: 'UZS',
+    rateMinor: null,
+    amountBaseMinor: '600000',
+  },
+  {
+    method: 'DEBT',
+    amountMinor: '1200000',
+    currency: 'UZS',
+    rateMinor: null,
+    amountBaseMinor: '1200000',
+  },
+];
+
+function chekRoutes(detail: Record<string, unknown> = {}): Route[] {
+  return salesRoutes([
+    { match: /limit=100/, value: { items: [LIST_ROW], total: 1 } },
+    { match: /^\/retail-sales\/[^/?]+$/, value: SALE_DETAIL(detail) },
+  ]);
+}
+
+async function openRefund(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(await screen.findByRole('button', { name: /^Cheklar/ }));
+  await user.click(await screen.findByRole('button', { name: /Usta Vali/ }));
+  await screen.findByText('CHEK-00001');
+  await user.click(screen.getByRole('button', { name: '↩ Qaytarish' }));
+}
+
+function refundQtyInputs(): HTMLElement[] {
+  return screen.getAllByRole('textbox').filter((el) => el.getAttribute('inputmode') === 'decimal');
+}
+
+beforeEach(() => {
+  vi.mocked(api.get).mockReset();
+  vi.mocked(api.post).mockReset();
+  vi.mocked(api.post).mockResolvedValue({ ok: true });
+  window.open = vi.fn();
+});
+
+describe('ChekDetailPanel — qarzli chekni qaytarish', () => {
+  it('naqd ulushi chek QANDAY yopilganidan kelib chiqadi (18 000 dan 6 000)', async () => {
+    vi.mocked(api.get).mockImplementation(router(chekRoutes({ payments: PART_DEBT })));
+    const user = userEvent.setup();
+    renderWithProviders(<SotuvPage />);
+    await openRefund(user);
+
+    const footer = screen.getByText('Qaytariladigan summa (naqd)').parentElement as HTMLElement;
+    expect(norm(footer.textContent)).toContain('6 000,00 сум');
+  });
+
+  it('qarzdan yechiladigan qism kassirga KO‘RSATILADI', async () => {
+    vi.mocked(api.get).mockImplementation(router(chekRoutes({ payments: PART_DEBT })));
+    const user = userEvent.setup();
+    renderWithProviders(<SotuvPage />);
+    await openRefund(user);
+
+    const row = screen.getByText('Qarzdan yechiladi').parentElement as HTMLElement;
+    expect(norm(row.textContent)).toContain('12 000,00 сум');
+  });
+
+  it('so‘rovda naqd = kassa olgan pul; qarz ulushi YUBORILMAYDI (server auto-split)', async () => {
+    vi.mocked(api.get).mockImplementation(router(chekRoutes({ payments: PART_DEBT })));
+    const user = userEvent.setup();
+    renderWithProviders(<SotuvPage />);
+    await openRefund(user);
+
+    await user.click(screen.getByRole('button', { name: /Qaytarishni tasdiqlash/ }));
+    await waitFor(() => expect(api.post).toHaveBeenCalled());
+    expect(api.post).toHaveBeenCalledWith('/retail-sales/s-1/refund', {
+      positions: [{ productId: 'p-1', quantity: '2' }],
+      cashAmountMinor: '600000',
+      cardAmountMinor: '0',
+      description: 'POS qaytarish',
+    });
+  });
+
+  it('TO‘LIQ qarzli chekda naqd 0 — tugma baribir ISHLAYDI', async () => {
+    vi.mocked(api.get).mockImplementation(
+      router(
+        chekRoutes({
+          payments: [
+            {
+              method: 'DEBT',
+              amountMinor: '1800000',
+              currency: 'UZS',
+              rateMinor: null,
+              amountBaseMinor: '1800000',
+            },
+          ],
+        }),
+      ),
+    );
+    const user = userEvent.setup();
+    renderWithProviders(<SotuvPage />);
+    await openRefund(user);
+
+    const btn = screen.getByRole('button', { name: /Qaytarishni tasdiqlash/ });
+    // Ilgari bu holat imkonsiz edi: naqd 18 000 yuborilar va server 400 berardi.
+    expect(btn).toBeEnabled();
+    await user.click(btn);
+    await waitFor(() => expect(api.post).toHaveBeenCalled());
+    const [, body] = vi.mocked(api.post).mock.calls[0] as [string, Record<string, unknown>];
+    expect(body.cashAmountMinor).toBe('0');
+  });
+
+  it('qisman qaytarishda naqd ham proporsional kamayadi', async () => {
+    vi.mocked(api.get).mockImplementation(router(chekRoutes({ payments: PART_DEBT })));
+    const user = userEvent.setup();
+    renderWithProviders(<SotuvPage />);
+    await openRefund(user);
+
+    const input = at(refundQtyInputs(), 0);
+    await user.clear(input);
+    await user.type(input, '1');
+
+    // 9 000 qaytariladi ⇒ naqd ulushi 6 000 × 9 000 / 18 000 = 3 000.
+    const footer = screen.getByText('Qaytariladigan summa (naqd)').parentElement as HTMLElement;
+    expect(norm(footer.textContent)).toContain('3 000,00 сум');
+  });
+
+  it('to‘lov qatorlari yo‘q ESKI chekda xulq o‘zgarmaydi (hammasi naqd)', async () => {
+    vi.mocked(api.get).mockImplementation(router(chekRoutes()));
+    const user = userEvent.setup();
+    renderWithProviders(<SotuvPage />);
+    await openRefund(user);
+
+    const footer = screen.getByText('Qaytariladigan summa (naqd)').parentElement as HTMLElement;
+    expect(norm(footer.textContent)).toContain('18 000,00 сум');
+    expect(screen.queryByText('Qarzdan yechiladi')).not.toBeInTheDocument();
+  });
+});

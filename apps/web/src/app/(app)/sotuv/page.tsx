@@ -15,8 +15,10 @@ import {
   cartTotalMinor,
   clampReturnQty,
   normalizeQtyDecimal,
+  refundCashShareMinor,
   refundPayoutMinor,
   revenueBaseMinor,
+  saleDebtMinor,
   cartCount as sumCartCount,
   toMinorOrNull,
 } from '@/lib/pos/cart-math';
@@ -245,6 +247,11 @@ interface ChekDetailData {
   cashAmountMinor: string;
   cardAmountMinor: string;
   terminalAmountMinor: string;
+  /**
+   * Chek QANDAY yopilgani (`RetailSalePayment`). Qaytarishda naqd ulushi
+   * shundan chiqadi — qarzga olingan tovar uchun kassa pul olmagan.
+   */
+  payments?: Array<{ method: string; amountBaseMinor: string }> | null;
   agent: { id: string; name: string } | null;
   session: {
     cashier: { id: string; name: string };
@@ -285,13 +292,22 @@ function ChekDetailPanel({ saleId, onBack }: { saleId: string; onBack: () => voi
       // FE-01: naqd asl chekning CHEGIRMALI qator summasidan proporsional —
       // `priceMinor × qty` mijoz to'lamagan pulni qaytarardi. Server ham
       // aynan shu bazadan hisoblaydi va oshib ketsa 400 beradi.
-      const cashRefund = refundPayoutMinor(
+      const refundValue = refundPayoutMinor(
         refundLines.map((p) => ({
           quantity: p.quantity,
           sumMinor: p.sumMinor,
           returnQty: normalizeQtyDecimal(returnQty[p.id] ?? ''),
         })),
       );
+      // AUDIT: qarzga sotilgan chekda kassa PUL OLMAGAN — to'liq naqd
+      // so'rasak server `moneyMaxMinor` bilan 400 berardi va bunday chekni
+      // POS'dan umuman qaytarib bo'lmasdi. Qarz ulushi (`debtReturnMinor`)
+      // ATAYLAB yuborilmaydi: server uni o'zi hisoblaydi (auto-split).
+      const cashRefund = refundCashShareMinor({
+        originalSumMinor: BigInt(data?.sumMinor ?? '0'),
+        originalDebtMinor: saleDebtMinor(data?.payments),
+        refundSumMinor: refundValue,
+      });
       await api.post(`/retail-sales/${saleId}/refund`, {
         positions,
         cashAmountMinor: cashRefund.toString(),
@@ -524,13 +540,23 @@ function ChekDetailPanel({ saleId, onBack }: { saleId: string; onBack: () => voi
             // Ekranda ko'rinadigan raqam so'rovga ketadigani bilan bir xil
             // formuladan chiqsin (FE-01) — aks holda kassir bir summani
             // ko'rib boshqasini yuborardi.
-            const refundMinor = refundPayoutMinor(
+            const refundValue = refundPayoutMinor(
               data.positions.map((p) => ({
                 quantity: p.quantity,
                 sumMinor: p.sumMinor,
                 returnQty: normalizeQtyDecimal(returnQty[p.id] ?? ''),
               })),
             );
+            const saleDebt = saleDebtMinor(data.payments);
+            const refundMinor = refundCashShareMinor({
+              originalSumMinor: BigInt(data.sumMinor),
+              originalDebtMinor: saleDebt,
+              refundSumMinor: refundValue,
+            });
+            // Qarzdan yechiladigan qism — serverning auto-split'i aynan shu
+            // qoldiqni yozadi. Kassir mijozga «pulingiz emas, qarzingiz
+            // kamayadi» deyishi uchun ekranda ko'rinishi SHART.
+            const refundDebtMinor = refundValue - refundMinor;
             return (
               <>
                 <div className="mb-3 flex items-center justify-between">
@@ -541,9 +567,22 @@ function ChekDetailPanel({ saleId, onBack }: { saleId: string; onBack: () => voi
                     {formatMoney(refundMinor)}
                   </span>
                 </div>
+                {saleDebt > 0n && refundDebtMinor > 0n && (
+                  <div className="mb-3 flex items-center justify-between">
+                    <span className="text-sm text-[var(--ms-text-muted)]">
+                      {t('refund_amount_debt')}
+                    </span>
+                    <span className="font-semibold tabular-nums text-[var(--ms-text-primary)]">
+                      {formatMoney(refundDebtMinor)}
+                    </span>
+                  </div>
+                )}
                 <button
                   type="button"
-                  disabled={refundMinor <= 0n || refundMut.isPending}
+                  // Qaytariladigan QIYMAT nolga teng bo'lsagina bloklanadi —
+                  // to'liq qarzli chekda naqd 0 bo'ladi, lekin qaytarish
+                  // O'ZI to'g'ri amal (qarz yechiladi).
+                  disabled={refundValue <= 0n || refundMut.isPending}
                   onClick={() => refundMut.mutate()}
                   className="w-full rounded-xl bg-[var(--ms-destructive-500)] py-3 font-bold text-white hover:opacity-90 disabled:opacity-40"
                 >

@@ -7905,6 +7905,7 @@
       "receipts_empty": "Bu smenada hali sotuv yo'q",
       "refund": "Qaytarish",
       "refund_amount_cash": "Qaytariladigan summa (naqd)",
+      "refund_amount_debt": "Qarzdan yechiladi",
       "refund_confirm": "Qaytarishni tasdiqlash",
       "refund_no_lines": "Qaytariladigan tovar tanlanmagan",
       "refund_qty_label": "Qaytadi:",

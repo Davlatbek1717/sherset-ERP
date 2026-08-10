@@ -7,8 +7,10 @@ import {
   discountedCartTotalMinor,
   discountedLineTotalMinor,
   normalizeQtyDecimal,
+  refundCashShareMinor,
   refundPayoutMinor,
   revenueBaseMinor,
+  saleDebtMinor,
   toMinorOrNull,
 } from './cart-math';
 
@@ -308,5 +310,116 @@ describe('normalizeQtyDecimal', () => {
     expect(normalizeQtyDecimal('')).toBe('0');
     expect(normalizeQtyDecimal('abc')).toBe('0');
     expect(normalizeQtyDecimal('1e-7')).toBe('0');
+  });
+});
+
+/**
+ * F5 (audit 2026-08-11) — QARZLI chekni POS'dan qaytarish.
+ *
+ * Hozirgacha mumkin EMAS edi: `sotuv/page.tsx` refundda har doim to'liq naqd
+ * so'rardi (`cashAmountMinor` = butun qiymat), server esa
+ * `retail-refund-validation.ts` `moneyMaxMinor` bilan «kassa bu tovar uchun
+ * bunchalik pul OLMAGAN» deb 400 berardi (xom inglizcha matn bilan). Ya'ni
+ * qarzga sotilgan chekni kassir umuman qaytara olmasdi.
+ *
+ * Formula serverning `computeRefundSettlementCaps` idagi `moneyCap` ning
+ * AYNAN o'zi: `⌊(sum − debt) × R / sum⌋`. Qolgani (qarz ulushi) ataylab
+ * yuborilmaydi — server uni o'zi hisoblaydi (auto-split), shunda qisman
+ * qaytarishlarda yaxlitlash serverning kümülativ bazasidan ketadi.
+ */
+describe('refundCashShareMinor', () => {
+  it('qarzsiz chek — hammasi naqd (xulq o`zgarmagan)', () => {
+    expect(
+      refundCashShareMinor({
+        originalSumMinor: 900_000n,
+        originalDebtMinor: 0n,
+        refundSumMinor: 900_000n,
+      }),
+    ).toBe(900_000n);
+  });
+
+  it('to`liq qarzli chek — naqd NOL (kassa pul olmagan)', () => {
+    expect(
+      refundCashShareMinor({
+        originalSumMinor: 900_000n,
+        originalDebtMinor: 900_000n,
+        refundSumMinor: 900_000n,
+      }),
+    ).toBe(0n);
+  });
+
+  it('qisman qarz — naqd ulushi proporsional', () => {
+    // 100 000 dan 60 000 qarzga: kassa 40 000 olgan. To'liq qaytarishda 40 000.
+    expect(
+      refundCashShareMinor({
+        originalSumMinor: 100_000n,
+        originalDebtMinor: 60_000n,
+        refundSumMinor: 100_000n,
+      }),
+    ).toBe(40_000n);
+  });
+
+  it('qisman qaytarishda ham proporsional', () => {
+    // Yarmi qaytarilsa kassa olgan pulning yarmi: 40 000 × 50 000 / 100 000.
+    expect(
+      refundCashShareMinor({
+        originalSumMinor: 100_000n,
+        originalDebtMinor: 60_000n,
+        refundSumMinor: 50_000n,
+      }),
+    ).toBe(20_000n);
+  });
+
+  it('yaxlitlash PASTGA — server chegarasidan oshmaydi', () => {
+    // 100 dan 1 qarz ⇒ money 99; R = 1 ⇒ 99 × 1 / 100 = 0.99 → 0.
+    expect(
+      refundCashShareMinor({ originalSumMinor: 100n, originalDebtMinor: 1n, refundSumMinor: 1n }),
+    ).toBe(0n);
+  });
+
+  it('buzuq ma`lumot (qarz jamidan katta) naqd yaratmaydi', () => {
+    expect(
+      refundCashShareMinor({
+        originalSumMinor: 100_000n,
+        originalDebtMinor: 200_000n,
+        refundSumMinor: 100_000n,
+      }),
+    ).toBe(0n);
+  });
+
+  it('nol summali chek bo`lishga urinmaydi', () => {
+    expect(
+      refundCashShareMinor({ originalSumMinor: 0n, originalDebtMinor: 0n, refundSumMinor: 500n }),
+    ).toBe(0n);
+  });
+
+  it('qaytarilgan qiymat chek summasidan oshsa — qisiladi', () => {
+    expect(
+      refundCashShareMinor({
+        originalSumMinor: 100_000n,
+        originalDebtMinor: 0n,
+        refundSumMinor: 150_000n,
+      }),
+    ).toBe(100_000n);
+  });
+});
+
+/**
+ * Chekning qarz ulushi — `RetailSalePayment` qatorlaridan. Ilgari FE bu
+ * raqamni umuman bilmasdi (detal javobida to'lov qatorlari yo'q edi).
+ */
+describe('saleDebtMinor', () => {
+  it('DEBT qatorlarini qo`shadi, boshqasini e`tiborsiz qoldiradi', () => {
+    expect(
+      saleDebtMinor([
+        { method: 'CASH_UZS', amountBaseMinor: '40000' },
+        { method: 'DEBT', amountBaseMinor: '60000' },
+      ]),
+    ).toBe(60_000n);
+  });
+
+  it('to`lov qatorlari yo`q eski chekda 0 (naqd deb qaraladi)', () => {
+    expect(saleDebtMinor(undefined)).toBe(0n);
+    expect(saleDebtMinor([])).toBe(0n);
   });
 });

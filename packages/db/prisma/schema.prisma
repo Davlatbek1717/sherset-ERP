@@ -8493,10 +8493,11 @@ model RetailSale {
 /// `method` — VarChar, Postgres enum EMAS (sxema bo'ylab konventsiya:
 /// RetailSale.state, RestockTask.status). Yangi kanal (CLICK/PAYME/QR)
 /// migratsiyasiz qo'shiladi. Hozir yozib turilganlari:
-///   CASH_UZS · CARD · TERMINAL · DEBT
-/// TZ'da rejalashtirilgan, hali ULANMAGAN: CASH_USD (kunlik kurs kerak —
-/// `rateMinor` ga muzlatiladi va kurs topilmasa to'lov BLOKLANADI, jim 1:1
-/// qabul qilish taqiqlanadi), CLICK, PAYME, QR.
+///   CASH_UZS · CASH_USD · CARD · TERMINAL · DEBT
+/// `CASH_USD` (F5, 2026-08-11) ULANDI: kassa ekrani kunlik kursni
+/// `GET /exchange-rates/rate` dan oladi, u `rateMinor` ga MUZLATILADI va
+/// kurs topilmasa to'lov BLOKLANADI (jim 1:1 qabul qilish taqiqlanadi).
+/// TZ'da rejalashtirilgan, hali ULANMAGAN: CLICK, PAYME, QR.
 model RetailSalePayment {
   id        String @id @default(uuid()) @db.Uuid
   accountId String @map("account_id") @db.Uuid
@@ -8509,7 +8510,9 @@ model RetailSalePayment {
   /// `CASH_USD` uchun qo'llanilgan kurs — chekka MUZLATILADI (kurs keyin
   /// o'zgarsa, eski chek qayta baholanmasin). UZS to'lovda NULL.
   /// Masshtab: KANONIK ×10^8 (DB-01, Faza 16) — rateValue bilan bir xil.
-  /// Hozircha hech bir yozuvchi yo'q (CASH_USD ulanmagan) — backfill kerak emas.
+  /// Yozuvchi: `retail-sale.service.ts` `post()` (F5 dan beri CASH_USD
+  /// qatorlari uchun). Eski qatorlarda NULL — backfill kerak emas
+  /// (ular so'm to'lovlari, kursi yo'q).
   rateMinor       BigInt? @map("rate_minor")
   /// Hisob valyutasiga (UZS) o'girilgan summa — BARCHA hisob-kitob shundan.
   /// UZS to'lovda `amountMinor` bilan teng.

@@ -7905,6 +7905,7 @@
       "receipts_empty": "В этой смене ещё нет продаж",
       "refund": "Возврат",
       "refund_amount_cash": "Сумма к возврату (наличными)",
+      "refund_amount_debt": "Списывается с долга",
       "refund_confirm": "Подтвердить возврат",
       "refund_no_lines": "Не выбран товар для возврата",
       "refund_qty_label": "Возврат:",
