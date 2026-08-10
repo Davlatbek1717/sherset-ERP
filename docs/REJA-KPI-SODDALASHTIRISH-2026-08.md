@@ -317,7 +317,7 @@ o'zgarmagan) · `kpi-accrual-wiring.test.ts` yashil.
 
 ---
 
-### KPI-06 — Phase-2 QA: real brauzer verifikatsiya ☐ HISOBOT
+### KPI-06 — Phase-2 QA: real brauzer verifikatsiya ☑ HISOBOT (2026-08-10)
 **Bo'lim/blok:** KPI-soddalashtirish · **TZ:** — (runtime QA)
 **Ustuvorlik:** P1 · **Bog'liqlik:** KPI-01…KPI-05
 **Maqsad:** Butun oqimni real brauzerda tasdiqlash (`/qa-cohort` naqshi, Playwright MCP) — statik gate
@@ -730,4 +730,109 @@ hunk'im (16 qator).
 3. `manualDoneAt` bitta timestamp (KPI-03 qarzi) — takrorlanuvchi kunlik todo uchun har kun
    qayta belgilash kerak.
 **Browser-smoke YO'Q** (KPI-06).
-### KPI-06 — _(kutilmoqda)_
+### KPI-06 — ✅ 2026-08-10 (**Phase-2 verified** — real brauzer + API adversarial; 4 defekt tuzatildi, 1 qarz)
+
+**Nima qilindi.** Butun oqim real brauzerda (Playwright, headless Chromium) va API qatlamida
+adversarial tekshirildi. **6 stsenariydan 5 tasi to'liq o'tdi**, 1 tasi (S2) reja kutgan xulqni
+BERMADI va qarz sifatida qoldi. **4 defekt topildi va shu sessiyada tuzatildi** (biri — ruxsat
+teshigi).
+
+**🔴 Topilma 1 (jiddiy, RUXSAT) — oraliq qamrov to'liq HR huquqiga ko'tarilardi.**
+`HrPermissionGuard` ning core-RBAC zaxira sho'basi `scope !== 'NO'` deb yozilgan edi, hujjatlangan
+maqsadi esa «core-RBAC **administrator/egasi**» (= `ALL`). Jonli o'lchov: `qa.sotuvchi@qa.local`
+(`hrPermissions: []`, core-RBAC `employee.update = OWN_GROUP`) yangi KPI marshrutlarida
+**200/201** oldi va **o'z guruhidan tashqaridagi** xodimga (Admin User) KPI **yaratdi**. KPI-02
+controlleri o'qishni ataylab `employees:full` ortiga yopgan edi (ro'yxat boshqa xodimning
+**faktini** ham beradi) — zaxira sho'ba o'sha qulfni aylanib o'tardi.
+
+- **Sabab-bo'shliq:** mavjud qo'riqchi testlari faqat `ALL` va `NO` ni qoplagan; `OWN`,
+  `OWN_GROUP`, `OWN_AND_GROUP` hech qachon o'lchanmagan — bug aynan shu bo'shliqda yashagan.
+- **Tuzatish:** `if (scope === 'ALL') return true` (`!== 'NO'` o'rniga).
+- **TDD:** 4 yangi test avval **RED** (4 yiqildi / 14 o'tdi) → tuzatishdan keyin **27/27** yashil.
+- **Jonli tasdiq:** sotuvchi 3 marshrutda ham **403**; admin **200** (regress yo'q);
+  `/hr/employees` sotuvchi uchun hamon **200** (u boshqa yo'ldan boradi — katalog yopilmadi).
+
+**🔴 Topilma 2 (UI) — belgilangan qo'lda KPI ro'yxatda ko'rinmasdi.**
+«Bajarildi deb belgilash» bosilgach ekranda o'zgargan yagona narsa — **tugma matni**. Fakt hamon
+«—», hech qanday holat belgisi yo'q; menejer qaysi qo'lda KPI bajarilganini ro'yxatdan o'qiy
+olmasdi. **Tuzatish:** `data-done` bayrog'i + «Bajarildi» / «Выполнено» badge. Brauzerda tasdiqlandi.
+
+**🔴 Topilma 3 (UI, «ikki manba» sinfi) — fakt SANASIZ chizilardi.**
+Karta «Fakt: —» deb yozardi, lekin bu fakt **qaysi kunniki** ekani ekranda yo'q edi. Jonli bazada
+oxirgi hisoblangan kun **2026-08-09**, ekran esa **2026-08-10** da ochilgan — ya'ni menejer
+kechagi o'lchovni bugungisi deb o'qirdi. `lastFactDate` API javobida bor edi, UI uni chizmasdi.
+**Tuzatish:** `Fakt (2026-08-09): —` ko'rinishida sana muhri (`ekpi-fact-date-<id>`).
+([[browser-qa-catches-what-static-cannot]])
+
+**🔴 Topilma 4 (matn) — eskirgan va'da.** Xodim kartasi sarlavhasi hamon «Saqlash **yangi versiya
+yaratadi**» derdi, holbuki KPI-04 versiyalashni olib tashlagan. `kpi_hint` ru+uz qayta yozildi
+(«todo kabi biriktiring… har kun o'z maqsadi bilan muhrlanadi»). Brauzerda tasdiqlandi.
+
+**Stsenariylar bo'yicha natija.**
+
+1. **S1 — xodim kartasi CRUD ✅.** «+ KPI qo'shish» → metrika+maqsad+davr → saqlandi (qator 2→3),
+   og'irlik maydoni yopiq («ixtiyoriy» ning UI ifodasi), tahrir/o'chirish ishlaydi, konsol xatosi
+   **0**, 4xx/5xx **0**, xom i18n kaliti **yo'q**, «100%» talabi qolmagan.
+2. **S2 — qo'lda «bajarildi» ⚠️ QISMAN.** Belgilash `manualDoneAt` ni yozadi va endi ekranda
+   ko'rinadi (Topilma 2), **lekin fakt to'liqqa O'TMAYDI**: dvigatel qo'lda faktni faqat KUN
+   QAYTA HISOBLANGANDA yozadi (`manualDailyOutcome`: `fact = manualDoneDate === date ? target : 0`).
+   Bazada oxirgi hisoblangan kun 2026-08-09, bugungi kun hisoblanmagan → karta fakti `null`
+   qoladi. **Bu KPI-03 dvigateli xulqi, KPI-02/04 xatosi emas** — qarz sifatida qoldi (quyida).
+3. **S3 — `/menejer/kpi` ✅.** 4 xodim guruhi, 15 qator; xodim filtri (4→1→4) va davr filtri
+   (`monthly` → 0 guruh + bo'sh holat) ikki tomonlama ishlaydi; guruh sarlavhasida inline
+   «+ KPI qo'shish»; konsol xatosi **0**, 4xx/5xx **0**, xom kalit **yo'q**.
+4. **S4 — kun muhri ✅.** `receipt_count` bugun `target=999, weight=77` ga o'zgartirildi →
+   **2026-08-09 kunining `target`/`weight` qiymatlari o'zgarmadi** (22 metrika baytma-bayt teng).
+   Keyin asl holat tiklandi.
+5. **S5 — ruxsat ✅ (tuzatishdan keyin).** Token'siz **401**; `employees:full` siz **403** (3
+   marshrut); admin **200**.
+6. **S6 — bir raqam ikki manbadan ✅.** Menejer tuzatmasi (`days/:id/adjust`) bilan **uchala
+   holat** yaratildi va karta (`/manager/kpi/employee/:id/targets`) bilan dvigatel
+   (`/manager/kpi/employee/:id/daily`) **to'liq mos keldi**: `null` (karta «—»), `0` (karta «0»),
+   `4500000` (karta «45 000,00 сум»). Tozalash: tuzatmalar `null` ga qaytarildi, baza 14 target
+   bilan boshlang'ich holatda.
+
+**API adversarial probe — 31/34 (3 yiqilgan = Topilma 1).** Tasdiqlangan shartnomalar:
+so'm→tiyin **serverda bir marta** (`150000` → `15000000`; kasr `250000.55` → `25000055`);
+og'irliksiz yaratish → `weight = null` (**0 EMAS**); klient `unit`/`currency` in'yeksiyasi
+**e'tiborsiz** (katalog g'olib: `unit=count, currency=null`); takror `(metrika, davr)` → **409**,
+boshqa davr → qabul; sanoqda kasr / manfiy / noma'lum metrika / `weight>100` → **400**;
+noma'lum xodim va cross-tenant → **404**; `/done` o'lchanadiganda **400**, qo'ldada **201** +
+qayta ochish; qisman `PATCH` tegilmagan maydonni saqlaydi.
+
+**Fayllar.** `apps/api/src/modules/hr/hr-auth/hr-permission.guard.ts` (**Edit**) ·
+`…/hr-permission.guard.test.ts` (**Edit**, +4 test) ·
+`apps/web/src/app/(app)/menejer/_components/employee-kpi-screen.tsx` (**Edit**) ·
+`…/employee-kpi-screen.test.tsx` (**Edit**, +4 test) · `apps/web/src/messages/{ru,uz}.json`
+(`ekpi_done_badge` yangi, `kpi_hint` qayta yozildi).
+
+**Gate.** api typecheck **0** · web typecheck **0** · `lint:product` **0 error** ·
+`i18n:gate` **9/9** · api `src/modules/hr` **984/984 (93 fayl)** · api `kpi-permission-gate` +
+`app-boot` **23/23** · web `src/app/(app)/menejer` **119/119 (15 fayl)**.
+
+**⚠️ Muhit haqida halol qayd (o'lchangan).**
+
+1. **4000-portdagi API boshqa worktree'dan ishlayotgan edi** (`D:/projects/sherset-qa-kassa`,
+   `8e0a1fc0` = KPI-01) — unda yangi KPI marshrutlari YO'Q, hammasi **404**. Standart `pnpm dev`
+   stack'ida brauzer-QA qilgan odam buni «KPI ekrani buzuq» deb o'qirdi. Begona jarayon
+   **o'ldirilmadi** (CLAUDE.md §6.4); QA uchun alohida stack ko'tarildi (API `:4001`, web `:3111`,
+   `NEXT_DISTDIR=.next-qa`), keyin to'xtatilib artefaktlar tozalandi.
+2. **Sessiya davomida parallel sessiya KPI-02/04/05 ni commit qildi** (`9bd914d7`, `c5b3a173`,
+   `fbee806a`). S1–S6 o'lchovlari `c5b3a173` (KPI-04) holatida olingan — **KPI-05 (og'irlik
+   normalizatsiyasi) brauzerda QOPLANMADI**, u keyin kirdi.
+3. **Yo'l-yo'lakay ko'rilgan (meniki EMAS, tegilmadi):** KPI-05 ishi davom etayotgan payt
+   `GET /manager/kpi/days` **500** berardi — `PrismaClientValidationError` on
+   `employeeDailyKpi.findMany()` (sxema/klient nomutanosibligi). Commit `fbee806a` dan keyin
+   qayta o'lchanmagan.
+
+**Ochiq qarz.**
+
+1. **S2 to'liq emas:** qo'lda KPI belgilangach fakt faqat kun qayta hisoblangandan keyin to'ladi.
+   Kerak: belgilash paytida o'sha kunni qayta hisoblash (yoki kartada «bugungi kun hali
+   hisoblanmagan» holatini ochiq ko'rsatish). Dvigatel fayllari o'sha payt parallel sessiya
+   qo'lida edi — ataylab TEGILMADI.
+2. **KPI-05 uchun brauzer-QA yo'q** (og'irlik normalizatsiyasi, `weightApplied` muhri) — alohida
+   qisqa Phase-2 seansi kerak.
+3. `chala ma'lumot` badge'i fakt `null` bo'lgan qatorlarda ham chiqadi («o'lchanmagan» va «chala»
+   bir xil ko'rinadi) — o'lchandi, lekin `complete` semantikasi dvigatelda, shu sababli bu
+   sessiyada tuzatilmadi.

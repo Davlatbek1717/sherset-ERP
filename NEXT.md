@@ -331,6 +331,46 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-08-10m (REJA-KPI-SODDALASHTIRISH **KPI-06** — Phase-2 QA, real brauzer) —
+> **PHASE-2 VERIFIED** (KPI-01…KPI-04 yuzasi). 6 stsenariydan **5 ✅ / 1 ⚠️ qisman**;
+> **4 defekt topildi va tuzatildi**. To'liq hisobot:
+> `docs/REJA-KPI-SODDALASHTIRISH-2026-08.md` → «HISOBOT JURNALI» → KPI-06.**
+>
+> **🔴 Eng muhimi — RUXSAT teshigi yopildi (`HrPermissionGuard`).** Core-RBAC zaxira sho'basi
+> `scope !== 'NO'` edi; hujjatlangan maqsadi esa «administrator/egasi» (= `ALL`). Jonli o'lchov:
+> `employee.update = OWN_GROUP` bo'lgan menejer (`hrPermissions: []`) BARCHA xodimlarning KPI
+> maqsadi va **faktini** o'qidi va **o'z guruhidan tashqaridagi** xodimga KPI **yaratdi** —
+> KPI-02 ning `employees:full` qulfi aylanib o'tilgan. Endi `scope === 'ALL'`. Eski testlar faqat
+> `ALL` va `NO` ni qoplagan; `OWN`/`OWN_GROUP`/`OWN_AND_GROUP` hech qachon o'lchanmagan — bug
+> shu bo'shliqda yashagan. **Bu qo'riqchi butun HR `employees` sahifasida ishlaydi** — yangi
+> HR-endpoint qo'shsang, oraliq qamrov endi ochmasligini hisobga ol.
+>
+> **UI tuzatishlari (brauzerda tasdiqlangan).** (1) Belgilangan qo'lda KPI endi «Bajarildi» badge
+> + `data-done` bilan ko'rinadi — ilgari faqat tugma matni o'zgarardi. (2) Fakt endi **SANASI
+> bilan** chiziladi (`Fakt (2026-08-09): —`): dvigatelning oxirgi hisoblangan kuni ekran ochilgan
+> kundan orqada bo'lishi mumkin, sanasiz raqam «bugungi» deb o'qilardi. (3) `kpi_hint` dagi
+> eskirgan «Saqlash yangi versiya yaratadi» va'dasi olib tashlandi (KPI-04 versiyalashni
+> yo'q qilgan).
+>
+> **⚠️ QARZ — S2 to'liq emas.** Qo'lda KPI «bajarildi» belgilangach **fakt to'liqqa o'tmaydi**:
+> dvigatel uni faqat KUN QAYTA HISOBLANGANDA yozadi (`manualDailyOutcome`). Bazada oxirgi
+> hisoblangan kun 2026-08-09 edi → karta fakti `null` qoladi. Kerak: belgilashda o'sha kunni
+> qayta hisoblash, yoki kartada «bugungi kun hali hisoblanmagan» holatini ochiq ko'rsatish.
+> Dvigatel fayllari o'sha payt **parallel sessiya qo'lida** edi — ataylab tegilmadi.
+>
+> **⚠️ QARZ — KPI-05 brauzerda QOPLANMADI.** U shu sessiya davomida commit bo'ldi (`fbee806a`),
+> o'lchovlar esa `c5b3a173` holatida olingan. Og'irlik normalizatsiyasi + `weightApplied` muhri
+> uchun qisqa alohida Phase-2 seansi kerak.
+>
+> **🖥️ Stack tuzog'i (keyingi QA sessiyasi shuni bilsin).** `:4000` dagi API **boshqa
+> worktree'dan** (`D:/projects/sherset-qa-kassa`) ishlayotgan edi — yangi marshrutlar unda YO'Q,
+> hammasi **404**. `pnpm dev` bilan QA qilishdan oldin `Get-CimInstance Win32_Process` bilan
+> jarayonning **qaysi papkadan** ekanini tekshir. Bu sessiya o'ziga alohida stack ko'tardi
+> (API `:4001`, web `:3111`, `NEXT_DISTDIR=.next-qa`) va tugagach tozaladi.
+>
+> **Keyingi ish:** `docs/REJA-KPI-SODDALASHTIRISH-2026-08.md` bo'yicha barcha fazalar yopildi
+> (KPI-01…06). Yuqoridagi 2 qarz — alohida kichik sessiyalar.
+
 > **🕒 2026-08-10l (REJA-KPI-SODDALASHTIRISH **KPI-02 + KPI-04** — CRUD API + «todo» ekranlari) —
 > **Phase-1: strukturaviy + unit + MUTANT-tasdiqlangan, browser-smoke YO'Q**. Commit `9bd914d7`.
 > To'liq hisobot: `docs/REJA-KPI-SODDALASHTIRISH-2026-08.md` → «HISOBOT JURNALI» → KPI-02, KPI-04.**

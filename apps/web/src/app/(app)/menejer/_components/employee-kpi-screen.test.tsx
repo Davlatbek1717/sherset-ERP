@@ -1,6 +1,6 @@
 import { api } from '@/lib/api-client';
 import type { EmployeeKpiTarget, KpiMetricDef } from '@/lib/manager-api';
-import { renderWithProviders, screen, userEvent, waitFor } from '@/test-utils';
+import { renderWithProviders, screen, userEvent, waitFor, within } from '@/test-utils';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { EmployeeKpiScreen, EmployeeKpiTodoList } from './employee-kpi-screen';
 
@@ -354,5 +354,76 @@ describe('EmployeeKpiScreen — menejer «barcha KPI» ekrani', () => {
 
     await user.click(await screen.findByTestId('ekpi-remove-t1'));
     await waitFor(() => expect(api.delete).toHaveBeenCalledWith('/manager/kpi/targets/t1'));
+  });
+});
+
+/**
+ * KPI-06 brauzer-QA (2026-08-10) — real brauzerda o'lchangan ikki defekt.
+ * Ikkalasi ham «ekran raqamni ko'rsatadi, LEKIN u nimani anglatishini
+ * ko'rsatmaydi» sinfidan ([[browser-qa-catches-what-static-cannot]]).
+ */
+describe('KPI-06 brauzer-QA topilmalari', () => {
+  /**
+   * O'lchangan: qo'lda KPI'da «Bajarildi deb belgilash» bosilgach ekranda
+   * O'ZGARGAN YAGONA narsa — tugma matni. Fakt hamon «—», hech qanday holat
+   * belgisi yo'q. Dvigatel faktni faqat KUN QAYTA HISOBLANGANDA yozadi
+   * (`manualDailyOutcome`), shuning uchun oradagi vaqtda menejer qaysi qo'lda
+   * KPI bajarilganini ro'yxatdan umuman o'qiy olmaydi.
+   */
+  it('🔴 belgilangan qo`lda KPI qatorda «bajarildi» holatini KO`RSATADI', async () => {
+    mockApi({
+      targets: [
+        target({
+          id: 'm1',
+          metricKey: 'custom_x',
+          measurable: false,
+          manualDoneAt: '2026-08-10T09:00:00.000Z',
+        }),
+      ],
+    });
+    renderWithProviders(<EmployeeKpiTodoList employeeId={EMP} />);
+
+    const row = await screen.findByTestId('ekpi-row-m1');
+    expect(row.getAttribute('data-done')).toBe('true');
+    expect(within(row).getByTestId('ekpi-done-badge-m1')).toBeTruthy();
+  });
+
+  it('belgilanmagan qo`lda KPI `data-done="false"`', async () => {
+    mockApi({
+      targets: [target({ id: 'm2', measurable: false, manualDoneAt: null })],
+    });
+    renderWithProviders(<EmployeeKpiTodoList employeeId={EMP} />);
+
+    const row = await screen.findByTestId('ekpi-row-m2');
+    expect(row.getAttribute('data-done')).toBe('false');
+    expect(within(row).queryByTestId('ekpi-done-badge-m2')).toBeNull();
+  });
+
+  /**
+   * O'lchangan: karta «Fakt: —» deb yozadi, lekin bu fakt QAYSI KUNNIKI ekani
+   * ekranda yo'q. Jonli bazada oxirgi hisoblangan kun 2026-08-09 edi, ekran
+   * esa 2026-08-10 da ochilgan — ya'ni menejer kechagi (yoki undan ham eski)
+   * o'lchovni bugungisi deb o'qiydi. `lastFactDate` API'da bor edi, UI uni
+   * shunchaki chizmasdi.
+   */
+  it('🔴 fakt SANASI ko`rsatiladi (raqam qaysi kunniki ekani)', async () => {
+    mockApi({
+      targets: [
+        target({ id: 'f1', lastFactMinor: '250000', lastFactDate: '2026-08-09T00:00:00.000Z' }),
+      ],
+    });
+    renderWithProviders(<EmployeeKpiTodoList employeeId={EMP} />);
+
+    const stamp = await screen.findByTestId('ekpi-fact-date-f1');
+    expect(stamp.textContent).toMatch(/09/);
+    expect(stamp.textContent).toMatch(/08/);
+  });
+
+  it('hisoblangan kun umuman bo`lmasa sana bloki chizilmaydi', async () => {
+    mockApi({ targets: [target({ id: 'f2', lastFactMinor: null, lastFactDate: null })] });
+    renderWithProviders(<EmployeeKpiTodoList employeeId={EMP} />);
+
+    await screen.findByTestId('ekpi-row-f2');
+    expect(screen.queryByTestId('ekpi-fact-date-f2')).toBeNull();
   });
 });

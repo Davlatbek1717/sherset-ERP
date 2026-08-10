@@ -82,7 +82,7 @@ function useKpiText() {
   const locale = useLocale();
   const label = (r: { labelUz: string; labelRu: string }) =>
     locale === 'ru' ? r.labelRu || r.labelUz : r.labelUz;
-  return { t, label };
+  return { t, label, locale };
 }
 
 // ── Bitta xodimning «todo» ro'yxati ─────────────────────────────────────────
@@ -360,7 +360,7 @@ function TargetRow({
   onInvalid: () => void;
   onDone: () => void;
 }) {
-  const { t } = useKpiText();
+  const { t, locale } = useKpiText();
   const qc = useQueryClient();
 
   const refresh = () => {
@@ -402,6 +402,11 @@ function TargetRow({
       data-scored={row.weight !== null ? 'true' : 'false'}
       data-fact-complete={row.lastFactComplete === null ? 'none' : String(row.lastFactComplete)}
       data-manual={row.measurable ? 'false' : 'true'}
+      // Dvigatel qo'lda faktni faqat KUN QAYTA HISOBLANGANDA yozadi
+      // (`manualDailyOutcome`). Oradagi vaqtda «bajarildi» ning yagona izi shu
+      // bayroq — usiz ro'yxatda belgilangan va belgilanmagan KPI bir xil
+      // ko'rinardi (KPI-06 brauzer-QA da o'lchangan).
+      data-done={isDone ? 'true' : 'false'}
       className="rounded-[var(--ms-radius-default)] border border-[var(--ms-border-default)] p-3"
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -420,6 +425,11 @@ function TargetRow({
               {t('ekpi_weight')}: {row.weight}
             </Badge>
           )}
+          {isDone && (
+            <Badge tone="success" data-test-id={`ekpi-done-badge-${row.id}`}>
+              {t('ekpi_done_badge')}
+            </Badge>
+          )}
           {!row.active && <Badge tone="neutral">{t('ekpi_archived')}</Badge>}
         </div>
 
@@ -431,7 +441,24 @@ function TargetRow({
             </span>
           </span>
           <span className="text-[var(--ms-text-muted)]">
-            {t('ekpi_fact')}:{' '}
+            {t('ekpi_fact')}
+            {/*
+              🔴 Fakt SANASIZ ko'rsatilmaydi (KPI-06 brauzer-QA da o'lchangan).
+              Dvigatel oxirgi hisoblangan KUNni beradi — jonli bazada u ekran
+              ochilgan kundan bir kun orqada edi. Sanasiz «Fakt: —» menejer
+              tomonidan «bugun hech narsa yo'q» deb o'qiladi, aslida esa u
+              «boshqa kunning o'lchovi». Bir raqamni ikki manbadan solishtirish
+              shartnomasi ([[browser-qa-catches-what-static-cannot]]).
+            */}
+            {row.lastFactDate && (
+              <span data-test-id={`ekpi-fact-date-${row.id}`}>
+                {' '}
+                (
+                {new Date(row.lastFactDate).toLocaleDateString(locale === 'ru' ? 'ru-RU' : 'uz-UZ')}
+                )
+              </span>
+            )}
+            :{' '}
             <span data-test-id={`ekpi-fact-${row.id}`} className="tabular-nums">
               {showValue(row.unit, row.lastFactMinor, row.currency)}
             </span>

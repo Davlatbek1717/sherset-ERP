@@ -187,4 +187,35 @@ describe('HrPermissionGuard — core-RBAC fallback on «employees» (2026-07-16)
     const guard = makeGuard({ page: 'oylik', access: 'read' }, 'ALL');
     await expect(guard.canActivate(makeCtx(baseUser))).rejects.toThrow(/required/);
   });
+
+  /**
+   * KPI-06 brauzer-QA (2026-08-10) — o'lchangan teshik.
+   *
+   * Fallback `scope !== 'NO'` deb yozilgan edi, lekin uning HUJJATLANGAN
+   * maqsadi «core-RBAC **administrator/egasi**» — ya'ni `ALL`. Oraliq
+   * qamrovlar (`OWN`, `OWN_GROUP`, `OWN_AND_GROUP`) — bu «faqat o'zimning /
+   * guruhimning yozuvim» degani, «hamma xodim» EMAS.
+   *
+   * Jonli o'lchov: `qa.sotuvchi@qa.local` (hrPermissions `[]`, core-RBAC
+   * `employee.update = OWN_GROUP`) yangi KPI marshrutlarida **200/201** oldi va
+   * o'z guruhidan TASHQARIDAGI xodimga (Admin User) KPI yaratdi. KPI-02
+   * controlleri o'qishni ataylab `employees:full` ortiga yopgan — chunki
+   * ro'yxat boshqa xodimning FAKTINI ham beradi; fallback o'sha qulfni
+   * aylanib o'tardi.
+   *
+   * Eski testlar faqat `ALL` va `NO` ni qoplagan — oraliq qamrovlar hech
+   * qachon o'lchanmagan (aynan shu bo'shliqda bug yashagan).
+   */
+  it.each(['OWN', 'OWN_GROUP', 'OWN_AND_GROUP'] as const)(
+    'qamrov %s — fallback OCHMAYDI (u «administrator» emas)',
+    async (scope) => {
+      const guard = makeGuard({ page: 'employees', access: 'full' }, scope);
+      await expect(guard.canActivate(makeCtx(baseUser))).rejects.toThrow(/required/);
+    },
+  );
+
+  it('«read» uchun ham oraliq qamrov yetarli emas', async () => {
+    const guard = makeGuard({ page: 'employees', access: 'read' }, 'OWN_GROUP');
+    await expect(guard.canActivate(makeCtx(baseUser))).rejects.toThrow(/required/);
+  });
 });

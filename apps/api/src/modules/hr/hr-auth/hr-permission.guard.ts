@@ -64,13 +64,23 @@ export class HrPermissionGuard implements CanActivate {
       // (Role/RolePermission `employee` entity) must reach /hr/employees even
       // with no HR page-keys — the two RBAC systems meet on this one page.
       // Scoped to page 'employees' only: every other HR page stays HR-gated.
+      //
+      // 🔴 `ALL` ONLY — `!== 'NO'` EMAS (KPI-06 brauzer-QA, 2026-08-10).
+      // Fallback'ning maqsadi «administrator/egasi», ular esa doim `ALL`.
+      // Oraliq qamrov (`OWN`, `OWN_GROUP`, `OWN_AND_GROUP`) aynan TESKARISINI
+      // bildiradi — «faqat o'zim / guruhim». `!== 'NO'` ularni ham to'liq HR
+      // huquqiga ko'tarardi: o'lchangan hodisa — `employee.update = OWN_GROUP`
+      // bo'lgan menejer BARCHA xodimlarning KPI maqsadi va FAKTINI o'qidi va
+      // guruhidan tashqaridagi xodimga KPI yaratdi (`employees:full` qulfi
+      // aylanib o'tildi). HR sahifalari qamrovni o'zi filtrlamaydi — shuning
+      // uchun qaror shu yerda, kirishda qabul qilinadi.
       if (required.page === 'employees') {
         const scope = await this.permissions.resolveScope(
           user.sub,
           'employee',
           required.access === 'full' ? 'update' : 'view',
         );
-        if (scope !== 'NO') return true;
+        if (scope === 'ALL') return true;
       }
       throw new ForbiddenException(
         `HR permission required: ${required.page}${required.section ? `:${required.section}` : ''}`,
