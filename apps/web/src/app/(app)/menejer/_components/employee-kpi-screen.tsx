@@ -100,27 +100,11 @@ export function EmployeeKpiTodoList({ employeeId }: { employeeId: string }) {
     enabled: !!employeeId,
   });
 
-  const { data: metrics } = useQuery<KpiMetricDef[]>({
-    queryKey: ['kpi-metrics'],
-    queryFn: () => managerKpiApi.metrics(),
-  });
-
   const invalidate = () => {
     void qc.invalidateQueries({ queryKey: ['ekpi-targets', employeeId] });
     void qc.invalidateQueries({ queryKey: ['ekpi-all'] });
   };
   const fail = (e: unknown) => setError(e instanceof Error ? e.message : t('ekpi_save_failed'));
-
-  const create = useMutation({
-    mutationFn: (data: CreateEmployeeKpiTargetInput) =>
-      employeeKpiTargetApi.create(employeeId, data),
-    onSuccess: () => {
-      setAdding(false);
-      setError(null);
-      invalidate();
-    },
-    onError: fail,
-  });
 
   return (
     <div className="space-y-3">
@@ -140,21 +124,16 @@ export function EmployeeKpiTodoList({ employeeId }: { employeeId: string }) {
       )}
 
       {adding && (
-        <TargetForm
-          mode="add"
-          metrics={(metrics ?? []).filter((m) => !(rows ?? []).some((r) => r.metricKey === m.key))}
-          busy={create.isPending}
-          onCancel={() => setAdding(false)}
-          onSubmit={(v) => {
-            if (!v.metricKey) return;
-            create.mutate({
-              metricKey: v.metricKey,
-              period: v.period,
-              ...(v.targetValue === null ? {} : { targetValue: v.targetValue }),
-              ...(v.weight === null ? {} : { weight: v.weight }),
-            });
-          }}
+        <AddTargetForm
+          employeeId={employeeId}
+          takenKeys={(rows ?? []).map((r) => r.metricKey)}
+          onClose={() => setAdding(false)}
+          onError={fail}
           onInvalid={() => setError(t('ekpi_invalid_amount'))}
+          onDone={() => {
+            setError(null);
+            invalidate();
+          }}
         />
       )}
 
@@ -195,6 +174,8 @@ export function EmployeeKpiScreen() {
   const [period, setPeriod] = useState<KpiTargetPeriod | ''>('');
   const [employeeId, setEmployeeId] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
+  /** Qaysi xodim guruhida «qo'shish» shakli ochiq (bir vaqtda bitta). */
+  const [addingFor, setAddingFor] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const qc = useQueryClient();
 
@@ -302,7 +283,37 @@ export function EmployeeKpiScreen() {
               data-test-id={`ekpi-emp-${id}`}
               className="rounded-[var(--ms-radius-default)] border border-[var(--ms-border-default)] bg-[var(--ms-bg-surface)] p-3"
             >
-              <h2 className="mb-2 font-semibold text-[var(--ms-text-strong)] text-sm">{g.name}</h2>
+              <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                <h2 className="font-semibold text-[var(--ms-text-strong)] text-sm">{g.name}</h2>
+                {addingFor !== id && (
+                  <button
+                    type="button"
+                    data-test-id={`ekpi-group-add-${id}`}
+                    onClick={() => setAddingFor(id)}
+                    className="text-[var(--ms-text-brand)] text-xs underline"
+                  >
+                    + {t('ekpi_add')}
+                  </button>
+                )}
+              </div>
+
+              {addingFor === id && (
+                <div className="mb-2">
+                  <AddTargetForm
+                    employeeId={id}
+                    // Allaqachon biriktirilgan metrika tanlovda ko'rinmaydi —
+                    // aks holda server `@@unique` bo'yicha 409 qaytarardi.
+                    takenKeys={g.items.map((r) => r.metricKey)}
+                    onClose={() => setAddingFor(null)}
+                    onError={(e) =>
+                      setError(e instanceof Error ? e.message : t('ekpi_save_failed'))
+                    }
+                    onInvalid={() => setError(t('ekpi_invalid_amount'))}
+                    onDone={invalidate}
+                  />
+                </div>
+              )}
+
               <ul className="space-y-2">
                 {g.items.map((r) => (
                   <TargetRow
@@ -483,6 +494,69 @@ function TargetRow({
   );
 }
 
+/**
+ * Yangi KPI biriktirish — **yagona yaratish yo'li**.
+ *
+ * Ikkala yuza (xodim kartasi va menejer ekrani) shu komponentdan foydalanadi:
+ * nusxa qilinsa biri jimgina bir shoxni yo'qotardi
+ * ([[copy-paste-loses-a-branch]]). Katalog so'rovi ham shu yerda — shakl
+ * ochilmaguncha kerak emas.
+ */
+function AddTargetForm({
+  employeeId,
+  takenKeys,
+  onClose,
+  onError,
+  onInvalid,
+  onDone,
+}: {
+  employeeId: string;
+  takenKeys: string[];
+  onClose: () => void;
+  onError: (e: unknown) => void;
+  onInvalid: () => void;
+  onDone: () => void;
+}) {
+  const { data: metrics } = useQuery<KpiMetricDef[]>({
+    queryKey: ['kpi-metrics'],
+    queryFn: () => managerKpiApi.metrics(),
+  });
+
+  const create = useMutation({
+    mutationFn: (data: CreateEmployeeKpiTargetInput) =>
+      employeeKpiTargetApi.create(employeeId, data),
+    onSuccess: () => {
+      onClose();
+      onDone();
+    },
+    onError,
+  });
+
+  const available = (metrics ?? []).filter((m) => !takenKeys.includes(m.key));
+
+  return (
+    <TargetForm
+      mode="add"
+      metrics={available}
+      busy={create.isPending}
+      onCancel={onClose}
+      onInvalid={onInvalid}
+      onSubmit={(v) => {
+        if (!v.metricKey) return;
+        create.mutate({
+          metricKey: v.metricKey,
+          period: v.period,
+          // Berilmagan maydon so'rovga UMUMAN tushmaydi — `weight: null` va
+          // «og'irlik yo'q» server uchun bir xil, lekin so'rov o'zi ham
+          // niyatni ko'rsatib tursin.
+          ...(v.targetValue === null ? {} : { targetValue: v.targetValue }),
+          ...(v.weight === null ? {} : { weight: v.weight }),
+        });
+      }}
+    />
+  );
+}
+
 interface FormValue {
   metricKey: string;
   period: KpiTargetPeriod;
@@ -518,7 +592,15 @@ function TargetForm({
   const { t, label } = useKpiText();
   const prefix = mode === 'add' ? 'ekpi-add' : 'ekpi-edit';
 
-  const [metricKey, setMetricKey] = useState(metrics?.[0]?.key ?? '');
+  const [metricKey, setMetricKey] = useState('');
+  /**
+   * Katalog ASINXRON keladi: shakl ochilganda ro'yxat hali bo'sh bo'lishi
+   * mumkin, va `useState` boshlang'ich qiymati keyin yangilanmaydi. Shuning
+   * uchun tanlov HOSILA — ro'yxatda yo'q kalit avtomat birinchisiga tushadi
+   * (aks holda «hech narsa tanlanmagan» holatda saqlash jimgina ishlamasdi).
+   */
+  const effectiveKey =
+    metrics?.some((m) => m.key === metricKey) === true ? metricKey : (metrics?.[0]?.key ?? '');
   const [period, setPeriod] = useState<KpiTargetPeriod>(row?.period ?? 'daily');
   const [target, setTarget] = useState(row ? minorToInput(row.unit, row.targetMinor) : '');
   const [advanced, setAdvanced] = useState(row?.weight != null);
@@ -537,7 +619,7 @@ function TargetForm({
       onInvalid();
       return;
     }
-    onSubmit({ metricKey, period, targetValue, weight: w });
+    onSubmit({ metricKey: effectiveKey, period, targetValue, weight: w });
   };
 
   return (
@@ -547,7 +629,7 @@ function TargetForm({
           <label className="flex flex-col gap-1 text-sm">
             <span className="text-[var(--ms-text-muted)]">{t('ekpi_metric')}</span>
             <NativeSelect
-              value={metricKey}
+              value={effectiveKey}
               data-test-id={`${prefix}-metric`}
               onChange={(e) => setMetricKey(e.target.value)}
             >

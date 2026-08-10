@@ -317,6 +317,36 @@ describe('EmployeeKpiScreen — menejer «barcha KPI» ekrani', () => {
     expect(await screen.findByTestId('ekpi-all-empty')).toBeTruthy();
   });
 
+  it('inline QO`SHISH: xodim guruhida yangi KPI POST qilinadi', async () => {
+    mockApi({ metrics: [metric()], targets: [target({ id: 't1', metricKey: 'receipt_count' })] });
+    const user = userEvent.setup();
+    renderWithProviders(<EmployeeKpiScreen />);
+
+    await user.click(await screen.findByTestId(`ekpi-group-add-${EMP}`));
+    await user.type(screen.getByTestId('ekpi-add-target'), '5000');
+    await user.click(screen.getByTestId('ekpi-add-save'));
+
+    await waitFor(() => expect(api.post).toHaveBeenCalled());
+    const [url, body] = vi.mocked(api.post).mock.calls[0] ?? [];
+    expect(url).toBe(`/manager/kpi/employee/${EMP}/targets`);
+    expect(body).toMatchObject({ metricKey: 'cash_revenue', period: 'daily' });
+  });
+
+  it('inline qo`shishda ALLAQACHON biriktirilgan metrika tanlovda yo`q', async () => {
+    mockApi({
+      metrics: [metric(), metric({ key: 'receipt_count', labelUz: 'Chek soni', unit: 'count' })],
+      targets: [target({ id: 't1', metricKey: 'receipt_count' })],
+    });
+    const user = userEvent.setup();
+    renderWithProviders(<EmployeeKpiScreen />);
+
+    await user.click(await screen.findByTestId(`ekpi-group-add-${EMP}`));
+    const options = [...screen.getByTestId('ekpi-add-metric').querySelectorAll('option')].map((o) =>
+      o.getAttribute('value'),
+    );
+    expect(options).toEqual(['cash_revenue']);
+  });
+
   it('inline o`chirish menejer ekranida ham ishlaydi', async () => {
     mockApi({ targets: [target({ id: 't1' })] });
     const user = userEvent.setup();

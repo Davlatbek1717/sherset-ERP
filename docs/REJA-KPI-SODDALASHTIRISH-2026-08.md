@@ -569,7 +569,9 @@ kerak (KPI-04/06 da UX savoli). **Browser-smoke YO'Q.**
   ro'yxati. Versiya raqami olib tashlandi (qatlam versiyalanmaydi). Hisobning O'Z ko'rsatkichini
   yaratish/tahrirlash **qoldi**, lekin ro'yxatdan PASTGA ko'chdi va «biriktirish» dan ajratildi:
   u katalog amali (metrika TA'RIFI), biriktirish emas.
-- **Yangi `/menejer/kpi`** — xodimlar kesimida guruhlangan, xodim/davr filtri, inline CRUD.
+- **Yangi `/menejer/kpi`** — xodimlar kesimida guruhlangan, xodim/davr filtri, **to'liq inline
+  CRUD**: har guruh sarlavhasida «+ KPI qo'shish» (allaqachon biriktirilgan metrika tanlovda
+  ko'rinmaydi — server `@@unique` bo'yicha 409 qaytarardi), qatorda tahrir/o'chir/«bajarildi».
   Sahifa yupqa (`menejer/plan` naqshi), mantiq `_components/employee-kpi-screen.tsx` da.
 - **Bitta manba, ikki yuza:** `EmployeeKpiTodoList` (xodim kartasi) va `EmployeeKpiScreen`
   (menejer) BIR faylda va bir `TargetRow`/`TargetForm` dan foydalanadi — nusxa qilinsa biri
@@ -592,13 +594,19 @@ kerak (KPI-04/06 da UX savoli). **Browser-smoke YO'Q.**
 486→302 qator) · `src/lib/manager-api.ts` (tiplar + `employeeKpiTargetApi`) ·
 `src/components/command-palette.tsx` · `src/app/(app)/layout.tsx` · `src/messages/{ru,uz}.json`.
 
-**Testlar.** TDD: avval RED (modul yo'q) → **20/20** yashil (14 todo-ro'yxat + 6 menejer ekrani).
+**Testlar.** TDD: avval RED (modul yo'q) → **22/22** yashil (14 todo-ro'yxat + 8 menejer ekrani).
+Inline-qo'shish ham TDD bilan: `ekpi-group-add-*` yo'qligida RED, keyin yashil.
+
+**♻️ Yagona yaratish yo'li.** «Qo'shish» ikki yuzada ham BITTA `AddTargetForm` orqali ketadi
+(katalog so'rovi ham unda — shakl ochilmaguncha yuklanmaydi). `TargetForm` dagi metrika tanlovi
+**hosila** (`effectiveKey`): katalog asinxron kelgani uchun `useState` boshlang'ich qiymati
+eskirib qolar va «hech narsa tanlanmagan» holatda saqlash jimgina ishlamasdi.
 
 **🔬 Mutant.** `showValue` ning `null → '—'` shoxi `'0'` ga, `weight` tashlab yuborish `?? 0` ga
 o'zgartirildi → **2 test yiqildi** (`'0' ≠ '—'`, `+0 ≠ null`). Revert `diff` bilan tasdiqlandi.
 
 **Gate.** web typecheck **0** · api typecheck **0** · `lint:product` **0 error** · `i18n:gate`
-**9/9** (12 962 kalit skanlandi) · web vitest **3146 passed / 26 skipped (218 fayl)** — regress
+**9/9** (12 962 kalit skanlandi) · web vitest **3148 passed / 26 skipped (218 fayl)** — regress
 yo'q · qo'lda hardcoded skan (`_components` + ikki sahifa) — **0 topilma**.
 
 **🔴 Rejadan CHEKINISH (asoslangan).** Reja `EmployeeKpiTodoList` uchun alohida joy
