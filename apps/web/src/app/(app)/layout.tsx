@@ -10,7 +10,8 @@ import { UserMenu } from '@/components/user-menu';
 import { useNotificationStream } from '@/hooks/use-notification-stream';
 import { usePermissions } from '@/hooks/use-permissions';
 import { useTasksBadgeCount } from '@/hooks/use-tasks-badge-count';
-import { hasAuthHint, isKioskUser, useAuth } from '@/lib/auth-store';
+import { hasAuthHint, isKioskUser, logout, useAuth } from '@/lib/auth-store';
+import { readPosDevice } from '@/lib/pos-device';
 import {
   AppShell,
   Icons,
@@ -31,6 +32,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const auth = useAuth();
   const tNav = useTranslations('nav');
   const tCommon = useTranslations('common');
+  const tKassa = useTranslations('kassaLogin');
   const tSales = useTranslations('subnav.sales');
   const tPurchases = useTranslations('subnav.purchases');
   const tMoney = useTranslations('subnav.money');
@@ -57,7 +59,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       // must survive the login round-trip (usePathname drops search params).
       const search = typeof window !== 'undefined' ? window.location.search : '';
       const redirect = encodeURIComponent(pathname + search);
-      router.replace(`/login?redirect=${redirect}`);
+      // Juftlangan kassa qurilmasida sessiya tugagach PAROL ekrani emas, PIN
+      // ekrani ochilishi kerak — kassir parolni bilmaydi va kassa jimgina
+      // o'lik qolardi. Bu yerda `auth.user` allaqachon `null` (shuning uchun
+      // yo'naltiryapmiz), ya'ni `isKioskUser` mavjud emas — qaror QURILMA
+      // bo'yicha olinadi: brauzer juftlangan bo'lsa, u kassa ish o'rni.
+      router.replace(readPosDevice() ? '/kassa-kirish' : `/login?redirect=${redirect}`);
     }
   }, [auth.initialized, auth.user, pathname, router]);
 
@@ -736,6 +743,25 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     return (
       <div className="flex min-h-screen flex-col bg-[var(--ms-bg-app)]">
         {children}
+        {/* «Chiqish» — smena topshirilganda keyingi kassir o'z PIN'i bilan
+            kiradi. Yo'nalish QURILMAGA bog'liq: juftlangan kassada PIN
+            ekrani, juftlanmagan brauzerda esa parol ekrani (u yerda PIN
+            ekrani foydasiz bo'lardi). `window.location` ishlatiladi —
+            chiqishdan keyin butun sahifa holati (savat qoldig'i, keshlar)
+            tozalanishi kerak, `router.replace` uni ushlab qolardi. */}
+        <button
+          type="button"
+          data-test-id="kiosk-logout"
+          className="fixed right-3 bottom-3 z-50 rounded-[var(--ms-radius-sm)] bg-[var(--ms-bg-muted)] px-3 py-1.5 text-[var(--ms-text-muted)] text-xs"
+          onClick={() => {
+            const dest = readPosDevice() ? '/kassa-kirish' : '/login';
+            void logout().finally(() => {
+              window.location.href = dest;
+            });
+          }}
+        >
+          {tKassa('logout')}
+        </button>
         <PosPinLock />
       </div>
     );

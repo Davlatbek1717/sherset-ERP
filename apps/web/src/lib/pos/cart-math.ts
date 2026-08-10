@@ -194,6 +194,63 @@ export function refundPayoutMinor(lines: ReadonlyArray<RefundableLine>): bigint 
 }
 
 /**
+ * Chekning QARZ ulushi (tiyin) — `RetailSalePayment` qatorlaridan.
+ *
+ * Ilgari FE bu raqamni umuman bilmasdi: chek detali to'lov qatorlarini
+ * qaytarmasdi. Natijada qarzga sotilgan chek POS'dan qaytarilmasdi (quyiga
+ * qara). Qatorlar yo'q eski chek — 0, ya'ni to'liq pulli deb qaraladi
+ * (aynan avvalgi xulq).
+ */
+export function saleDebtMinor(
+  payments: ReadonlyArray<{ method: string; amountBaseMinor: string }> | null | undefined,
+): bigint {
+  let sum = 0n;
+  for (const p of payments ?? []) {
+    if (p.method !== 'DEBT') continue;
+    try {
+      sum += BigInt(p.amountBaseMinor);
+    } catch {
+      // Buzuq qiymat pul yaratmasin.
+    }
+  }
+  return sum;
+}
+
+/**
+ * Qaytarishda KASSADAN chiqadigan naqd ulushi (tiyin).
+ *
+ * AUDIT (2026-08-11): qarzga sotilgan chekni POS'dan qaytarib bo'lmasdi —
+ * ekran har doim to'liq naqd so'rardi, server esa
+ * `validateRefundSettlement` bilan «payout > moneyMaxMinor» deb 400 berardi.
+ * Sabab oddiy: qarzga olingan tovar uchun kassa PUL OLMAGAN, uni naqd
+ * qaytarish — kassadan pul yo'qotish (va qarz balansda qolaverardi).
+ *
+ * Formula serverning `computeRefundSettlementCaps` idagi `moneyCap` bilan
+ * AYNAN bir xil: `⌊(sum − debt) × R / sum⌋`, yaxlitlash pastga. Qarz ulushi
+ * ATAYLAB yuborilmaydi — server uni o'zi hisoblaydi (`debtReturnMinor`
+ * berilmaganda auto-split), shunda ketma-ket qisman qaytarishlarda
+ * yaxlitlash serverning kümülativ bazasidan ketadi va tiyin sürüklanmaydi.
+ */
+export function refundCashShareMinor(i: {
+  /** Asl chek summasi (tiyin). */
+  originalSumMinor: bigint;
+  /** Shu chekning qarzga qoldirilgan qismi (tiyin). */
+  originalDebtMinor: bigint;
+  /** Hozir qaytarilayotgan qiymat (tiyin) — `refundPayoutMinor` natijasi. */
+  refundSumMinor: bigint;
+}): bigint {
+  const sum = i.originalSumMinor > 0n ? i.originalSumMinor : 0n;
+  if (sum === 0n) return 0n;
+  // Buzuq/legacy ma'lumot (qarz jamidan katta) yo'qdan naqd YARATMASIN —
+  // server ham aynan shu qisishni qiladi.
+  const debt =
+    i.originalDebtMinor < 0n ? 0n : i.originalDebtMinor > sum ? sum : i.originalDebtMinor;
+  const money = sum - debt;
+  const refunded = i.refundSumMinor < 0n ? 0n : i.refundSumMinor > sum ? sum : i.refundSumMinor;
+  return (money * refunded) / sum;
+}
+
+/**
  * Foyda bazasi — kassa HAQIQATAN oladigan pul.
  *
  * Mavjud chekni to'layotgan bo'lsak (omborchidan qaytgan «Tayyor» chek)

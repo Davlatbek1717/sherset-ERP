@@ -1,6 +1,6 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { ExchangeRate, RATE_SCALE } from './exchange-rate.js';
+import { ExchangeRate, RATE_SCALE, convertByRateE8 } from './exchange-rate.js';
 import { Money } from './money.js';
 
 describe('Money — construction', () => {
@@ -284,5 +284,33 @@ describe('ExchangeRate', () => {
     expect(restored.from).toBe('USD');
     expect(restored.to).toBe('UZS');
     expect(restored.multiplier).toBe(rate.multiplier);
+  });
+});
+
+/**
+ * F5 (MK31) — kanonik kurs bo'yicha o'girish YAGONA formula sifatida.
+ *
+ * NEGA PAKETDA: bu formulani server (`retail-tenders.ts` → `usdBaseMinor`,
+ * `debt.schema.ts` → `usdCentsToSomTiyin`) ham, kassa ekrani ham (dollar
+ * to'lovining so'm ekvivalentini KO'RSATISH uchun) ishlatadi. Har biri o'z
+ * nusxasini saqlaganda biri jimgina eskirib pulni boshqa masshtabda
+ * hisoblardi — xotira: «nusxa-ko'chirish bitta shoxni yo'qotadi».
+ */
+describe('convertByRateE8', () => {
+  it('sentni kanonik kurs bilan tiyinga o‘giradi', () => {
+    // $12.50 × 12 450,27 = 155 628,375 so'm → 15 562 837 tiyin (pastga).
+    expect(convertByRateE8(1250n, 1_245_027_000_000n)).toBe(15_562_837n);
+  });
+
+  it('yaxlitlash PASTGA — server bilan bir xil (bigint bo‘linishi)', () => {
+    expect(convertByRateE8(1n, 150_000_000n)).toBe(1n); // 1.5 → 1
+  });
+
+  it('kurs 1 (identity) qiymatni o‘zgartirmaydi', () => {
+    expect(convertByRateE8(99_999n, RATE_SCALE)).toBe(99_999n);
+  });
+
+  it('nol summa — nol', () => {
+    expect(convertByRateE8(0n, 1_245_027_000_000n)).toBe(0n);
   });
 });

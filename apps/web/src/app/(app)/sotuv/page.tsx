@@ -15,20 +15,27 @@ import {
   cartTotalMinor,
   clampReturnQty,
   normalizeQtyDecimal,
+  refundCashShareMinor,
   refundPayoutMinor,
   revenueBaseMinor,
+  saleDebtMinor,
   cartCount as sumCartCount,
   toMinorOrNull,
 } from '@/lib/pos/cart-math';
 // Smena yopish sanog'i uchun xavfsiz pul-parse (buzuq kiritma → 0n, crash emas).
 import { parseAmountToMinor } from '@/lib/pos/parse-amount';
-import { printPickingViaAgent, printReceiptViaAgent } from '@/lib/print-agent';
+import {
+  printPickingViaAgent,
+  printReceiptViaAgent,
+  printZReportViaAgent,
+} from '@/lib/print-agent';
 import {
   resolveDefaultSalePrice,
   resolveDefaultSalePriceOrZero,
   resolveWholesaleSalePrice,
   usePriceTypeIds,
 } from '@/lib/sale-price';
+import { useZReceiptLabels } from '@/lib/use-z-receipt-labels';
 import type {
   CurrentSession,
   ListEnvelope as ListResponse,
@@ -245,6 +252,11 @@ interface ChekDetailData {
   cashAmountMinor: string;
   cardAmountMinor: string;
   terminalAmountMinor: string;
+  /**
+   * Chek QANDAY yopilgani (`RetailSalePayment`). Qaytarishda naqd ulushi
+   * shundan chiqadi — qarzga olingan tovar uchun kassa pul olmagan.
+   */
+  payments?: Array<{ method: string; amountBaseMinor: string }> | null;
   agent: { id: string; name: string } | null;
   session: {
     cashier: { id: string; name: string };
@@ -285,13 +297,22 @@ function ChekDetailPanel({ saleId, onBack }: { saleId: string; onBack: () => voi
       // FE-01: naqd asl chekning CHEGIRMALI qator summasidan proporsional —
       // `priceMinor × qty` mijoz to'lamagan pulni qaytarardi. Server ham
       // aynan shu bazadan hisoblaydi va oshib ketsa 400 beradi.
-      const cashRefund = refundPayoutMinor(
+      const refundValue = refundPayoutMinor(
         refundLines.map((p) => ({
           quantity: p.quantity,
           sumMinor: p.sumMinor,
           returnQty: normalizeQtyDecimal(returnQty[p.id] ?? ''),
         })),
       );
+      // AUDIT: qarzga sotilgan chekda kassa PUL OLMAGAN — to'liq naqd
+      // so'rasak server `moneyMaxMinor` bilan 400 berardi va bunday chekni
+      // POS'dan umuman qaytarib bo'lmasdi. Qarz ulushi (`debtReturnMinor`)
+      // ATAYLAB yuborilmaydi: server uni o'zi hisoblaydi (auto-split).
+      const cashRefund = refundCashShareMinor({
+        originalSumMinor: BigInt(data?.sumMinor ?? '0'),
+        originalDebtMinor: saleDebtMinor(data?.payments),
+        refundSumMinor: refundValue,
+      });
       await api.post(`/retail-sales/${saleId}/refund`, {
         positions,
         cashAmountMinor: cashRefund.toString(),
@@ -524,13 +545,23 @@ function ChekDetailPanel({ saleId, onBack }: { saleId: string; onBack: () => voi
             // Ekranda ko'rinadigan raqam so'rovga ketadigani bilan bir xil
             // formuladan chiqsin (FE-01) — aks holda kassir bir summani
             // ko'rib boshqasini yuborardi.
-            const refundMinor = refundPayoutMinor(
+            const refundValue = refundPayoutMinor(
               data.positions.map((p) => ({
                 quantity: p.quantity,
                 sumMinor: p.sumMinor,
                 returnQty: normalizeQtyDecimal(returnQty[p.id] ?? ''),
               })),
             );
+            const saleDebt = saleDebtMinor(data.payments);
+            const refundMinor = refundCashShareMinor({
+              originalSumMinor: BigInt(data.sumMinor),
+              originalDebtMinor: saleDebt,
+              refundSumMinor: refundValue,
+            });
+            // Qarzdan yechiladigan qism — serverning auto-split'i aynan shu
+            // qoldiqni yozadi. Kassir mijozga «pulingiz emas, qarzingiz
+            // kamayadi» deyishi uchun ekranda ko'rinishi SHART.
+            const refundDebtMinor = refundValue - refundMinor;
             return (
               <>
                 <div className="mb-3 flex items-center justify-between">
@@ -541,9 +572,22 @@ function ChekDetailPanel({ saleId, onBack }: { saleId: string; onBack: () => voi
                     {formatMoney(refundMinor)}
                   </span>
                 </div>
+                {saleDebt > 0n && refundDebtMinor > 0n && (
+                  <div className="mb-3 flex items-center justify-between">
+                    <span className="text-sm text-[var(--ms-text-muted)]">
+                      {t('refund_amount_debt')}
+                    </span>
+                    <span className="font-semibold tabular-nums text-[var(--ms-text-primary)]">
+                      {formatMoney(refundDebtMinor)}
+                    </span>
+                  </div>
+                )}
                 <button
                   type="button"
-                  disabled={refundMinor <= 0n || refundMut.isPending}
+                  // Qaytariladigan QIYMAT nolga teng bo'lsagina bloklanadi —
+                  // to'liq qarzli chekda naqd 0 bo'ladi, lekin qaytarish
+                  // O'ZI to'g'ri amal (qarz yechiladi).
+                  disabled={refundValue <= 0n || refundMut.isPending}
                   onClick={() => refundMut.mutate()}
                   className="w-full rounded-xl bg-[var(--ms-destructive-500)] py-3 font-bold text-white hover:opacity-90 disabled:opacity-40"
                 >
@@ -558,9 +602,44 @@ function ChekDetailPanel({ saleId, onBack }: { saleId: string; onBack: () => voi
   );
 }
 
+// ── Z-hisobot chop etish (F11) ───────────────────────────────────────────────
+
+/**
+ * Z-hisobotni chop etish — chek bilan AYNI yo'l: agent/Electron chek
+ * printeriga jim bosadi, aks holda brauzer popup'i (`?auto=1`) ochiladi.
+ *
+ * Ikki chaqiruvchi bor (ochiq smenadagi tugma va yopilgandan keyingi
+ * tugma), shuning uchun yo'l bitta hookda — ikki joyda ayri yozilsa,
+ * biri fallback'ni unutib qo'yardi.
+ */
+function usePrintZReport() {
+  const t = useTranslations('pages.sotuv');
+  const { toast } = useToast();
+  const labels = useZReceiptLabels();
+  return useCallback(
+    async (sessionId: string) => {
+      const outcome = await printZReportViaAgent(sessionId, labels);
+      if (!outcome.handled) {
+        window.open(`/print/z-report/${sessionId}?auto=1`, '_blank', 'width=420,height=760');
+        return;
+      }
+      if (!outcome.ok) toast.error(t('print_error'));
+    },
+    [labels, toast, t],
+  );
+}
+
 // ── Sales screen ─────────────────────────────────────────────────────────────
 
-function SalesScreen({ session }: { session: CurrentSession }) {
+function SalesScreen({
+  session,
+  onShiftClosed,
+}: {
+  session: CurrentSession;
+  /** Smena yopilgach id'ni yuqoriga uzatadi — ekran «smena ochish»ga
+   *  qaytadi va Z-hisobotga yo'l shu id orqali saqlanib qoladi. */
+  onShiftClosed: (sessionId: string) => void;
+}) {
   const t = useTranslations('pages.sotuv');
   const tCommon = useTranslations('common');
   const qc = useQueryClient();
@@ -585,6 +664,8 @@ function SalesScreen({ session }: { session: CurrentSession }) {
   // post() — the retail tier for the starting price, the «Оптовая цена» tier
   // for the negotiated floor.
   const { defaultId: defaultPriceTypeId, wholesaleId: wholesalePriceTypeId } = usePriceTypeIds();
+
+  const printZReport = usePrintZReport();
 
   const [tab, setTab] = useState<'savat' | 'jarayonda' | 'tayyor' | 'cheklar' | 'smena'>('savat');
   const [search, setSearch] = useState('');
@@ -1023,6 +1104,8 @@ function SalesScreen({ session }: { session: CurrentSession }) {
       cardAmountMinor: bigint;
       terminalAmountMinor: bigint;
       debtAmountMinor: bigint;
+      cashUsdAmountMinor: bigint;
+      usdRateMinor: string | null;
       agentId?: string;
     }) => {
       if (!payingSale) throw new Error(t('no_sale_selected'));
@@ -1031,6 +1114,16 @@ function SalesScreen({ session }: { session: CurrentSession }) {
         cardAmountMinor: payment.cardAmountMinor.toString(),
         terminalAmountMinor: payment.terminalAmountMinor.toString(),
         debtAmountMinor: payment.debtAmountMinor.toString(),
+        // MK31 — dollar naqd SENTDA, kurs esa KANONIK ×10^8 satr (oynada
+        // serverdan olingan, qayta hisoblanmagan). Ikkalasi FAQAT dollar
+        // berilganda qo'shiladi: sxemada ikkisi ham `.default('0')` /
+        // `optional`, ya'ni eski payload shakli buzilmaydi.
+        ...(payment.cashUsdAmountMinor > 0n && payment.usdRateMinor
+          ? {
+              cashUsdAmountMinor: payment.cashUsdAmountMinor.toString(),
+              usdRateMinor: payment.usdRateMinor,
+            }
+          : {}),
         expectedSumMinor: payingSale.sumMinor.toString(),
         ...(payment.agentId ? { agentId: payment.agentId } : {}),
       });
@@ -1119,6 +1212,9 @@ function SalesScreen({ session }: { session: CurrentSession }) {
       );
       setVarianceNote('');
       setClosingCashUsd('');
+      // Yopilgan smenaning id'si — Z-hisobot chop tugmasi uchun. Ekran shu
+      // zahoti «smena ochish» formasiga qaytadi, id esa yuqorida saqlanadi.
+      onShiftClosed(session.id);
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -1530,6 +1626,19 @@ function SalesScreen({ session }: { session: CurrentSession }) {
               <span>{t('z_report')}</span>
               <span className="text-[var(--ms-text-muted)]">→</span>
             </a>
+
+            {/* Z-hisobotni chop etish (F11). Ochiq smenada ham ishlaydi —
+                server shu holatda sanoq va farqni `null` qaytaradi, chek
+                esa ularni «sanalmagan» deb chizadi (nol EMAS). */}
+            <button
+              type="button"
+              onClick={() => void printZReport(session.id)}
+              data-test-id="print-z-report"
+              className="flex w-full items-center justify-between rounded-xl border border-[var(--ms-border)] bg-[var(--ms-bg-surface)] px-4 py-3 text-left font-medium text-[var(--ms-text-primary)] text-sm hover:bg-[var(--ms-bg-hover)]"
+            >
+              <span>{t('print_z_report')}</span>
+              <span className="text-[var(--ms-text-muted)]">🖨</span>
+            </button>
 
             {/* Drawer — Внесение / Изъятие */}
             <div className="rounded-xl border border-[var(--ms-border)] bg-[var(--ms-bg-surface)] p-4">
@@ -2210,6 +2319,11 @@ export default function SotuvPage() {
   // DIQQAT: hook erta `return`dan YUQORIDA — pastga qo'yilsa React #310
   // («Rendered more hooks…») butun sahifani yiqitadi (2026-08-01 saboqi).
   const { ref: shellRef, height: shellHeight } = useFillViewport<HTMLDivElement>();
+  // F11 — yopilgan smenaning Z-hisobotini chop etish yo'li. Holat AYNAN shu
+  // yerda turadi: `SalesScreen` smena yopilishi bilan unmount bo'ladi, ya'ni
+  // ichkarida saqlangan id o'sha zahoti yo'qolardi.
+  const [closedSessionId, setClosedSessionId] = useState<string | null>(null);
+  const printZReport = usePrintZReport();
 
   if (!user || isLoading) {
     return (
@@ -2222,6 +2336,20 @@ export default function SotuvPage() {
   if (!session) {
     return (
       <div className="p-4">
+        {/* Endi yopilgan smena — Z-hisobot qog'ozi hali chiqarilmagan
+            bo'lishi mumkin. Yo'l shu yerda qoladi, aks holda kassir uni
+            faqat `/retail/sessions` ro'yxatidan topardi. */}
+        {closedSessionId && (
+          <button
+            type="button"
+            onClick={() => void printZReport(closedSessionId)}
+            data-test-id="print-closed-z-report"
+            className="mb-3 flex w-full items-center justify-between rounded-xl border border-[var(--ms-border)] bg-[var(--ms-bg-surface)] px-4 py-3 text-left font-medium text-[var(--ms-text-primary)] text-sm hover:bg-[var(--ms-bg-hover)]"
+          >
+            <span>{t('print_z_report')}</span>
+            <span className="text-[var(--ms-text-muted)]">🖨</span>
+          </button>
+        )}
         <OpenShiftForm />
       </div>
     );
@@ -2237,7 +2365,7 @@ export default function SotuvPage() {
         <h1 className="font-semibold text-[var(--ms-text-primary)] text-base">{t('title')}</h1>
       </div>
       <div className="flex min-h-0 flex-1 overflow-hidden">
-        <SalesScreen session={session} />
+        <SalesScreen session={session} onShiftClosed={setClosedSessionId} />
       </div>
     </div>
   );

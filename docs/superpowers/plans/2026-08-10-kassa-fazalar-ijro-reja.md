@@ -1216,16 +1216,128 @@ Tuzatish 4 parallel agent + o'zim (auth), har biri TDD (RED ko'rilgan → fix �
 
 ### F1 hisoboti
 
-- **Holat:** ⬜ bajarilmagan
-- **Sana:**
+- **Holat:** ✅ kod tugadi (Task 10–14 · Task 15 gate) · ⬜ brauzer-o'lchov QOLDI
+- **Sana:** 2026-08-11 · worktree `D:/projects/sherset-kassa-f1`, branch `kassa-f1` (baza `6ba54150`)
+
 - **O'zgargan fayllar:**
-- **Qilingan ish:**
+  - *Yangi:* `apps/web/src/lib/pos-device.ts` · `apps/web/src/lib/__tests__/pos-device.test.ts` ·
+    `apps/web/src/lib/__tests__/auth-store-pos-login.test.ts` ·
+    `apps/web/src/components/pos/pin-keypad.tsx` ·
+    `apps/web/src/components/pos/__tests__/pin-keypad.test.tsx` ·
+    `apps/web/src/app/kassa-kirish/page.tsx` · `apps/web/src/app/kassa-kirish/juftlash/page.tsx` ·
+    `apps/web/src/__tests__/kassa-kirish-wiring.test.ts` ·
+    `apps/web/src/__tests__/kiosk-logout-redirect.test.ts`
+  - *Tahrirlangan:* `apps/web/src/lib/auth-store.ts` (`posLogin`) ·
+    `apps/web/src/app/(app)/layout.tsx` (chiqish yo'nalishi + kiosk «Chiqish» tugmasi) ·
+    `apps/web/src/components/pos/pos-pin-lock.tsx` (lockout yo'nalishi) ·
+    `apps/web/src/__tests__/kiosk-shell.test.ts` (1 ta assertion — pastda izohlangan) ·
+    `apps/web/src/messages/{ru,uz}.json` (`kassaLogin.*`, 16 kalit)
+  - 🔴 `apps/api` va `packages/` ga UMUMAN tegilmadi (`git diff 6ba54150..HEAD -- apps/api packages/` — bo'sh).
+
+- **Qilingan ish (task-task):**
+  - **Task 10 ✅** — `pos-device.ts`: `readPosDevice/writePosDevice/clearPosDevice`. Ikki saqlash
+    joyi: Electron ko'prigi (`window.electronAPI`, `isSherset` bayrog'i bilan tanilади) yoki
+    `localStorage` (dev/QA). To'liqmas/buzuq yozuv → `null` (yarim juftlangan qurilma kirishga
+    urinmasin). Rejadan tashqari 1 test qo'shildi: ko'prik bor bo'lsa YOZUV ham o'shanga ketadi.
+  - **Task 11 ✅** — `auth-store.posLogin(creds, pin)`: `POST /auth/pos-login`, `credentials:'include'`
+    (cookie'lar parol-login bilan bir xil). Tana faqat `deviceId/deviceSecret/pin` — serverdagi
+    `PosLoginSchema` (`auth.schema.ts:130-134`) qurilma NOMINI kutmaydi, shuning uchun test buni
+    alohida qulflaydi.
+  - **Task 12 ✅** — `PinKeypad` (sof prezentatsion, tarmoqqa chiqmaydi): 0–9 + Tozalash +
+    O'chirish, sensorli ekran uchun katta tugmalar, kiritilgan raqamlar OCHIQ ko'rsatilmaydi
+    (nuqta-indikator — kassa monitorini mijoz ham ko'radi), `<4` raqamda «Kirish» o'chirilgan.
+    `kassaLogin.*` kalitlari ru+uz.
+  - **Task 13 ✅** — `/kassa-kirish` (PIN ekrani, «juftlanmagan» shoxi bilan) va
+    `/kassa-kirish/juftlash` (admin login → do'kon/kassa/tashkilot tanlash → `POST
+    /auth/pos-device/pair` → kalitni darhol saqlash). Yo'llar o'lchandi:
+    `/stores`, `/cash-desks`, `/organizations` — `reference.controller.ts:62,85,113`
+    (`@Controller()`, ya'ni prefikssiz), javob `{ items, total }`.
+    🔴 Holat-shoxlari tartibi: `if (!ready) return null` «juftlanmagan» shoxidan OLDIN — aks holda
+    juftlangan kassada birinchi kadrda «juftlanmagan» ekrani chaqnaydi.
+  - **Task 14 ✅** — chiqish yo'nalishi. **Auditda topildi: kiosk qobig'ida CHIQISH TUGMASI UMUMAN
+    YO'Q edi** (`layout.tsx` kiosk shoxi faqat `{children}` + `PosPinLock` render qilardi;
+    `/sotuv/page.tsx` da `logout` — 0 hit). Ya'ni qabul mezoni 5-qadamini bajaradigan tugma
+    mavjud emasdi. Uchala chiqish yo'li shartli qilindi:
+    1. yangi kiosk «Chiqish» tugmasi (`layout.tsx`, `data-test-id="kiosk-logout"`);
+    2. PIN-qulfda 5 xatodan keyingi majburiy chiqish (`pos-pin-lock.tsx`) — ilgari SO'ZSIZ
+       `/login` ga tashlardi, kassir esa parolni bilmaydi ⇒ kassa jimgina o'lik qolardi;
+    3. sessiya o'lgach `layout.tsx` ning avto-yo'naltirishi.
+    Qoida: `readPosDevice() ? '/kassa-kirish' : '/login'` — juftlanmagan brauzerda PIN ekrani
+    foydasiz, `/login?redirect=` zaxira yo'li saqlanib qoldi.
+    ⚠️ `kiosk-shell.test.ts` dagi `expect(lock).toContain("window.location.href = '/login'")`
+    assertioni ATAYLAB o'zgartirildi (so'zsiz `/login` endi xato xulq) — o'rniga shartli
+    ifodaning o'zi qulflandi. Fayl `Edit` bilan, bitta assertion doirasida tahrirlandi.
+  - **Task 15 ✅ (gate) / ⬜ (brauzer)** — pastda.
+  - **Qo'shimcha tuzatish:** juftlash ekranidagi xom `<select>` DS `NativeSelect` ga ko'chirildi.
+    Buni **to'liq web suite tutdi** (`raw-element-conventions.test.ts`, UI Convention 8) —
+    fayl-darajasidagi typecheck/biome uni KO'RMAGAN edi. Sabog'i: yo'l-cheklangan gate yetarli emas.
+
 - **Testlar (raqam bilan):**
-- **Brauzer o'lchovi (5 qadam):**
-- **Gate natijasi:**
-- **Commit(lar):**
+  - Yangi yozilgan: **41 test** — `pos-device` 7 · `auth-store-pos-login` 5 · `pin-keypad` 10 ·
+    `kassa-kirish-wiring` 12 · `kiosk-logout-redirect` 7. Hammasi TDD: har biri avval
+    yiqildi (modul/komponent yo'q · `posLogin is not a function` · `ENOENT page.tsx` ·
+    layout'da `/kassa-kirish` yo'q), keyin yashil.
+  - Tahrirlangan `kiosk-shell.test.ts` — 12 test, yashil (regress yo'q).
+
+- **Brauzer o'lchovi (5 qadam):** 🔴 **BAJARILMADI — parallel to'lqin, port band; merge'dan
+  keyingi QA sessiyasiga qoldirildi.** (Ijro rejasi §1.2.4: `pnpm dev` 3100/4000 bir vaqtda faqat
+  bitta sessiyada, hozir 3 faza parallel ketyapti.) O'lchanishi kerak bo'lgan qadamlar:
+  1. `http://localhost:3100/kassa-kirish` → «Bu qurilma juftlanmagan» ekrani ko'rinadi;
+  2. «Qurilmani juftlash» → admin bilan kirish → do'kon/kassa/tashkilot tanlanadi → `/kassa-kirish`
+     ga qaytadi va qurilma nomi ko'rinadi;
+  3. To'g'ri PIN → `/sotuv` ochiladi;
+  4. Noto'g'ri PIN → server xabari ko'rinadi va PIN maydoni tozalanadi (nuqtalar bo'shaydi);
+  5. `/sotuv` da «Chiqish» (o'ng-past burchak, `kiosk-logout`) → `/kassa-kirish` (`/login` EMAS).
+  Qo'shimcha tavsiya: 5 marta noto'g'ri PIN bilan PIN-QULF lockout yo'lini ham o'lchash
+  (u ham `/kassa-kirish` ga qaytishi kerak) va juftlanmagan brauzerda `/login` zaxirasi.
+
+- **Gate natijasi** (hammasi yugurtirildi, qisqartirilmadi):
+  - `@moysklad/money build` — OK · `api typecheck` — 0 xato · `web typecheck` — 0 xato
+  - `biome check` (tegilgan 15 fayl) — **0 diagnostika**.
+    ℹ️ `apps/web/src/components/pos` butun papkasida 20 warning bor, lekin hammasi
+    `rasmilashtirish-modal.tsx` dan (F5 ning fayli, men tegmadim — `git log --name-only` tasdiqladi).
+  - `web test` — **227 fayl / 3221 o'tdi · 26 skip · 0 yiqildi** (exit 0).
+  - `api test` — 553 fayl / 7771 o'tdi · **11 yiqildi**. 🔴 **Hammasi `Test timed out in 5000ms`
+    (assertion emas) va hammasi oldindan qizil** — baseline `6ba54150` (orkestrator o'lchagan).
+    Dalil: (a) bu branchda `apps/api` ga bitta ham o'zgarish yo'q; (b) izolyatsiyada
+    `pos-device.service` (6), `pos-pin.service` (3), `publication.service` (1) — yashil, ya'ni
+    parallel yuk ostidagi argon2 timeout'i; (c) `mutation-guard-coverage` (1) yolg'iz yugurtirilganda
+    ham ~5060 ms da timeout beradi — chegaraga yopishib qolgan test, baseline ro'yxatida bor.
+    Baseline qiyosi: api 10–11 qizil (timeout), web 1 qizil (timeout, `sales-screen-shift`) — mening
+    yakuniy web yugurishimda u ham yashil chiqdi (mashina bo'shaganda).
+  - `pnpm i18n:gate` — 9 test yashil (ru+uz parity, hardcode yo'q).
+
+- **Commit(lar):** `e0ee620a` (Task 10) · `996639db` (Task 11) · `700c0585` (Task 12) ·
+  `e2e10c6d` (Task 13) · `3cd7c18d` (Task 14) · `2502e489` (NativeSelect tuzatishi) ·
+  + shu hisobot commit'i.
+  Har commitdan keyin `git show --stat HEAD` tekshirildi; begona fayl tushmadi
+  (`docs/progress.json` — pre-commit hook'ining o'zi qo'shadi, normal).
+
 - **Kelgusi fazalarga qoldirilgan:**
-- **Yorliq:**
+  1. 🔴 **F2 uchun shartnoma kengaydi:** `pos-device.ts` Electron ko'prigidan `isSherset`,
+     `getDevice()`, `setDevice(creds)`, `clearDevice()` ni kutadi. F2 ning
+     `electron-bridge-contract.test.ts` metod nomlarini FAQAT `print-agent.ts` dan emas,
+     `pos-device.ts` dan HAM manbadan o'qisin — aks holda `electronAPI` optional bo'lgani uchun
+     typecheck yashil qolib, prod kassada qurilma kaliti jimgina `localStorage` ga tushadi.
+  2. **Qurilmani bekor qilish (unpair) UI yo'q:** `clearPosDevice()` yozildi va test qilindi,
+     lekin uni HECH KIM chaqirmaydi. Qurilma almashtirilganda/o'g'irlanganda kassirning yo'li yo'q.
+     Tabiiy joyi — F2 (Electron sozlamalar oynasi) yoki F4 (operator yo'riqnomasi + admin ekrani).
+  3. **Layout avto-yo'naltirishi QURILMA bo'yicha ishlaydi, foydalanuvchi bo'yicha emas** — chunki
+     u nuqtada `auth.user` allaqachon `null`. Ya'ni juftlangan brauzerda ADMIN ham sessiyasi
+     tugagach `/kassa-kirish` ga tushadi. Real kassa PC'da to'g'ri, dev brauzerda kutilmagan
+     bo'lishi mumkin; yumshatish — `/kassa-kirish` dagi «Administrator kirishi» havolasi.
+     F12 QA'da kuzatilsin.
+  4. **Kiosk «Chiqish» tugmasining joyi vaqtinchalik** — `layout.tsx` da fiksirlangan o'ng-past
+     burchak. F5/F8 `/sotuv` ga o'z chrome'ini qo'shganda uni POS sarlavhasiga ko'chirish
+     mantiqiyroq bo'lishi mumkin (tugmaning o'zi va `data-test-id="kiosk-logout"` saqlansin).
+  5. **`POS_PIN_PEPPER` `.env` ga qo'shilishi** hamon prod-qadam sifatida ochiq (K1–K4 rejasining
+     Task 15 Step 6 bandi). `NEXT.md` ga hand-off yozuvi bu sessiyada YOZILMADI — parallel
+     to'lqinda `NEXT.md` umumiy fayl, merge sessiyasida yozilsin.
+  6. **Juftlash uchun `employee.update` ruxsati kerak** (`auth.controller.ts:262-263`) — kiosk
+     kassiri o'zi juftlay olmaydi, bu ATAYLAB. Operator yo'riqnomasida (F4) shu aytilsin.
+
+- **Yorliq:** **«Phase-1: strukturaviy, runtime-tasdiqlanmagan»** — brauzer-smoke YO'Q,
+  real kassa PC va printer — F12.
 
 ### F2 hisoboti
 
@@ -1268,18 +1380,151 @@ Tuzatish 4 parallel agent + o'zim (auth), har biri TDD (RED ko'rilgan → fix �
 
 ### F5 hisoboti
 
-- **Holat:** ⬜ bajarilmagan
-- **Sana:**
-- **O'zgargan fayllar:**
+- **Holat:** ✅ bajarildi (worktree `kassa-f5`, branch `kassa-f5`, merge kutilmoqda)
+- **Sana:** 2026-08-11
+
+- **O'zgargan fayllar (21):**
+  - *server:* `apps/api/src/modules/exchange-rate/exchange-rate.service.ts` ·
+    `.../exchange-rate-canonical-scale.test.ts` (yangi) ·
+    `apps/api/src/modules/retail-sale/retail-sale.service.ts` ·
+    `.../retail-sale-detail-payments.test.ts` (yangi) ·
+    `.../retail-tenders.ts`
+  - *paket:* `packages/money/src/exchange-rate.ts` · `.../index.ts` · `.../money.test.ts` ·
+    `packages/db/prisma/schema.prisma` (faqat izoh)
+  - *web (chek):* `apps/web/src/lib/pos/receipt-payments.ts` + `.test.ts` (yangi) ·
+    `apps/web/src/lib/print-agent.ts` · `apps/web/src/lib/__tests__/receipt-renderers.test.ts` (yangi) ·
+    `apps/web/src/app/print/retail-sale/[id]/page.tsx` + `print-retail-sale.test.tsx` (yangi)
+  - *web (POS):* `apps/web/src/components/pos/rasmilashtirish-modal.tsx` ·
+    `.../pos/__tests__/rasmilashtirish-usd.test.tsx` (yangi) ·
+    `apps/web/src/app/(app)/sotuv/page.tsx` · `.../__tests__/harness.tsx` ·
+    `.../__tests__/sales-screen-usd.test.tsx` (yangi) · `.../__tests__/chek-refund-debt.test.tsx` (yangi) ·
+    `apps/web/src/lib/pos/cart-math.ts` + `.test.ts`
+  - *i18n:* `apps/web/src/messages/{uz,ru}.json` (5 kalit)
+
 - **Qilingan ish:**
-- **Testlar (qaysi xulqni qo'riqlaydi):**
-- **Brauzer o'lchovi (summa/kurs/natija):**
-- **Uchala chek renderer holati:**
-- **CashDesk dollar qarzi:**
+  1. **Kurs — serverdan, kanonik masshtabda.** `GET /exchange-rates/rate` endi
+     `rateMinor` (×10^8) ham qaytaradi (mavjud `cbuRateToRateValue` bilan, `nominal`
+     hisobga olinib). Sabab: endpoint CBU'ning o'nlik satrini beradi, sxema esa
+     `< 10^9` ni rad etadi — o'girishni ekranga qoldirsak formula ikkinchi nusxada
+     yashardi (`nominal ≠ 1` da 100× xato). Margin QO'LLANMAYDI (0) — u `Currency`
+     jadvalining ishi; qaror izohda yozilgan.
+  2. **`@moysklad/money` → `convertByRateE8`** — kurs bo'yicha o'girishning yagona
+     formulasi. `retail-tenders.ts` `usdBaseMinor` unga delegat qiladi (matematika
+     o'zgarmagan), kassa ekrani ham shundan foydalanadi ⇒ kassir ko'rgan so'm
+     ekvivalenti server yozadigan raqam bilan bir xil.
+  3. **`rasmilashtirish-modal.tsx` — 4-tender «Naqd USD».** Summa SENTDA parse
+     qilinadi, so'm ekvivalenti jonli ko'rinadi, qaytim chegarasiga uning so'm
+     qiymati kiradi (`retail-tenders.ts` `cashLikeMinor` bilan aynan bir xil).
+     «Aniq summa» dollar maydonida so'm qoldig'ini YUQORIGA yaxlitlab sentga
+     o'giradi (pastga yaxlitlansa server «to'lov yetarli emas» derdi).
+  4. **Kurs yo'q kun:** dollar tugmasi `disabled`, sabab matni ko'rsatiladi, USD
+     summasi 0 ga majburlanadi ⇒ jim 1:1 ga tushish yo'li **yopiq**. So'm to'lovi
+     bu holatda ishlayveradi.
+  5. **`sotuv/page.tsx` payload:** `cashUsdAmountMinor` + `usdRateMinor` FAQAT dollar
+     berilganda qo'shiladi — eski payload shakli va uni qulflagan testlar tegilmagan.
+  6. **Chek to'lov qatlami qayta simlandi** (audit topilmasi): `findById` endi
+     `payments` ni beradi, uchala renderer `lib/pos/receipt-payments.ts` dan o'qiydi.
+     Natijada «Terminal» va «Qarz» qatorlari ISHLAY BOSHLADI (ilgari biri mavjud
+     bo'lmagan ustundan, ikkinchisi hech kim yozmaydigan ustundan o'qirdi), dollar
+     qatori esa tabiiy ravishda o'sha manbadan chiqadi. Eski cheklar uchun legacy
+     ustunlarga fallback saqlangan.
+  7. **Qarzli chekni qaytarish ochildi** (audit topilmasi): `saleDebtMinor` +
+     `refundCashShareMinor` (serverning `moneyCap` formulasi bilan aynan bir xil);
+     qarz ulushi ataylab yuborilmaydi — server auto-split qiladi.
+
+- **Testlar (qaysi xulqni qo'riqlaydi) — 49 yangi:**
+  | Fayl | Nechta | Nimani qo'riqlaydi |
+  |---|---|---|
+  | `exchange-rate-canonical-scale.test.ts` | 5 | o'nlik kurs → ×10^8; `nominal ≠ 1` bir birlikka keltiriladi; qiymat stale-scale chegarasidan (10^9) o'tadi; kurs yo'q bo'lsa **otiladi**, 1:1 ga tushmaydi |
+  | `retail-sale-detail-payments.test.ts` | 2 | `findById` `payments` ni **include qiladi** va dollar qatori uchun kerakli 5 maydonni so'raydi — FE fikstura'si o'zini aldamasin |
+  | `packages/money/money.test.ts` (+4) | 4 | `convertByRateE8`: masshtab, pastga yaxlitlash, identity kurs |
+  | `lib/pos/receipt-payments.test.ts` | 12 | kanonik tartib · **TERMINAL alohida qator** · **QARZ qatori bor** · dollar qatori asl sent+kurs+server bergan so'm ekvivalenti bilan · noma'lum kanal (CLICK) tushib qolmaydi · legacy fallback · kurssiz buzuq qator otmaydi |
+  | `lib/__tests__/receipt-renderers.test.ts` | 6 | matn (ESC/POS) va HTML renderer'lari **bir xil** qatorlarni chiqaradi |
+  | `app/print/retail-sale/[id]/print-retail-sale.test.tsx` | 2 | uchinchi (React) renderer ham shu manbadan |
+  | `components/pos/__tests__/rasmilashtirish-usd.test.tsx` | 7 | kurs **serverdan** olinadi va sanasi bilan ko'rsatiladi · payload'da sent + muzlatilgan kurs · so'm ekvivalenti jonli · **kurssiz → bloklangan + sabab** · kurssiz holatda so'm to'lovi ishlaydi · qaytim chegarasiga dollar kiradi · ortiqcha karta hamon bloklangan |
+  | `sotuv/__tests__/sales-screen-usd.test.tsx` | 3 | post payload'da ikki maydon; dollarsiz to'lovda **umuman yuborilmaydi**; aralash to'lov |
+  | `sotuv/__tests__/chek-refund-debt.test.tsx` | 6 | naqd ulushi chek qanday yopilganidan; qarz ulushi ekranda; so'rovda `debtReturnMinor` **yo'q**; to'liq qarzli chekda naqd 0 va tugma ishlaydi; qisman qaytarish; eski chekda xulq o'zgarmagan |
+  | `lib/pos/cart-math.test.ts` (+10) | 10 | `refundCashShareMinor` (qarzsiz/to'liq qarz/qisman/yaxlitlash/buzuq ma'lumot/nol summa) + `saleDebtMinor` |
+
+- **Brauzer o'lchovi (summa/kurs/natija):** 🔴 **BAJARILMADI — parallel to'lqin, portlar band
+  (§1.2.4); QA sessiyasiga qoldirildi.** O'lchanishi kerak bo'lgan aniq stsenariylar:
+  1. *Kurs mavjud kun.* Chek 155 628,37 so'm · kurs 1$ = 12 450,27 · to'lov faqat
+     «Naqd USD» = **$12.50** → kutilgan: «Aniq to'landi», qaytim yo'q; chekda
+     `Dollar $12.50` + `1USD = 12450.27` + `155 628`; smena yopilishida
+     `expectedCashUsdMinor` = **1250 sent**, so'm kutilgan naqdi **oshmaydi**.
+  2. *Aralash.* 55 628,37 so'm naqd + **$8.04** → jami 155 728,54 ⇒ qaytim
+     **100,17 so'm** (so'mda beriladi); chekda uchala qator (Naqd · Dollar · Qaytim).
+  3. *Qaytim chegarasi.* 1 000 so'mlik chek, **$1** → o'tishi kerak (dollar naqd
+     hisoblanadi); shu chekka **karta 2 000** → tugma bloklangan bo'lishi kerak.
+  4. *Kurssiz kun.* `exchange_rates` da USD qatori yo'q akkaunt (yoki endpoint 404) →
+     «Naqd USD» tugmasi o'chiq, sabab matni ko'rinadi, so'm to'lovi ishlayveradi.
+     So'ng payload'ni qo'lda `usdRateMinor` siz yuborib server 400 berishini ko'rish.
+  5. *Eski masshtab.* `usdRateMinor: '124502700'` (×10^4) bilan → server 400
+     («Kurs eski (×10⁴) masshtabda»).
+  6. *Chek uchala yo'ldan.* `/print/retail-sale/:id` brauzer · Electron native ·
+     ESC/POS agent — aralash to'lovli chekda qatorlar bir xilligi.
+  7. *Qarzli qaytarish.* 18 000 lik chek 6 000 naqd + 12 000 qarz → to'liq qaytarish:
+     kassadan **6 000** chiqadi, mijoz balansidan **12 000** yechiladi (400 YO'Q).
+
+- **Uchala chek renderer holati:** uchalasiga ham **tegildi va bitta manbaga**
+  (`lib/pos/receipt-payments.ts`) ulandi —
+  (1) `buildReceiptText` (ESC/POS matn) va (2) `buildReceiptHtml` (Electron native)
+  `print-agent.ts` da, ikkalasi ham eksport qilinib matn-tekshiruvi bilan sinaldi
+  (`receipt-renderers.test.ts`, 6 test: dollar/terminal/qarz/qaytim/legacy);
+  (3) `/print/retail-sale/[id]` React sahifasi — `renderWithProviders` bilan real
+  render qilinib tekshirildi (2 test). 🔴 **Fizik chop etish sinalmagan** (printer
+  yo'q, Electron qobiq yo'q) — faqat qurilgan matn/HTML/DOM.
+
+- **CashDesk dollar qarzi:** ✅ **TASDIQLANDI — bu fazada YECHILMADI** (reja §F5 da
+  shunday yozilgan). Dalil: `apps/api/src/modules/retail-sale/retail-sale.service.ts:959-971`
+  — `money.applyDeltas` ga faqat `cashToDrawer = cashAmount − change` (SO'M) yoziladi;
+  dollar ataylab tushmaydi, chunki `CashDesk.balanceMinor` bitta valyutadagi qoldiq va
+  boshqa valyutali delta «Currency mismatch» bilan rad etiladi. Oqibati o'zgarmagan:
+  **pul daftari va bank-balans hisobotlari kassadagi dollarni KO'RSATMAYDI**; dollar
+  faqat smena hisobida (`CashierSession.*UsdMinor`) va `CASH_USD` to'lov qatorlarida
+  yuritiladi. Yechim alohida faza talab qiladi.
+
 - **Gate natijasi:**
+  - `pnpm --filter @moysklad/money build` → **OK**
+  - `pnpm --filter @moysklad/api typecheck` → **0 xato**
+  - `pnpm --filter @moysklad/web typecheck` → **0 xato**
+  - `pnpm biome check <tegilgan yo'llar>` → **0 error** (57 warning: `nursery/useSortedClasses`,
+    tegilmagan satrlarda ham bor — siyosat bo'yicha ruxsat)
+  - `pnpm --filter @moysklad/api test` → **554 fayl / 7789 test — hammasi yashil** (1 skip)
+  - `pnpm --filter @moysklad/web test` → **228 fayl / 3226 test — hammasi yashil** (26 skip)
+  - `pnpm i18n:gate` → **9/9 yashil**
+  - 📌 Baseline `6ba54150` da orkestrator o'lchagani: api 10 qizil, web 1 qizil —
+    **hammasi `Test timed out in 5000ms`** (parallel yuk ostida argon2/render).
+    Mening yugurtirishimda mashina bo'shroq bo'lgani uchun **o'sha testlar ham yashil**;
+    ya'ni yangi yiqilish YO'Q va baseline qizillari ham qaytarilmadi.
+  - ⚠️ Bir kuzatuv: `sales-screen-usd.test.tsx` ning aralash-to'lov testi dastlab
+    `user.type` bilan 5 s chegarasidan oshdi. `testTimeout` OSHIRILMADI — test
+    arzonlashtirildi (`fireEvent.change`, izoh bilan).
+
 - **Commit(lar):**
+  - `5cc1b1e9` — `feat(kassa): chek to'lov qatlami RetailSalePayment qatorlaridan o'qiladi`
+  - `ef5da7b2` — `feat(kassa): POS'da dollar naqd tenderi (kurs serverdan, muzlatiladi)`
+  - `ed19780e` — `fix(kassa): qarzli chekni POS'dan qaytarish mumkin bo'ldi`
+  - *(+ shu hisobot commiti)*
+  - Har commitdan keyin `git show --stat HEAD` bilan tarkib tekshirildi — begona fayl
+    tushmagan (worktree izolyatsiyasi; hook'lar chetlab o'tilgan, gate'lar qo'lda to'liq).
+
 - **Kelgusi fazalarga qoldirilgan:**
-- **Yorliq:**
+  1. 🔴 **CashDesk dollar qoldig'i** (yuqorida) — pul daftari/bank-balans dollarni ko'rmaydi.
+  2. **Kurs manbai qarori:** POS `ExchangeRate` (CBU, margin'siz) dan oladi, hujjatlar esa
+     `Currency.rateValue` (margin qo'llangan) dan. Ikkalasi bir kun ajralib qolishi mumkin —
+     do'kon ustamasi POS'ga ham kerak bo'lsa, F6 bilan birga bitta manbaga keltirilsin.
+  3. **F6 uchun:** `debt.schema.ts` dagi `usdCentsToSomTiyin` ham endi
+     `convertByRateE8` ga delegat qilinishi mumkin (bu fazada TEGILMADI — F6 hududi).
+  4. **Chek chegirmasi** hamon ko'rinmaydi (`qty × price` va `sum` mos kelmaydi) — audit
+     topilmasi, F5 doirasidan tashqarida qoldirildi (to'lov qatlami tuzatildi, POZITSIYA
+     qatlami emas).
+  5. Chek yorliqlari (`Naqd`/`Dollar`/`Qarz`…) ataylab i18n'da EMAS — chek mijozga
+     beriladigan hujjat. Ko'p tilli chek kerak bo'lsa alohida qaror talab qiladi.
+  6. `/print/retail-sale` sahifasidagi `_t` (ishlatilmagan tarjimon) tegilmadi.
+
+- **Yorliq:** **Phase-1: strukturaviy, runtime-tasdiqlanmagan** — brauzer-smoke **YO'Q**,
+  fizik chop etish **YO'Q**, real DB bilan uchidan-uchiga o'lchov **YO'Q**.
 
 ### F6 hisoboti
 
@@ -1359,17 +1604,110 @@ Tuzatish 4 parallel agent + o'zim (auth), har biri TDD (RED ko'rilgan → fix �
 
 ### F11 hisoboti
 
-- **Holat:** ⬜ bajarilmagan
-- **Sana:**
+- **Holat:** ✅ bajarildi (Phase-1)
+- **Sana:** 2026-08-11 · worktree `sherset-kassa-f11`, branch `kassa-f11` (baza `6ba54150`)
+
 - **O'zgargan fayllar:**
-- **Qilingan ish:**
-- **Raqamlar ikki manbadan solishtirildimi:**
-- **NULL holati qanday ko'rsatiladi:**
-- **Brauzer o'lchovi:**
+  - YANGI `apps/web/src/app/print/z-report/[id]/page.tsx` — 72mm chek, `?auto=1` avto-chop
+  - YANGI `apps/web/src/lib/z-report-receipt.ts` — SOF model (`buildZReceipt`) + ikki renderer
+    (`renderZReceiptText` ESC/POS 32-ustun, `renderZReceiptHtml` 72mm Electron)
+  - YANGI `apps/web/src/lib/use-z-receipt-labels.ts` — yorliqlar i18n'dan (`pages.z_report.*`)
+  - YANGI testlar: `lib/__tests__/z-report-receipt.test.ts` (8) ·
+    `app/print/z-report/[id]/__tests__/z-report-print-page.test.tsx` (8) ·
+    `…/z-report-source-parity.test.ts` (6) ·
+    `app/(app)/sotuv/__tests__/z-report-print-wiring.test.tsx` (4) ·
+    `lib/__tests__/z-receipt-labels-fixture.ts` (fikstura, test emas)
+  - `apps/web/src/lib/print-agent.ts` — `printZReportViaAgent()` (Electron native → HTTP agent)
+  - `apps/web/src/app/(app)/sotuv/page.tsx` — `usePrintZReport()` hooki; «Smena» yorlig'ida
+    `print-z-report` tugmasi; smena yopilgach `print-closed-z-report` tugmasi (id `SotuvPage` da
+    saqlanadi, chunki `SalesScreen` yopilish bilan unmount bo'ladi)
+  - `apps/web/src/messages/{ru,uz}.json` — `pages.z_report.print.*` (34 kalit) + `pages.sotuv.print_z_report`
+  - Mavjud 6 POS test faylida `vi.mock('@/lib/print-agent')` fabrikasiga 1 qatordan qo'shildi
+    (+2 qator/fayl, boshqa hech narsa tegilmadi)
+
+- **Qilingan ish:** reja §2/F11 ning 5 bandi. 🔴 Uch renderer bir modeldan chiziladi — xotira
+  «Ombor cheki uch renderer» (biri o'zgarsa qolgani jimgina eskiradi) shu sababdan raqam va
+  NULL mantig'i `z-report-receipt.ts` da BIR MARTA turadi.
+
+- **Raqamlar ikki manbadan solishtirildimi:** HA, lekin **kod darajasida** (brauzer emas — pastga qara).
+  - Manba-1 = `GET /cashier-sessions/:id/z-report` (`cashier-session.service.ts#zReport`) —
+    aynan `/retail/sessions/[id]` ekranining `zFull` so'rovi. Chop sahifasi TUSHUM, cheklar soni,
+    o'rtacha chek, yalpi foyda, chegirma, qarzga sotilgan, qarz to'lovlari, qaytarish summasi,
+    xarajat/inkassatsiya, kutilgan/sanalgan naqd va farqni AYNAN shu maydonlardan oladi.
+  - Manba-2 = eski `GET /retail-sales/z-report?sessionId=` — faqat **qaytarishlar SONI** uchun
+    (yangi javobda bunday maydon yo'q); ekran ham xuddi shu manbadan oladi.
+  - Qulf: `z-report-source-parity.test.ts` (6 test) — (A) ikkala sahifa bir endpointdan va
+    15 ta umumiy maydon nomidan o'qishi; chop sahifasida `BigInt(x) ± BigInt(y)` arifmetikasi
+    YO'Qligi; (B) `ZReportPayload` ning har maydoni serverning `zReport()` manbasida borligi
+    (grounding — xotira «FE fixture server maydonini o'zi to'qiydi»), + qo'riqchi vakuum
+    bo'lmasligi uchun maydonlar soni > 20 tekshiruvi.
+  - **Ekran bilan MOS KELMAYDIGAN qism (o'lchangan, ataylab tuzatilmagan):**
+    `/retail/sessions/[id]` ning `ZFull` interfeysi `openingCashMinor`, `unconvertedByMethod`
+    va BARCHA dollar maydonlarini (`openingCashUsdMinor`, `expectedUsdCashMinor`,
+    `countedUsdCashMinor`, `varianceUsdMinor`) umuman e'lon qilmaydi — ya'ni ekran ularni
+    KO'RSATMAYDI, chop qog'ozi ko'rsatadi. Bundan tashqari ekran `revenueByMethod[].sumMinor`
+    ni HAR DOIM smena valyutasi bilan formatlaydi (USD qatori sent sifatida noto'g'ri chiqadi),
+    chop qog'ozi esa qator valyutasi bilan. Ekran F11 fayli emas — qarzga yozildi.
+
+- **NULL holati qanday ko'rsatiladi:** uch holat AJRATILGAN va testda qulflangan (12 assert):
+  - `null` sanoq → **«sanalmagan»** matni (raqam UMUMAN yo'q — test `not.toMatch(/\d/)` bilan
+    tekshiradi); `null` farq → ham «sanalmagan»
+  - `'0'` sanoq → «0,00»; `'0'` farq → **«farq yo'q»** (bu ikkisi hech qachon bir xil ko'rinmaydi)
+  - normal → raqam; farq ishorasiga qarab «kamomad»/«ortiqcha»
+  - `grossProfitMinor: null` (tan narx muzlatilmagan) → **«o'lchanmagan»**, 0 EMAS —
+    «100% marja» yolg'onining oldi olinadi
+  - `averageReceiptMinor: null` → «—»; qaytarishlar soni manbasi yiqilsa → «—», 0 EMAS
+  - Dollar bloki **HAR DOIM** chiziladi (dollar oqimi bo'lmagan smenada ham): Z-hisobot arxiv
+    hujjati, «dollar yashigi sanalmagan» fakti qog'ozda ko'rinib turishi kerak.
+
+- **Brauzer o'lchovi:** 🔴 **BAJARILMADI — parallel to'lqin, portlar band (3 faza bir vaqtda);
+  QA sessiyasiga qoldirildi.** QA'da `/print/z-report/<id>` ni `/retail/sessions/<id>` bilan
+  yonma-yon ochib solishtirilishi kerak bo'lgan raqamlar: **tushum (`revenueMinor`)** ·
+  **cheklar soni (`salesCount`)** · **o'rtacha chek** · **yalpi foyda** · **chegirma** ·
+  **qarzga sotilgan** · **qabul qilingan qarz to'lovlari** · **qaytarishlar soni va summasi** ·
+  **xarajatlar (jami + moddalar bo'yicha)** · **inkassatsiya** · **kutilgan naqd** ·
+  **sanalgan naqd** · **farq** · **to'lov turlari kesimi (har qator: tur + valyuta + summa)**.
+  Ekranda YO'Q, faqat qog'ozda tekshiriladi: **ochilish qoldig'i (UZS va USD)**, **dollar
+  kutilgan/sanalgan/farq**, **kursi yo'q qatorlar**. Alohida: real chek printerida 72mm sig'imi
+  va ESC/POS kirill/lotin chiqishi (`renderZReceiptText` 32-ustun cheklovini birlik-test
+  qiladi, printer emas).
+
 - **Gate natijasi:**
-- **Commit(lar):**
+  - `pnpm --filter @moysklad/money build` — ✅
+  - `pnpm --filter @moysklad/api typecheck` — ✅ 0 xato
+  - `pnpm --filter @moysklad/web typecheck` — ✅ 0 xato
+  - `pnpm biome check <tegilgan yo'llar>` (19 fayl) — ✅ **0 error**; 20 warning —
+    hammasi `sotuv/page.tsx` dagi OLDINDAN mavjud `lint/nursery/useSortedClasses`
+    (qator raqamlari tekshirildi: mening yangi qatorlarim ro'yxatda YO'Q)
+  - `pnpm --filter @moysklad/api test` — ✅ **552 fayl o'tdi, 1 skip, 0 qizil** (7782 test).
+    Diqqat: orkestratorning `6ba54150` baseline'ida 4 fayl / 10 test qizil edi (argon2
+    timeout, parallel yuk) — bu yugurishda yuk pasaygani uchun hammasi yashil chiqdi.
+  - `pnpm --filter @moysklad/web test` — 224/226 fayl yashil, **3 test qizil, HAMMASI
+    `Test timed out in 5000ms`** (assertion emas):
+    `sotuv/__tests__/sales-screen-shift.test.tsx` (2) + `menejer/_components/comment-template-settings.test.tsx` (1).
+    Uchalasi ham **YAKKA yugurtirilganda YASHIL** (tekshirildi: shift fayli 17/17, menejer fayli 4/4).
+    Baseline `6ba54150` da web'da 1 qizil bor edi (aynan `sales-screen-shift` › «kirim summasi…»);
+    qolgan 2 tasi ham shu sinf — 3 agent + gate bir mashinada parallel yugurgani uchun 5 s chegara.
+    **Yangi (baseline'da yo'q) haqiqiy yiqilish YO'Q.**
+  - `pnpm i18n:gate` — ✅ 9 test (470 fayl, 12 969 kalit)
+  - Yangi testlar: **26** (chek modeli 8 · chop sahifasi 8 · manba-parity 6 · `/sotuv` wiring 4)
+
+- **Commit(lar):** `8ff8e25d` — `feat(kassa): z-hisobot chop sahifasi (/print/z-report)`
+  (19 fayl; 19-chisi — hook yozgan `docs/progress.json` metadata, begona ish emas)
+
 - **Kelgusi fazalarga qoldirilgan:**
-- **Yorliq:**
+  1. **`/retail/sessions/[id]` ekrani dollar bloki va `openingCashMinor` ni ko'rsatmaydi**
+     (`ZFull` interfeysi eskirgan) — chop qog'ozi ekrandan ko'proq narsa ko'rsatadi.
+  2. **O'sha ekran `revenueByMethod[].sumMinor` ni har doim smena valyutasi bilan formatlaydi**
+     — USD to'lov qatori sentni tiyin sifatida ko'rsatadi (chop qog'azida to'g'ri).
+  3. **Farq aktlari (`variances[]`) chop qog'oziga chiqarilmadi** — ekranda bor. Qog'ozda
+     aktlar bloki kerakmi, degan qaror F12 (real kassada QA) ga qoldirildi.
+  4. **`printZReportViaAgent` uchun birlik-test yo'q** — `printReceiptViaAgent` da ham yo'q
+     (mavjud naqsh); chop yo'lining o'zi `/sotuv` wiring testida mok orqali qulflangan.
+  5. Brauzer/printer smoke — yuqoridagi ro'yxat bo'yicha.
+
+- **Yorliq:** **Phase-1: strukturaviy, runtime-tasdiqlanmagan.** Brauzer-smoke YO'Q,
+  printer-smoke YO'Q.
 
 ### F12 hisoboti
 

@@ -33,6 +33,8 @@ vi.mock('@/lib/auth-store', () => ({
 vi.mock('@/lib/print-agent', () => ({
   printReceiptViaAgent: vi.fn(async () => ({ handled: true, ok: true })),
   printPickingViaAgent: vi.fn(async () => ({ handled: true, printed: 1, skipped: 0, errors: 0 })),
+  // F11 — smena yopilganda sahifa Z-hisobotni ham chop yo'liga uzatadi.
+  printZReportViaAgent: vi.fn(async () => ({ handled: true, ok: true })),
 }));
 
 beforeEach(() => {

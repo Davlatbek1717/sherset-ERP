@@ -2,11 +2,13 @@
 
 import { api } from '@/lib/api-client';
 import { formatAmountInput, parseAmountToMinor } from '@/lib/pos/parse-amount';
+import { formatForeignMajor } from '@/lib/pos/receipt-payments';
+import { RATE_SCALE, convertByRateE8 } from '@moysklad/money';
 import type { CurrencyCode } from '@moysklad/money/currencies';
 import { Input, formatMoney } from '@moysklad/ui';
 import * as Dialog from '@radix-ui/react-dialog';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { Banknote, CreditCard, Monitor, X } from 'lucide-react';
+import { Banknote, CreditCard, DollarSign, Monitor, X } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useCallback, useEffect, useState } from 'react';
 
@@ -32,7 +34,24 @@ interface ConfirmParams {
   cardAmountMinor: bigint;
   terminalAmountMinor: bigint;
   debtAmountMinor: bigint;
+  /** MK31 — mijoz bergan dollar naqd, SENTDA. */
+  cashUsdAmountMinor: bigint;
+  /**
+   * Chekka MUZLATILADIGAN kurs — kanonik ×10^8, SERVERDAN olingan satr
+   * (`GET /exchange-rates/rate`). Dollar berilmagan bo'lsa `null`.
+   * 🔴 Bu qiymat ekranda qo'lda kiritilmaydi va qayta hisoblanmaydi.
+   */
+  usdRateMinor: string | null;
   agentId?: string;
+}
+
+/** `GET /exchange-rates/rate?currency=USD` javobi (kerakli qismi). */
+interface UsdRateRow {
+  date: string;
+  currency: string;
+  rate: string;
+  /** Kanonik ×10^8 — payload'ga aynan shu ketadi. */
+  rateMinor: string;
 }
 
 interface Props {
@@ -47,7 +66,7 @@ interface Props {
 
 const NUMPAD_KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '000', '0', '⌫'];
 
-type ActiveField = 'cash' | 'card' | 'terminal';
+type ActiveField = 'cash' | 'cashUsd' | 'card' | 'terminal';
 
 const FIELD_COLORS: Record<ActiveField, { border: string; bg: string; icon: string; dot: string }> =
   {
@@ -56,6 +75,15 @@ const FIELD_COLORS: Record<ActiveField, { border: string; bg: string; icon: stri
       bg: 'bg-emerald-50',
       icon: 'bg-emerald-500',
       dot: 'bg-emerald-500',
+    },
+    // Dollar — naqdning ukasi, lekin ATAYLAB boshqa rang: kassir yashiqda
+    // qaysi pul turganini bir qarashda ajratishi kerak (§8.4 — USD farqi
+    // so'mga o'girilmaydi, alohida sanaladi).
+    cashUsd: {
+      border: 'border-teal-400',
+      bg: 'bg-teal-50',
+      icon: 'bg-teal-500',
+      dot: 'bg-teal-500',
     },
     card: { border: 'border-blue-400', bg: 'bg-blue-50', icon: 'bg-blue-500', dot: 'bg-blue-500' },
     terminal: {
@@ -108,15 +136,48 @@ export function RasmiyashtirishModal({
 
   // ── Payment inputs (major units string → minor bigint) ────────────────────
   const [cashInput, setCashInput] = useState('');
+  const [cashUsdInput, setCashUsdInput] = useState('');
   const [cardInput, setCardInput] = useState('');
   const [terminalInput, setTerminalInput] = useState('');
   const [activeField, setActiveField] = useState<ActiveField>('cash');
 
+  /**
+   * MK31 — kunlik dollar kursi SERVERDAN. 🔴 Kassir uni QO'LDA kiritmaydi
+   * (`call-outcome-modal.tsx` dagi qo'lda-kiritish naqshi bu yerga
+   * KO'CHIRILMADI): kursni odam yozsa, chek qanday kurs bo'yicha yopilgani
+   * kassirning kayfiyatiga bog'liq bo'lardi.
+   *
+   * `retry: false` — kurs YO'Q kun normal holat (CBU dam olish kunlarida
+   * e'lon qilmaydi, carry-forward server tomonda). Qayta urinish faqat
+   * bloklangan holatni kechiktirardi.
+   */
+  const {
+    data: usdRate,
+    isError: usdRateError,
+    isLoading: usdRateLoading,
+  } = useQuery<UsdRateRow>({
+    queryKey: ['pos-usd-rate'],
+    queryFn: () => api.get<UsdRateRow>('/exchange-rates/rate?currency=USD'),
+    enabled: open,
+    retry: false,
+    staleTime: 5 * 60 * 1000,
+  });
+  const usdRateE8 = usdRate?.rateMinor ? BigInt(usdRate.rateMinor) : null;
+  /** Kurs yo'q ⇒ dollar maydoni yopiq. Jim 1:1 ga tushish TAQIQ (TZ §6.2). */
+  const usdBlocked = usdRateE8 == null || usdRateE8 <= 0n;
+
   // FE-09: yagona pul-parse (lokal float nusxasi o'rniga).
   const cashMinor = parseAmountToMinor(cashInput, currency);
+  // Dollar ALOHIDA valyutada parse qilinadi (sent ≠ tiyin) — kassa valyutasi
+  // bilan aralashtirilsa summa 100× siljirdi.
+  const cashUsdMinor = usdBlocked ? 0n : parseAmountToMinor(cashUsdInput, 'USD');
+  // So'm ekvivalenti — SERVER formulasi (`retail-tenders.ts` → `usdBaseMinor`
+  // ham shu funksiyani chaqiradi). Ekran o'z formulasini yozmaydi.
+  const cashUsdBaseMinor =
+    usdRateE8 != null && cashUsdMinor > 0n ? convertByRateE8(cashUsdMinor, usdRateE8) : 0n;
   const cardMinor = parseAmountToMinor(cardInput, currency);
   const terminalMinor = parseAmountToMinor(terminalInput, currency);
-  const totalPaid = cashMinor + cardMinor + terminalMinor;
+  const totalPaid = cashMinor + cashUsdBaseMinor + cardMinor + terminalMinor;
   const debtMinor = totalPaid < sumMinor ? sumMinor - totalPaid : 0n;
   const change = totalPaid > sumMinor ? totalPaid - sumMinor : 0n;
 
@@ -124,7 +185,12 @@ export function RasmiyashtirishModal({
   // kassa uni naqd bilan qaytarib bera olmaydi — server buni rad etadi, shu
   // sababli tugmani shu yerda ham bloklaymiz: kassir xatoni bosgandan KEYIN
   // emas, oldin ko'rsin.
-  const changeExceedsCash = change > cashMinor;
+  //
+  // MK31: dollar ham NAQD, shuning uchun chegaraga uning so'm ekvivalenti
+  // kiradi — `retail-tenders.ts:174` dagi `cashLikeMinor` bilan AYNAN bir xil.
+  // Aks holda $1 bilan 1 000 so'mlik tovar olgan mijozning cheki ekranda
+  // bloklanib, serverda esa o'tib ketardi.
+  const changeExceedsCash = change > cashMinor + cashUsdBaseMinor;
 
   // Can confirm if fully paid OR if there's debt but agent is selected
   const canConfirm =
@@ -142,6 +208,7 @@ export function RasmiyashtirishModal({
     setNewPhone('');
     setNewType('oddiy');
     setCashInput('');
+    setCashUsdInput('');
     setCardInput('');
     setTerminalInput('');
     setActiveField('cash');
@@ -152,12 +219,19 @@ export function RasmiyashtirishModal({
   }, [open, reset]);
 
   // ── Numpad handlers ───────────────────────────────────────────────────────
-  const setActive =
-    activeField === 'cash'
-      ? setCashInput
-      : activeField === 'card'
-        ? setCardInput
-        : setTerminalInput;
+  const SETTERS: Record<ActiveField, (v: string | ((prev: string) => string)) => void> = {
+    cash: setCashInput,
+    cashUsd: setCashUsdInput,
+    card: setCardInput,
+    terminal: setTerminalInput,
+  };
+  const setActive = SETTERS[activeField];
+  const INPUTS: Record<ActiveField, string> = {
+    cash: cashInput,
+    cashUsd: cashUsdInput,
+    card: cardInput,
+    terminal: terminalInput,
+  };
 
   const handleDigit = useCallback(
     (d: string) => {
@@ -176,9 +250,19 @@ export function RasmiyashtirishModal({
   const handleExact = () => {
     const others =
       (activeField === 'cash' ? 0n : cashMinor) +
+      (activeField === 'cashUsd' ? 0n : cashUsdBaseMinor) +
       (activeField === 'card' ? 0n : cardMinor) +
       (activeField === 'terminal' ? 0n : terminalMinor);
     const left = sumMinor > others ? sumMinor - others : 0n;
+    if (activeField === 'cashUsd') {
+      if (usdRateE8 == null || usdRateE8 <= 0n) return;
+      // So'm qoldig'ini dollarga teskari o'girish — YUQORIGA yaxlitlanadi.
+      // Pastga yaxlitlansa summa bir sentga kam bo'lib, server «to'lov
+      // yetarli emas» deb 400 berardi (qaytim esa har doim so'mda).
+      const cents = (left * RATE_SCALE + usdRateE8 - 1n) / usdRateE8;
+      setActive(formatAmountInput(cents, 'USD'));
+      return;
+    }
     // `Number(left) / 100` EMAS: katta summada yaxlitlardi va 0 kasrli
     // kassada 100× kichraytirardi (FE-08).
     setActive(formatAmountInput(left, currency));
@@ -191,6 +275,10 @@ export function RasmiyashtirishModal({
       cardAmountMinor: cardMinor,
       terminalAmountMinor: terminalMinor,
       debtAmountMinor: debtMinor,
+      cashUsdAmountMinor: cashUsdMinor,
+      // Kurs FAQAT dollar berilganda ketadi — server sxemasi ham shuni
+      // kutadi (`cashUsdAmountMinor === 0 || usdRateMinor != null`).
+      usdRateMinor: cashUsdMinor > 0n && usdRate ? usdRate.rateMinor : null,
       agentId: agent?.id,
     });
   };
@@ -199,6 +287,7 @@ export function RasmiyashtirishModal({
 
   const fieldLabel: Record<ActiveField, string> = {
     cash: t('field_cash'),
+    cashUsd: t('field_cash_usd'),
     card: t('field_card'),
     terminal: t('field_terminal'),
   };
@@ -414,6 +503,7 @@ export function RasmiyashtirishModal({
                   {/* Naqd */}
                   <button
                     type="button"
+                    data-test-id="pos-tender-cash"
                     onClick={() => setActiveField('cash')}
                     className={`flex items-center gap-3 rounded-xl border-2 p-3 text-left transition-all ${
                       activeField === 'cash'
@@ -443,9 +533,73 @@ export function RasmiyashtirishModal({
                     )}
                   </button>
 
+                  {/* Naqd USD (MK31) — kurs serverdan, kassir kiritmaydi. */}
+                  <button
+                    type="button"
+                    data-test-id="pos-tender-cash-usd"
+                    disabled={usdBlocked}
+                    onClick={() => setActiveField('cashUsd')}
+                    className={`flex items-center gap-3 rounded-xl border-2 p-3 text-left transition-all disabled:cursor-not-allowed disabled:opacity-50 ${
+                      activeField === 'cashUsd'
+                        ? 'border-teal-400 bg-teal-50'
+                        : 'border-[var(--ms-border)] bg-[var(--ms-bg-app)] hover:border-teal-200'
+                    }`}
+                  >
+                    <div
+                      className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${activeField === 'cashUsd' ? 'bg-teal-500' : 'bg-[var(--ms-bg-input)]'}`}
+                    >
+                      <DollarSign
+                        className={`h-4 w-4 ${activeField === 'cashUsd' ? 'text-white' : 'text-[var(--ms-text-muted)]'}`}
+                      />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="text-[10px] font-semibold uppercase tracking-wide text-[var(--ms-text-muted)]">
+                        {t('cash_usd')}
+                      </div>
+                      <div
+                        className={`font-bold tabular-nums leading-tight text-sm ${cashUsdMinor > 0n ? 'text-[var(--ms-text-primary)]' : 'text-[var(--ms-text-muted)]'}`}
+                      >
+                        {cashUsdMinor > 0n ? formatForeignMajor(cashUsdMinor, 'USD') : '—'}
+                      </div>
+                      {/* So'm ekvivalenti — server formulasi bilan, JONLI. */}
+                      {cashUsdMinor > 0n && (
+                        <div
+                          data-test-id="pos-usd-equivalent"
+                          className="text-[10px] tabular-nums text-[var(--ms-text-muted)]"
+                        >
+                          ≈ {formatMoney(cashUsdBaseMinor)}
+                        </div>
+                      )}
+                    </div>
+                    {activeField === 'cashUsd' && (
+                      <div className="h-2 w-2 shrink-0 rounded-full bg-teal-500" />
+                    )}
+                  </button>
+
+                  {/* Kurs holati — sana bilan (carry-forward tufayli bugungi
+                      bo'lmasligi mumkin) yoki bloklash sababi. */}
+                  {usdBlocked ? (
+                    usdRateLoading ? null : (
+                      <p
+                        data-test-id="pos-usd-rate-missing"
+                        className="-mt-1 text-[10px] font-medium text-orange-500"
+                      >
+                        {t('usd_rate_missing')}
+                      </p>
+                    )
+                  ) : (
+                    <p
+                      data-test-id="pos-usd-rate"
+                      className="-mt-1 text-[10px] text-[var(--ms-text-muted)] tabular-nums"
+                    >
+                      {t('usd_rate_hint', { rate: usdRate?.rate ?? '', date: usdRate?.date ?? '' })}
+                    </p>
+                  )}
+
                   {/* Karta */}
                   <button
                     type="button"
+                    data-test-id="pos-tender-card"
                     onClick={() => setActiveField('card')}
                     className={`flex items-center gap-3 rounded-xl border-2 p-3 text-left transition-all ${
                       activeField === 'card'
@@ -478,6 +632,7 @@ export function RasmiyashtirishModal({
                   {/* Terminal */}
                   <button
                     type="button"
+                    data-test-id="pos-tender-terminal"
                     onClick={() => setActiveField('terminal')}
                     className={`flex items-center gap-3 rounded-xl border-2 p-3 text-left transition-all ${
                       activeField === 'terminal'
@@ -613,13 +768,7 @@ export function RasmiyashtirishModal({
                   type="number"
                   inputMode="decimal"
                   min="0"
-                  value={
-                    activeField === 'cash'
-                      ? cashInput
-                      : activeField === 'card'
-                        ? cardInput
-                        : terminalInput
-                  }
+                  value={INPUTS[activeField]}
                   onChange={(e) => setActive(e.target.value)}
                   placeholder="0"
                   // biome-ignore lint/a11y/noAutofocus: intentional POS focus — cashier types the payment amount immediately when this modal opens.

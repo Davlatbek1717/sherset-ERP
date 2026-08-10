@@ -11,6 +11,19 @@
  */
 
 import { api } from './api-client';
+import {
+  type ReceiptPaymentRow,
+  formatForeignMajor,
+  formatFrozenRate,
+  receiptPaymentLines,
+} from './pos/receipt-payments';
+import {
+  type ZReceiptLabels,
+  type ZReportPayload,
+  buildZReceipt,
+  renderZReceiptHtml,
+  renderZReceiptText,
+} from './z-report-receipt';
 
 export const PRINT_AGENT_URL = 'http://127.0.0.1:17777';
 
@@ -373,10 +386,17 @@ interface ReceiptSale {
   name: string;
   moment: string;
   sumMinor: string;
+  /**
+   * Kassa TZ §6.1 — chekning to'lov qatlami. Ilgari bu yerda
+   * `terminalAmountMinor` va `advancePaymentSumMinor` turardi: birinchisi
+   * `RetailSale` da MAVJUD BO'LMAGAN ustun (terminal puli «Karta» bo'lib
+   * ko'rinardi), ikkinchisiga esa hech kim yozmaydi (qarz qatori o'lik edi).
+   * Endi manba bitta — `receiptPaymentLines()`.
+   */
+  payments?: ReceiptPaymentRow[] | null;
+  /** Legacy fallback — to'lov qatorlaridan oldingi arxiv cheklari. */
   cashAmountMinor: string;
   cardAmountMinor: string;
-  terminalAmountMinor: string;
-  advancePaymentSumMinor: string;
   changeMinor: string;
   description: string | null;
   agent: { name: string; legalTitle: string | null } | null;
@@ -396,8 +416,11 @@ function sumStr(minorStr: string): string {
 }
 
 /** ESC/POS plain-text receipt. 32-char columns — matches the picking sheet the
- *  cashier's printer already renders nicely. */
-function buildReceiptText(sale: ReceiptSale): string {
+ *  cashier's printer already renders nicely.
+ *
+ *  Eksport qilingan — chek renderer'lari sinaladigan yagona narsa (uchalasi bir
+ *  xil qatorlarni chiqarishi `lib/__tests__/receipt-renderers.test.ts` da). */
+export function buildReceiptText(sale: ReceiptSale): string {
   const W = 32;
   const bar = '-'.repeat(W);
   const center = (s: string) => {
@@ -427,13 +450,21 @@ function buildReceiptText(sale: ReceiptSale): string {
   L.push(bar);
   L.push(row('JAMI', `${sumStr(sale.sumMinor)} so'm`));
   L.push(bar);
-  if (Number(sale.cashAmountMinor) > 0) L.push(row('Naqd', sumStr(sale.cashAmountMinor)));
-  if (Number(sale.cardAmountMinor) > 0) L.push(row('Karta', sumStr(sale.cardAmountMinor)));
-  if (Number(sale.terminalAmountMinor) > 0)
-    L.push(row('Terminal', sumStr(sale.terminalAmountMinor)));
-  if (Number(sale.advancePaymentSumMinor) > 0)
-    L.push(row('Qarz', sumStr(sale.advancePaymentSumMinor)));
-  if (Number(sale.changeMinor) > 0) L.push(row('Qaytim', sumStr(sale.changeMinor)));
+  for (const p of receiptPaymentLines(sale)) {
+    if (p.foreign) {
+      // Chet valyuta: birinchi qatorda mijoz BERGAN asl summa, ikkinchisida
+      // chekka MUZLATILGAN kurs va so'mdagi ekvivalenti (serverning raqami).
+      L.push(row(p.label, formatForeignMajor(p.foreign.amountMinor, p.foreign.currency)));
+      L.push(
+        row(
+          `  1${p.foreign.currency} = ${formatFrozenRate(p.foreign.rateMinor)}`,
+          sumStr(p.baseMinor.toString()),
+        ),
+      );
+    } else {
+      L.push(row(p.label, sumStr(p.baseMinor.toString())));
+    }
+  }
   if (sale.description) L.push(sale.description);
   L.push('');
   L.push(center('Xarid uchun rahmat!'));
@@ -450,8 +481,10 @@ function fmtReceiptDate(iso: string): string {
   });
 }
 
-/** 80mm-thermal HTML receipt for Electron native printing (driver renders it). */
-function buildReceiptHtml(sale: ReceiptSale): string {
+/** 80mm-thermal HTML receipt for Electron native printing (driver renders it).
+ *  Eksport qilingan — matnli renderer bilan bir xil qatorlarni chiqarishi
+ *  testda qulflangan. */
+export function buildReceiptHtml(sale: ReceiptSale): string {
   const org = escapeHtml(sale.session.organization.legalTitle ?? sale.session.organization.name);
   const rowsHtml = sale.positions
     .map(
@@ -459,10 +492,15 @@ function buildReceiptHtml(sale: ReceiptSale): string {
         `<div class="ln"><div class="nm">${escapeHtml(p.product?.name ?? '—')}</div><div class="mt"><span>${Number(p.quantity)} x ${sumStr(p.priceMinor)}</span><span class="b">${sumStr(p.sumMinor)}</span></div></div>`,
     )
     .join('');
-  const pay = (label: string, minor: string, cls = '') =>
-    Number(minor) > 0
-      ? `<div class="mt${cls ? ` ${cls}` : ''}"><span>${label}</span><span>${sumStr(minor)}</span></div>`
-      : '';
+  // To'lov qatlami — matnli renderer bilan AYNAN bir manbadan.
+  const payHtml = receiptPaymentLines(sale)
+    .map((p) =>
+      p.foreign
+        ? `<div class="mt"><span>${escapeHtml(p.label)}</span><span>${escapeHtml(formatForeignMajor(p.foreign.amountMinor, p.foreign.currency))}</span></div>` +
+          `<div class="mt sub"><span>1${escapeHtml(p.foreign.currency)} = ${escapeHtml(formatFrozenRate(p.foreign.rateMinor))}</span><span>${sumStr(p.baseMinor.toString())}</span></div>`
+        : `<div class="mt"><span>${escapeHtml(p.label)}</span><span>${sumStr(p.baseMinor.toString())}</span></div>`,
+    )
+    .join('');
   return `<!doctype html><html><head><meta charset="utf-8"><style>
 @page{margin:0}
 *{box-sizing:border-box}
@@ -473,6 +511,7 @@ body{width:72mm;margin:0 auto;padding:2mm 1mm;font-family:'Segoe UI',Arial,sans-
 .ln{margin-bottom:4px}
 .nm{font-weight:600}
 .mt{display:flex;justify-content:space-between;gap:6px}
+.sub{font-size:10px;color:#333}
 .b{font-weight:700}
 .tot{font-weight:700;font-size:15px}
 .thanks{text-align:center;margin-top:8px}
@@ -490,11 +529,7 @@ ${rowsHtml}
 <div class="sep"></div>
 <div class="mt tot"><span>JAMI</span><span>${sumStr(sale.sumMinor)} so'm</span></div>
 <div class="sep"></div>
-${pay('Naqd', sale.cashAmountMinor)}
-${pay('Karta', sale.cardAmountMinor)}
-${pay('Terminal', sale.terminalAmountMinor)}
-${pay('Qarz', sale.advancePaymentSumMinor)}
-${pay('Qaytim', sale.changeMinor)}
+${payHtml}
 ${sale.description ? `<div>${escapeHtml(sale.description)}</div>` : ''}
 <div class="thanks">Xarid uchun rahmat!</div>
 </body></html>`;
@@ -535,5 +570,61 @@ export async function printReceiptViaAgent(saleId: string): Promise<ReceiptPrint
   const r = el
     ? await el.printSheet(printer, buildReceiptHtml(sale))
     : await agentPrint(printer, { text: buildReceiptText(sale) });
+  return { handled: true, ok: r.ok, error: r.error };
+}
+
+// ─── Z-hisobot («Z-отчёт») chop etish ────────────────────────────────────────
+// Chek bilan AYNI yo'l: agent/Electron tirik va chek printeri sozlangan bo'lsa
+// qog'oz to'g'ridan-to'g'ri chiqadi, aks holda chaqiruvchi brauzer popup'iga
+// (`/print/z-report/<id>?auto=1`) tushadi.
+//
+// 🔴 Raqamlar bu yerda ham HISOBLANMAYDI — server javobi to'g'ridan-to'g'ri
+// `buildZReceipt` ga beriladi, ya'ni qog'oz, Electron-HTML va ekran bitta
+// modeldan chiziladi (xotira: «Ombor cheki uch renderer»).
+
+/**
+ * Z-hisobotni chek printeriga yuboradi.
+ *
+ * `labels` chaqiruvchidan keladi (`useZReceiptLabels()`) — print-agent
+ * React kontekstida emas, i18n'ni o'zi o'qiy olmaydi.
+ */
+export async function printZReportViaAgent(
+  sessionId: string,
+  labels: ZReceiptLabels,
+): Promise<ReceiptPrintOutcome> {
+  const idle: ReceiptPrintOutcome = { handled: false, ok: false };
+  if (!(await checkPrintAgent())) return idle;
+
+  let printer: string | null;
+  let z: ZReportPayload;
+  try {
+    const [settings, report] = await Promise.all([
+      api.get<{ receiptPrinterName: string | null }>('/sklad-keepers'),
+      api.get<ZReportPayload>(`/cashier-sessions/${sessionId}/z-report`),
+    ]);
+    printer = settings.receiptPrinterName ?? null;
+    z = report;
+  } catch {
+    return idle;
+  }
+  if (!printer) return idle; // sozlanmagan → brauzer popup'i
+
+  // Qaytarishlar SONI — eski endpointda. Yiqilsa chek baribir chiqadi,
+  // faqat son o'rnida «—» turadi (NOL EMAS).
+  let returnsCount: number | null = null;
+  try {
+    const legacy = await api.get<{ returnsCount: number }>(
+      `/retail-sales/z-report?sessionId=${sessionId}`,
+    );
+    if (typeof legacy.returnsCount === 'number') returnsCount = legacy.returnsCount;
+  } catch {
+    returnsCount = null;
+  }
+
+  const view = buildZReceipt(z, { labels, returnsCount });
+  const el = electron();
+  const r = el
+    ? await el.printSheet(printer, renderZReceiptHtml(view))
+    : await agentPrint(printer, { text: renderZReceiptText(view) });
   return { handled: true, ok: r.ok, error: r.error };
 }

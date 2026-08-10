@@ -96,6 +96,19 @@ export const PRICE_TYPES = {
   ],
 };
 
+/**
+ * `GET /exchange-rates/rate?currency=USD` — kanonik `rateMinor` (×10^8) bilan.
+ * 1 USD = 12 450,27 so'm. Payload'ga AYNAN `rateMinor` ketadi.
+ */
+export const USD_RATE = {
+  date: '2026-08-11',
+  currency: 'USD',
+  rate: '12450.27',
+  nominal: 1,
+  rateMinor: '1245027000000',
+  source: 'CBRU',
+};
+
 export function SESSION(over: Partial<CurrentSession> = {}): CurrentSession {
   return {
     id: '33333333-3333-4333-8333-333333333333',
@@ -158,6 +171,10 @@ export function salesRoutes(over: Route[] = []): Route[] {
   return [
     ...over,
     { match: /^\/cashier-sessions\/current$/, value: SESSION() },
+    // MK31 — to'lov oynasi ochilganda kunlik dollar kursi so'raladi. Marshrut
+    // shu yerda TURISHI SHART: yo'qligida router istisno otadi va har POS
+    // testi kursi yo'q holatda ishlab, dollar tenderini jimgina o'chirardi.
+    { match: /^\/exchange-rates\/rate/, value: USD_RATE },
     { match: /^\/price-types/, value: PRICE_TYPES },
     { match: /^\/products\?/, value: PRODUCTS },
     // Aniqrog'i umumiy `/retail-sales?` dan OLDIN.

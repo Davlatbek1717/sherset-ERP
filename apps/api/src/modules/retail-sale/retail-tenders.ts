@@ -23,7 +23,7 @@
 // Kanonik kurs-masshtab (kurs × 10^8, DB-01/Faza 16) YAGONA manbadan olinadi.
 // Bu yerda `100_000_000n` deb qayta yozilsa, masshtab bir kun o'zgarganda
 // nusxa jimgina eskirib, dollar summasi 10 000× xato bo'lardi.
-import { RATE_SCALE } from '@moysklad/money';
+import { convertByRateE8 } from '@moysklad/money';
 
 /** To'lov turlari — `RetailSalePayment.method` ustuniga yoziladigan qiymatlar. */
 export const TENDER = {
@@ -97,9 +97,16 @@ export function lineBaseMinor(l: TenderLine): bigint {
   return l.amountBaseMinor ?? l.amountMinor;
 }
 
-/** USD sent → so'm tiyin, kanonik ×10^8 kurs bilan (`usdCentsToSomTiyin` bilan bir formula). */
+/**
+ * USD sent → so'm tiyin, kanonik ×10^8 kurs bilan.
+ *
+ * Formulaning O'ZI `@moysklad/money` da (`convertByRateE8`) — kassa EKRANI
+ * ham o'sha yerdan oladi, chunki kassir ko'rgan so'm ekvivalenti server
+ * yozadigan raqam bilan tiyinigacha bir xil bo'lishi kerak. Bu yerdagi nom
+ * saqlanadi: mavjud chaqiruvchilar va testlar tegilmaydi.
+ */
 export function usdBaseMinor(cents: bigint, rateE8: bigint): bigint {
-  return (cents * rateE8) / RATE_SCALE;
+  return convertByRateE8(cents, rateE8);
 }
 
 export type TenderResult =

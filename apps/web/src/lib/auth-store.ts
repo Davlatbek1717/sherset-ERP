@@ -131,6 +131,36 @@ export async function login(identifier: string, password: string): Promise<User>
   return data.user;
 }
 
+/**
+ * Kassa PIN-kirishi. `login()` dan farqi — hisob ma'lumoti o'rniga QURILMA
+ * kaliti + PIN yuboriladi. Muvaffaqiyat holati aynan bir xil: server bir xil
+ * cookie'larni qo'yadi, shuning uchun refresh/logout/media yo'llari o'zgarmaydi.
+ *
+ * Qurilma NOMI ataylab yuborilmaydi — server `PosLoginSchema`
+ * (`apps/api/src/modules/auth/auth.schema.ts:130-134`) faqat
+ * `deviceId`/`deviceSecret`/`pin` ni kutadi.
+ */
+export async function posLogin(
+  creds: { deviceId: string; deviceSecret: string },
+  pin: string,
+): Promise<User> {
+  const res = await fetch(`${BASE}/auth/pos-login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ deviceId: creds.deviceId, deviceSecret: creds.deviceSecret, pin }),
+  });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { message?: string };
+    throw new Error(body.message ?? `HTTP ${res.status}`);
+  }
+  const data = (await res.json()) as { accessToken: string; user: User };
+  state = { accessToken: data.accessToken, user: data.user, initialized: true };
+  writeAuthHint(true);
+  emit();
+  return data.user;
+}
+
 export async function logout(): Promise<void> {
   try {
     await fetch(`${BASE}/auth/logout`, { method: 'POST', credentials: 'include' });

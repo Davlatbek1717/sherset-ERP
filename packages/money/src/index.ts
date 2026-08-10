@@ -1,5 +1,10 @@
 export { Money, type MoneyJSON, type RoundingMode } from './money.js';
-export { ExchangeRate, RATE_SCALE, type ExchangeRateJSON } from './exchange-rate.js';
+export {
+  ExchangeRate,
+  RATE_SCALE,
+  convertByRateE8,
+  type ExchangeRateJSON,
+} from './exchange-rate.js';
 export {
   CURRENCIES,
   getCurrency,

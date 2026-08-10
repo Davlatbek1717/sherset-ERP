@@ -17,6 +17,7 @@
 
 import { api } from '@/lib/api-client';
 import { logout } from '@/lib/auth-store';
+import { readPosDevice } from '@/lib/pos-device';
 import { Button, Input } from '@moysklad/ui';
 import { useTranslations } from 'next-intl';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -76,8 +77,12 @@ export function PosPinLock() {
       const err = e as { body?: { lockout?: boolean; remaining?: number }; message?: string };
       if (err.body?.lockout) {
         // 5 xato → hisob boshqa odamda bo'lishi mumkin: to'liq chiqamiz.
+        // Juftlangan kassada PIN ekraniga qaytamiz — kassir PAROLNI bilmaydi,
+        // `/login` ga tashlansa kassa jimgina o'lik qolardi. Juftlanmagan
+        // brauzerda PIN ekrani foydasiz ⇒ `/login` qoladi.
+        const dest = readPosDevice() ? '/kassa-kirish' : '/login';
         await logout();
-        window.location.href = '/login';
+        window.location.href = dest;
         return;
       }
       const left = err.body?.remaining;

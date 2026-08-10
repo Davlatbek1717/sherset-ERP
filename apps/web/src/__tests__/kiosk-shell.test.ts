@@ -97,7 +97,12 @@ describe('PIN-qulf', () => {
   it('5 xatodan keyin TO`LIQ chiqish', () => {
     expect(lock).toContain('lockout');
     expect(lock).toContain('logout()');
-    expect(lock).toContain("window.location.href = '/login'");
+    // Yo'nalish 2026-08-11 (F1) da SHARTLI qilindi: juftlangan kassada
+    // `/kassa-kirish` (kassir parolni bilmaydi), juftlanmagan brauzerda
+    // `/login`. Ilgari bu yerda so'zsiz `/login` qulflangan edi — batafsil
+    // qo'riqchi: `kiosk-logout-redirect.test.ts`.
+    expect(lock).toContain('window.location.href = dest');
+    expect(lock).toContain("readPosDevice() ? '/kassa-kirish' : '/login'");
   });
 
   it('PIN o`rnatilmagan bo`lsa qulf ISHLAMAYDI', () => {
