@@ -280,6 +280,7 @@ export const ROLE_TEMPLATES: Record<RoleTemplateSlug, RoleTemplate> = {
         print: 'ALL',
       }),
       grant(['store', 'cashdesk'], { view: 'ALL' }),
+      grant(['storecell'], { view: 'ALL', update: 'ALL' }),
       grant(['product', 'variant', 'bundle', 'productfolder'], { view: 'ALL', update: 'ALL' }),
       // Yig'ish/jo'natish — realizatsiyani tasdiqlaydi, lekin YARATMAYDI.
       grant(['demand'], { view: 'ALL', update: 'ALL', approve: 'ALL', print: 'ALL' }),
@@ -373,6 +374,9 @@ export const ROLE_TEMPLATES: Record<RoleTemplateSlug, RoleTemplate> = {
       grant(['supply'], { view: 'ALL', update: 'ALL', print: 'ALL' }),
       grant(['product', 'productfolder', 'variant', 'bundle', 'uom'], { view: 'ALL' }),
       grant(['store'], { view: 'ALL' }),
+      // TZ v3 §3: yacheyka amallari (bog'lash/sanash) omborchining asosiy ishi —
+      // ombor kartochkasini tahrirlash huquqini bermasdan ochiladi.
+      grant(['storecell'], { view: 'ALL', update: 'ALL' }),
       grant(['label'], { view: 'ALL', print: 'ALL' }),
     ),
   },

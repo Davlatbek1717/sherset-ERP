@@ -37,6 +37,7 @@ export type PermissionEntity =
   | 'organization'
   | 'branch'
   | 'store'
+  | 'storecell'
   | 'cashdesk'
   | 'bankaccount'
   | 'employee'
@@ -168,6 +169,7 @@ export const PERMISSION_ENTITIES: readonly PermissionEntity[] = [
   'organization',
   'branch',
   'store',
+  'storecell',
   'cashdesk',
   'bankaccount',
   'employee',

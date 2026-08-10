@@ -37,6 +37,7 @@ const NEW_ENTITIES = [
   'organization',
   'branch',
   'store',
+  'storecell',
   'cashdesk',
   'bankaccount',
   'employee',

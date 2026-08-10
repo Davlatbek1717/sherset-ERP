@@ -1,0 +1,79 @@
+import 'reflect-metadata';
+import { describe, expect, it } from 'vitest';
+import {
+  PERMISSION_META,
+  type RequiredPermission,
+} from '../permissions/require-permission.decorator.js';
+import { resolveTemplateMatrix } from '../permissions/role-templates.js';
+import { StoreController } from './store.controller.js';
+
+/**
+ * TZ v3 §3 — «bog'lash/sanash = storecell (omborchi roli yetadi)».
+ *
+ * Muammo (2026-08-10 da o'lchandi): yacheyka amallari `store.update` talab
+ * qilardi, `storekeeper` shablonida esa faqat `store.view` bor edi ⇒ omborchi
+ * «Scan»/«Sanash» oynalarini umuman ishlata olmasdi, ammo hech narsa
+ * yiqilmasdi (403 faqat jonli klikda ko'rinardi).
+ *
+ * Bu test ikki tomonni birga qulflaydi: (a) marshrutlar AYNAN `storecell`
+ * talab qiladi, (b) omborchi shablonida shu ruxsat bor va (c) ombor
+ * kartochkasining O'ZINI tahrirlash omborchiga ochilmagan.
+ */
+function permOf(method: keyof StoreController): RequiredPermission | undefined {
+  const handler = (StoreController.prototype as Record<string, unknown>)[method as string];
+  return Reflect.getMetadata(PERMISSION_META, handler as object) as RequiredPermission | undefined;
+}
+
+const scopeOf = (slug: 'storekeeper' | 'warehouse_manager', entity: string, action: string) =>
+  resolveTemplateMatrix(slug).find((c) => c.entity === entity && c.action === action)?.scope ??
+  'NO';
+
+describe('TZ v3 §3 — yacheyka amallari `storecell` ruxsatida', () => {
+  const READ: Array<keyof StoreController> = ['cellStock', 'cellProducts'];
+  const WRITE: Array<keyof StoreController> = [
+    'setCellStock',
+    'assignCellProducts',
+    'bindCellProductIfEmpty',
+  ];
+
+  for (const m of READ) {
+    it(`${m} — storecell.view`, () => {
+      expect(permOf(m)).toEqual({ entity: 'storecell', action: 'view' });
+    });
+  }
+
+  for (const m of WRITE) {
+    it(`${m} — storecell.update`, () => {
+      expect(permOf(m)).toEqual({ entity: 'storecell', action: 'update' });
+    });
+  }
+
+  it('omborchi yacheyka amallarini bajara oladi', () => {
+    expect(scopeOf('storekeeper', 'storecell', 'view')).toBe('ALL');
+    expect(scopeOf('storekeeper', 'storecell', 'update')).toBe('ALL');
+  });
+
+  it('omborchi ombor KARTOCHKASINI tahrirlay olmaydi (chegara saqlanadi)', () => {
+    expect(scopeOf('storekeeper', 'store', 'update')).toBe('NO');
+  });
+
+  /**
+   * TZ §3 ning ATAYLAB qilingan assimetriyasi: bog'lash/sanash omborchiga
+   * ochiq, lekin BOG'LASHNI CHIQARIB TASHLASH (Scan'dagi «chiqarib qo'shish»)
+   * — `store.update`, ya'ni omborchida YO'Q. Bu qator o'zgarsa, destruktiv
+   * amal jimgina omborchiga ochilib ketadi.
+   */
+  it('chiqarish (unbind) `store.update` da QOLADI — omborchida yo`q', () => {
+    expect(permOf('unassignCellProduct')).toEqual({ entity: 'store', action: 'update' });
+    expect(scopeOf('storekeeper', 'store', 'update')).toBe('NO');
+  });
+
+  it('ombor menejerida ham storecell bor', () => {
+    expect(scopeOf('warehouse_manager', 'storecell', 'update')).toBe('ALL');
+  });
+
+  it('zona/yacheyka KONFIGURATSIYASI store.update da qoladi (omborchiga emas)', () => {
+    expect(permOf('createZone')).toEqual({ entity: 'store', action: 'update' });
+    expect(permOf('updateCell')).toEqual({ entity: 'store', action: 'update' });
+  });
+});

@@ -153,7 +153,7 @@ export class StoreController {
 
   /** «🖨 Этикетка» — one cell's stock with label identities (name/code/barcode). */
   @Get(':id/cells/:cellId/stock')
-  @RequirePermission({ entity: 'store', action: 'view' })
+  @RequirePermission({ entity: 'storecell', action: 'view' })
   async cellStock(
     @CurrentUser() user: AuthenticatedUser,
     @Param('id') id: string,
@@ -165,7 +165,7 @@ export class StoreController {
   /** «Sanash» (owner 2026-07-21) — record a physical count for one product in
    *  this cell (absolute value; 0 clears the row). */
   @Put(':id/cells/:cellId/stock')
-  @RequirePermission({ entity: 'store', action: 'update' })
+  @RequirePermission({ entity: 'storecell', action: 'update' })
   async setCellStock(
     @CurrentUser() user: AuthenticatedUser,
     @Param('id') id: string,
@@ -178,7 +178,7 @@ export class StoreController {
 
   /** «Товары в ячейке» — products whose home cell (__yacheyka) is this cell. */
   @Get(':id/cells/:cellId/products')
-  @RequirePermission({ entity: 'store', action: 'view' })
+  @RequirePermission({ entity: 'storecell', action: 'view' })
   async cellProducts(
     @CurrentUser() user: AuthenticatedUser,
     @Param('id') id: string,
@@ -189,7 +189,7 @@ export class StoreController {
 
   /** «Добавить товар в ячейку» — assign the picked products' home cell to this cell. */
   @Post(':id/cells/:cellId/products')
-  @RequirePermission({ entity: 'store', action: 'update' })
+  @RequirePermission({ entity: 'storecell', action: 'update' })
   async assignCellProducts(
     @CurrentUser() user: AuthenticatedUser,
     @Param('id') id: string,
@@ -202,7 +202,7 @@ export class StoreController {
   /** Bind a cell-less product's home cell to this cell (NEVER overwrites) — used
    *  by document editors when a «Ячейка» is picked for a product with no cell. */
   @Post(':id/cells/:cellId/products/:productId/bind-if-empty')
-  @RequirePermission({ entity: 'store', action: 'update' })
+  @RequirePermission({ entity: 'storecell', action: 'update' })
   async bindCellProductIfEmpty(
     @CurrentUser() user: AuthenticatedUser,
     @Param('id') id: string,

@@ -241,6 +241,7 @@ const KNOWN_ENTITIES = [
   // birlik, hujjat emas.
   'branch',
   'store',
+  'storecell',
   'cashdesk',
   'bankaccount',
   'employee',
@@ -344,6 +345,7 @@ const CATEGORY_BY_ENTITY: Record<(typeof KNOWN_ENTITIES)[number], (typeof CATEGO
   organization: 'Master data',
   branch: 'Master data',
   store: 'Master data',
+  storecell: 'Master data',
   cashdesk: 'Master data',
   bankaccount: 'Master data',
   employee: 'Master data',

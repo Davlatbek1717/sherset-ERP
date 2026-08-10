@@ -19,6 +19,7 @@ const ENTITIES: PermissionEntity[] = [
   'contactperson',
   'organization',
   'store',
+  'storecell',
   'employee',
   'role',
   // sales

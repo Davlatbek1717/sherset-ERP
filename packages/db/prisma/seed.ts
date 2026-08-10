@@ -69,6 +69,7 @@ async function main(): Promise<void> {
     'organization',
     'branch',
     'store',
+    'storecell',
     'cashdesk',
     'bankaccount',
     'employee',

@@ -265,6 +265,7 @@ export class PermissionsService {
       'organization',
       'branch',
       'store',
+      'storecell',
       'cashdesk',
       'bankaccount',
       'employee',
