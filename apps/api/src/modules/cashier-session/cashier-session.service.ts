@@ -423,19 +423,47 @@ export class CashierSessionService {
       // qarz puli yashiqda turadi-yu, kutilgan naqdda ko'rinmaydi va smena
       // har safar shu summaga ORTIQCHA (излишек) chiqardi.
       // Faqat NAQD: terminal to'lovi yashiqqa tushmaydi.
+      //
+      // 🔴 `currency: BASE_CURRENCY` (F6, audit §F6.6) — `DebtPayment.amountMinor`
+      // HAR DOIM so'm ekvivalentida. Valyuta filtrisiz DOLLARDA qabul qilingan
+      // to'lov ham shu yig'indiga tushardi: yashiqqa dollar kirar, so'm-kutilgani
+      // esa dollarning so'm qiymatiga oshib ketar edi ⇒ SOXTA SO'M KAMOMADI.
+      // Dollar to'lovlari `collectUsdCashInputs` da, o'z sanoq birligida.
       db.debtPayment.aggregate({
-        where: { accountId, retailShiftId: sessionId, method: 'cash', reversedAt: null },
+        where: {
+          accountId,
+          retailShiftId: sessionId,
+          method: 'cash',
+          currency: BASE_CURRENCY,
+          reversedAt: null,
+        },
         _sum: { amountMinor: true },
       }),
+      // 🔴 `currency: BASE_CURRENCY` (F6, audit §F6.7): yashiq hujjatiga KASSA
+      // valyutasi yoziladi (`loadOpenShiftForDrawer`), ya'ni so'm bo'lmagan
+      // kassada sent shu so'm formulasiga qo'shilib ketardi. Bugungi bazada
+      // hammasi UZS — filtr xulqni o'zgartirmaydi, kelajakdagi jim xatoni yopadi.
       db.retailDrawerCashIn.aggregate({
-        where: { accountId, retailShiftId: sessionId, state: 'posted', deletedAt: null },
+        where: {
+          accountId,
+          retailShiftId: sessionId,
+          state: 'posted',
+          deletedAt: null,
+          currency: BASE_CURRENCY,
+        },
         _sum: { sumMinor: true },
       }),
       // Xarajat (РКО) va inkassatsiya (ИНК) ham SHU jadvalda — tasnifi
       // `kind` da. Shuning uchun ular formulaga o'z-o'zidan kiradi va
       // «yangi turni qo'shishni unutish» xatosi tug'ilmaydi (§8.2/§8.3).
       db.retailDrawerCashOut.aggregate({
-        where: { accountId, retailShiftId: sessionId, state: 'posted', deletedAt: null },
+        where: {
+          accountId,
+          retailShiftId: sessionId,
+          state: 'posted',
+          deletedAt: null,
+          currency: BASE_CURRENCY,
+        },
         _sum: { sumMinor: true },
       }),
     ]);
@@ -467,7 +495,7 @@ export class CashierSessionService {
     sessionId: string,
     openingUsdMinor: bigint,
   ): Promise<ShiftUsdCashInputs> {
-    const [salesAgg, refundAgg] = await Promise.all([
+    const [salesAgg, refundAgg, debtUsdAgg] = await Promise.all([
       db.retailSalePayment.aggregate({
         where: {
           accountId,
@@ -492,12 +520,29 @@ export class CashierSessionService {
         },
         _sum: { amountMinor: true },
       }),
+      // F6 (audit §F6.6) — DOLLARDA qabul qilingan NAQD QARZ to'lovi.
+      //
+      // 🔴 `amountOriginalMinor` o'qiladi, `amountMinor` EMAS: ikkinchisi so'm
+      // ekvivalenti va uni sent deb qo'shish yashiqdagi dollarni ~12 000×
+      // ko'paytirardi. Manba ajratmasi so'm tomonidagi `currency: BASE_CURRENCY`
+      // filtri bilan JUFT — bir to'lov ikkala jamiga ham tushmaydi.
+      db.debtPayment.aggregate({
+        where: {
+          accountId,
+          retailShiftId: sessionId,
+          method: 'cash',
+          currency: 'USD',
+          reversedAt: null,
+        },
+        _sum: { amountOriginalMinor: true },
+      }),
     ]);
 
     return {
       openingUsdMinor,
       salesUsdMinor: salesAgg._sum.amountMinor ?? 0n,
       returnsUsdMinor: refundAgg._sum.amountMinor ?? 0n,
+      debtUsdMinor: debtUsdAgg._sum.amountOriginalMinor ?? 0n,
     };
   }
 
@@ -522,6 +567,22 @@ export class CashierSessionService {
     if (session.cashierId !== cashierId) {
       throw new BadRequestException(
         'Only the cashier who opened the shift can perform drawer operations',
+      );
+    }
+    // 🔴 F6 (audit §F6.7) — SO'M BO'LMAGAN KASSA QO'LLAB-QUVVATLANMAYDI.
+    //
+    // Yashiq hujjatiga kassa valyutasi yoziladi (`currency: cashDesk.currency`),
+    // smena hisobining butun oqimi esa so'm semantikasida: `openingCashMinor`,
+    // sotuv naqdi, `expectedCashMinor`, farq akti. Dollar-kassada sent shu
+    // formulaga 1 sent = 1 tiyin bo'lib kirar edi — kutilgan naqd JIMGINA
+    // buzilardi va kassir tushuntirib bo'lmaydigan farqqa javob berardi.
+    //
+    // Shuning uchun to'liq qo'llab-quvvatlashgacha — OCHIQ to'xtash. Jim
+    // noto'g'ri hisob ancha qimmatga tushadi (dollar oqimi `CASH_USD` tenderi
+    // va F6 dollar qarz to'lovi orqali ALOHIDA sanaladi).
+    if (session.cashDesk.currency !== BASE_CURRENCY) {
+      throw new BadRequestException(
+        `Kassa valyutasi ${session.cashDesk.currency} — yashiq amallari faqat ${BASE_CURRENCY} kassada qo'llab-quvvatlanadi`,
       );
     }
     return session;

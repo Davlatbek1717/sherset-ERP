@@ -434,16 +434,48 @@ export type BulkRemindersInput = z.infer<typeof BulkRemindersSchema>;
  * POS «Qarz to'lovi» (kassa TZ §7.2) — bitta summa, FIFO bo'yicha bir necha
  * qarzga taqsimlanadi. Kassir qaysi QRZ- hujjatga tushishini tanlamaydi.
  */
-export const PosDebtPaymentSchema = z.object({
-  counterpartyId: z.string().uuid(),
-  amountMinor: moneyMinor,
-  method: z.enum(['cash', 'terminal']).default('cash'),
-  currency: z.string().length(3).optional(),
-  cashDeskId: z.string().uuid().nullish(),
-  /** Qaysi smenaga tushgani — naqd bo'lsa «kutilgan naqd» ga kiradi (§8.4). */
-  retailShiftId: z.string().uuid().nullish(),
-  comment: z.string().trim().max(4000).nullish(),
-});
+export const PosDebtPaymentSchema = z
+  .object({
+    counterpartyId: z.string().uuid(),
+    /**
+     * Mijoz BERGAN summa — `currency` ning MINOR birligida (UZS → tiyin,
+     * USD → sent). `PostRetailSaleSchema.cashUsdAmountMinor` bilan bir xil
+     * konvensiya (F6).
+     *
+     * 🔴 Klient so'mdagi ekvivalentni YUBORMAYDI: qarz daftariga tushadigan
+     * so'm qiymatini SERVER `usdCentsToSomTiyin` bilan hisoblaydi. Ikki manba
+     * (klient hisobi + server hisobi) muqarrar bir-biridan uzoqlashadi va
+     * farq to'g'ridan-to'g'ri qarz qoldig'ida qolardi.
+     */
+    amountMinor: moneyMinor,
+    method: z.enum(['cash', 'terminal']).default('cash'),
+    /** To'lov valyutasi. Faqat kassa oqimi bor ikkitasi (`MarkCallSchema` bilan bir xil). */
+    currency: PaymentCurrencySchema.default('UZS'),
+    /**
+     * Qo'llanilgan kurs — KANONIK ×10^8 (DB-01, Faza 16; `Currency.rateValue`,
+     * `DebtPayment.exchangeRate` va `RetailSalePayment.rateMinor` bilan bir xil
+     * masshtab): 12 450,27 so'm → '1245027000000'. Chekka MUZLATILADI.
+     */
+    exchangeRate: z.string().regex(/^\d+$/, 'Kurs — butun son').optional(),
+    cashDeskId: z.string().uuid().nullish(),
+    /** Qaysi smenaga tushgani — naqd bo'lsa «kutilgan naqd» ga kiradi (§8.4). */
+    retailShiftId: z.string().uuid().nullish(),
+    comment: z.string().trim().max(4000).nullish(),
+  })
+  // TZ §6.2 / F6: kurs topilmasa to'lov BLOKLANADI — sentni tiyin deb jim
+  // qabul qilish qarzni haqiqiy summaning ~1/12 000 iga kamaytirardi.
+  .refine((v) => v.currency !== 'USD' || (v.exchangeRate != null && BigInt(v.exchangeRate) > 0n), {
+    message: 'Dollar to‘lovida kurs majburiy',
+    path: ['exchangeRate'],
+  })
+  // DB-01 (Faza 16) STALE-SCALE: eski ×10^4 masshtabdagi klient qiymati
+  // kanonik ×10^8 deb o'qilsa 10 000× xato bo'lardi. Real USD kursi 10 so'mdan
+  // (10^9) ming barobar yuqori, stale qiymat esa doim past — past qiymat JIM
+  // o'tmaydi. (`retail-sale.schema.ts` va `MarkCallSchema` dagi bir xil qoida.)
+  .refine((v) => v.exchangeRate == null || BigInt(v.exchangeRate) >= 1_000_000_000n, {
+    message: 'Kurs eski (×10⁴) masshtabda — sahifani yangilang (kanonik ×10⁸)',
+    path: ['exchangeRate'],
+  });
 export type PosDebtPaymentInput = z.infer<typeof PosDebtPaymentSchema>;
 
 /**
