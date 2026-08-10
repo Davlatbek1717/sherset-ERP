@@ -171,6 +171,22 @@ const KIOSK_ROUTE_BY_ENTITY: Partial<Record<PermissionEntity, string>> = {
   currency: '/currencies',
   exchangerate: '/exchange-rates',
   settings: '/company-settings',
+  customerorder: '/customer-orders',
+};
+
+/**
+ * Entity darajasidagi xarita yetmaydigan holatlar — `entity.action` bo'yicha
+ * ANIQ yo'l.
+ *
+ * F7 sababi: kassirning `customerorder.approve` ruxsati kiosk'da FAQAT
+ * `POST /customer-orders/:id/transitions/confirmed` orqali yashaydi. Bazaviy
+ * `/customer-orders` ga POST — zakaz YARATISH, va u ataylab yopiq. Ya'ni
+ * entity xaritasidagi bitta yo'l bilan tekshirish bu yerda YOLG'ON javob
+ * berardi (ikkala tomonga ham).
+ */
+const KIOSK_ROUTE_OVERRIDE: Record<string, string> = {
+  'customerorder.approve':
+    '/customer-orders/8f7d1c22-0000-4000-8000-000000000001/transitions/confirmed',
 };
 
 const METHOD_BY_ACTION: Record<PermissionAction, string> = {
@@ -196,7 +212,7 @@ describe('MK29 — kassir shabloni kiosk cheklovi bilan mos (TZ §3.1)', () => {
     const violations: string[] = [];
     for (const { entity, action, scope } of resolveTemplateMatrix('cashier')) {
       if (scope === 'NO') continue;
-      const route = KIOSK_ROUTE_BY_ENTITY[entity];
+      const route = KIOSK_ROUTE_OVERRIDE[`${entity}.${action}`] ?? KIOSK_ROUTE_BY_ENTITY[entity];
       if (!route) {
         violations.push(`${entity}.${action} — kiosk marshruti xaritada yo'q`);
         continue;
@@ -217,16 +233,27 @@ describe('MK29 — kassir shabloni kiosk cheklovi bilan mos (TZ §3.1)', () => {
   });
 
   it('kassir savdo/ombor hujjatlariga umuman tegmaydi', () => {
-    for (const entity of [
-      'demand',
-      'customerorder',
-      'supply',
-      'move',
-      'report',
-    ] as PermissionEntity[]) {
+    for (const entity of ['demand', 'supply', 'move', 'report'] as PermissionEntity[]) {
       for (const action of PERMISSION_ACTIONS) {
         expect(scopeFor(ROLE_TEMPLATES.cashier, entity, action), `${entity}.${action}`).toBe('NO');
       }
+    }
+  });
+
+  /**
+   * F7 — zakaz kassirga ochilgan YAGONA savdo hujjati, va faqat ikki amal
+   * bilan. Bu test `customerorder` ni yuqoridagi «umuman tegmaydi» ro'yxatidan
+   * chiqarishning narxi: aks holda kelasi faza jimgina `create`/`update` ni
+   * ham qo'shib qo'yardi va hech narsa qizarmasdi.
+   */
+  it('kassir zakazni FAQAT ko‘radi va tasdiqlaydi (F7)', () => {
+    expect(scopeFor(ROLE_TEMPLATES.cashier, 'customerorder', 'view')).toBe('ALL');
+    expect(scopeFor(ROLE_TEMPLATES.cashier, 'customerorder', 'approve')).toBe('ALL');
+    for (const action of ['create', 'update', 'delete', 'print'] as PermissionAction[]) {
+      expect(
+        scopeFor(ROLE_TEMPLATES.cashier, 'customerorder', action),
+        `customerorder.${action}`,
+      ).toBe('NO');
     }
   });
 });

@@ -122,6 +122,70 @@ describe('isKioskAllowed — DEFAULT DENY', () => {
   });
 });
 
+/**
+ * F7 — zakazlar POS'da. Kassir zakazni **ko'radi va tasdiqlaydi**, boshqa
+ * hech narsa qilmaydi.
+ *
+ * Nega `*` EMAS: `/customer-orders` ostida o'chirish, ommaviy o'chirish,
+ * birlashtirish, mass-edit, rezervni tozalash bor. Bitta `methods: ['*']`
+ * qatori ularning HAMMASINI kassirga ochib yuborardi — va bu jimgina
+ * bo'lardi, chunki hech bir test «nima OCHILDI» ni tekshirmaydi. Shuning
+ * uchun quyidagi negativ blok — ro'yxatning haqiqiy qulfi.
+ */
+describe('F7 — zakazlar: FAQAT ro`yxat + detal + tasdiqlash', () => {
+  it.each([
+    ['GET', '/customer-orders'],
+    ['GET', '/customer-orders?state=draft&limit=50'],
+    ['GET', '/customer-orders/8f7d1c22-0000-4000-8000-000000000001'],
+    // `draft → confirmed` — rezerv shu o'tishda avtomatik tushadi
+    // (`customer-order.service.ts`), ya'ni POS'ga kerak bo'lgan YAGONA POST.
+    ['POST', '/customer-orders/8f7d1c22-0000-4000-8000-000000000001/transitions/confirmed'],
+  ])('%s %s → ruxsat', (method, path) => {
+    expect(isKioskAllowed(method, normalizePath(path))).toBe(true);
+  });
+
+  it.each([
+    // Zakaz YARATISH/TAHRIRLASH — kassa ishi emas (savdo menejeri qiladi).
+    ['POST', '/customer-orders'],
+    ['PATCH', '/customer-orders/8f7d1c22-0000-4000-8000-000000000001'],
+    ['DELETE', '/customer-orders/8f7d1c22-0000-4000-8000-000000000001'],
+    ['POST', '/customer-orders/8f7d1c22-0000-4000-8000-000000000001/clone'],
+    // Ommaviy amallar — bittasi ham kassirga ochilmaydi.
+    ['POST', '/customer-orders/bulk-delete'],
+    ['POST', '/customer-orders/bulk-transition'],
+    ['POST', '/customer-orders/bulk-set-status'],
+    ['POST', '/customer-orders/bulk-reserve'],
+    ['POST', '/customer-orders/bulk-clear-reserve'],
+    ['POST', '/customer-orders/bulk-mark-printed'],
+    ['POST', '/customer-orders/merge'],
+    ['POST', '/customer-orders/mass-edit'],
+    ['POST', '/customer-orders/bulk-print'],
+    // 🔴 Boshqa FSM nishonlari — F7 doirasi FAQAT `confirmed`. `cancelled`
+    // rezervni bo'shatadi, `paid` esa F8 ishi (to'lov). Ikkalasi ham shu
+    // yerdan ochilib ketmasin.
+    ['POST', '/customer-orders/8f7d1c22-0000-4000-8000-000000000001/transitions/cancelled'],
+    ['POST', '/customer-orders/8f7d1c22-0000-4000-8000-000000000001/transitions/paid'],
+    ['POST', '/customer-orders/8f7d1c22-0000-4000-8000-000000000001/transitions/closed'],
+    // Chuqurroq GET'lar — POS'ga kerak emas, demak yopiq.
+    ['GET', '/customer-orders/8f7d1c22-0000-4000-8000-000000000001/related'],
+    ['GET', '/customer-orders/8f7d1c22-0000-4000-8000-000000000001/supply-shortfall'],
+    ['GET', '/customer-orders/8f7d1c22-0000-4000-8000-000000000001/position'],
+    // Segment chegarasi — o'xshash nomli modul ochilmaydi.
+    ['GET', '/customer-orders-archive'],
+  ])('%s %s → RAD', (method, path) => {
+    expect(isKioskAllowed(method, normalizePath(path))).toBe(false);
+  });
+
+  it('`:id` shakli bir SEGMENTNI oladi — statik GET yo`llar ham tushadi', () => {
+    // `/customer-orders/kanban` va `/customer-orders/print-forms` shaklan
+    // `:id` ga mos keladi. Bu ATAYLAB qoldirilgan: ikkalasi ham ro'yxat
+    // bilan bir xil `customerorder.view` ruxsatiga bog'langan va yangi
+    // ma'lumot ochmaydi. Yozadigan hech narsa yo'q.
+    expect(isKioskAllowed('GET', '/customer-orders/kanban')).toBe(true);
+    expect(isKioskAllowed('POST', '/customer-orders/kanban')).toBe(false);
+  });
+});
+
 describe('prefiks SEGMENT chegarasida mos keladi', () => {
   it('o`xshash nomli modul jimgina ochilmaydi', () => {
     // `/products` qoidasi `/products-secret` ni ochib yubormasligi kerak.
