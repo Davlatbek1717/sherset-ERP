@@ -91,11 +91,22 @@ export interface ShiftUsdCashInputs {
   salesUsdMinor: bigint;
   /** Σ qaytarilgan cheklardagi `CASH_USD` (hozircha 0 — dollar qaytarish yo'li yo'q). */
   returnsUsdMinor: bigint;
+  /**
+   * Σ DOLLARDA qabul qilingan naqd qarz to'lovlari — SENTDA (F6, audit §F6.6).
+   *
+   * Manba `DebtPayment.amountOriginalMinor` (mijoz JISMONAN bergan pul),
+   * `amountMinor` EMAS: u har doim so'm ekvivalentida turadi. Shu ajratmasiz
+   * dollar to'lov so'm-kutilganiga qo'shilib, kassirga **soxta so'm kamomadi**
+   * yozilardi, yashiqdagi dollar esa umuman hisobga olinmasdi.
+   *
+   * Ixtiyoriy: eski chaqiruvchilar uzatmasa 0 (regressiya yo'q).
+   */
+  debtUsdMinor?: bigint;
 }
 
 /** Yashiqda smena oxirida bo'lishi KERAK bo'lgan dollar (sent). */
 export function expectedUsdCashMinor(i: ShiftUsdCashInputs): bigint {
-  return i.openingUsdMinor + i.salesUsdMinor - i.returnsUsdMinor;
+  return i.openingUsdMinor + i.salesUsdMinor + (i.debtUsdMinor ?? 0n) - i.returnsUsdMinor;
 }
 
 /** countedUsd − expectedUsd. Musbat = ortiqcha, manfiy = kamomad. Qirqilmaydi. */

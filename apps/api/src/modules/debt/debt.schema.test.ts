@@ -9,6 +9,7 @@ import {
   DebtFilterSchema,
   DebtPaymentsFeedFilterSchema,
   MarkCallSchema,
+  PosDebtPaymentSchema,
   ReversePaymentSchema,
   SetProblemSchema,
   usdCentsToSomTiyin,
@@ -501,5 +502,75 @@ describe('CancelCallNoteSchema — qo‘ng‘iroq natijasini bekor qilish', () =
 
   it('juda uzun sababni RAD ETADI (2000 belgi chegarasi)', () => {
     expect(() => CancelCallNoteSchema.parse({ reason: 'a'.repeat(2001) })).toThrow();
+  });
+});
+
+/**
+ * F6 — POS «Qarz to'lovi» DOLLARDA.
+ *
+ * `amountMinor` endi **to'lov valyutasining minor birligida** o'qiladi
+ * (UZS → tiyin, USD → sent) — aynan `PostRetailSaleSchema.cashUsdAmountMinor`
+ * konvensiyasi. So'mga o'girishni SERVER qiladi (`usdCentsToSomTiyin`),
+ * shuning uchun klientdan ikkinchi (so'mdagi) summa umuman qabul qilinmaydi:
+ * ikki manba bo'lsa ular albatta bir-biridan uzoqlashadi.
+ *
+ * Ikki qo'riqchi `retail-sale.schema.ts` naqshidan (bitta qoida, ikki joyda):
+ *  1. USD to'lovda KURS majburiy — sentni tiyin deb jim qabul qilish qarzni
+ *     haqiqiy summaning ~1/12 000 iga kamaytirardi;
+ *  2. STALE-SCALE: eski ×10^4 masshtabdagi klient qiymati kanonik ×10^8 deb
+ *     o'qilsa 10 000× xato bo'lardi.
+ */
+describe("PosDebtPaymentSchema — F6 USD qarz to'lovi", () => {
+  const base = { counterpartyId: CP, amountMinor: '100000' };
+
+  it("so'm to'lovi kursisiz ishlayveradi (regressiya yo'q)", () => {
+    const v = PosDebtPaymentSchema.parse(base);
+    expect(v.currency).toBe('UZS');
+    expect(v.exchangeRate).toBeUndefined();
+  });
+
+  it('USD to‘lovni kanonik ×10^8 kurs bilan qabul qiladi', () => {
+    const v = PosDebtPaymentSchema.parse({
+      ...base,
+      amountMinor: '10000', // $100.00 — SENTDA
+      currency: 'USD',
+      exchangeRate: '1280000000000', // 12 800 so'm × 10^8
+    });
+    expect(v.currency).toBe('USD');
+    expect(v.exchangeRate).toBe('1280000000000');
+    // Server o'girishi: $100 × 12 800 = 1 280 000 so'm = 128 000 000 tiyin
+    // (10 000 sent × 1 280 000 000 000 / 10^8).
+    expect(usdCentsToSomTiyin(BigInt(v.amountMinor), BigInt(v.exchangeRate ?? '0'))).toBe(
+      128_000_000n,
+    );
+  });
+
+  it('🔴 KURSSIZ USD to‘lovni RAD etadi (jim 1:1 ga tushish taqiq)', () => {
+    expect(() => PosDebtPaymentSchema.parse({ ...base, currency: 'USD' })).toThrow();
+  });
+
+  it('🔴 ESKI (×10⁴) masshtabdagi kursni RAD etadi (stale-scale guard)', () => {
+    expect(() =>
+      PosDebtPaymentSchema.parse({
+        ...base,
+        currency: 'USD',
+        exchangeRate: '128000000', // 12 800 × 10^4 — kanonik emas
+      }),
+    ).toThrow();
+  });
+
+  it('nol yoki manfiy kursni RAD etadi', () => {
+    expect(() =>
+      PosDebtPaymentSchema.parse({ ...base, currency: 'USD', exchangeRate: '0' }),
+    ).toThrow();
+    expect(() =>
+      PosDebtPaymentSchema.parse({ ...base, currency: 'USD', exchangeRate: '-1' }),
+    ).toThrow();
+  });
+
+  it("noma'lum valyutani RAD etadi (EUR/RUB uchun kassa oqimi yo'q)", () => {
+    expect(() =>
+      PosDebtPaymentSchema.parse({ ...base, currency: 'EUR', exchangeRate: '1280000000000' }),
+    ).toThrow();
   });
 });
