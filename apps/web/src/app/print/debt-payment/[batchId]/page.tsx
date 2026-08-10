@@ -2,6 +2,11 @@
 
 import { PrintShell } from '@/components/print/print-shell';
 import { api } from '@/lib/api-client';
+import {
+  RECEIPT_PAYMENT_LABELS,
+  formatForeignMajor,
+  formatFrozenRate,
+} from '@/lib/pos/receipt-payments';
 import { formatMoney } from '@moysklad/ui';
 import { useQuery } from '@tanstack/react-query';
 import { useParams, useSearchParams } from 'next/navigation';
@@ -21,6 +26,10 @@ interface DebtReceipt {
   paidAt: string | null;
   method: string;
   currency: string;
+  /** F6 — mijoz bergan ASL summa (USD → sent); so'm to'lovda `null`. */
+  originalMinor: string | null;
+  /** F6 — muzlatilgan kurs, kanonik ×10^8; so'm to'lovda `null`. */
+  exchangeRate: string | null;
   paidMinor: string;
   outstandingAfterMinor: string;
   lines: ReceiptLine[];
@@ -68,6 +77,23 @@ export default function PrintDebtPaymentPage() {
   const paid = BigInt(data.paidMinor);
   const after = BigInt(data.outstandingAfterMinor);
   const hasReversed = data.lines.some((l) => l.reversed);
+
+  /**
+   * F6 — DOLLAR qatori. Chek MOLIYAVIY hujjat: mijoz $100 berganini va
+   * qaysi KURS bo'yicha hisoblanganini ko'rishi shart, aks holda ertaga
+   * «qarzim nega shuncha kamaydi» degan bahsni yechib bo'lmaydi.
+   *
+   * Yorliq va formatlar `receipt-payments.ts` dan — savdo cheki bilan BITTA
+   * lug'at (xotira: «ombor cheki uch renderer» — nusxa jimgina eskiradi).
+   */
+  const foreign =
+    data.currency !== 'UZS' && data.originalMinor != null && data.exchangeRate != null
+      ? {
+          amountMinor: BigInt(data.originalMinor),
+          rateMinor: BigInt(data.exchangeRate),
+          currency: data.currency,
+        }
+      : null;
 
   return (
     <PrintShell autoPrint={auto}>
@@ -131,6 +157,17 @@ export default function PrintDebtPaymentPage() {
         </div>
 
         <div style={{ borderTop: '1px dashed #999', paddingTop: 6, marginBottom: 6 }}>
+          {/* Dollar qatori — TO'LANDI dan OLDIN: mijoz avval nima berganini,
+              keyin qarzdan qancha yopilganini o'qiydi. */}
+          {foreign && (
+            <div style={{ ...ROW, marginBottom: 3 }} data-test-id="pko-usd-line">
+              <span>{RECEIPT_PAYMENT_LABELS.cashUsd}</span>
+              <span style={{ fontWeight: 600 }}>
+                {formatForeignMajor(foreign.amountMinor, foreign.currency)} ×{' '}
+                {formatFrozenRate(foreign.rateMinor)}
+              </span>
+            </div>
+          )}
           <div style={{ ...ROW, fontWeight: 700, fontSize: 15 }}>
             <span>TO'LANDI</span>
             <span>{formatMoney(paid)}</span>

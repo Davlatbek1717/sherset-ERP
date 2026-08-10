@@ -216,6 +216,9 @@ describe('Qarz to‘lovi oynasi (kassa TZ §7.2)', () => {
     expect(api.post).toHaveBeenCalledWith('/debts/pos/pay', {
       counterpartyId: 'cp-1',
       amountMinor: '5000000',
+      // F6: valyuta endi HAR DOIM oshkor ketadi (server default'iga tayanmaydi);
+      // so'm to'lovda kurs YUBORILMAYDI.
+      currency: 'UZS',
       method: 'cash',
       cashDeskId: CASH_DESK_ID,
       retailShiftId: SESSION_ID,

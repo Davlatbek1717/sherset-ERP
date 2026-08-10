@@ -63,14 +63,42 @@ describe('POS qarz to`lovi — ulanish', () => {
     // Number(bigint)/100 katta summada yaxlitlaydi → server bir tiyinlik
     // ortiqchani rad etardi. FE-09'dan keyin lokal `minorToInput` o'rniga
     // umumiy `formatAmountInput` (valyuta-scale bilan) ishlatiladi.
-    expect(DIALOG).toMatch(/setAmountInput\(formatAmountInput\(outstanding, currency\)\)/);
+    // F6: qiymat `payAllInput` orqali o'tadi — dollarda PASTGA yaxlitlangan
+    // sent, so'mda esa aynan qoldiq.
+    expect(DIALOG).toMatch(
+      /payAllInput = formatAmountInput\(payAllMinor, isUsd \? 'USD' : currency\)/,
+    );
+    expect(DIALOG).toMatch(/setAmountInput\(payAllInput\)/);
     expect(DIALOG).not.toMatch(/Number\(outstanding\)/);
   });
 
   it('summa float EMAS, umumiy parse orqali o`qiladi (FE-09)', () => {
     // Lokal `BigInt(Math.round(n * 100))` nusxasi qaytib kelmasin: u float
     // orqali yaxlitlardi va scale'ni qattiq 100 deb olardi.
-    expect(DIALOG).toMatch(/parseAmountToMinor\(amountInput, currency\)/);
+    // F6: dollar ALOHIDA valyutada parse qilinadi (sent ≠ tiyin).
+    expect(DIALOG).toMatch(/parseAmountToMinor\(amountInput, isUsd \? 'USD' : currency\)/);
     expect(DIALOG).not.toMatch(/Math\.round\([^)]*\*\s*100\)/);
+  });
+
+  /**
+   * F6 — dollar qarz to'lovining ulanish qulflari. Bularning har biri
+   * typecheck'dan JIM o'tadi va faqat PULDA ko'rinadi:
+   *  · kurs FE'da qo'lda kiritilsa yoki qayta hisoblansa — chek serverdagi
+   *    summadan farq qiladi;
+   *  · so'm ekvivalenti payload'ga qo'shilsa — ikki manba paydo bo'ladi.
+   */
+  it('kurs SERVERDAN olinadi (qo`lda kiritilmaydi)', () => {
+    expect(DIALOG).toMatch(/exchange-rates\/rate\?currency=USD/);
+  });
+
+  it('payload`ga serverdan olingan `rateMinor` AYNAN uzatiladi', () => {
+    expect(DIALOG).toMatch(/exchangeRate: usdRate\.rateMinor/);
+  });
+
+  it('so`m ekvivalenti payload`ga QO`SHILMAYDI (yagona manba — server)', () => {
+    const body = DIALOG.slice(DIALOG.indexOf("api.post<PayResult>('/debts/pos/pay'"));
+    const call = body.slice(0, body.indexOf('}),'));
+    expect(call).toContain('amountMinor: amountMinor.toString()');
+    expect(call).not.toContain('somMinor');
   });
 });
