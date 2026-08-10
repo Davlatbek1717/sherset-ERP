@@ -5,9 +5,11 @@ import {
   Logger,
   UnauthorizedException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import * as argon2 from 'argon2';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { POS_PIN_MAX_ATTEMPTS, isValidPosPin } from './kiosk-policy.js';
+import { posPinLookupHash, resolvePosPinPepper } from './pos-pin-lookup.js';
 
 /**
  * POS PIN-qulf (kassa TZ §3.2).
@@ -40,7 +42,19 @@ export class PosPinService {
    */
   private readonly attempts = new Map<string, number>();
 
-  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
+  /**
+   * `posPinLookup` uchun HMAC kaliti. Boot'da hal qilinadi: prod'da sir yo'q
+   * bo'lsa API ko'tarilmaydi — jim ishlab, keyin hamma PIN'ni yaroqsiz
+   * qilishdan ko'ra baland ovozda yiqilgan yaxshi.
+   */
+  private readonly pepper: string;
+
+  constructor(
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(ConfigService) config: ConfigService,
+  ) {
+    this.pepper = resolvePosPinPepper(config.get<string>('POS_PIN_PEPPER'), process.env.NODE_ENV);
+  }
 
   /** PIN o'rnatish yoki almashtirish. */
   async setPin(accountId: string, employeeId: string, pin: string): Promise<{ ok: true }> {
@@ -53,12 +67,58 @@ export class PosPinService {
     });
     if (!employee) throw new BadRequestException('Xodim topilmadi');
 
+    try {
+      await this.prisma.client.employee.update({
+        where: { id: employeeId },
+        data: {
+          posPinHash: await argon2.hash(pin),
+          // Ikkala ustun BIRGA yoziladi. Biri yozilib ikkinchisi qolsa kirish
+          // jimgina ishlamay qolardi: lookup topmaydi yoki xesh mos kelmaydi.
+          posPinLookup: posPinLookupHash(pin, this.pepper),
+        },
+      });
+    } catch (err) {
+      // Unique(account_id, pos_pin_lookup) — bu PIN allaqachon boshqa xodimda.
+      // Faqat SHU xatoni tarjima qilamiz; qolganini yutib yuborish haqiqiy
+      // nosozlikni yashirardi.
+      if ((err as { code?: string }).code === 'P2002') {
+        throw new BadRequestException('Bu PIN band — boshqa PIN tanlang');
+      }
+      throw err;
+    }
+    this.attempts.delete(employeeId);
+    return { ok: true };
+  }
+
+  /** PIN'ni olib tashlash — kirish ham, idle-qulf ham o'chadi. */
+  async clearPin(accountId: string, employeeId: string): Promise<{ ok: true }> {
+    const employee = await this.prisma.client.employee.findFirst({
+      where: { id: employeeId, accountId },
+      select: { id: true },
+    });
+    if (!employee) throw new BadRequestException('Xodim topilmadi');
+
     await this.prisma.client.employee.update({
       where: { id: employeeId },
-      data: { posPinHash: await argon2.hash(pin) },
+      data: { posPinHash: null, posPinLookup: null },
     });
     this.attempts.delete(employeeId);
     return { ok: true };
+  }
+
+  /**
+   * PIN bo'yicha xodimni topish — PIN-only kirish (kassa .exe) uchun.
+   *
+   * `accountId` bo'yicha filtrlanmaydi: kassir kirishdan OLDIN qaysi akkaunt
+   * ekanini ko'rsatmaydi. Akkaunt mosligini `PosLoginService` tekshiradi —
+   * qurilma yozuvi qaysi akkauntga tegishli ekanini biladi.
+   */
+  async findByPin(pin: string): Promise<{ employeeId: string } | null> {
+    const row = await this.prisma.client.employee.findFirst({
+      where: { posPinLookup: posPinLookupHash(pin, this.pepper), archived: false },
+      select: { id: true },
+    });
+    return row ? { employeeId: row.id } : null;
   }
 
   /** PIN o'rnatilganmi — FE qulfni ko'rsatish/ko'rsatmaslikni shundan biladi. */
