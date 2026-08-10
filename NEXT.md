@@ -305,6 +305,66 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-08-10g (REJA-MENEJER-KASSA **MK17** — yo'qolgan mijozlar signali) —
+> ✅ **Phase-1: strukturaviy + unit-tasdiqlangan, BROWSER-SMOKE YO'Q** (commit `06c5c097`).
+> To'liq hisobot: `docs/REJA-MENEJER-KASSA-2026-08.md` → «Faza MK17».**
+>
+> **🔴 F005 bog'liqligi BEKOR QILINDI (dalil bilan).** Reja MK17 ni F005 ga
+> (`Counterparty.lastActivityAt`) bog'lagan edi; repoda tekshirildi — ustun sxemada ham, kodda
+> ham **YO'Q**. Lekin u kerak ham emas: «yo'qolgan mijoz» javobi FAKTdа turibdi — posted
+> `Demand` + posted `RetailSale`. Denormalizatsiya qilingan ustun har yozuvchidan yangilanishni
+> talab qilardi; bitta unutilgan joy jimgina «yo'qolgan mijoz» yolg'onini bergan bo'lardi.
+> **F005 o'sha ustunni qo'shsa ham, bu modul FAKTdan o'qishda qolsin.**
+>
+> **Uch «ikkinchi manba» ochilmadi:** sabab belgisi → `counterparty_notes` `kind='lost_reason'`
+> + `reason_code` (MK16 `DebtNote.kind='reminder'` naqshi; amaldagi sabab = eng oxirgi belgi,
+> tarix bepul) · davr → MK13 registri `LOST_CUSTOMER_DAYS` (sukut 60) · marshrutlar → **mavjud**
+> `ManagerCustomersController` ga (`GET /manager/customers/lost`, `POST …/lost-reason`) ·
+> ekran → MK38 `menejer/mijoz-taqsimoti` ning ikkinchi bo'limi (**ikkinchi mijoz ekrani
+> qurilmadi** — reja shuni taqiqlagan).
+>
+> **F005 ziddiyati (reja testi 3) shunday bajarildi:** F005 ning «90 kun» taymeri **ham shu
+> registrga** qo'yildi (`OWNERSHIP_RELEASE_DAYS`, sukut 90) — F005 qurilganda 90 ni kodga
+> qaytadan yozmasin. MK17 uni faqat O'QIYDI: davr taymerdan uzun bo'lsa `ownershipConflict`
+> ekranda OGOHLANTIRISH beradi (aks holda sotuvchi kesimi jimgina bo'sh chiqardi), egalik
+> muddatidan oshgan mijoz esa kesimdan yo'qolmaydi — `releaseDueCount` da alohida sanaladi.
+>
+> **MK13 registri kengaydi (yon natija):** `unit` endi `percent | days`; **yozuv sirti ochildi**
+> (`GET/PUT /manager/thresholds/:key`) — ilgari chegarani o'zgartirishning yagona yo'li bazani
+> qo'lda tahrirlash edi. Birlik HAR DOIM registrdan yoziladi; oraliqdan chiqqan qiymat **400**
+> beradi, o'qishda esa jimgina sukutga qaytadi (assimetriya ataylab).
+>
+> **Migratsiya** `20260810150000_lost_customer_reason` — lokal `climart_adopt` ga
+> to'g'ridan-to'g'ri SQL bilan qo'llandi (`prisma migrate deploy` bazadagi ESKI yiqilgan
+> `20260419135104_init` yozuvi sababli **P3009** beradi — MK37 sessiyasidan qolgan holat,
+> MK17 tuzatmadi). **Prodga TEGILMADI → OPS-QADAM.**
+>
+> **Gate:** turbo typecheck **10/10** · `i18n:gate` yashil · api vitest **7477 pass** · web
+> vitest **3116 pass** (+69 yangi test; sof modulning kalendar-kun testi **mutatsiya bilan
+> o'lchandi** — xom-ms hisobiga almashtirilganda yiqiladi).
+>
+> **⚠️ Parallel sessiya faol edi** (sessiya boshida daraxt TOZA edi, ish davomida ~20 fayl
+> o'zgardi — MK40 brauzer-QA ishi). Shuning uchun: (a) `ru.json`/`uz.json` ga **«HEAD + faqat
+> mening blokim»** blobi qurilib `hash-object -w` + `update-index --cacheinfo` bilan stage
+> qilindi ([[commit-pathspec-takes-worktree-version]]); (b) commit **hook'siz** qilindi
+> (CLAUDE.md §6.7 B) — lint-staged butun daraxtni stash qilib begona fayllarni qo'shardi;
+> gate'lar qo'lda to'liq yugurtirildi; (c) `git show --stat HEAD` bilan tarkib tasdiqlandi
+> (**22 fayl, hammasi meniki**).
+>
+> **🔴 Ochiq qarz (halol):** (1) **browser-smoke YO'Q** → MK40; (2) **prod migratsiyasi
+> qo'llanmadi** (OPS-QADAM); (3) `lint:product` da **1 xato qoldi** — parallel sessiyaning
+> `apps/web/src/app/(app)/page.tsx` fayli, §6.1 bo'yicha TEGILMADI; (4) to'liq test yugurishida
+> **2 flake** (`mutation-guard-coverage`, `comment-template-settings`) — yakka yugurtirilganda
+> ikkalasi ham o'tadi (1.1s / 2.2s), 5s timeout yuklamadan; (5) `OWNERSHIP_RELEASE_DAYS` ni
+> hech kim QO'LLAMAYDI — taymerning o'zi hamon F005 ning ishi; (6) sabab belgisini «olib
+> tashlash» yo'li yo'q (yangi belgi qo'yiladi, eng oxirgisi yutadi).
+>
+> **🗂️ ARXIV QARZI (bu sessiya QILMADI, ataylab):** shu bo'limda **105** entry bor (chegara
+> 8–10). Arxivlash = 5300 qatorli surgery; parallel sessiya FAOL bo'lgani uchun qilinmadi
+> ([[rebuilt-blob-goes-stale]] xavfi). **Keyingi TINCH sessiya buni birinchi qadam qilsin:**
+> oxirgi 8 tadan eskisini `docs/audits/_ARCHIVE-NEXT-2026-08-10.md` ga ko'chir (faqat
+> `appendFileSync`, qator-sonini tekshir — [[doc-append-marker-truncation]]).
+
 > **🕒 2026-08-10f (REJA-MENEJER-KASSA **MK37 + MK38** — `SalesPlan` + plan/mijoz/narx ekranlari) —
 > ✅ **Phase-1: strukturaviy + unit-tasdiqlangan, BROWSER-SMOKE YO'Q** (commit `cd091c77`).
 > To'liq hisobot: `docs/REJA-MENEJER-KASSA-2026-08.md` → «Faza MK37 + MK38».**

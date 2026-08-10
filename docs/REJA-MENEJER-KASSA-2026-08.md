@@ -20,7 +20,7 @@ Fazalar ajratilgani bilan bog'liqlik yo'qolmadi. Havolalar ikkala faylda ham **o
 | Faza | Nimani kutadi |
 |---|---|
 | **MK15** «Korxona puli qayerda» | `F011` — Rollup jadvallari + tungi cron |
-| **MK17** Yo'qolgan mijozlar signali | `F005` — Mijoz egaligi (`ownerId`, `lastActivityAt`) |
+| ~~**MK17** Yo'qolgan mijozlar signali~~ ☑ 2026-08-10 | ~~`F005`~~ — **bog'liqlik BEKOR**: faollik `lastActivityAt` ustunidan emas, `Demand`+`RetailSale` FAKTIdan o'qiladi (MK17 hisobotiga qara) |
 | **MK35** Record-scope 1-to'lqin + filial filtri | `F003` — Hujjatlarda `branchId` muhrlash |
 | **MK38** Plan qo'yish · narx siyosati ekranlari | `F004` — Narx dvigateli (narx siyosati qismi uchun) |
 
@@ -274,18 +274,18 @@ Belgilar: 🗄️ migratsiya · 🌐 brauzer/QA · 📝 kodsiz · ⛔ qaror kutm
 | **9** | **MK28** Ruxsat matritsasi UI (entity × action × scope)<br>**MK34** 🌐 1-Kassa Phase-2 QA (real brauzer + real termal printer)<br>**MK36** Record-scope 2–3-to'lqin (pul + mijozlar) |
 | **10** | **MK29** ⛔B4 10 rol shabloni<br>**MK37** 🗄️ `SalesPlan` modeli (xodim × oy × plan turi) |
 | **11** | ~~**MK22** Maqsad kaskadi (ega → bo'lim → xodim)~~ ☑ mantiqiy yadro (2026-08-10) — jonlantirish MK13-qarzga bog'liq<br>**MK38** ⏳ Plan qo'yish · mijoz taqsimoti · narx siyosati ekranlari *(kutadi: F004)*<br>**MK39** 🗄️ Record-scope 4-to'lqin + `recordScopeEnforced` YOQISH |
-| **12** | **MK17** ⏳ Yo'qolgan mijozlar signali *(kutadi: F005)*<br>**MK40** 🌐 4-Menejer Phase-2 QA (ruxsatlar) |
+| **12** | ~~**MK17** Yo'qolgan mijozlar signali~~ ☑ 2026-08-10 (F005 bog'liqligi BEKOR — FAKTdan o'qiladi)<br>**MK40** 🌐 4-Menejer Phase-2 QA (ruxsatlar) |
 | **13** | **MK25** 🌐 M2 Phase-2 QA (mobil qurilma + yangi menejer ekranlari) |
 
 **Jami 13 paket** (40 faza).
 
 > ⏳ = **asosiy rejadagi fazani kutadi** (`docs/REJA-8-BOLIM-2026-08.md`). Bu 4 faza shu
 > grafikda o'z o'rnida turibdi, lekin **kutayotgan fazasi bajarilmaguncha boshlanmaydi**:
-> `MK15` ← F011 · > `MK17` ← F005 · > `MK35` ← F003 · > `MK38` ← F004
+> `MK15` ← F011 · ~~`MK17` ← F005~~ (bekor, 2026-08-10) · > `MK35` ← F003 · > `MK38` ← F004
 
 > ⏳ = **asosiy rejadagi fazani kutadi** (`docs/REJA-8-BOLIM-2026-08.md`). Bu 4 faza shu
 > grafikda o'z o'rnida turibdi, lekin **kutayotgan fazasi bajarilmaguncha boshlanmaydi**:
-> `MK15` ← F011 · > `MK17` ← F005 · > `MK35` ← F003 · > `MK38` ← F004
+> `MK15` ← F011 · ~~`MK17` ← F005~~ (bekor, 2026-08-10) · > `MK35` ← F003 · > `MK38` ← F004
 
 ---
 
@@ -639,7 +639,7 @@ tushadi va takror yuborilmaydi (idempotent). (3) tartib determinist.
 
 ---
 
-### MK17 — Yo'qolgan mijozlar signali ☐ HISOBOT
+### MK17 — Yo'qolgan mijozlar signali ☑ HISOBOT (2026-08-10)
 **Bo'lim/blok:** 4M §8.1/3 · **Ustuvorlik:** P2 · **Bog'liqlik:** F005 (asosiy reja) (`lastActivityAt`), MK38
 **Qamrov:** ilgari sotib olib, endi to'xtagan mijozlar (davr sozlanadi) · yo'qolish «sababi»
 belgisi (qo'lda) · sotuvchi bo'yicha kesim · mijoz taqsimoti ekraniga (MK38) ulanish.
@@ -650,6 +650,82 @@ belgisi (qo'lda) · sotuvchi bo'yicha kesim · mijoz taqsimoti ekraniga (MK38) u
 > `docs/REJA-MENEJER-KASSA-2026-08.md` — **Faza MK17** ni bajar. Yo'qolgan mijozlar signali + sabab
 > belgisi + sotuvchi kesimi. MK38 dagi mijoz taqsimoti ekraniga ulan, ikkinchisini qurma.
 > TDD, gate → **TO'XTA**.
+
+#### 📋 HISOBOT — MK17 (2026-08-10, commit `06c5c097`)
+
+**🔴 F005 BLOKIRA QILMADI — bog'liqlik qayta o'qildi.** Reja MK17 ni `F005` ga (ya'ni
+`Counterparty.lastActivityAt` ustuniga) bog'lagan edi. Repoda tekshirildi: `lastActivityAt`
+sxemada ham, kodda ham **YO'Q** (F005 bajarilmagan). Lekin u **kerak ham emas**: «yo'qolgan
+mijoz» savolining javobi FAKTdа turibdi — posted `Demand` (ulgurji jo'natma) va posted
+`RetailSale` (kassa). Denormalizatsiya qilingan ustun har yozuvchidan yangilanishni talab
+qilardi va bitta unutilgan joy jimgina «yo'qolgan mijoz» yolg'onini bergan bo'lardi.
+`counterparty.service.ts` dagi «Последняя продажа» ham aynan shu ta'rif. **F005 o'sha ustunni
+qo'shsa ham, bu modul FAKTdan o'qishda qolishi kerak.**
+
+**Nima qurildi**
+- **Sof modul** `manager/customers/lost-customers.ts` (Prisma yo'q, soat yo'q; 19 test):
+  chelaklar `lost | active | never_purchased` · `inactiveDays` KALENDAR kunlarda (Toshkent,
+  `tashkentDayKey` MK16 dan qayta ishlatildi — uchinchi nusxa yozilmadi) · determinist tartib ·
+  sotuvchi kesimi · sabab taqsimoti · `releaseDue`/`ownershipConflict`.
+- **I/O qatlami** `lost-customers.service.ts` (13 test): faollik ikki manbadan, **valyuta filtri
+  YO'Q** (bu yerda pul emas, SANA o'qiladi — boshqa valyutadagi jo'natma ham faollik).
+- **HTTP**: `GET /manager/customers/lost` · `POST /manager/customers/lost-reason` — **mavjud**
+  `ManagerCustomersController` ga qo'shildi (ikkinchi `manager/customers` prefiksli kontroller
+  Fastify'ni yiqitardi, [[duplicate-route-prod-502]]).
+- **Ekran**: `menejer/mijoz-taqsimoti` ichida ikkinchi bo'lim (`LostCustomersPanel`, 9 test) —
+  **ikkinchi mijoz ekrani qurilmadi**, reja shuni aniq taqiqlagan.
+- **Migratsiya** `20260810150000_lost_customer_reason`: `counterparty_notes.kind` +
+  `reason_code` + DISTINCT-ON shakliga mos indeks.
+
+**Uch «ikkinchi manba» ataylab ochilmadi**
+| Nima | Qayerda yashaydi | Nega |
+|---|---|---|
+| Sabab belgisi | `counterparty_notes`, `kind='lost_reason'` | MK16 `DebtNote.kind='reminder'` naqshi. Amaldagi sabab = eng oxirgi belgi ⇒ tarix bepul; belgi mijozning muloqot tarixida operator ko'radigan joyda turadi |
+| Yo'qolish davri | MK13 registri (`manager_rule_configs`, `LOST_CUSTOMER_DAYS`, sukut 60) | [[sla-thresholds-in-rule-config-table]] |
+| Faollik sanasi | `Demand` + `RetailSale` hujjatlari | yuqoriga qara |
+
+**F005 bilan ziddiyat — reja testi (3) shunday bajarildi.** F005 taymeri hali yo'q, shuning uchun
+uning «90 kun» raqami **ham shu registrga** qo'yildi (`OWNERSHIP_RELEASE_DAYS`, sukut 90) — F005
+qurilganda 90 ni kodga qaytadan yozmasin. MK17 uni faqat **O'QIYDI**: (a) davr taymerdan uzun
+bo'lsa `ownershipConflict` bayrog'i chiqadi va ekranda OGOHLANTIRISH ko'rinadi — aks holda
+sotuvchi kesimi jimgina bo'sh chiqardi; (b) egalik muddatidan oshgan mijoz kesimdan
+**yo'qolmaydi**, `releaseDueCount` da alohida sanaladi.
+
+**MK13 registri kengaydi (yon natija):** `unit` endi `percent | days`; **yozuv sirti ochildi** —
+`GET/PUT /manager/thresholds/:key`. Birlik HAR DOIM registrdan yoziladi (mijoz yuborgan birlik
+qabul qilinmaydi), oraliqdan chiqqan qiymat **400** beradi. O'qishda esa jimgina sukutga qaytadi —
+assimetriya ataylab: o'qish 500 bermasligi kerak, yozuvda esa operator darhol bilishi kerak.
+
+**Ma'lumot-sifati shartnomalari (hammasi testda qulflangan)**
+1. Hech qachon xarid qilmagan mijoz «yo'qolgan» **EMAS** (`never_purchased`, `inactiveDays=null`,
+   NULL ≠ 0) — reja testi (1).
+2. Davr sozlamasi natijani o'zgartiradi — reja testi (2); noto'g'ri birlikdagi sozlama **jimgina
+   talqin qilinmaydi**, `rejectReason` ekranda ko'rinadi.
+3. Signal `enabled:false` bo'lsa ro'yxat bo'sh, lekin **SABABI bilan** («hech kim yo'qolmagan»
+   degan yolg'on emas) va DB umuman o'qilmaydi.
+4. Tanilmagan sabab kodi jimgina «belgilanmagan» ga aylanmaydi — xom qiymat ko'rinadi.
+5. Kesimlar to'liq to'plam ustidan; kesilgan sahifa yolg'on son bermaydi (`truncated` ochiq).
+
+**Gate:** turbo typecheck **10/10** · `i18n:gate` yashil · api vitest **7477 pass** · web vitest
+**3116 pass** (+69 yangi test). Ikki test to'liq yugurishda 5s timeout'ga urildi
+(`mutation-guard-coverage`, `comment-template-settings`) — ikkalasi ham yakka yugurtirilganda
+o'tadi (1.1s / 2.2s), yuklama flake'i, MK17 bilan bog'liq emas. `lint:product` da **1 xato
+qoldi** — u parallel sessiyaning `apps/web/src/app/(app)/page.tsx` fayli (MK40 ishi), CLAUDE.md
+§6.1 bo'yicha **TEGILMADI**.
+
+**🔴 Ochiq qarz (halol)**
+1. **BROWSER-SMOKE YO'Q** — Phase-1, runtime-tasdiqlanmagan (→ MK40).
+2. **Prod migratsiyasi qo'llanmadi** — OPS-QADAM (lokal `climart_adopt` ga to'g'ridan-to'g'ri
+   SQL bilan qo'llandi: `prisma migrate deploy` bazadagi ESKI yiqilgan `20260419135104_init`
+   yozuvi sababli P3009 beradi — bu MK37 sessiyasidan qolgan holat, MK17 tuzatmadi).
+3. **Sabab belgisi `enabled` qilib «olib tashlash» yo'li yo'q** — noto'g'ri belgini tuzatish
+   uchun yangi belgi qo'yiladi (eng oxirgisi yutadi). Izohni arxivlash sirti ochilmadi.
+4. **`OWNERSHIP_RELEASE_DAYS` ni hech kim QO'LLAMAYDI** — u hozircha faqat ziddiyat tekshiruvi
+   uchun o'qiladi. Taymerning o'zi F005 ning ishi.
+5. **Chegara ekrani yo'q** — `PUT /manager/thresholds/:key` faqat MK17 panelidagi «davr»
+   maydonidan chaqiriladi; `KPI_SCORE_CAP` / `BUDGET_WARN_PERCENT` uchun UI qo'shilmadi.
+
+---
 
 ---
 
