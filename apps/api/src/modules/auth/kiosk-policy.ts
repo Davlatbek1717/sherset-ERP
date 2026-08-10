@@ -33,10 +33,24 @@ export function resolveUiMode(roles: ReadonlyArray<{ uiMode?: string | null }>):
 type Method = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | '*';
 
 interface Rule {
-  /** Yo'l prefiksi (`/api/v1` global prefiksisiz). */
+  /**
+   * Yo'l prefiksi (`/api/v1` global prefiksisiz).
+   *
+   * `:` bilan boshlangan segment — **bitta** yo'l segmentiga mos keladi
+   * (`/customer-orders/:id/transitions/confirmed`). Bu ataylab regex emas:
+   * ro'yxat o'qiladigan qolsin va «`.*` yozib qo'ydim» xatosi bo'lmasin.
+   */
   prefix: string;
   methods: readonly Method[];
   why: string;
+  /**
+   * `true` → AYNAN shu chuqurlik. Ichki yo'llar OCHILMAYDI.
+   *
+   * Kerak, chunki oddiy prefiks-qoida butun daraxtni ochadi: `/customer-orders`
+   * GET qoidasi `:id/related`, `:id/supply-shortfall` va kelajakdagi har
+   * qanday yangi sub-resursni ham jimgina ochib yuborardi.
+   */
+  exact?: boolean;
 }
 
 /**
@@ -73,6 +87,31 @@ export const KIOSK_ALLOWED: readonly Rule[] = [
   // ── Mijoz: o'qish + YARATISH (kassada yangi mijoz ochiladi) ───────────────
   { prefix: '/counterparties', methods: ['GET', 'POST'], why: 'mijoz qidirish va kassada ochish' },
 
+  // ── Zakazlar (F7): KO'RISH + `draft → confirmed` TASDIQLASH ──────────────
+  // 🔴 Uch AYNIQ qator — `methods: ['*']` EMAS. `/customer-orders` ostida
+  // o'chirish, `merge`, `mass-edit`, `bulk-clear-reserve` bor; bitta yulduzcha
+  // ularning hammasini kassirga ochib yuborardi.
+  {
+    prefix: '/customer-orders',
+    methods: ['GET'],
+    exact: true,
+    why: "jarayondagi zakazlar ro'yxati (POS «Zakazlar» tabi)",
+  },
+  {
+    prefix: '/customer-orders/:id',
+    methods: ['GET'],
+    exact: true,
+    why: 'zakaz detali — pozitsiyalar, summa, mijoz',
+  },
+  {
+    // FAQAT `confirmed` nishoni: rezerv aynan shu o'tishda avtomatik tushadi.
+    // `cancelled` (rezervni bo'shatadi) va `paid` (F8 — to'lov) ATAYLAB yopiq.
+    prefix: '/customer-orders/:id/transitions/confirmed',
+    methods: ['POST'],
+    exact: true,
+    why: 'zakazni tasdiqlash — rezerv avtomatik tushadi',
+  },
+
   // ── Qarz: o'qish + to'lov ─────────────────────────────────────────────────
   { prefix: '/debts', methods: ['GET', 'POST'], why: "qarz ko'rish va to'lov qabul qilish" },
 
@@ -99,17 +138,37 @@ export function normalizePath(url: string, globalPrefix = '/api/v1'): string {
   return trimmed === '' ? '/' : trimmed;
 }
 
+/** `/a/b` → `['a','b']` (bo'sh segmentlarsiz). */
+function segments(path: string): string[] {
+  return path.split('/').filter((s) => s !== '');
+}
+
+/**
+ * Yo'l qoidaga mos keladimi — **segment chegarasida**.
+ *
+ * `/products` qoidasi `/products/123` ga mos keladi, lekin `/products-secret`
+ * ga MOS KELMAYDI (aks holda o'xshash nomli yangi modul jimgina ochilib
+ * qolardi). `:param` segmenti istalgan BITTA segmentga mos keladi;
+ * `exact` bo'lsa chuqurlik ham teng bo'lishi shart.
+ */
+function matchesPrefix(rule: Rule, path: string): boolean {
+  const ruleSegs = segments(rule.prefix);
+  const pathSegs = segments(path);
+  if (rule.exact ? pathSegs.length !== ruleSegs.length : pathSegs.length < ruleSegs.length) {
+    return false;
+  }
+  return ruleSegs.every((seg, i) =>
+    seg.startsWith(':') ? pathSegs[i] !== undefined : seg === pathSegs[i],
+  );
+}
+
 /**
  * Kiosk shu so'rovni bajara oladimi.
- *
- * Prefiks mosligi **segment chegarasida** tekshiriladi: `/products` qoidasi
- * `/products/123` ga mos keladi, lekin `/products-secret` ga MOS KELMAYDI.
- * Aks holda o'xshash nomli yangi modul jimgina ochilib qolardi.
  */
 export function isKioskAllowed(method: string, path: string): boolean {
   const m = method.toUpperCase();
   return KIOSK_ALLOWED.some((rule) => {
-    if (!(path === rule.prefix || path.startsWith(`${rule.prefix}/`))) return false;
+    if (!matchesPrefix(rule, path)) return false;
     return rule.methods.includes('*') || rule.methods.includes(m as Method);
   });
 }
