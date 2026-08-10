@@ -1216,16 +1216,128 @@ Tuzatish 4 parallel agent + o'zim (auth), har biri TDD (RED ko'rilgan → fix �
 
 ### F1 hisoboti
 
-- **Holat:** ⬜ bajarilmagan
-- **Sana:**
+- **Holat:** ✅ kod tugadi (Task 10–14 · Task 15 gate) · ⬜ brauzer-o'lchov QOLDI
+- **Sana:** 2026-08-11 · worktree `D:/projects/sherset-kassa-f1`, branch `kassa-f1` (baza `6ba54150`)
+
 - **O'zgargan fayllar:**
-- **Qilingan ish:**
+  - *Yangi:* `apps/web/src/lib/pos-device.ts` · `apps/web/src/lib/__tests__/pos-device.test.ts` ·
+    `apps/web/src/lib/__tests__/auth-store-pos-login.test.ts` ·
+    `apps/web/src/components/pos/pin-keypad.tsx` ·
+    `apps/web/src/components/pos/__tests__/pin-keypad.test.tsx` ·
+    `apps/web/src/app/kassa-kirish/page.tsx` · `apps/web/src/app/kassa-kirish/juftlash/page.tsx` ·
+    `apps/web/src/__tests__/kassa-kirish-wiring.test.ts` ·
+    `apps/web/src/__tests__/kiosk-logout-redirect.test.ts`
+  - *Tahrirlangan:* `apps/web/src/lib/auth-store.ts` (`posLogin`) ·
+    `apps/web/src/app/(app)/layout.tsx` (chiqish yo'nalishi + kiosk «Chiqish» tugmasi) ·
+    `apps/web/src/components/pos/pos-pin-lock.tsx` (lockout yo'nalishi) ·
+    `apps/web/src/__tests__/kiosk-shell.test.ts` (1 ta assertion — pastda izohlangan) ·
+    `apps/web/src/messages/{ru,uz}.json` (`kassaLogin.*`, 16 kalit)
+  - 🔴 `apps/api` va `packages/` ga UMUMAN tegilmadi (`git diff 6ba54150..HEAD -- apps/api packages/` — bo'sh).
+
+- **Qilingan ish (task-task):**
+  - **Task 10 ✅** — `pos-device.ts`: `readPosDevice/writePosDevice/clearPosDevice`. Ikki saqlash
+    joyi: Electron ko'prigi (`window.electronAPI`, `isSherset` bayrog'i bilan tanilади) yoki
+    `localStorage` (dev/QA). To'liqmas/buzuq yozuv → `null` (yarim juftlangan qurilma kirishga
+    urinmasin). Rejadan tashqari 1 test qo'shildi: ko'prik bor bo'lsa YOZUV ham o'shanga ketadi.
+  - **Task 11 ✅** — `auth-store.posLogin(creds, pin)`: `POST /auth/pos-login`, `credentials:'include'`
+    (cookie'lar parol-login bilan bir xil). Tana faqat `deviceId/deviceSecret/pin` — serverdagi
+    `PosLoginSchema` (`auth.schema.ts:130-134`) qurilma NOMINI kutmaydi, shuning uchun test buni
+    alohida qulflaydi.
+  - **Task 12 ✅** — `PinKeypad` (sof prezentatsion, tarmoqqa chiqmaydi): 0–9 + Tozalash +
+    O'chirish, sensorli ekran uchun katta tugmalar, kiritilgan raqamlar OCHIQ ko'rsatilmaydi
+    (nuqta-indikator — kassa monitorini mijoz ham ko'radi), `<4` raqamda «Kirish» o'chirilgan.
+    `kassaLogin.*` kalitlari ru+uz.
+  - **Task 13 ✅** — `/kassa-kirish` (PIN ekrani, «juftlanmagan» shoxi bilan) va
+    `/kassa-kirish/juftlash` (admin login → do'kon/kassa/tashkilot tanlash → `POST
+    /auth/pos-device/pair` → kalitni darhol saqlash). Yo'llar o'lchandi:
+    `/stores`, `/cash-desks`, `/organizations` — `reference.controller.ts:62,85,113`
+    (`@Controller()`, ya'ni prefikssiz), javob `{ items, total }`.
+    🔴 Holat-shoxlari tartibi: `if (!ready) return null` «juftlanmagan» shoxidan OLDIN — aks holda
+    juftlangan kassada birinchi kadrda «juftlanmagan» ekrani chaqnaydi.
+  - **Task 14 ✅** — chiqish yo'nalishi. **Auditda topildi: kiosk qobig'ida CHIQISH TUGMASI UMUMAN
+    YO'Q edi** (`layout.tsx` kiosk shoxi faqat `{children}` + `PosPinLock` render qilardi;
+    `/sotuv/page.tsx` da `logout` — 0 hit). Ya'ni qabul mezoni 5-qadamini bajaradigan tugma
+    mavjud emasdi. Uchala chiqish yo'li shartli qilindi:
+    1. yangi kiosk «Chiqish» tugmasi (`layout.tsx`, `data-test-id="kiosk-logout"`);
+    2. PIN-qulfda 5 xatodan keyingi majburiy chiqish (`pos-pin-lock.tsx`) — ilgari SO'ZSIZ
+       `/login` ga tashlardi, kassir esa parolni bilmaydi ⇒ kassa jimgina o'lik qolardi;
+    3. sessiya o'lgach `layout.tsx` ning avto-yo'naltirishi.
+    Qoida: `readPosDevice() ? '/kassa-kirish' : '/login'` — juftlanmagan brauzerda PIN ekrani
+    foydasiz, `/login?redirect=` zaxira yo'li saqlanib qoldi.
+    ⚠️ `kiosk-shell.test.ts` dagi `expect(lock).toContain("window.location.href = '/login'")`
+    assertioni ATAYLAB o'zgartirildi (so'zsiz `/login` endi xato xulq) — o'rniga shartli
+    ifodaning o'zi qulflandi. Fayl `Edit` bilan, bitta assertion doirasida tahrirlandi.
+  - **Task 15 ✅ (gate) / ⬜ (brauzer)** — pastda.
+  - **Qo'shimcha tuzatish:** juftlash ekranidagi xom `<select>` DS `NativeSelect` ga ko'chirildi.
+    Buni **to'liq web suite tutdi** (`raw-element-conventions.test.ts`, UI Convention 8) —
+    fayl-darajasidagi typecheck/biome uni KO'RMAGAN edi. Sabog'i: yo'l-cheklangan gate yetarli emas.
+
 - **Testlar (raqam bilan):**
-- **Brauzer o'lchovi (5 qadam):**
-- **Gate natijasi:**
-- **Commit(lar):**
+  - Yangi yozilgan: **41 test** — `pos-device` 7 · `auth-store-pos-login` 5 · `pin-keypad` 10 ·
+    `kassa-kirish-wiring` 12 · `kiosk-logout-redirect` 7. Hammasi TDD: har biri avval
+    yiqildi (modul/komponent yo'q · `posLogin is not a function` · `ENOENT page.tsx` ·
+    layout'da `/kassa-kirish` yo'q), keyin yashil.
+  - Tahrirlangan `kiosk-shell.test.ts` — 12 test, yashil (regress yo'q).
+
+- **Brauzer o'lchovi (5 qadam):** 🔴 **BAJARILMADI — parallel to'lqin, port band; merge'dan
+  keyingi QA sessiyasiga qoldirildi.** (Ijro rejasi §1.2.4: `pnpm dev` 3100/4000 bir vaqtda faqat
+  bitta sessiyada, hozir 3 faza parallel ketyapti.) O'lchanishi kerak bo'lgan qadamlar:
+  1. `http://localhost:3100/kassa-kirish` → «Bu qurilma juftlanmagan» ekrani ko'rinadi;
+  2. «Qurilmani juftlash» → admin bilan kirish → do'kon/kassa/tashkilot tanlanadi → `/kassa-kirish`
+     ga qaytadi va qurilma nomi ko'rinadi;
+  3. To'g'ri PIN → `/sotuv` ochiladi;
+  4. Noto'g'ri PIN → server xabari ko'rinadi va PIN maydoni tozalanadi (nuqtalar bo'shaydi);
+  5. `/sotuv` da «Chiqish» (o'ng-past burchak, `kiosk-logout`) → `/kassa-kirish` (`/login` EMAS).
+  Qo'shimcha tavsiya: 5 marta noto'g'ri PIN bilan PIN-QULF lockout yo'lini ham o'lchash
+  (u ham `/kassa-kirish` ga qaytishi kerak) va juftlanmagan brauzerda `/login` zaxirasi.
+
+- **Gate natijasi** (hammasi yugurtirildi, qisqartirilmadi):
+  - `@moysklad/money build` — OK · `api typecheck` — 0 xato · `web typecheck` — 0 xato
+  - `biome check` (tegilgan 15 fayl) — **0 diagnostika**.
+    ℹ️ `apps/web/src/components/pos` butun papkasida 20 warning bor, lekin hammasi
+    `rasmilashtirish-modal.tsx` dan (F5 ning fayli, men tegmadim — `git log --name-only` tasdiqladi).
+  - `web test` — **227 fayl / 3221 o'tdi · 26 skip · 0 yiqildi** (exit 0).
+  - `api test` — 553 fayl / 7771 o'tdi · **11 yiqildi**. 🔴 **Hammasi `Test timed out in 5000ms`
+    (assertion emas) va hammasi oldindan qizil** — baseline `6ba54150` (orkestrator o'lchagan).
+    Dalil: (a) bu branchda `apps/api` ga bitta ham o'zgarish yo'q; (b) izolyatsiyada
+    `pos-device.service` (6), `pos-pin.service` (3), `publication.service` (1) — yashil, ya'ni
+    parallel yuk ostidagi argon2 timeout'i; (c) `mutation-guard-coverage` (1) yolg'iz yugurtirilganda
+    ham ~5060 ms da timeout beradi — chegaraga yopishib qolgan test, baseline ro'yxatida bor.
+    Baseline qiyosi: api 10–11 qizil (timeout), web 1 qizil (timeout, `sales-screen-shift`) — mening
+    yakuniy web yugurishimda u ham yashil chiqdi (mashina bo'shaganda).
+  - `pnpm i18n:gate` — 9 test yashil (ru+uz parity, hardcode yo'q).
+
+- **Commit(lar):** `e0ee620a` (Task 10) · `996639db` (Task 11) · `700c0585` (Task 12) ·
+  `e2e10c6d` (Task 13) · `3cd7c18d` (Task 14) · `2502e489` (NativeSelect tuzatishi) ·
+  + shu hisobot commit'i.
+  Har commitdan keyin `git show --stat HEAD` tekshirildi; begona fayl tushmadi
+  (`docs/progress.json` — pre-commit hook'ining o'zi qo'shadi, normal).
+
 - **Kelgusi fazalarga qoldirilgan:**
-- **Yorliq:**
+  1. 🔴 **F2 uchun shartnoma kengaydi:** `pos-device.ts` Electron ko'prigidan `isSherset`,
+     `getDevice()`, `setDevice(creds)`, `clearDevice()` ni kutadi. F2 ning
+     `electron-bridge-contract.test.ts` metod nomlarini FAQAT `print-agent.ts` dan emas,
+     `pos-device.ts` dan HAM manbadan o'qisin — aks holda `electronAPI` optional bo'lgani uchun
+     typecheck yashil qolib, prod kassada qurilma kaliti jimgina `localStorage` ga tushadi.
+  2. **Qurilmani bekor qilish (unpair) UI yo'q:** `clearPosDevice()` yozildi va test qilindi,
+     lekin uni HECH KIM chaqirmaydi. Qurilma almashtirilganda/o'g'irlanganda kassirning yo'li yo'q.
+     Tabiiy joyi — F2 (Electron sozlamalar oynasi) yoki F4 (operator yo'riqnomasi + admin ekrani).
+  3. **Layout avto-yo'naltirishi QURILMA bo'yicha ishlaydi, foydalanuvchi bo'yicha emas** — chunki
+     u nuqtada `auth.user` allaqachon `null`. Ya'ni juftlangan brauzerda ADMIN ham sessiyasi
+     tugagach `/kassa-kirish` ga tushadi. Real kassa PC'da to'g'ri, dev brauzerda kutilmagan
+     bo'lishi mumkin; yumshatish — `/kassa-kirish` dagi «Administrator kirishi» havolasi.
+     F12 QA'da kuzatilsin.
+  4. **Kiosk «Chiqish» tugmasining joyi vaqtinchalik** — `layout.tsx` da fiksirlangan o'ng-past
+     burchak. F5/F8 `/sotuv` ga o'z chrome'ini qo'shganda uni POS sarlavhasiga ko'chirish
+     mantiqiyroq bo'lishi mumkin (tugmaning o'zi va `data-test-id="kiosk-logout"` saqlansin).
+  5. **`POS_PIN_PEPPER` `.env` ga qo'shilishi** hamon prod-qadam sifatida ochiq (K1–K4 rejasining
+     Task 15 Step 6 bandi). `NEXT.md` ga hand-off yozuvi bu sessiyada YOZILMADI — parallel
+     to'lqinda `NEXT.md` umumiy fayl, merge sessiyasida yozilsin.
+  6. **Juftlash uchun `employee.update` ruxsati kerak** (`auth.controller.ts:262-263`) — kiosk
+     kassiri o'zi juftlay olmaydi, bu ATAYLAB. Operator yo'riqnomasida (F4) shu aytilsin.
+
+- **Yorliq:** **«Phase-1: strukturaviy, runtime-tasdiqlanmagan»** — brauzer-smoke YO'Q,
+  real kassa PC va printer — F12.
 
 ### F2 hisoboti
 

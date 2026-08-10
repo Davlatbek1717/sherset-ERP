@@ -1,4 +1,26 @@
 {
+  "kassaLogin": {
+    "title": "Kassaga kirish",
+    "subtitle": "PIN-kodingizni kiriting",
+    "device_label": "Qurilma",
+    "pin_label": "PIN-kod",
+    "submit": "Kirish",
+    "submitting": "Tekshirilmoqda…",
+    "clear": "Tozalash",
+    "backspace": "O'chirish",
+    "error_generic": "PIN noto'g'ri",
+    "not_paired_title": "Bu qurilma juftlanmagan",
+    "not_paired_body": "Administrator qurilmani do'kon va kassaga bog'lashi kerak.",
+    "pair_link": "Qurilmani juftlash",
+    "admin_login": "Administrator kirishi",
+    "admin_password": "Parol",
+    "pair_store": "Do'kon",
+    "pair_cash_desk": "Kassa",
+    "pair_organization": "Tashkilot",
+    "pair_device_name": "Qurilma nomi",
+    "error_unknown": "Xatolik yuz berdi",
+    "logout": "Chiqish"
+  },
   "unsaved_changes": {
     "title": "Saqlanmagan o'zgarishlar",
     "description": "Bu sahifadagi o'zgarishlar saqlanmagan. Saqlamasdan chiqasizmi?",
