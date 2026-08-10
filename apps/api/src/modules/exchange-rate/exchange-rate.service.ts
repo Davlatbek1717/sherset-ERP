@@ -1,6 +1,7 @@
 import { Prisma } from '@moysklad/db';
 import { BadGatewayException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service.js';
+import { cbuRateToRateValue } from '../currency/currency-rate-source.js';
 import { CurrencyService } from '../currency/currency.service.js';
 import {
   CbruResponseSchema,
@@ -16,7 +17,31 @@ export interface ExchangeRateRow {
   currency: string;
   rate: string;
   nominal: number;
+  /**
+   * KANONIK kurs — bir birlik uchun, ×10^8 (DB-01 / Faza 16; `Currency.rateValue`,
+   * `DebtPayment.exchangeRate`, `RetailSalePayment.rateMinor` bilan bir xil).
+   *
+   * NEGA SERVERDA: klient (POS dollar to'lovi) `usdRateMinor` ni aynan shu
+   * masshtabda yuboradi va `retail-sale.schema.ts` stale-scale qo'riqchisi
+   * `< 10^9` qiymatni rad etadi. O'girishni ekranga qoldirsak `rate/nominal`
+   * formulasi ikkinchi nusxada yashardi — `nominal ≠ 1` valyutada jimgina
+   * 100× xato. Bu yerda u `cbuRateToRateValue` bilan bitta manbada turadi.
+   *
+   * Margin QO'LLANMAYDI (0): bu jadval CBU tasmasining o'zi. Do'konning
+   * ustamasi `Currency.margin` orqali `Currency.rateValue` ga tushadi —
+   * ikkisi ataylab ajratilgan.
+   */
+  rateMinor: string;
   source: string;
+}
+
+/**
+ * O'nlik CBU kotirovkasiga kanonik `rateMinor` ni qo'shadi — HAMMA o'quvchi
+ * (rate · latest · history) shu yagona joydan o'tadi, aks holda biri jimgina
+ * eskirib klientга masshtabsiz qator qaytarardi.
+ */
+function toExchangeRateRow(r: Omit<ExchangeRateRow, 'rateMinor'>): ExchangeRateRow {
+  return { ...r, rateMinor: cbuRateToRateValue(r.rate, r.nominal, 0).toString() };
 }
 
 export interface SyncResult {
@@ -120,13 +145,13 @@ export class ExchangeRateService {
    */
   async getRate(currency: CurrencyCode, date: Date = new Date()): Promise<ExchangeRateRow> {
     if (currency === 'UZS') {
-      return {
+      return toExchangeRateRow({
         date: toYMD(date),
         currency: 'UZS',
         rate: '1',
         nominal: 1,
         source: 'CBRU',
-      };
+      });
     }
     const row = await this.prisma.client.exchangeRate.findFirst({
       where: {
@@ -140,13 +165,13 @@ export class ExchangeRateService {
         `No rate found for ${currency} on or before ${toYMD(date)}. Run a sync first.`,
       );
     }
-    return {
+    return toExchangeRateRow({
       date: toYMD(row.date),
       currency: row.currency,
       rate: row.rate.toString(),
       nominal: row.nominal,
       source: row.source,
-    };
+    });
   }
 
   /**
@@ -168,13 +193,15 @@ export class ExchangeRateService {
       FROM exchange_rates
       ORDER BY currency, source, date DESC
     `;
-    return rows.map((r) => ({
-      date: toYMD(r.date),
-      currency: r.currency,
-      rate: r.rate.toString(),
-      nominal: r.nominal,
-      source: r.source,
-    }));
+    return rows.map((r) =>
+      toExchangeRateRow({
+        date: toYMD(r.date),
+        currency: r.currency,
+        rate: r.rate.toString(),
+        nominal: r.nominal,
+        source: r.source,
+      }),
+    );
   }
 
   /**
@@ -192,13 +219,15 @@ export class ExchangeRateService {
       orderBy: [{ date: 'desc' }, { currency: 'asc' }],
       take: Math.min(Math.max(limit, 1), 365),
     });
-    return rows.map((r) => ({
-      date: toYMD(r.date),
-      currency: r.currency,
-      rate: r.rate.toString(),
-      nominal: r.nominal,
-      source: r.source,
-    }));
+    return rows.map((r) =>
+      toExchangeRateRow({
+        date: toYMD(r.date),
+        currency: r.currency,
+        rate: r.rate.toString(),
+        nominal: r.nominal,
+        source: r.source,
+      }),
+    );
   }
 
   // -------------------------------------------------------------------

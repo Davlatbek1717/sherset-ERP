@@ -7965,6 +7965,7 @@
       "receipts_empty": "В этой смене ещё нет продаж",
       "refund": "Возврат",
       "refund_amount_cash": "Сумма к возврату (наличными)",
+      "refund_amount_debt": "Списывается с долга",
       "refund_confirm": "Подтвердить возврат",
       "refund_no_lines": "Не выбран товар для возврата",
       "refund_qty_label": "Возврат:",
@@ -8916,6 +8917,7 @@
       "cash_out_submit_collection": "Сдать",
       "cash_out_submit_expense": "Провести расход",
       "cash_out_title": "Расход из кассы",
+      "cash_usd": "Наличные USD",
       "change_cash_only": "Сдача выдаётся только наличными — уменьшите сумму по карте/терминалу",
       "change_customer": "Изменить",
       "change_due": "Сдача",
@@ -8943,6 +8945,7 @@
       "exact_paid": "Оплачено точно",
       "field_card": "Сумма картой",
       "field_cash": "Сумма наличными",
+      "field_cash_usd": "Сумма в долларах ($)",
       "field_terminal": "Сумма терминалом",
       "new_customer": "+ Новый клиент",
       "new_customer_name_placeholder": "Имя Фамилия / Название организации",
@@ -8957,7 +8960,9 @@
       "terminal": "Терминал",
       "type_dokon": "Магазин",
       "type_oddiy": "Обычный",
-      "type_usta": "Мастер"
+      "type_usta": "Мастер",
+      "usd_rate_hint": "Курс 1$ = {rate} ({date})",
+      "usd_rate_missing": "Курс доллара не найден — оплата в долларах недоступна"
     },
     "shiftAcceptance": {
       "accept": "Принять",
