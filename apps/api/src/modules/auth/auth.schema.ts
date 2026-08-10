@@ -119,3 +119,26 @@ export const SetPosPinSchema = z.object({
   pin: z.string().regex(/^\d{4,6}$/, 'PIN 4-6 raqamdan iborat bo`lishi kerak'),
 });
 export type SetPosPinInput = z.infer<typeof SetPosPinSchema>;
+
+/**
+ * Kassa qurilmasidan PIN bilan KIRISH (tokensiz endpoint).
+ *
+ * `deviceSecret` majburiy: PIN'da foydalanuvchi nomi yo'q, shuning uchun
+ * qurilma kaliti «kim so'rayapti» savoliga javob beradi. Usiz endpoint
+ * ochiq internetda 10 000 variantli taxmin maydoniga aylanardi.
+ */
+export const PosLoginSchema = z.object({
+  deviceId: z.string().uuid(),
+  deviceSecret: z.string().min(32),
+  pin: z.string().regex(/^\d{4,6}$/, 'PIN 4-6 raqamdan iborat bo`lishi kerak'),
+});
+export type PosLoginInput = z.infer<typeof PosLoginSchema>;
+
+/** Qurilmani do'kon/kassa/tashkilotga bog'lash (JWT + hr `employees:full`). */
+export const PairPosDeviceSchema = z.object({
+  name: z.string().min(1).max(200),
+  storeId: z.string().uuid(),
+  cashDeskId: z.string().uuid(),
+  organizationId: z.string().uuid(),
+});
+export type PairPosDeviceInput = z.infer<typeof PairPosDeviceSchema>;
