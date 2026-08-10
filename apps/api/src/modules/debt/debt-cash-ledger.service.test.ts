@@ -146,6 +146,11 @@ function makeSvc(
   };
 
   const tx = {
+    // `addCashPayment` endi yozishdan oldin qarz qatorini FOR UPDATE bilan
+    // qulflaydi (check-then-write race tuzatishi). Bu SERIAL double — qulf
+    // semantikasi shart emas, faqat qator topilganini qaytaramiz; race'ning
+    // o'zi `debt-cash-payment-lock.test.ts` da modellangan.
+    $queryRaw: async () => [{ id: DEBT }],
     moneyOperation: {
       findFirst: async (args: {
         where: { documentId: string; cashDeskId: string | null; deltaMinor: { gt: bigint } };

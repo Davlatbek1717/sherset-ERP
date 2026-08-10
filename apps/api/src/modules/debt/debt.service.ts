@@ -1024,24 +1024,10 @@ export class DebtService {
    */
   async addCashPayment(accountId: string, userId: string, debtId: string, raw: unknown) {
     const input: CreateCashPaymentInput = CreateCashPaymentSchema.parse(raw);
-    const debt = await this.mustFind(accountId, debtId);
-
-    if (debt.status === 'paid') {
-      throw new BadRequestException('Qarz allaqachon to’liq to’langan');
-    }
-
+    // 404 shu yerda (qulfsiz, tez yo'l); pul tekshiruvlari esa PASTDA — qulf
+    // olingandan keyin, tx ichida (check-then-write race'iga qarshi).
+    await this.mustFind(accountId, debtId);
     const amount = BigInt(input.amountMinor);
-    const remaining = debt.totalMinor - debt.paidMinor;
-    if (amount > remaining) {
-      throw new BadRequestException(
-        `To’lov qoldiqdan katta (qoldiq: ${remaining.toString()} tiyin)`,
-      );
-    }
-
-    const isPartial = amount < remaining;
-    if (isPartial && (!input.comment || !input.nextContactAt)) {
-      throw new BadRequestException('Qisman to’lovda izoh va keyingi to’lov sanasi majburiy');
-    }
 
     let cashDeskName: string | null = null;
     if (input.cashDeskId) {
@@ -1054,6 +1040,43 @@ export class DebtService {
     }
 
     const updated = await this.prisma.client.$transaction(async (tx) => {
+      // M-10 naqshi (`pos-debt-payment.service.ts` → `lockOpenDebts`): qarz
+      // qatori TRANZAKSIYA OXIRIGACHA QULFLANADI va summa/qoldiq tekshiruvi
+      // QULF OLINGANDAN KEYIN bajariladi. Ilgari tekshiruv tx'dan TASHQARIDA
+      // edi — ikki parallel to'lov bitta eski `remaining`ni ko'rib, qarzni
+      // IKKI MARTA yopar va kontragent balansini manfiyga tushirardi.
+      const locked = await tx.$queryRaw<Array<{ id: string }>>`
+        SELECT id
+        FROM debts
+        WHERE id = ${debtId}::uuid
+          AND account_id = ${accountId}::uuid
+          AND deleted_at IS NULL
+        FOR UPDATE
+      `;
+      if (locked.length === 0) throw new NotFoundException('Qarz topilmadi');
+
+      // Qulf olingach QAYTA o'qiymiz — endi qiymatlar tx yakunigacha o'zgarmaydi.
+      const debt = await tx.debt.findFirstOrThrow({
+        where: { id: debtId, accountId },
+        select: { status: true, totalMinor: true, paidMinor: true, counterpartyId: true },
+      });
+
+      if (debt.status === 'paid') {
+        throw new BadRequestException('Qarz allaqachon to’liq to’langan');
+      }
+
+      const remaining = debt.totalMinor - debt.paidMinor;
+      if (amount > remaining) {
+        throw new BadRequestException(
+          `To’lov qoldiqdan katta (qoldiq: ${remaining.toString()} tiyin)`,
+        );
+      }
+
+      const isPartial = amount < remaining;
+      if (isPartial && (!input.comment || !input.nextContactAt)) {
+        throw new BadRequestException('Qisman to’lovda izoh va keyingi to’lov sanasi majburiy');
+      }
+
       const payment = await tx.debtPayment.create({
         data: {
           accountId,

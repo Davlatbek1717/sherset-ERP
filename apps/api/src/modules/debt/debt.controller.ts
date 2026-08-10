@@ -337,8 +337,18 @@ export class DebtController {
 
   // ── POS «Qarz to'lovi» oynasi (kassa TZ §7.2) ─────────────────────────────
 
-  /** Oyna ochilganda: qoldiq, eng eski qarz sanasi, ochiq qarzlar ro'yxati. */
+  /**
+   * Oyna ochilganda: qoldiq, eng eski qarz sanasi, ochiq qarzlar ro'yxati.
+   *
+   * Ruxsat — `debtpayment.create`, ya'ni POS to'lov OYNASINING ruxsati
+   * (`POST pos/pay` bilan AYNAN bir xil, pastdagi Q10/AUTH-07 izohiga qarang).
+   * Bu endpoint faqat shu oyna uchun mavjud; guard'siz qolsa istalgan
+   * autentifikatsiyalangan xodim istalgan mijozning to'liq qarz ro'yxatini
+   * o'qiy olardi — `debt.view` RBAC'i chetlab o'tilardi. Kassir rolida
+   * `debtpayment.create` allaqachon bor, oyna uchun qo'shimcha ruxsat kerak emas.
+   */
   @Get('pos/summary/:counterpartyId')
+  @RequirePermission({ entity: 'debtpayment', action: 'create' })
   posSummary(
     @CurrentUser() user: AuthenticatedUser,
     @Param('counterpartyId') counterpartyId: string,
@@ -350,8 +360,13 @@ export class DebtController {
    * To'lovni FIFO bo'yicha taqsimlab yozadi va PKO uchun ma'lumot qaytaradi.
    * Kassir qaysi qarzga tushishini tanlamaydi — eng eskisidan yopiladi (Q9).
    */
-  /** PKO chekini qayta chop etish (kassir yo'qotdi / printer tiqildi). */
+  /**
+   * PKO chekini qayta chop etish (kassir yo'qotdi / printer tiqildi).
+   * Ruxsat — `posSummary` bilan bir xil sabab: chek moliyaviy hujjat, uni
+   * o'qish ham POS oynasining `debtpayment.create` ruxsati ostida turadi.
+   */
   @Get('pos/receipt/:batchId')
+  @RequirePermission({ entity: 'debtpayment', action: 'create' })
   posReceipt(@CurrentUser() user: AuthenticatedUser, @Param('batchId') batchId: string) {
     return this.pos.receipt(user.accountId, batchId);
   }

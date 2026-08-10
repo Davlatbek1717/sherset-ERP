@@ -94,6 +94,19 @@ export class PosDebtPaymentService {
       throw new BadRequestException('To`lov summasi noldan katta bo`lishi kerak');
     }
 
+    // `retailShiftId` KLIENTDAN keladi — unga ko'r-ko'rona ishonib bo'lmaydi.
+    // Tekshiruvsiz yozilsa yopiq/begona/mavjud bo'lmagan smena id jim qabul
+    // qilinadi va naqd pul JORIY smenaning «kutilgan naqd» hisobiga (TZ §8.4)
+    // tushmaydi — reconciliation buziladi, kamomadni yashirish yo'li ochiladi.
+    // Faqat SHU akkauntning OCHIQ smenasi qabul qilinadi.
+    if (input.retailShiftId) {
+      const shift = await this.prisma.client.cashierSession.findFirst({
+        where: { id: input.retailShiftId, accountId, state: 'open' },
+        select: { id: true },
+      });
+      if (!shift) throw new BadRequestException('Smena topilmadi yoki yopilgan');
+    }
+
     // Bitta jismoniy to'lov = N qator, lekin PKO cheki BITTA hujjat.
     // Shu id chekni keyin ANIQ yig'ishga imkon beradi (mijoz+vaqt bo'yicha
     // taxmin qilish moliyaviy hujjatda yaramaydi).
