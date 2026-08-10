@@ -1352,17 +1352,110 @@ Tuzatish 4 parallel agent + o'zim (auth), har biri TDD (RED ko'rilgan → fix �
 
 ### F11 hisoboti
 
-- **Holat:** ⬜ bajarilmagan
-- **Sana:**
+- **Holat:** ✅ bajarildi (Phase-1)
+- **Sana:** 2026-08-11 · worktree `sherset-kassa-f11`, branch `kassa-f11` (baza `6ba54150`)
+
 - **O'zgargan fayllar:**
-- **Qilingan ish:**
-- **Raqamlar ikki manbadan solishtirildimi:**
-- **NULL holati qanday ko'rsatiladi:**
-- **Brauzer o'lchovi:**
+  - YANGI `apps/web/src/app/print/z-report/[id]/page.tsx` — 72mm chek, `?auto=1` avto-chop
+  - YANGI `apps/web/src/lib/z-report-receipt.ts` — SOF model (`buildZReceipt`) + ikki renderer
+    (`renderZReceiptText` ESC/POS 32-ustun, `renderZReceiptHtml` 72mm Electron)
+  - YANGI `apps/web/src/lib/use-z-receipt-labels.ts` — yorliqlar i18n'dan (`pages.z_report.*`)
+  - YANGI testlar: `lib/__tests__/z-report-receipt.test.ts` (8) ·
+    `app/print/z-report/[id]/__tests__/z-report-print-page.test.tsx` (8) ·
+    `…/z-report-source-parity.test.ts` (6) ·
+    `app/(app)/sotuv/__tests__/z-report-print-wiring.test.tsx` (4) ·
+    `lib/__tests__/z-receipt-labels-fixture.ts` (fikstura, test emas)
+  - `apps/web/src/lib/print-agent.ts` — `printZReportViaAgent()` (Electron native → HTTP agent)
+  - `apps/web/src/app/(app)/sotuv/page.tsx` — `usePrintZReport()` hooki; «Smena» yorlig'ida
+    `print-z-report` tugmasi; smena yopilgach `print-closed-z-report` tugmasi (id `SotuvPage` da
+    saqlanadi, chunki `SalesScreen` yopilish bilan unmount bo'ladi)
+  - `apps/web/src/messages/{ru,uz}.json` — `pages.z_report.print.*` (34 kalit) + `pages.sotuv.print_z_report`
+  - Mavjud 6 POS test faylida `vi.mock('@/lib/print-agent')` fabrikasiga 1 qatordan qo'shildi
+    (+2 qator/fayl, boshqa hech narsa tegilmadi)
+
+- **Qilingan ish:** reja §2/F11 ning 5 bandi. 🔴 Uch renderer bir modeldan chiziladi — xotira
+  «Ombor cheki uch renderer» (biri o'zgarsa qolgani jimgina eskiradi) shu sababdan raqam va
+  NULL mantig'i `z-report-receipt.ts` da BIR MARTA turadi.
+
+- **Raqamlar ikki manbadan solishtirildimi:** HA, lekin **kod darajasida** (brauzer emas — pastga qara).
+  - Manba-1 = `GET /cashier-sessions/:id/z-report` (`cashier-session.service.ts#zReport`) —
+    aynan `/retail/sessions/[id]` ekranining `zFull` so'rovi. Chop sahifasi TUSHUM, cheklar soni,
+    o'rtacha chek, yalpi foyda, chegirma, qarzga sotilgan, qarz to'lovlari, qaytarish summasi,
+    xarajat/inkassatsiya, kutilgan/sanalgan naqd va farqni AYNAN shu maydonlardan oladi.
+  - Manba-2 = eski `GET /retail-sales/z-report?sessionId=` — faqat **qaytarishlar SONI** uchun
+    (yangi javobda bunday maydon yo'q); ekran ham xuddi shu manbadan oladi.
+  - Qulf: `z-report-source-parity.test.ts` (6 test) — (A) ikkala sahifa bir endpointdan va
+    15 ta umumiy maydon nomidan o'qishi; chop sahifasida `BigInt(x) ± BigInt(y)` arifmetikasi
+    YO'Qligi; (B) `ZReportPayload` ning har maydoni serverning `zReport()` manbasida borligi
+    (grounding — xotira «FE fixture server maydonini o'zi to'qiydi»), + qo'riqchi vakuum
+    bo'lmasligi uchun maydonlar soni > 20 tekshiruvi.
+  - **Ekran bilan MOS KELMAYDIGAN qism (o'lchangan, ataylab tuzatilmagan):**
+    `/retail/sessions/[id]` ning `ZFull` interfeysi `openingCashMinor`, `unconvertedByMethod`
+    va BARCHA dollar maydonlarini (`openingCashUsdMinor`, `expectedUsdCashMinor`,
+    `countedUsdCashMinor`, `varianceUsdMinor`) umuman e'lon qilmaydi — ya'ni ekran ularni
+    KO'RSATMAYDI, chop qog'ozi ko'rsatadi. Bundan tashqari ekran `revenueByMethod[].sumMinor`
+    ni HAR DOIM smena valyutasi bilan formatlaydi (USD qatori sent sifatida noto'g'ri chiqadi),
+    chop qog'ozi esa qator valyutasi bilan. Ekran F11 fayli emas — qarzga yozildi.
+
+- **NULL holati qanday ko'rsatiladi:** uch holat AJRATILGAN va testda qulflangan (12 assert):
+  - `null` sanoq → **«sanalmagan»** matni (raqam UMUMAN yo'q — test `not.toMatch(/\d/)` bilan
+    tekshiradi); `null` farq → ham «sanalmagan»
+  - `'0'` sanoq → «0,00»; `'0'` farq → **«farq yo'q»** (bu ikkisi hech qachon bir xil ko'rinmaydi)
+  - normal → raqam; farq ishorasiga qarab «kamomad»/«ortiqcha»
+  - `grossProfitMinor: null` (tan narx muzlatilmagan) → **«o'lchanmagan»**, 0 EMAS —
+    «100% marja» yolg'onining oldi olinadi
+  - `averageReceiptMinor: null` → «—»; qaytarishlar soni manbasi yiqilsa → «—», 0 EMAS
+  - Dollar bloki **HAR DOIM** chiziladi (dollar oqimi bo'lmagan smenada ham): Z-hisobot arxiv
+    hujjati, «dollar yashigi sanalmagan» fakti qog'ozda ko'rinib turishi kerak.
+
+- **Brauzer o'lchovi:** 🔴 **BAJARILMADI — parallel to'lqin, portlar band (3 faza bir vaqtda);
+  QA sessiyasiga qoldirildi.** QA'da `/print/z-report/<id>` ni `/retail/sessions/<id>` bilan
+  yonma-yon ochib solishtirilishi kerak bo'lgan raqamlar: **tushum (`revenueMinor`)** ·
+  **cheklar soni (`salesCount`)** · **o'rtacha chek** · **yalpi foyda** · **chegirma** ·
+  **qarzga sotilgan** · **qabul qilingan qarz to'lovlari** · **qaytarishlar soni va summasi** ·
+  **xarajatlar (jami + moddalar bo'yicha)** · **inkassatsiya** · **kutilgan naqd** ·
+  **sanalgan naqd** · **farq** · **to'lov turlari kesimi (har qator: tur + valyuta + summa)**.
+  Ekranda YO'Q, faqat qog'ozda tekshiriladi: **ochilish qoldig'i (UZS va USD)**, **dollar
+  kutilgan/sanalgan/farq**, **kursi yo'q qatorlar**. Alohida: real chek printerida 72mm sig'imi
+  va ESC/POS kirill/lotin chiqishi (`renderZReceiptText` 32-ustun cheklovini birlik-test
+  qiladi, printer emas).
+
 - **Gate natijasi:**
-- **Commit(lar):**
+  - `pnpm --filter @moysklad/money build` — ✅
+  - `pnpm --filter @moysklad/api typecheck` — ✅ 0 xato
+  - `pnpm --filter @moysklad/web typecheck` — ✅ 0 xato
+  - `pnpm biome check <tegilgan yo'llar>` (19 fayl) — ✅ **0 error**; 20 warning —
+    hammasi `sotuv/page.tsx` dagi OLDINDAN mavjud `lint/nursery/useSortedClasses`
+    (qator raqamlari tekshirildi: mening yangi qatorlarim ro'yxatda YO'Q)
+  - `pnpm --filter @moysklad/api test` — ✅ **552 fayl o'tdi, 1 skip, 0 qizil** (7782 test).
+    Diqqat: orkestratorning `6ba54150` baseline'ida 4 fayl / 10 test qizil edi (argon2
+    timeout, parallel yuk) — bu yugurishda yuk pasaygani uchun hammasi yashil chiqdi.
+  - `pnpm --filter @moysklad/web test` — 224/226 fayl yashil, **3 test qizil, HAMMASI
+    `Test timed out in 5000ms`** (assertion emas):
+    `sotuv/__tests__/sales-screen-shift.test.tsx` (2) + `menejer/_components/comment-template-settings.test.tsx` (1).
+    Uchalasi ham **YAKKA yugurtirilganda YASHIL** (tekshirildi: shift fayli 17/17, menejer fayli 4/4).
+    Baseline `6ba54150` da web'da 1 qizil bor edi (aynan `sales-screen-shift` › «kirim summasi…»);
+    qolgan 2 tasi ham shu sinf — 3 agent + gate bir mashinada parallel yugurgani uchun 5 s chegara.
+    **Yangi (baseline'da yo'q) haqiqiy yiqilish YO'Q.**
+  - `pnpm i18n:gate` — ✅ 9 test (470 fayl, 12 969 kalit)
+  - Yangi testlar: **26** (chek modeli 8 · chop sahifasi 8 · manba-parity 6 · `/sotuv` wiring 4)
+
+- **Commit(lar):** `8ff8e25d` — `feat(kassa): z-hisobot chop sahifasi (/print/z-report)`
+  (19 fayl; 19-chisi — hook yozgan `docs/progress.json` metadata, begona ish emas)
+
 - **Kelgusi fazalarga qoldirilgan:**
-- **Yorliq:**
+  1. **`/retail/sessions/[id]` ekrani dollar bloki va `openingCashMinor` ni ko'rsatmaydi**
+     (`ZFull` interfeysi eskirgan) — chop qog'ozi ekrandan ko'proq narsa ko'rsatadi.
+  2. **O'sha ekran `revenueByMethod[].sumMinor` ni har doim smena valyutasi bilan formatlaydi**
+     — USD to'lov qatori sentni tiyin sifatida ko'rsatadi (chop qog'azida to'g'ri).
+  3. **Farq aktlari (`variances[]`) chop qog'oziga chiqarilmadi** — ekranda bor. Qog'ozda
+     aktlar bloki kerakmi, degan qaror F12 (real kassada QA) ga qoldirildi.
+  4. **`printZReportViaAgent` uchun birlik-test yo'q** — `printReceiptViaAgent` da ham yo'q
+     (mavjud naqsh); chop yo'lining o'zi `/sotuv` wiring testida mok orqali qulflangan.
+  5. Brauzer/printer smoke — yuqoridagi ro'yxat bo'yicha.
+
+- **Yorliq:** **Phase-1: strukturaviy, runtime-tasdiqlanmagan.** Brauzer-smoke YO'Q,
+  printer-smoke YO'Q.
 
 ### F12 hisoboti
 
