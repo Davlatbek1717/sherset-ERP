@@ -11,6 +11,13 @@
  */
 
 import { api } from './api-client';
+import {
+  type ZReceiptLabels,
+  type ZReportPayload,
+  buildZReceipt,
+  renderZReceiptHtml,
+  renderZReceiptText,
+} from './z-report-receipt';
 
 export const PRINT_AGENT_URL = 'http://127.0.0.1:17777';
 
@@ -535,5 +542,61 @@ export async function printReceiptViaAgent(saleId: string): Promise<ReceiptPrint
   const r = el
     ? await el.printSheet(printer, buildReceiptHtml(sale))
     : await agentPrint(printer, { text: buildReceiptText(sale) });
+  return { handled: true, ok: r.ok, error: r.error };
+}
+
+// ─── Z-hisobot («Z-отчёт») chop etish ────────────────────────────────────────
+// Chek bilan AYNI yo'l: agent/Electron tirik va chek printeri sozlangan bo'lsa
+// qog'oz to'g'ridan-to'g'ri chiqadi, aks holda chaqiruvchi brauzer popup'iga
+// (`/print/z-report/<id>?auto=1`) tushadi.
+//
+// 🔴 Raqamlar bu yerda ham HISOBLANMAYDI — server javobi to'g'ridan-to'g'ri
+// `buildZReceipt` ga beriladi, ya'ni qog'oz, Electron-HTML va ekran bitta
+// modeldan chiziladi (xotira: «Ombor cheki uch renderer»).
+
+/**
+ * Z-hisobotni chek printeriga yuboradi.
+ *
+ * `labels` chaqiruvchidan keladi (`useZReceiptLabels()`) — print-agent
+ * React kontekstida emas, i18n'ni o'zi o'qiy olmaydi.
+ */
+export async function printZReportViaAgent(
+  sessionId: string,
+  labels: ZReceiptLabels,
+): Promise<ReceiptPrintOutcome> {
+  const idle: ReceiptPrintOutcome = { handled: false, ok: false };
+  if (!(await checkPrintAgent())) return idle;
+
+  let printer: string | null;
+  let z: ZReportPayload;
+  try {
+    const [settings, report] = await Promise.all([
+      api.get<{ receiptPrinterName: string | null }>('/sklad-keepers'),
+      api.get<ZReportPayload>(`/cashier-sessions/${sessionId}/z-report`),
+    ]);
+    printer = settings.receiptPrinterName ?? null;
+    z = report;
+  } catch {
+    return idle;
+  }
+  if (!printer) return idle; // sozlanmagan → brauzer popup'i
+
+  // Qaytarishlar SONI — eski endpointda. Yiqilsa chek baribir chiqadi,
+  // faqat son o'rnida «—» turadi (NOL EMAS).
+  let returnsCount: number | null = null;
+  try {
+    const legacy = await api.get<{ returnsCount: number }>(
+      `/retail-sales/z-report?sessionId=${sessionId}`,
+    );
+    if (typeof legacy.returnsCount === 'number') returnsCount = legacy.returnsCount;
+  } catch {
+    returnsCount = null;
+  }
+
+  const view = buildZReceipt(z, { labels, returnsCount });
+  const el = electron();
+  const r = el
+    ? await el.printSheet(printer, renderZReceiptHtml(view))
+    : await agentPrint(printer, { text: renderZReceiptText(view) });
   return { handled: true, ok: r.ok, error: r.error };
 }
