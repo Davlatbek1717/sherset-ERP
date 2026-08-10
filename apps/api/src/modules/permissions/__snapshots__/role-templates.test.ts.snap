@@ -563,7 +563,7 @@ exports[`MK29 — shablon matritsasi snapshot (10/10) > warehouse_manager matrit
   "saleschannel": "view:ALL print:ALL",
   "salesreturn": "view:ALL print:ALL",
   "service": "view:ALL print:ALL",
-  "store": "view:ALL print:ALL",
+  "store": "view:ALL update:ALL print:ALL",
   "storecell": "view:ALL update:ALL print:ALL",
   "supply": "view:ALL create:ALL update:ALL approve:ALL print:ALL",
   "task": "view:ALL print:ALL",

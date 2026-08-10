@@ -107,6 +107,11 @@ function makeService() {
         return out;
       }),
     },
+    // Q1 (egasi, 2026-08-11): `unassignProduct` endi chiqarishdan oldin
+    // yacheykadagi QOLDIQNI tekshiradi. Bu ssenariylar sof bog'lanish
+    // haqida — hech qayerda sanoq yo'q, shuning uchun qulf hech qachon
+    // yonmaydi va multi-bin xulqi o'zgarishsiz qoladi.
+    stockByCell: { findFirst: vi.fn(async () => null) },
   };
   const svc = new StoreAddressService({ client } as never, {} as never, {} as never);
   return { svc, products, links };

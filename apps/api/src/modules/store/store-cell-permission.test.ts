@@ -82,6 +82,27 @@ describe('TZ v3 §3 — yacheyka amallari `storecell` ruxsatida', () => {
   });
 
   /**
+   * EGASINING QARORI (2026-08-11 · Q2). `store.update` na omborchida, na ombor
+   * menejerida yo'q edi ⇒ «chiqarib qo'shish» tugmasi FAQAT admin/egada
+   * ko'rinardi, ya'ni TZ §1.2 ning uchinchi varianti amalda o'lik edi. Endi u
+   * ombor menejerida bor. Assimetriya SAQLANADI: omborchi bog'laydi/sanaydi,
+   * lekin CHIQARA olmaydi (yuqoridagi test) — bu ikki qator birga o'qiladi.
+   */
+  it('ombor menejeri chiqara OLADI (`store.update` = ALL), omborchi — YO`Q', () => {
+    expect(scopeOf('warehouse_manager', 'store', 'update')).toBe('ALL');
+    expect(scopeOf('storekeeper', 'store', 'update')).toBe('NO');
+  });
+
+  /**
+   * Q2 grant'i `['store', 'cashdesk']` juftligidan AJRATILDI — `cashdesk`
+   * yozuv huquqini yo'l-yo'lakay olib qo'ymasligi kerak (kassa entity'si bu
+   * qarorning doirasida emas).
+   */
+  it('Q2 kassani yon ta`sir sifatida OCHMAYDI', () => {
+    expect(scopeOf('warehouse_manager', 'cashdesk', 'update')).toBe('NO');
+  });
+
+  /**
    * Review 2026-08-10 — ZAXIRA YO'L teshigi. `GET admin/stores/cells/by-barcode`
    * da `@RequirePermission` UMUMAN yo'q edi: u yacheykani AKKAUNT BO'YLAB topib,
    * tarkibi va qoldig'i bilan qaytaradi, ya'ni yuqoridagi `storecell.view`

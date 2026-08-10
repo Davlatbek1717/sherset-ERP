@@ -279,8 +279,31 @@ export function CellScanBindModal({
         // sessiyada staged qilingan qator o'zini-o'zi chiqarib yuborardi.
         const decision = decisionsRef.current.get(cellId);
         if (decision?.mode === 'replace' && decision.evict.length > 0) {
+          const cellName = cellRows[0]?.cell.name ?? cellId;
           for (const victim of decision.evict) {
-            await api.delete(`/admin/stores/${storeId}/cells/${cellId}/products/${victim.id}`);
+            try {
+              await api.delete(`/admin/stores/${storeId}/cells/${cellId}/products/${victim.id}`);
+            } catch (e) {
+              // EGASINING QARORI (2026-08-11 · Q1): server yacheykada QOLDIQ
+              // bor mahsulotni chiqarishni RAD etadi (409 + `CELL_STOCK_NOT_
+              // EMPTY`) — hujjatsiz stok o'zgarmasligi uchun. Xom server
+              // matni bu yerda YETARLI EMAS: u mahsulot NOMINI bilmaydi
+              // (faqat id), omborchi esa qaysi tovar to'sib turganini ko'rishi
+              // shart. Shuning uchun 409 aynan shu kod bo'yicha tanib olinadi
+              // va nom/yacheyka/qoldiq bilan qayta yoziladi; boshqa har qanday
+              // xato o'z holicha yuqoriga o'tadi (yashirilmaydi).
+              const err = e as { status?: number; body?: { code?: string; qty?: string } };
+              if (err.status === 409 && err.body?.code === 'CELL_STOCK_NOT_EMPTY') {
+                throw new Error(
+                  t('scan_evict_blocked', {
+                    product: victim.name,
+                    cell: cellName,
+                    qty: err.body.qty ?? '?',
+                  }),
+                );
+              }
+              throw e;
+            }
             evicted += 1;
           }
           // Chiqarish BAJARILDI — qaror `together` ga tushadi. Ikki ish bir

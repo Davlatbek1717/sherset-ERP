@@ -5673,6 +5673,7 @@
         "scan_answer_conflict_first": "Avval «Yacheyka band» savoliga javob bering — bu skan QABUL QILINMADI, javobdan keyin qayta skanerlang",
         "scan_cell_contents_failed": "Yacheyka tarkibini o'qib bo'lmadi — hech narsa qo'shilmadi, qayta skanerlang",
         "scan_evict_cancelled": "«{name}» yacheykada QOLADI — chiqarish bekor qilindi",
+        "scan_evict_blocked": "«{product}» «{cell}» yacheykasidan chiqarilmadi: u yerda {qty} dona qoldiq bor. Avval «Sanash» bilan 0 ga tushiring yoki boshqa yacheykaga ko'chiring",
         "scan_cancel": "Bekor qilish",
         "scan_save": "Saqlash",
         "scan_saving": "Saqlanmoqda…",

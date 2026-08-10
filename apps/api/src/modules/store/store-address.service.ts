@@ -1,5 +1,11 @@
 import { Prisma } from '@moysklad/db';
-import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import type { z } from 'zod';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { EnterService } from '../enter/enter.service.js';
@@ -614,6 +620,23 @@ export class StoreAddressService {
    * any) and, when this cell IS the product's `__yacheyka` home cache,
    * clears that too (multi-bin, 2026-08-06: the two used to be one and the
    * same; now a product can have other links left after this call).
+   *
+   * ⚠️ QOLDIQ QULFI (egasi, 2026-08-11 · Q1). Chiqarish faqat BOG'LANISHNI
+   * uzadi — `StockByCell` qatoriga TEGMAYDI. Yacheykada shu mahsulotdan
+   * hisoblangan qoldiq bor holda chiqarilsa, ikki sirt bir-biriga zid gapira
+   * boshlardi (`getCellStock` tovarni ko'rsatadi, `getCellProducts` yo'q
+   * deydi) va keyingi «Umumiy sanash» (`mode:'add'`) FANTOM qoldiq ustiga
+   * qo'shardi. Egasining qarori: hujjatsiz stok o'zgarmaydi ⇒ avto-«Списание»
+   * YOZILMAYDI, amal RAD ETILADI (409) va foydalanuvchiga yo'l ko'rsatiladi.
+   *
+   * Qulf shu yerda — YAGONA haqiqat manbai: `DELETE :id/cells/:cellId/
+   * products/:productId` ning har bir chaqiruvchisi (Scan oynasining
+   * «chiqarib qo'shish»i, «Ko'chirish» oynasi, kelajakdagi skriptlar) unga
+   * bo'ysunadi.
+   *
+   * Filtr `assortmentKind: 'product'` — ATAYLAB tor: davo yo'li («Sanash»)
+   * aynan shu turga yozadi, ya'ni boshqa turdagi qatorga qulf qo'yilsa
+   * foydalanuvchi chiqa olmaydigan tuzoqqa tushardi.
    */
   async unassignProduct(accountId: string, storeId: string, cellId: string, productId: string) {
     await this.assertStore(accountId, storeId);
@@ -623,6 +646,29 @@ export class StoreAddressService {
       select: { id: true, attributes: true },
     });
     if (!product) throw new NotFoundException(`Product ${productId} not found`);
+    const stocked = await this.prisma.client.stockByCell.findFirst({
+      where: {
+        accountId,
+        storeId,
+        cellId,
+        assortmentKind: 'product',
+        assortmentId: productId,
+        qty: { gt: 0 },
+      },
+      select: { qty: true },
+    });
+    if (stocked) {
+      const qty = String(stocked.qty);
+      throw new ConflictException({
+        // Mashina o'qiydigan sabab — FE bu kod bo'yicha aniq bannerni chizadi
+        // (xom `message` matniga tayanmasdan).
+        code: 'CELL_STOCK_NOT_EMPTY',
+        qty,
+        cell: cell.name,
+        productId,
+        message: `«${cell.name}» yacheykasida bu mahsulotdan ${qty} dona qoldiq bor — avval «Sanash» bilan 0 ga tushiring yoki boshqa yacheykaga ko'chiring, keyin chiqaring`,
+      });
+    }
     const base =
       product.attributes &&
       typeof product.attributes === 'object' &&

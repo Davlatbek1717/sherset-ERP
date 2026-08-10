@@ -279,7 +279,14 @@ export const ROLE_TEMPLATES: Record<RoleTemplateSlug, RoleTemplate> = {
         approve: 'ALL',
         print: 'ALL',
       }),
-      grant(['store', 'cashdesk'], { view: 'ALL' }),
+      grant(['cashdesk'], { view: 'ALL' }),
+      // `store.update` (egasi, 2026-08-11 · Q2): Scan oynasidagi «chiqarib
+      // qo'shish» — ya'ni bog'lanishni CHIQARIB tashlash — TZ v3 §3 bo'yicha
+      // `store.update` talab qiladi. U na omborchida, na ombor menejerida
+      // yo'q edi ⇒ tugma faqat admin/egada ko'rinardi. Omborchi (`storekeeper`)
+      // esa chiqara olmasligi SHART (TZ §3 assimetriyasi) — u ATAYLAB
+      // o'zgarishsiz qoladi, `store-cell-permission.test.ts` shuni qulflaydi.
+      grant(['store'], { view: 'ALL', update: 'ALL' }),
       grant(['storecell'], { view: 'ALL', update: 'ALL' }),
       grant(['product', 'variant', 'bundle', 'productfolder'], { view: 'ALL', update: 'ALL' }),
       // Yig'ish/jo'natish — realizatsiyani tasdiqlaydi, lekin YARATMAYDI.
