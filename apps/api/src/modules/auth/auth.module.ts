@@ -6,6 +6,8 @@ import { AuthService } from './auth.service.js';
 import { resolveSecret } from './boot-secrets.js';
 import { JwtAuthGuard } from './jwt-auth.guard.js';
 import { KioskGuard } from './kiosk.guard.js';
+import { PosDeviceService } from './pos-device.service.js';
+import { PosLoginService } from './pos-login.service.js';
 import { PosPinService } from './pos-pin.service.js';
 import { TokenService } from './token.service.js';
 
@@ -53,7 +55,17 @@ function parseTtl(raw: string | undefined, fallback: string, varName: string) {
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, TokenService, JwtAuthGuard, PosPinService, KioskGuard],
-  exports: [AuthService, TokenService, JwtAuthGuard, KioskGuard],
+  providers: [
+    AuthService,
+    TokenService,
+    JwtAuthGuard,
+    PosPinService,
+    KioskGuard,
+    PosDeviceService,
+    PosLoginService,
+  ],
+  // `PosPinService` eksport qilinadi: admin PIN berish endpointi HR modulida
+  // turadi (`hr/employees/:id/pos-pin`) va uni o'sha yerdan chaqiradi.
+  exports: [AuthService, TokenService, JwtAuthGuard, KioskGuard, PosPinService],
 })
 export class AuthModule {}

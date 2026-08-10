@@ -13,9 +13,12 @@ import { UseGuards } from '@nestjs/common';
 import { BadRequestException } from '@nestjs/common';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { PrismaService } from '../../prisma/prisma.service.js';
+import { RequirePermission } from '../permissions/require-permission.decorator.js';
 import {
   type AuthenticatedUser,
   ChangePasswordSchema,
+  PairPosDeviceSchema,
+  PosLoginSchema,
   SetPosPinSchema,
   UpdateMeSchema,
 } from './auth.schema.js';
@@ -23,6 +26,8 @@ import { AuthService } from './auth.service.js';
 import { CurrentUser } from './current-user.decorator.js';
 import { JwtAuthGuard } from './jwt-auth.guard.js';
 import { MEDIA_TOKEN_COOKIE, MEDIA_TOKEN_TTL_SEC } from './media-token.js';
+import { PosDeviceService } from './pos-device.service.js';
+import { PosLoginService } from './pos-login.service.js';
 import { PosPinService } from './pos-pin.service.js';
 
 const REFRESH_COOKIE = 'ms_rt';
@@ -57,6 +62,8 @@ export class AuthController {
     @Inject(AuthService) private readonly auth: AuthService,
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(PosPinService) private readonly posPin: PosPinService,
+    @Inject(PosLoginService) private readonly posLogin: PosLoginService,
+    @Inject(PosDeviceService) private readonly posDevices: PosDeviceService,
   ) {}
 
   @Post('login')
@@ -203,5 +210,58 @@ export class AuthController {
   verifyPosPin(@CurrentUser() user: AuthenticatedUser, @Body() body: unknown) {
     const { pin } = SetPosPinSchema.parse(body);
     return this.posPin.verifyPin(user.accountId, user.sub, pin);
+  }
+
+  // ── PIN-only KIRISH (kassa .exe) ──────────────────────────────────────────
+  // Yuqoridagi `pos-pin/verify` dan farqi: u ochiq sessiyani qulfdan chiqaradi
+  // (JWT talab qiladi, savat saqlanadi), bu esa YANGI sessiya beradi.
+
+  /**
+   * Kassa qurilmasidan PIN bilan kirish — tokensiz.
+   *
+   * Qurilma kaliti «kim so'rayapti» savoliga javob beradi, PIN esa «qaysi
+   * kassir». Cookie'lar parol-login bilan AYNAN bir xil qo'yiladi, shuning
+   * uchun refresh/logout/media yo'llari o'zgarmaydi.
+   */
+  @Post('pos-login')
+  async posLoginHandler(
+    @Body() body: unknown,
+    @Req() req: FastifyRequest,
+    @Res({ passthrough: true }) res: FastifyReply,
+  ) {
+    const input = PosLoginSchema.parse(body);
+    const meta = {
+      userAgent: req.headers['user-agent'],
+      ipAddress: (req.headers['x-forwarded-for'] as string | undefined) ?? req.ip,
+    };
+    const { accessToken, refreshToken, mediaToken, user, device } = await this.posLogin.login(
+      input,
+      meta,
+    );
+    res.setCookie(REFRESH_COOKIE, refreshToken, COOKIE_OPTS);
+    res.setCookie(MEDIA_TOKEN_COOKIE, mediaToken, MEDIA_COOKIE_OPTS);
+    return { accessToken, user, device };
+  }
+
+  /**
+   * Qurilmani do'kon/kassa/tashkilotga bog'lash. Kalit FAQAT shu javobda
+   * qaytadi — keyin bazada faqat argon2 xeshi qoladi.
+   *
+   * 🔴 RUXSAT DEKORATORI TANLOVI: bu yerda `@RequirePermission` ishlatiladi,
+   * `@RequireHrPermission` EMAS. Sabab — `PermissionsGuard` global `APP_GUARD`
+   * (permissions.module.ts), `HrPermissionGuard` esa har controllerda qo'lda
+   * ulanadi va bu controllerda ulanmagan. HR dekoratori qo'yilsa u jimgina
+   * BEZAK bo'lib qolardi: istalgan kirgan foydalanuvchi (kiosk kassiri ham)
+   * qurilma juftlay olardi. Qo'riqchi: `pos-endpoint-guards.test.ts`.
+   *
+   * `employee`+`update` tanlandi: qurilma juftlash kassaga kirish yo'lini
+   * ochadi, ya'ni xodim boshqaruvi darajasidagi amal.
+   */
+  @Post('pos-device/pair')
+  @UseGuards(JwtAuthGuard)
+  @RequirePermission({ entity: 'employee', action: 'update' })
+  async pairPosDevice(@CurrentUser() user: AuthenticatedUser, @Body() body: unknown) {
+    const input = PairPosDeviceSchema.parse(body);
+    return this.posDevices.pair(user.accountId, user.sub, input);
   }
 }

@@ -156,3 +156,26 @@ describe('POS PIN', () => {
     expect(POS_PIN_MAX_ATTEMPTS).toBe(5);
   });
 });
+
+/**
+ * PIN-kirish yo'llari (kassa .exe) allowlist bilan mos kelishi hujjatlanadi.
+ *
+ * Bu test bugun «bepul» yashil (`/auth` qoidasi `methods: ['*']`), lekin
+ * kelajakda kimdir o'sha qoidani torroq qilsa DARHOL qizaradi — aks holda
+ * kassa jimgina kirolmay qolardi va sabab uzoq qidirilardi.
+ */
+describe('PIN-kirish yo`llari kiosk allowlist bilan mos', () => {
+  it('/auth/pos-login kiosk uchun ochiq', () => {
+    expect(isKioskAllowed('POST', '/auth/pos-login')).toBe(true);
+  });
+
+  it('/auth/pos-device/pair ham /auth qoidasiga tushadi', () => {
+    // Bu endpoint JWT + hr `employees:full` talab qiladi, ya'ni kiosk kassiri
+    // baribir o'tolmaydi — allowlist ochiqligi teshik EMAS.
+    expect(isKioskAllowed('POST', '/auth/pos-device/pair')).toBe(true);
+  });
+
+  it('nazorat: kassaga aloqasiz yo`l HAMON yopiq', () => {
+    expect(isKioskAllowed('GET', '/reports/profitability')).toBe(false);
+  });
+});
