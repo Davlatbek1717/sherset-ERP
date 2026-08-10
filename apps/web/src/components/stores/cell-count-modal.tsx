@@ -61,8 +61,18 @@ interface BulkRow {
   currentQty: string;
 }
 
+/** Display only. Deliberately coarser (3 dp) than `qtyValidRe` (6 dp): the input
+ *  accepts what the server accepts, the label just has to stay readable on a
+ *  handheld. The value SENT is always the typed string, never `fmtQty`'s. */
 const fmtQty = (n: number) => (Number.isInteger(n) ? String(n) : String(Number(n.toFixed(3))));
 const qtyValidRe = /^\d+(\.\d{1,6})?$/;
+
+/** A transport/server error is for the picker to REPORT, not to read: the banner
+ *  carries a human sentence and this short tail carries the technical crumb. */
+const techDetail = (e: unknown) => {
+  const raw = e instanceof Error ? e.message : String(e);
+  return raw.length > 120 ? `${raw.slice(0, 117)}…` : raw;
+};
 
 export function CellCountModal({
   open,
@@ -93,11 +103,18 @@ export function CellCountModal({
   const [cell, setCell] = useState<{ id: string; name: string } | null>(null);
   const [items, setItems] = useState<CellStockItem[]>([]);
   const [loadingItems, setLoadingItems] = useState(false);
+  // Three DISTINCT panel states, never collapsed into one: loading · open-FAILED
+  // · genuinely empty. Collapsing the middle one into «empty» is the same lie
+  // `bulkAdd`'s old `.catch(() => null)` told.
+  const [cellError, setCellError] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [qty, setQty] = useState('');
-  const [message, setMessage] = useState<{ kind: 'ok' | 'warn' | 'err'; text: string } | null>(
-    null,
-  );
+  const [message, setMessage] = useState<{
+    kind: 'ok' | 'warn' | 'err';
+    text: string;
+    /** Technical crumb (HTTP text, exception message) — shown small and apart. */
+    detail?: string;
+  } | null>(null);
   const [lastRead, setLastRead] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [value, setValue] = useState('');
@@ -205,6 +222,7 @@ export function CellCountModal({
     setBulkQtyClean('');
     applyBulkRows(() => []);
     setQtyMissing(false);
+    setCellError(null);
     const id = requestAnimationFrame(() => inputRef.current?.focus());
     return () => cancelAnimationFrame(id);
   }, [
@@ -221,6 +239,16 @@ export function CellCountModal({
   const loadItems = useCallback(
     async (target: { id: string; name: string }) => {
       setLoadingItems(true);
+      // The cell being opened OWNS the panel from this instant: whatever the
+      // previous cell left (its cards, its selected product, its typed count)
+      // must not survive into it. Clearing here — not only on success — is what
+      // keeps a FAILED open from leaving cell B on screen next to cell A's card
+      // and A's number: «Saqlash» would then have written A's product into B as
+      // an ABSOLUTE count. Data loss with a green button.
+      applyItems(() => []);
+      applySelectedId(null);
+      applyQty('');
+      setCellError(null);
       try {
         const res = await api.get<{ items: CellStockItem[] }>(
           `/admin/stores/${storeId}/cells/${target.id}/stock`,
@@ -230,11 +258,25 @@ export function CellCountModal({
         // A single product auto-selects (spec: cards are for the 2+ case).
         applySelectedId(list.length === 1 ? (list[0]?.assortmentId ?? null) : null);
         applyQty('');
+      } catch (e) {
+        // NO cell is open after a failed read — `save()` has nothing to write
+        // and the «Yacheyka bo'sh» panel (which would be a LIE: we never learned
+        // what is in there) cannot render. The failure gets its own visible
+        // state, kept next to the product area so a later scan's banner cannot
+        // quietly bury it.
+        applyCell(null);
+        beep();
+        setCellError(t('count_cell_open_failed', { cell: target.name }));
+        setMessage({
+          kind: 'err',
+          text: t('count_cell_open_failed', { cell: target.name }),
+          detail: techDetail(e),
+        });
       } finally {
         setLoadingItems(false);
       }
     },
-    [storeId, applyItems, applySelectedId, applyQty],
+    [storeId, applyItems, applySelectedId, applyQty, applyCell, t],
   );
 
   const selectProduct = useCallback(
@@ -277,9 +319,13 @@ export function CellCountModal({
         res = await api.get<{ items: CellStockItem[] }>(
           `/admin/stores/${storeId}/cells/${target.id}/stock`,
         );
-      } catch {
+      } catch (e) {
         beep();
-        setMessage({ kind: 'err', text: `${target.name}: ${t('scan_cell_contents_failed')}` });
+        setMessage({
+          kind: 'err',
+          text: `${target.name}: ${t('scan_cell_contents_failed')}`,
+          detail: techDetail(e),
+        });
         return;
       }
       const list = (res.items ?? []).filter((i) => i.assortmentKind === 'product');
@@ -295,9 +341,21 @@ export function CellCountModal({
       }
       const p = list[0];
       if (!p) return;
+      const key = `${target.id}-${p.assortmentId}`;
+      // Re-scanning a cell that is ALREADY listed keeps the existing row intact.
+      // The old code rebuilt it from the common qty, so a row hand-edited to 50
+      // silently snapped back to 100 while the banner still said «Qo'shildi» —
+      // in `add` semantics that is a wrong number about to be written. Nothing
+      // changes, and the picker is told so out loud.
+      if (bulkRowsRef.current.some((r) => r.key === key)) {
+        beep();
+        setMessage({ kind: 'warn', text: t('count_bulk_already_listed', { cell: target.name }) });
+        echoInInput(target.name, true);
+        return;
+      }
       applyBulkRows((rows) => [
         {
-          key: `${target.id}-${p.assortmentId}`,
+          key,
           cell: target,
           product: { id: p.assortmentId, name: p.name },
           qty: bulkQtyRef.current,
@@ -305,7 +363,7 @@ export function CellCountModal({
           // so the picker sees where the added number lands.
           currentQty: String(p.qty ?? '0'),
         },
-        ...rows.filter((r) => r.key !== `${target.id}-${p.assortmentId}`),
+        ...rows,
       ]);
       setMessage({ kind: 'ok', text: `${t('count_bulk_added', { name: p.name })}` });
       echoInInput(target.name, true);
@@ -462,11 +520,11 @@ export function CellCountModal({
   const enqueue = useScanQueue(
     (code: string) => resolveRef.current(code),
     (err) => {
+      // Last-resort net: `resolve()` handles its own known failures, so anything
+      // arriving here is unexpected. The picker gets a sentence they can ACT on
+      // («qayta skanerlang»), not «Request failed with status code 500».
       beep();
-      setMessage({
-        kind: 'err',
-        text: err instanceof Error ? err.message : t('count_not_found'),
-      });
+      setMessage({ kind: 'err', text: t('count_scan_failed'), detail: techDetail(err) });
     },
   );
 
@@ -636,6 +694,7 @@ export function CellCountModal({
       }
       const rows = bulkRowsRef.current;
       if (rows.length === 0) return;
+      const total = rows.length;
       setSaving(true);
       let done = 0;
       try {
@@ -655,10 +714,16 @@ export function CellCountModal({
         onSaved();
         onOpenChange(false);
       } catch (e) {
+        // The batch is NOT atomic. Saying only «xato» hides the one fact the
+        // picker needs — HOW MANY cells already moved — and they would either
+        // recount everything or trust a half-applied list. Written rows are
+        // dropped from the list, so pressing «Saqlash» again resumes where it
+        // stopped rather than adding twice.
         beep();
         setMessage({
           kind: 'err',
-          text: t('scan_save_failed', { msg: e instanceof Error ? e.message : String(e) }),
+          text: done > 0 ? t('count_bulk_save_partial', { done, total }) : t('count_save_failed'),
+          detail: techDetail(e),
         });
         setSaving(false);
         if (done > 0) onSaved();
@@ -695,10 +760,7 @@ export function CellCountModal({
       onOpenChange(false); // spec: Save closes the window
     } catch (e) {
       beep();
-      setMessage({
-        kind: 'err',
-        text: t('scan_save_failed', { msg: e instanceof Error ? e.message : String(e) }),
-      });
+      setMessage({ kind: 'err', text: t('count_save_failed'), detail: techDetail(e) });
       setSaving(false);
     }
   }, [
@@ -746,12 +808,13 @@ export function CellCountModal({
                 setMessage(null);
                 return;
               }
-              if (!bulkMode && cell) {
+              if (!bulkMode && (cell || cellError)) {
                 applyCell(null);
                 applyItems(() => []);
                 applySelectedId(null);
                 applyQty('');
                 setQtyMissing(false);
+                setCellError(null);
                 setMessage(null);
                 inputRef.current?.focus();
                 return;
@@ -781,6 +844,14 @@ export function CellCountModal({
             {message && (
               <p className="font-semibold text-[14px]" data-test-id="cell-count-status">
                 {message.text}
+              </p>
+            )}
+            {message?.detail && (
+              <p
+                className="mt-0.5 break-all text-[11px] text-[var(--ms-text-muted)]"
+                data-test-id="cell-count-status-detail"
+              >
+                {message.detail}
               </p>
             )}
             {lastRead && (
@@ -849,6 +920,17 @@ export function CellCountModal({
               </li>
             ))}
           </ul>
+        )}
+
+        {/* Open-FAILED is its own panel state — never «Yacheyka bo'sh». It stays
+            put after the banner moves on to the next read. */}
+        {cellError && (
+          <p
+            className="rounded-[var(--ms-radius-default)] border border-[var(--ms-error-500,#d5433c)] bg-[var(--ms-error-50,#fdf0ef)] px-3 py-2 text-[13px]"
+            data-test-id="cell-count-cell-error"
+          >
+            {cellError}
+          </p>
         )}
 
         {/* Product cards — selectable, chosen one highlights BLUE. */}
@@ -952,6 +1034,19 @@ export function CellCountModal({
           <Checkbox
             checked={bulkMode}
             onCheckedChange={(n) => {
+              // Leaving bulk mode with rows still staged used to drop them
+              // SILENTLY: single mode neither shows nor saves them, and its own
+              // «Saqlash» closes the window — the counted cells simply vanished.
+              // The switch is refused instead, and the refusal names both exits
+              // («Saqlash» writes them, «Bekor qilish» clears them).
+              if (n !== true && bulkRowsRef.current.length > 0) {
+                beep();
+                setMessage({
+                  kind: 'err',
+                  text: t('count_bulk_switch_blocked', { count: bulkRowsRef.current.length }),
+                });
+                return;
+              }
               applyBulkMode(n === true);
               setMessage(null);
               setQtyMissing(false);
@@ -972,7 +1067,7 @@ export function CellCountModal({
                 {bulkRows.map((r) => {
                   const typed = r.qty.trim() || bulkQty.trim();
                   const becomes = qtyValidRe.test(typed)
-                    ? fmtQty(Number(r.currentQty) + Number(typed))
+                    ? fmtQty((Number(r.currentQty) || 0) + Number(typed))
                     : '—';
                   return (
                     <li
