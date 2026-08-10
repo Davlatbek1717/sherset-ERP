@@ -75,13 +75,20 @@ export const CellBarcodeLookupSchema = z.object({
 export type CellBarcodeLookupInput = z.infer<typeof CellBarcodeLookupSchema>;
 
 // ---- «Sanash» (owner 2026-07-21): physical count of ONE product in ONE cell ----
-// Absolute set — «30» means the cell now holds exactly 30 of the product.
+// Ikki semantika bitta endpointda — `mode` ni qara.
 export const SetCellStockSchema = z.object({
   assortmentId: uuid,
   qty: z
     .string()
     .trim()
     .regex(/^\d+(\.\d{1,6})?$/, 'qty must be a non-negative decimal (≤6 dp)'),
+  /**
+   * TZ v3: `set` (default) — sanoq MUTLAQ, yacheyka qoldig'i aynan `qty` ga
+   * tenglashadi (oddiy rejim / inventarizatsiya). `add` — «Umumiy sanash»:
+   * `qty` mavjud qoldiqqa QO'SHILADI va avto-hujjat aynan `qty` ga yoziladi.
+   * Default ataylab `set` — eski chaqiruvchilar xulqi o'zgarmaydi.
+   */
+  mode: z.enum(['set', 'add']).default('set'),
 });
 export type SetCellStockInput = z.infer<typeof SetCellStockSchema>;
 

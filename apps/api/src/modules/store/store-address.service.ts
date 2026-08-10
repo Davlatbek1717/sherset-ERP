@@ -413,9 +413,17 @@ export class StoreAddressService {
 
   /**
    * «Sanash» (owner 2026-07-21) — record the PHYSICAL count of one product in
-   * one cell as an ABSOLUTE value: upsert the StockByCell row (qty > 0) or
-   * delete it (qty = 0). Owner-custom addressing feature: per-cell counts are
-   * hand-counted bin contents; store-level totals stay document-derived.
+   * one cell. Owner-custom addressing feature: per-cell counts are hand-counted
+   * bin contents; store-level totals stay document-derived.
+   *
+   * TZ v3 — IKKI semantika, `mode` bilan tanlanadi:
+   *   · `set` (default, eski xulq) — MUTLAQ: yacheyka qoldig'i aynan `qty` ga
+   *     tenglashadi (inventarizatsiya / oddiy rejim);
+   *   · `add` («Umumiy sanash», §2.2.3) — `qty` mavjud qoldiqqa QO'SHILADI va
+   *     avto-hujjat AYNAN `qty` ga yoziladi (126 ga emas).
+   * Delta serverda hisoblanadi — FE «hozirgi» qoldiqni o'qib mutlaq qiymat
+   * yubormaydi, shuning uchun ikki omborchi bir vaqtda sanasa ham yo'qolgan-
+   * yangilanish bo'lmaydi.
    */
   async setCellStock(
     accountId: string,
@@ -430,7 +438,7 @@ export class StoreAddressService {
       select: { id: true, name: true },
     });
     if (!cell) throw new NotFoundException();
-    const { assortmentId, qty } = this.parse(SetCellStockSchema, raw);
+    const { assortmentId, qty, mode } = this.parse(SetCellStockSchema, raw);
     const product = await this.prisma.client.product.findFirst({
       where: { id: assortmentId, accountId, deletedAt: null },
       select: { id: true, buyPrice: true },
@@ -446,7 +454,10 @@ export class StoreAddressService {
       select: { qty: true },
     });
     const oldQty = Number(before?.qty ?? 0);
-    const delta = Number(qty) - oldQty;
+    // TZ v3: `add` — kiritilgan son AYNAN delta (qo'shiladi); `set` — mutlaq
+    // sanoq, delta = farq. Yakuniy qoldiq ikkalasida ham `finalQty`.
+    const delta = mode === 'add' ? Number(qty) : Number(qty) - oldQty;
+    const finalQty = oldQty + delta;
 
     // Store-level true-up hujjati (avto Оприходование/Списание) SANALGAN yacheyka
     // `cellId`'ini olib boradi ⇒ applyDeltas StockByCell[cellId]'ni AYNAN `delta`ga
@@ -471,7 +482,11 @@ export class StoreAddressService {
     if (!willPostDoc) {
       // Degenerat yo'l (delta=0, yoki userId/org konteksti yo'q): store-darajani
       // ergashtiradigan hujjat yo'q ⇒ per-cell balansni to'g'ridan-to'g'ri yozamiz.
-      if (Number(qty) === 0) {
+      // ⚠️ Bu yerda YAKUNIY qoldiq (`finalQty`) yoziladi, kiritilgan `qty` emas —
+      // aks holda `add` rejimi hujjatsiz shoxda jimgina MUTLAQ yozuvga aylanardi
+      // (26 + 100 ⇒ 100). Nol-shox ham `finalQty` ga qaraydi: `add` + qty 0
+      // qatorni o'chirmasligi kerak.
+      if (finalQty === 0) {
         await this.prisma.client.stockByCell.deleteMany({
           where: { accountId, storeId, cellId, assortmentKind: 'product', assortmentId },
         });
@@ -486,8 +501,15 @@ export class StoreAddressService {
               assortmentId,
             },
           },
-          create: { accountId, storeId, cellId, assortmentKind: 'product', assortmentId, qty },
-          update: { qty },
+          create: {
+            accountId,
+            storeId,
+            cellId,
+            assortmentKind: 'product',
+            assortmentId,
+            qty: String(finalQty),
+          },
+          update: { qty: String(finalQty) },
         });
       }
     }
@@ -524,7 +546,16 @@ export class StoreAddressService {
         stockDoc = { type: 'loss', name: doc?.name ?? '' };
       }
     }
-    return { cellId, assortmentId, qty: String(qty), stockDoc };
+    // `qty` — YAKUNIY qoldiq (ikkala rejimda ham), `previousQty` — sanashdan
+    // oldingi qoldiq. Additiv: eski iste'molchilar faqat `qty` ni o'qiydi.
+    return {
+      cellId,
+      assortmentId,
+      qty: String(finalQty),
+      previousQty: String(oldQty),
+      mode,
+      stockDoc,
+    };
   }
 
   /**
