@@ -1423,7 +1423,11 @@ function SalesScreen({ session }: { session: CurrentSession }) {
                         </span>
                       </div>
                       <div className="mt-0.5 flex items-center gap-2 text-xs text-[var(--ms-text-muted)]">
-                        <span>{sale.session.cashier.name}</span>
+                        {/* Server include'i buni kafolatlaydi (qo'riqchi:
+                            api → retail-sale-list-contract.test.ts), lekin
+                            kassir ismi — kosmetik maydon: u yetib kelmasa
+                            butun POS ekrani oq bo'lib qolmasin. */}
+                        <span>{sale.session.cashier?.name ?? ''}</span>
                         {sale.agent && (
                           <>
                             <span>·</span>

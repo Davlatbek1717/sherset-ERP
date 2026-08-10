@@ -727,8 +727,6 @@ qoldi** — u parallel sessiyaning `apps/web/src/app/(app)/page.tsx` fayli (MK40
 
 ---
 
----
-
 ### MK18 — Xato narx nazorati ☑ HISOBOT (2026-08-09)
 **Bo'lim/blok:** 4M §8.1/4 · **Ustuvorlik:** P2 · **Bog'liqlik:** MK11 (narx o'zgarishi nazorati)
 **Qamrov:** shubhali narx aniqlash — tan narxdan past · optomdan past · o'rtachadan keskin farq ·
@@ -4594,6 +4592,7 @@ ombor, birinchi oy ekranda «reja qo'yilmagan» bo'lib ko'rinadi.
 - Prisma `generate` da `EPERM: rename query_engine-windows.dll.node` chiqdi (boshqa jarayon DLL'ni
   ushlab turgan). TS klient TO'LIQ generatsiya bo'lgan (`salesPlan` delegati bor), engine binary
   esa o'zgarmagan ⇒ ta'sir yo'q; typecheck va 10 500+ test buni tasdiqladi.
+
 
 ## Faza MK40 — 4-Menejer **Phase-2 QA** (ruxsatlar) (sana: 2026-08-10)
 

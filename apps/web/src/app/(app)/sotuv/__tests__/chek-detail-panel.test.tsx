@@ -82,6 +82,27 @@ describe('Cheklar ro‘yxati', () => {
     expect(await screen.findByText(/Bu smenada hali sotuv yo.q/)).toBeInTheDocument();
   });
 
+  it('server `session.cashier` yubormasa ham ro‘yxat yiqilmaydi (2026-08-10 hodisasi)', async () => {
+    // Prod'da `list()` include'ida `cashier` yo'q edi ⇒ `cashier.name` o'qish
+    // butun sahifani error-boundary'ga tashlardi. Ildiz server tomonda
+    // tuzatildi; bu — FE ning ikkinchi qatlami (ism yo'q, ekran tirik).
+    const noCashier = SALE_ROW({
+      state: 'posted',
+      sumMinor: '1800000',
+      agent: { id: 'cp-1', name: 'Usta Vali' },
+      session: { cashDesk: { name: 'Asosiy kassa', currency: 'UZS' } },
+    });
+    vi.mocked(api.get).mockImplementation(
+      router(salesRoutes([{ match: /limit=100/, value: { items: [noCashier], total: 1 } }])),
+    );
+    const user = userEvent.setup();
+    renderWithProviders(<SotuvPage />);
+
+    await user.click(await screen.findByRole('button', { name: /^Cheklar/ }));
+    const row = await screen.findByRole('button', { name: /Usta Vali/ });
+    expect(norm(row.textContent)).toContain('18 000,00 сум');
+  });
+
   it('chek qatori summa, kassir, mijoz va pozitsiyalar sonini ko‘rsatadi', async () => {
     const user = userEvent.setup();
     renderWithProviders(<SotuvPage />);

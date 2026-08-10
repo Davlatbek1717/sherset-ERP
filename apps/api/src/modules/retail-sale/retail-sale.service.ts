@@ -379,6 +379,11 @@ export class RetailSaleService {
             // currency drives the money-cell formatting on the list (the till
             // may not be UZS) — fetched so the FE never hard-codes a suffix.
             cashDesk: { select: { id: true, name: true, currency: true } },
+            // Kassir nomi — POS «Cheklar» tabi har qatorda shuni chizadi
+            // (`sotuv/page.tsx` → `sale.session.cashier.name`). U yo'q bo'lsa
+            // sahifa error-boundary'ga yiqiladi; qo'riqchi:
+            // retail-sale-list-contract.test.ts.
+            cashier: { select: { id: true, name: true } },
           },
         },
         agent: { select: { id: true, name: true } },

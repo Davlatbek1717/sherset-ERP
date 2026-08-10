@@ -8,8 +8,8 @@
  * «Печать → Товарный чек». Print isolation mirrors ReceiptPrintPortal.
  */
 
-import { ruAmountWords } from '@/lib/ru-amount-words';
-import { useTranslations } from 'next-intl';
+import { amountInWords } from '@moysklad/money';
+import { useLocale, useTranslations } from 'next-intl';
 import { createPortal } from 'react-dom';
 
 export interface CustomerReceiptPosition {
@@ -61,6 +61,10 @@ export function CustomerReceiptPortal({
   onClose?: () => void;
 }) {
   const t = useTranslations('pages.pickLists');
+  // Summa so'z bilan — interfeys tiliga ergashadi (`tovar-chek.tsx` bilan bir
+  // intizom). Ilgari `ruAmountWords()` qattiq-kodlangan edi va o'zbek
+  // interfeysida ham mijozga ruscha yozuv chiqardi.
+  const wordsLocale = useLocale() === 'uz' ? 'uz' : 'ru';
   if (typeof document === 'undefined' || !data) return null;
 
   const doPrint = () => {
@@ -194,7 +198,7 @@ export function CustomerReceiptPortal({
           {t('receipt_items_sum', { n: data.positions.length, sum: money(itogoMinor, true) })}
         </div>
         <div className="font-bold text-[11px]" data-test-id="creceipt-words">
-          {ruAmountWords(itogoMinor)}
+          {amountInWords(itogoMinor, 'UZS', wordsLocale)}
         </div>
 
         <div className="mt-4 border-black border-t pt-1 font-bold text-[11px] italic">
