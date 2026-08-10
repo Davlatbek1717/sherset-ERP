@@ -27,10 +27,11 @@ describe('posLogin', () => {
     });
     vi.stubGlobal('fetch', fetchMock);
     await posLogin(CREDS, '4321');
-    const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    const body = JSON.parse(init.body as string);
     expect(body).toEqual({ deviceId: 'dev-1', deviceSecret: 'x'.repeat(64), pin: '4321' });
     // Cookie'lar kerak: refresh/media shu orqali o'rnatiladi.
-    expect(fetchMock.mock.calls[0][1].credentials).toBe('include');
+    expect(init.credentials).toBe('include');
     // Qurilma NOMI serverga yuborilmaydi — sxema (PosLoginSchema) uni kutmaydi.
     expect(body.name).toBeUndefined();
   });
