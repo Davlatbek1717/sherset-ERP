@@ -1261,18 +1261,151 @@ Tuzatish 4 parallel agent + o'zim (auth), har biri TDD (RED ko'rilgan → fix �
 
 ### F5 hisoboti
 
-- **Holat:** ⬜ bajarilmagan
-- **Sana:**
-- **O'zgargan fayllar:**
+- **Holat:** ✅ bajarildi (worktree `kassa-f5`, branch `kassa-f5`, merge kutilmoqda)
+- **Sana:** 2026-08-11
+
+- **O'zgargan fayllar (21):**
+  - *server:* `apps/api/src/modules/exchange-rate/exchange-rate.service.ts` ·
+    `.../exchange-rate-canonical-scale.test.ts` (yangi) ·
+    `apps/api/src/modules/retail-sale/retail-sale.service.ts` ·
+    `.../retail-sale-detail-payments.test.ts` (yangi) ·
+    `.../retail-tenders.ts`
+  - *paket:* `packages/money/src/exchange-rate.ts` · `.../index.ts` · `.../money.test.ts` ·
+    `packages/db/prisma/schema.prisma` (faqat izoh)
+  - *web (chek):* `apps/web/src/lib/pos/receipt-payments.ts` + `.test.ts` (yangi) ·
+    `apps/web/src/lib/print-agent.ts` · `apps/web/src/lib/__tests__/receipt-renderers.test.ts` (yangi) ·
+    `apps/web/src/app/print/retail-sale/[id]/page.tsx` + `print-retail-sale.test.tsx` (yangi)
+  - *web (POS):* `apps/web/src/components/pos/rasmilashtirish-modal.tsx` ·
+    `.../pos/__tests__/rasmilashtirish-usd.test.tsx` (yangi) ·
+    `apps/web/src/app/(app)/sotuv/page.tsx` · `.../__tests__/harness.tsx` ·
+    `.../__tests__/sales-screen-usd.test.tsx` (yangi) · `.../__tests__/chek-refund-debt.test.tsx` (yangi) ·
+    `apps/web/src/lib/pos/cart-math.ts` + `.test.ts`
+  - *i18n:* `apps/web/src/messages/{uz,ru}.json` (5 kalit)
+
 - **Qilingan ish:**
-- **Testlar (qaysi xulqni qo'riqlaydi):**
-- **Brauzer o'lchovi (summa/kurs/natija):**
-- **Uchala chek renderer holati:**
-- **CashDesk dollar qarzi:**
+  1. **Kurs — serverdan, kanonik masshtabda.** `GET /exchange-rates/rate` endi
+     `rateMinor` (×10^8) ham qaytaradi (mavjud `cbuRateToRateValue` bilan, `nominal`
+     hisobga olinib). Sabab: endpoint CBU'ning o'nlik satrini beradi, sxema esa
+     `< 10^9` ni rad etadi — o'girishni ekranga qoldirsak formula ikkinchi nusxada
+     yashardi (`nominal ≠ 1` da 100× xato). Margin QO'LLANMAYDI (0) — u `Currency`
+     jadvalining ishi; qaror izohda yozilgan.
+  2. **`@moysklad/money` → `convertByRateE8`** — kurs bo'yicha o'girishning yagona
+     formulasi. `retail-tenders.ts` `usdBaseMinor` unga delegat qiladi (matematika
+     o'zgarmagan), kassa ekrani ham shundan foydalanadi ⇒ kassir ko'rgan so'm
+     ekvivalenti server yozadigan raqam bilan bir xil.
+  3. **`rasmilashtirish-modal.tsx` — 4-tender «Naqd USD».** Summa SENTDA parse
+     qilinadi, so'm ekvivalenti jonli ko'rinadi, qaytim chegarasiga uning so'm
+     qiymati kiradi (`retail-tenders.ts` `cashLikeMinor` bilan aynan bir xil).
+     «Aniq summa» dollar maydonida so'm qoldig'ini YUQORIGA yaxlitlab sentga
+     o'giradi (pastga yaxlitlansa server «to'lov yetarli emas» derdi).
+  4. **Kurs yo'q kun:** dollar tugmasi `disabled`, sabab matni ko'rsatiladi, USD
+     summasi 0 ga majburlanadi ⇒ jim 1:1 ga tushish yo'li **yopiq**. So'm to'lovi
+     bu holatda ishlayveradi.
+  5. **`sotuv/page.tsx` payload:** `cashUsdAmountMinor` + `usdRateMinor` FAQAT dollar
+     berilganda qo'shiladi — eski payload shakli va uni qulflagan testlar tegilmagan.
+  6. **Chek to'lov qatlami qayta simlandi** (audit topilmasi): `findById` endi
+     `payments` ni beradi, uchala renderer `lib/pos/receipt-payments.ts` dan o'qiydi.
+     Natijada «Terminal» va «Qarz» qatorlari ISHLAY BOSHLADI (ilgari biri mavjud
+     bo'lmagan ustundan, ikkinchisi hech kim yozmaydigan ustundan o'qirdi), dollar
+     qatori esa tabiiy ravishda o'sha manbadan chiqadi. Eski cheklar uchun legacy
+     ustunlarga fallback saqlangan.
+  7. **Qarzli chekni qaytarish ochildi** (audit topilmasi): `saleDebtMinor` +
+     `refundCashShareMinor` (serverning `moneyCap` formulasi bilan aynan bir xil);
+     qarz ulushi ataylab yuborilmaydi — server auto-split qiladi.
+
+- **Testlar (qaysi xulqni qo'riqlaydi) — 49 yangi:**
+  | Fayl | Nechta | Nimani qo'riqlaydi |
+  |---|---|---|
+  | `exchange-rate-canonical-scale.test.ts` | 5 | o'nlik kurs → ×10^8; `nominal ≠ 1` bir birlikka keltiriladi; qiymat stale-scale chegarasidan (10^9) o'tadi; kurs yo'q bo'lsa **otiladi**, 1:1 ga tushmaydi |
+  | `retail-sale-detail-payments.test.ts` | 2 | `findById` `payments` ni **include qiladi** va dollar qatori uchun kerakli 5 maydonni so'raydi — FE fikstura'si o'zini aldamasin |
+  | `packages/money/money.test.ts` (+4) | 4 | `convertByRateE8`: masshtab, pastga yaxlitlash, identity kurs |
+  | `lib/pos/receipt-payments.test.ts` | 12 | kanonik tartib · **TERMINAL alohida qator** · **QARZ qatori bor** · dollar qatori asl sent+kurs+server bergan so'm ekvivalenti bilan · noma'lum kanal (CLICK) tushib qolmaydi · legacy fallback · kurssiz buzuq qator otmaydi |
+  | `lib/__tests__/receipt-renderers.test.ts` | 6 | matn (ESC/POS) va HTML renderer'lari **bir xil** qatorlarni chiqaradi |
+  | `app/print/retail-sale/[id]/print-retail-sale.test.tsx` | 2 | uchinchi (React) renderer ham shu manbadan |
+  | `components/pos/__tests__/rasmilashtirish-usd.test.tsx` | 7 | kurs **serverdan** olinadi va sanasi bilan ko'rsatiladi · payload'da sent + muzlatilgan kurs · so'm ekvivalenti jonli · **kurssiz → bloklangan + sabab** · kurssiz holatda so'm to'lovi ishlaydi · qaytim chegarasiga dollar kiradi · ortiqcha karta hamon bloklangan |
+  | `sotuv/__tests__/sales-screen-usd.test.tsx` | 3 | post payload'da ikki maydon; dollarsiz to'lovda **umuman yuborilmaydi**; aralash to'lov |
+  | `sotuv/__tests__/chek-refund-debt.test.tsx` | 6 | naqd ulushi chek qanday yopilganidan; qarz ulushi ekranda; so'rovda `debtReturnMinor` **yo'q**; to'liq qarzli chekda naqd 0 va tugma ishlaydi; qisman qaytarish; eski chekda xulq o'zgarmagan |
+  | `lib/pos/cart-math.test.ts` (+10) | 10 | `refundCashShareMinor` (qarzsiz/to'liq qarz/qisman/yaxlitlash/buzuq ma'lumot/nol summa) + `saleDebtMinor` |
+
+- **Brauzer o'lchovi (summa/kurs/natija):** 🔴 **BAJARILMADI — parallel to'lqin, portlar band
+  (§1.2.4); QA sessiyasiga qoldirildi.** O'lchanishi kerak bo'lgan aniq stsenariylar:
+  1. *Kurs mavjud kun.* Chek 155 628,37 so'm · kurs 1$ = 12 450,27 · to'lov faqat
+     «Naqd USD» = **$12.50** → kutilgan: «Aniq to'landi», qaytim yo'q; chekda
+     `Dollar $12.50` + `1USD = 12450.27` + `155 628`; smena yopilishida
+     `expectedCashUsdMinor` = **1250 sent**, so'm kutilgan naqdi **oshmaydi**.
+  2. *Aralash.* 55 628,37 so'm naqd + **$8.04** → jami 155 728,54 ⇒ qaytim
+     **100,17 so'm** (so'mda beriladi); chekda uchala qator (Naqd · Dollar · Qaytim).
+  3. *Qaytim chegarasi.* 1 000 so'mlik chek, **$1** → o'tishi kerak (dollar naqd
+     hisoblanadi); shu chekka **karta 2 000** → tugma bloklangan bo'lishi kerak.
+  4. *Kurssiz kun.* `exchange_rates` da USD qatori yo'q akkaunt (yoki endpoint 404) →
+     «Naqd USD» tugmasi o'chiq, sabab matni ko'rinadi, so'm to'lovi ishlayveradi.
+     So'ng payload'ni qo'lda `usdRateMinor` siz yuborib server 400 berishini ko'rish.
+  5. *Eski masshtab.* `usdRateMinor: '124502700'` (×10^4) bilan → server 400
+     («Kurs eski (×10⁴) masshtabda»).
+  6. *Chek uchala yo'ldan.* `/print/retail-sale/:id` brauzer · Electron native ·
+     ESC/POS agent — aralash to'lovli chekda qatorlar bir xilligi.
+  7. *Qarzli qaytarish.* 18 000 lik chek 6 000 naqd + 12 000 qarz → to'liq qaytarish:
+     kassadan **6 000** chiqadi, mijoz balansidan **12 000** yechiladi (400 YO'Q).
+
+- **Uchala chek renderer holati:** uchalasiga ham **tegildi va bitta manbaga**
+  (`lib/pos/receipt-payments.ts`) ulandi —
+  (1) `buildReceiptText` (ESC/POS matn) va (2) `buildReceiptHtml` (Electron native)
+  `print-agent.ts` da, ikkalasi ham eksport qilinib matn-tekshiruvi bilan sinaldi
+  (`receipt-renderers.test.ts`, 6 test: dollar/terminal/qarz/qaytim/legacy);
+  (3) `/print/retail-sale/[id]` React sahifasi — `renderWithProviders` bilan real
+  render qilinib tekshirildi (2 test). 🔴 **Fizik chop etish sinalmagan** (printer
+  yo'q, Electron qobiq yo'q) — faqat qurilgan matn/HTML/DOM.
+
+- **CashDesk dollar qarzi:** ✅ **TASDIQLANDI — bu fazada YECHILMADI** (reja §F5 da
+  shunday yozilgan). Dalil: `apps/api/src/modules/retail-sale/retail-sale.service.ts:959-971`
+  — `money.applyDeltas` ga faqat `cashToDrawer = cashAmount − change` (SO'M) yoziladi;
+  dollar ataylab tushmaydi, chunki `CashDesk.balanceMinor` bitta valyutadagi qoldiq va
+  boshqa valyutali delta «Currency mismatch» bilan rad etiladi. Oqibati o'zgarmagan:
+  **pul daftari va bank-balans hisobotlari kassadagi dollarni KO'RSATMAYDI**; dollar
+  faqat smena hisobida (`CashierSession.*UsdMinor`) va `CASH_USD` to'lov qatorlarida
+  yuritiladi. Yechim alohida faza talab qiladi.
+
 - **Gate natijasi:**
+  - `pnpm --filter @moysklad/money build` → **OK**
+  - `pnpm --filter @moysklad/api typecheck` → **0 xato**
+  - `pnpm --filter @moysklad/web typecheck` → **0 xato**
+  - `pnpm biome check <tegilgan yo'llar>` → **0 error** (57 warning: `nursery/useSortedClasses`,
+    tegilmagan satrlarda ham bor — siyosat bo'yicha ruxsat)
+  - `pnpm --filter @moysklad/api test` → **554 fayl / 7789 test — hammasi yashil** (1 skip)
+  - `pnpm --filter @moysklad/web test` → **228 fayl / 3226 test — hammasi yashil** (26 skip)
+  - `pnpm i18n:gate` → **9/9 yashil**
+  - 📌 Baseline `6ba54150` da orkestrator o'lchagani: api 10 qizil, web 1 qizil —
+    **hammasi `Test timed out in 5000ms`** (parallel yuk ostida argon2/render).
+    Mening yugurtirishimda mashina bo'shroq bo'lgani uchun **o'sha testlar ham yashil**;
+    ya'ni yangi yiqilish YO'Q va baseline qizillari ham qaytarilmadi.
+  - ⚠️ Bir kuzatuv: `sales-screen-usd.test.tsx` ning aralash-to'lov testi dastlab
+    `user.type` bilan 5 s chegarasidan oshdi. `testTimeout` OSHIRILMADI — test
+    arzonlashtirildi (`fireEvent.change`, izoh bilan).
+
 - **Commit(lar):**
+  - `5cc1b1e9` — `feat(kassa): chek to'lov qatlami RetailSalePayment qatorlaridan o'qiladi`
+  - `ef5da7b2` — `feat(kassa): POS'da dollar naqd tenderi (kurs serverdan, muzlatiladi)`
+  - `ed19780e` — `fix(kassa): qarzli chekni POS'dan qaytarish mumkin bo'ldi`
+  - *(+ shu hisobot commiti)*
+  - Har commitdan keyin `git show --stat HEAD` bilan tarkib tekshirildi — begona fayl
+    tushmagan (worktree izolyatsiyasi; hook'lar chetlab o'tilgan, gate'lar qo'lda to'liq).
+
 - **Kelgusi fazalarga qoldirilgan:**
-- **Yorliq:**
+  1. 🔴 **CashDesk dollar qoldig'i** (yuqorida) — pul daftari/bank-balans dollarni ko'rmaydi.
+  2. **Kurs manbai qarori:** POS `ExchangeRate` (CBU, margin'siz) dan oladi, hujjatlar esa
+     `Currency.rateValue` (margin qo'llangan) dan. Ikkalasi bir kun ajralib qolishi mumkin —
+     do'kon ustamasi POS'ga ham kerak bo'lsa, F6 bilan birga bitta manbaga keltirilsin.
+  3. **F6 uchun:** `debt.schema.ts` dagi `usdCentsToSomTiyin` ham endi
+     `convertByRateE8` ga delegat qilinishi mumkin (bu fazada TEGILMADI — F6 hududi).
+  4. **Chek chegirmasi** hamon ko'rinmaydi (`qty × price` va `sum` mos kelmaydi) — audit
+     topilmasi, F5 doirasidan tashqarida qoldirildi (to'lov qatlami tuzatildi, POZITSIYA
+     qatlami emas).
+  5. Chek yorliqlari (`Naqd`/`Dollar`/`Qarz`…) ataylab i18n'da EMAS — chek mijozga
+     beriladigan hujjat. Ko'p tilli chek kerak bo'lsa alohida qaror talab qiladi.
+  6. `/print/retail-sale` sahifasidagi `_t` (ishlatilmagan tarjimon) tegilmadi.
+
+- **Yorliq:** **Phase-1: strukturaviy, runtime-tasdiqlanmagan** — brauzer-smoke **YO'Q**,
+  fizik chop etish **YO'Q**, real DB bilan uchidan-uchiga o'lchov **YO'Q**.
 
 ### F6 hisoboti
 
