@@ -45,10 +45,17 @@ pnpm --filter @moysklad/money build          # avval — xotira: «money dist es
 pnpm --filter @moysklad/api typecheck        # 0 xato
 pnpm --filter @moysklad/web typecheck        # 0 xato
 pnpm biome check <faqat tegilgan yo'llar>    # 0 xato
-pnpm --filter @moysklad/api vitest run       # API testlari — MAJBURIY
-pnpm --filter @moysklad/web vitest run       # web testlari — MAJBURIY
+pnpm --filter @moysklad/api test             # API testlari — MAJBURIY
+pnpm --filter @moysklad/web test             # web testlari — MAJBURIY
 pnpm i18n:gate                               # UI matni tegilgan bo'lsa
 ```
+
+⚠️ **Buyruq shakli (2026-08-11 tuzatildi):** ilgari bu yerda `pnpm --filter X vitest run`
+turardi — pnpm buni *script* nomi deb qidiradi va
+`ERR_PNPM_RECURSIVE_RUN_NO_SCRIPT: None of the selected packages has a "vitest" script`
+xatosi bilan **exit 1** qaytaradi. Ya'ni gate «qizil» ko'rinadi, aslida bitta ham test
+yugurmaydi. To'g'ri shakl — `test` scripti (`"test": "vitest run"`), bitta faylni
+yugurtirish uchun esa `pnpm --filter @moysklad/api exec vitest run <yo'l>`.
 
 🔴 **API testlarini o'tkazib yuborish TAQIQ** — xotira: «web-only gate `apps/api`
 qo'riqchilarini o'tkazib yuboradi» (bir faza 9 yiqilishni jim qoldirgan).
@@ -95,11 +102,36 @@ keyin tahrirla (xotira: «grep maydonni noto'g'ri modelga bog'ladi»).
 
 ---
 
+## 0.9 AUDIT-TO'LQINI (2026-08-11) — bajarilgan va qolgan
+
+Butun kassa yuzasi 5 yo'nalishda auditdan o'tkazildi (POS FE · retail-sale server ·
+cashier-session/smena · qarz+chop etish · auth/kiosk). **21 tasdiqlangan bug tuzatildi**
+(TDD, gate yashil) — tafsilot §3 «Audit-to'lqini hisoboti» da.
+
+🔴 **F0 fazasi BAJARILDI** shu to'lqinda (kiosk-allowlist) — uni qayta bajarma.
+
+**Auditda topilgan, ATAYLAB qoldirilgan ishlar — tegishli fazalarga biriktirildi:**
+
+| Topilma | Qaysi fazada | Nega hozir emas |
+|---|---|---|
+| Chekda «Qarz»/«Terminal»/USD qatorlari YO'Q — uchala renderer `RetailSalePayment` qatorlarini o'qimaydi, eski legacy ustunlarni o'qiydi | **F5** (kengaytirildi) | Chek qatlamini qayta simlash — F5 ning dollar ishi bilan bir joyda qilinsa, uchala renderer bir marta tegiladi |
+| Qarzga sotilgan chekni POS'dan qaytarib bo'lmaydi (FE har doim to'liq naqd so'raydi → server 400) | **F5** (kengaytirildi) | O'sha to'lov-qatlami ishi |
+| POS qarzga sotuv `Debt` reyestriga tushmaydi (faqat `CounterpartyBalance`) ⇒ «Qarz to'lovi» oynasida ko'rinmaydi | **F9** (kengaytirildi) | Ikki daftarni uchrashtirish — mijoz bilan ishlash fazasining yadrosi |
+| Kasr miqdorli («1.5 kg») tayyor chek POS'ni yiqitadi (`BigInt(1.5)`) | **F8** (kengaytirildi) | `CartLine.quantity` tipini o'zgartirish — zakaz/savat qayta simlash bilan bir joyda |
+| Savat footeri chegirmani jamiga bir marta qo'llaydi, server esa har qatorga (tiyin farqi) | **F8** (kengaytirildi) | `cart-math.ts` da server-mos funksiya BOR (`discountedCartTotalMinor`), sahifa uni ishlatmaydi |
+| Valyutali kassa (`CashDesk.currency ≠ UZS`) drawer-hujjatlari so'm formulasiga sent bilan kiradi | **F6** (kengaytirildi) | USD ishi bilan bir joyda |
+| USD naqd qarz to'lovi so'm-expected'ga qo'shiladi (valyuta filtri yo'q) | **F6** (kengaytirildi) | O'sha |
+| `escalateOverdue`/`markStale` (smena qabuli) HECH QAYERDAN chaqirilmaydi — o'lik avtomatika | **yangi F13** | Cron/wiring ishi, kassa oqimidan mustaqil |
+| `markReady` poygasi: ikki omborchi parallel tugatsa chek `picking`da qolishi mumkin (o'z-o'zidan davolanadi) | **F12 QA** | Past zarar, QA'da kuzatiladi |
+| Mijoz dublikati (kassir bir mijozni ikki marta ochadi) | **F9** | Operatsion xavf; qidiruv kuchaytirilganda tabiiy kamayadi |
+
+---
+
 ## 1. Fazalar xaritasi
 
 | Faza | Funksiya | Old shart | Hajm |
 |---|---|---|---|
-| **F0** | Kiosk-allowlist buglari (kassir smena ocholmaydi) | — | S |
+| ~~**F0**~~ | ~~Kiosk-allowlist buglari~~ ✅ **BAJARILDI** (2026-08-11 audit-to'lqini) | — | S |
 | **F1** | `/kassa-kirish` — web PIN ekrani | F0 | M |
 | **F2** | Electron kiosk o'rami (`desktop/`) | F1 | L |
 | **F3** | Exe'da chop etish + mijoz-ekran | F2 | M |
@@ -111,6 +143,7 @@ keyin tahrirla (xotira: «grep maydonni noto'g'ri modelga bog'ladi»).
 | **F9** | Mijoz kartasi POS'da (saldo · tarix · zakaz · telefon-qidiruv) | F7 | M |
 | **F10** | Avans (oldindan to'lov) qabul qilish | F9 | M |
 | **F11** | Z-hisobot chop sahifasi (`/print/z-report`) | — | S |
+| **F13** | Smena-qabul avtomatikasi tirik emas (audit) | — | S |
 | **F12** | Phase-2 QA: real kassa kompyuterida | hammasi | L |
 
 **Mustaqil shoxlar:** `F1→F2→F3→F4` (exe) va `F5→F6`, `F7→F8→F9→F10` (funksiya) bir-biriga
@@ -123,11 +156,11 @@ mumkin. Keyingi to'lqin **faqat oldingi to'lqin to'liq merge bo'lgach** boshlana
 
 | To'lqin | Bir vaqtda beriladigan fazalar | Nega birga mumkin |
 |---|---|---|
-| **1** | F0 · F1 · F5 · F11 | F0=`kiosk-policy` · F1=`kassa-kirish` (yangi papka) · F5=`sotuv`+to'lov modali · F11=`print/z-report` (yangi papka) — kesishma faqat `messages/*.json` (har xil kalitlar, merge oson) |
+| **1** | ~~F0~~ · F1 · F5 · F11 | F0 BAJARILDI · F1=`kassa-kirish` (yangi papka) · F5=`sotuv`+to'lov modali · F11=`print/z-report` (yangi papka) — kesishma faqat `messages/*.json` (har xil kalitlar, merge oson) |
 | **2** | F2 · F6 · F7 | F2=`desktop/` (yangi) · F6=`debt` moduli · F7=`kiosk-policy`+`sotuv` zakaz tabi (F0 va F5 allaqachon merge bo'lgan) |
 | **3** | F3 · F8 | F3=`desktop/` chop etish · F8=`retail-sale` servis + `sotuv` to'lov oqimi |
 | **4** | F4 · F9 | F4=installer/`deploy/` · F9=mijoz paneli (`sotuv`) — F8 merge bo'lgan |
-| **5** | F10 | avans (F6+F9 poydevorida) — yolg'iz |
+| **5** | F10 · F13 | avans (F6+F9 poydevorida) · F13=`shift-acceptance` cron (kesishmaydi) |
 | **6** | F12 | QA — hammasi merge bo'lgach, yolg'iz |
 
 🔴 **F8 va F9 ni bir to'lqinda BERMANG** — ikkalasi ham `sotuv/page.tsx` ni og'ir tahrirlaydi.
@@ -188,7 +221,7 @@ Hozir ikkita yo'l allowlist'dan tushib qolgan va prodda 403 beradi.
    (`/admin/` prefiksi bo'yicha butun `apps/web/src/app/(app)/sotuv/` va `components/pos/`) —
    topilganlarini ham allowlist'ga aniq yo'l sifatida qo'sh yoki hisobotda qayd et.
 
-**Testlar:** `pnpm --filter @moysklad/api vitest run src/modules/auth/kiosk-policy.test.ts`
+**Testlar:** `pnpm --filter @moysklad/api exec vitest run src/modules/auth/kiosk-policy.test.ts`
 + to'liq gate (§0.4).
 
 **Qabul mezoni:**
@@ -206,7 +239,7 @@ Qoidalar (buzilmaydi):
 - F0 tugagach TO'XTA. Keyingi fazani BOSHLAMA.
 - TDD: avval yiqiladigan test, yiqilishini ko'r, keyin implementatsiya.
 - To'liq gate: money build → api typecheck → web typecheck → biome (tegilgan yo'llar) →
-  api vitest run → web vitest run. API testlarini o'tkazib yuborma.
+  api test → web test. API testlarini o'tkazib yuborma.
 - git add faqat aniq fayllar; commitdan keyin git show --stat HEAD.
 - Yakunda shu faylning §3 dagi «F0 hisoboti» shablonini Edit bilan to'ldir (Write BILAN
   BUTUN FAYLNI QAYTA YOZMA).
@@ -480,13 +513,27 @@ Hisobotda majburiy: (1) o'zgargan fayllar, (2) installer yig'ildimi (buyruq + na
 4. **Chek — UCHALA renderer** (xotira: «ombor cheki uch renderer — biri o'zgarsa qolgani jimgina
    eskiradi»): `print-agent.ts` `buildReceiptText` (~:414-420) va `buildReceiptHtml` (~:483-487)
    + `apps/web/src/app/print/retail-sale/…` React sahifasi — «Dollar (kurs bilan)» qatori.
-   ⚠️ `ReceiptSale` interfeysi hozir `RetailSalePayment` qatorlarini umuman o'qimaydi, faqat
-   `RetailSale` ustunlarini — bu qatlamni ham kengaytirish kerak.
-5. **Kurs yo'q kun:** server 400 beradi; FE tushunarli xabar ko'rsatadi va USD maydonini
+   🔴 **AUDIT (2026-08-11) — bu band kengaytirildi.** Chek qatlami tubdan buzuq:
+   `ReceiptSale` `RetailSalePayment` qatorlarini UMUMAN o'qimaydi, faqat eski legacy
+   ustunlarni. Oqibatlari **o'lchangan**:
+   - «Qarz» qatori **o'lik** — `advancePaymentSumMinor` ga hech kim yozmaydi (grep: 0 hit).
+     Qarzga sotilgan chekda 60 000 qayerdaligi haqida bironta qator yo'q.
+   - «Terminal» qatori **hech qachon chiqmaydi** — `terminalAmountMinor` `RetailSale` da
+     mavjud bo'lmagan ustun; terminal puli `legacyTotals` orqali «Karta» bo'lib ko'rinadi.
+   - Chegirma chekda **ko'rinmaydi**, `qty × price` va `sum` bir-biriga mos kelmaydi
+     (`priceMinor` chegirmasiz, `sumMinor` chegirmali) — mijoz uchun izohsiz nomuvofiqlik.
+   ⇒ Bu fazada chek to'lov qatlami **`RetailSalePayment` qatorlaridan o'qishga o'tkaziladi**
+   (bitta manba), USD qatori esa tabiiy ravishda o'sha yerdan chiqadi. Uchala renderer birga.
+5. **Qarzli chekni qaytarish (AUDIT)** — hozir POS'dan **mumkin emas**:
+   `sotuv/page.tsx:276-291` refundda har doim to'liq naqd so'raydi
+   (`cashAmountMinor` = butun summa), server esa `retail-refund-validation.ts:316-319`
+   bilan «payout > moneyMaxMinor» deb 400 beradi (xom inglizcha matn). FE `debtReturnMinor`
+   ni hisoblab yuborishi kerak (server auto-split'i faqat maydon berilmaganda ishlaydi).
+6. **Kurs yo'q kun:** server 400 beradi; FE tushunarli xabar ko'rsatadi va USD maydonini
    bloklaydi (jim 1:1 ga tushish TAQIQ).
-6. **Eskirgan izohni yangila:** `schema.prisma:8489-8498` — «CASH_USD rejalashtirilgan, hali
+7. **Eskirgan izohni yangila:** `schema.prisma:8489-8498` — «CASH_USD rejalashtirilgan, hali
    ULANMAGAN» endi noto'g'ri.
-7. i18n: yangi matnlar `messages/{ru,uz}.json`.
+8. i18n: yangi matnlar `messages/{ru,uz}.json`.
 
 **Testlar:**
 - FE: modal komponent testi (USD kiritilganda payload maydonlari, kurs ko'rsatilishi, kurssiz
@@ -558,9 +605,20 @@ Hisobotda majburiy: (1) o'zgargan fayllar, (2) qaysi test qaysi xulqni qo'riqlay
 4. `debt-payment-dialog.tsx` — UZS/USD tanlovi, kurs avtomatik (`/exchange-rates/rate`),
    so'm ekvivalenti jonli, kurssiz kunda USD bloklanadi.
 5. PKO cheki USD qatorini ko'rsatadi (F5 dagi chek qatlamlari bilan bir uslubda).
-6. Smena hisobiga ta'siri **o'lchanadi**: naqd USD qarz to'lovi `expectedCashUsdMinor` ga
-   tushishi kerakmi — kod bilan tekshir va hisobotda ayt (taxmin qilma).
-7. i18n: yangi matnlar ru+uz.
+6. 🔴 **Smena hisobiga ta'siri — AUDIT o'lchadi, TUZATISH SHU FAZADA:**
+   `cashier-session.service.ts:425-427` naqd qarz to'lovlarini **valyuta filtrisiz** sanaydi
+   (`method:'cash'`), `DebtPayment.amountMinor` esa har doim so'm ekvivalentida. Ya'ni
+   `currency:'USD'` to'lovda yashiqqa **dollar** tushadi, so'm-expected esa oshadi va
+   USD-expected (`collectUsdCashInputs` faqat `RetailSalePayment CASH_USD` o'qiydi) uni
+   ko'rmaydi ⇒ soxta so'm kamomadi + hisobga olinmagan dollar. Bugun FE `currency`
+   yubormagani uchun bu **uxlab yotgan mina** — F6 uni uyg'otadi, shuning uchun
+   valyuta ajratmasi shu fazada yopiladi.
+7. 🟠 **Valyutali kassa (AUDIT):** `CashDesk.currency ≠ UZS` bo'lsa drawer-in/out va cash-out
+   hujjatlari so'm agregatiga sent bilan kiradi (`cashier-session.service.ts:429-439`
+   valyuta bo'yicha filtrlamaydi, `:554,588,1143` esa hujjatga kassa valyutasini yozadi).
+   Kamida: agregatlarga valyuta filtri; USD-kassa to'liq qo'llab-quvvatlanmasa — ochiq
+   xato bilan bloklash (jim noto'g'ri hisobdan ko'ra).
+8. i18n: yangi matnlar ru+uz.
 
 **Testlar:** schema testi (kurssiz USD → 400, stale-scale → 400) · servis testi (o'girish
 formulasi, daftar simmetriyasi) · dialog komponent testi · to'liq gate + i18n.
@@ -690,7 +748,16 @@ Hisobotda majburiy: (1) o'zgargan fayllar, (2) allowlist'ga qo'shilgan aniq yo'l
    (yig'ish zanjiri `send-to-picking` bilan birlashadimi yoki to'g'ridan-to'g'ri sotiladimi).
    Qaror hisobotda **sabab bilan** yoziladi.
 7. **Qisman to'lov:** `awaiting_payment` da qoladimi — qaror va sabab.
-8. i18n ru+uz.
+8. 🔴 **`CartLine.quantity` tipi (AUDIT) — bu fazada tuzatiladi.** Hozir `number`, server
+   sxemasi esa `Decimal(20,6)` ruxsat beradi (og'irlik tovarlar). Kasr miqdorli «tayyor»
+   chek savatga yuklansa `BigInt(1.5)` **RangeError** otadi va butun POS oq ekranga aylanadi
+   (`sotuv/page.tsx:764`, `:1794`, `cart-math.ts:31`; yuklovchi `:901`). Zakaz pozitsiyalari
+   ham kasr miqdorli bo'lishi mumkin — shuning uchun aynan shu fazada.
+9. 🟡 **Savat footeri ↔ server chegirmasi (AUDIT):** sahifa jamiga bir marta floor-chegirma
+   qo'llaydi (`page.tsx:757`), server har qatorni alohida half-up yaxlitlaydi ⇒ tiyin farqi
+   (ekran ≠ chek). `cart-math.ts:107-111` da server-mos `discountedCartTotalMinor` ALLAQACHON
+   bor, sahifa uni ishlatmaydi — shunga o'tkaziladi.
+10. i18n ru+uz.
 
 **Testlar:** servis testi (`customerOrderId` yoziladi; `paid` zakaz ikkinchi marta to'lanmaydi;
 holat o'tishi) · **concurrency testi** (ikki parallel to'lov — bittasi yutadi) · FE wiring ·
@@ -749,10 +816,22 @@ lekin **hammasi to'lov dialoglari ichida yashiringan** — mijozning umumiy ko'r
    (indeks holatini ham ko'r — xotira: «indeksni so'rov yoqadi, sxema emas»).
 3. **Mijoz ma'lumotini tahrirlash** — faqat telefon va izoh (to'liq karta emas: kiosk chegarasi).
    Allowlist'ga `PATCH/PUT /counterparties/:id` kerak bo'lsa **aniq** qo'shiladi.
-4. **Qaytarish (refund) qarzga ta'siri** — hozirgi xulqni **o'lchab** (qarzga sotilgan chek
-   qaytarilganda qarz kamayadimi) hisobotda ayt. Nuqson topilsa — tuzatish **bu fazada**
-   (mijoz bilan ishlashning bir qismi), lekin avval o'lchov, keyin da'vo.
-5. i18n ru+uz.
+4. 🔴 **IKKI QARZ DAFTARI UCHRASHMAYDI (AUDIT) — bu fazaning YADROSI.**
+   POS'da qarzga sotilgan chek qarzni faqat `CounterpartyBalance` ga yozadi
+   (`retail-sale.service.ts:950-963` — ataylab), POS «Qarz to'lovi» oynasi esa FAQAT
+   `Debt` reyestrini o'qiydi (`pos-debt-payment.service.ts:282-293`). Oqibat **o'lchangan**:
+   kassir 60 000 qarzga sotadi → ertasi kuni mijoz to'lagani keladi → oynada
+   «ochiq qarz yo'q», `pos/pay` 400. **Kassada bu qarzni qabul qilish yo'li umuman yo'q.**
+   Qaror faza boshida (kod bilan asoslab): POS qarz-sotuvi `Debt` yozuvini ham yaratadimi,
+   yoki oyna balansdan o'qiydimi. Ikki «haqiqat» qolmasin.
+5. **Qaytarish (refund) qarzga ta'siri** — hozirgi xulqni **o'lchab** (qarzga sotilgan chek
+   qaytarilganda qarz kamayadimi) hisobotda ayt. Nuqson topilsa — tuzatish **bu fazada**,
+   lekin avval o'lchov, keyin da'vo.
+6. 🟡 **POS summary sanasi (AUDIT):** `pos-debt-payment.service.ts:78` qarzni
+   `nextContactAt ?? createdAt` bo'yicha tartiblaydi, FIFO taqsimot esa (`:349`) faqat
+   `createdAt` bo'yicha ⇒ kassir ko'rgan tartib server yopadigan tartibdan farq qiladi
+   (dialogda kelajakdagi qo'ng'iroq sanasi «qarz sanasi» bo'lib ko'rinadi).
+7. i18n ru+uz.
 
 **Testlar:** panel komponent testlari (saldo/tarix/zakaz bloklari; NULL≠0 farqi — o'lchanmagan
 saldo «0» deb ko'rsatilmasin) · qidiruv testi · allowlist testi · to'liq gate + i18n.
@@ -900,6 +979,58 @@ mos keldimi, (3) NULL holati qanday ko'rsatiladi, (4) brauzer o'lchovi, (5) gate
 
 ---
 
+### F13 — Smena-qabul avtomatikasi tirik emas (audit topilmasi)
+
+**Maqsad:** yopilgan smenalar navbatda abadiy osilib qolmasin.
+
+**Hozirgi holat (AUDIT 2026-08-11, o'lchangan):** `shift-acceptance.service.ts:266` va `:301`
+dagi `escalateOverdue` va `markStale` metodlarini **hech kim chaqirmaydi** (grep: yagona
+ishlatuvchi — o'z test fayllari). `employee-daily-kpi.cron.ts:66` **boshqa** servisning
+(`DailyKpiAcceptanceService`) shu nomli metodini chaqiradi. Bu — «yetim modul = o'lik
+funksiya» bug-klassi (xotira).
+
+Oqibatlari:
+- `SHIFT_ESCALATE_AFTER_DAYS=3` hech qachon ishlamaydi — javobsiz `pending`/`rejected`
+  smenalar navbatda qoladi;
+- `stale` holatiga o'tish yo'q;
+- `force_accept` faqat menejer QO'LDA eskalatsiya qilsagina yetib boriladi.
+
+**Vazifalar:**
+1. Cron/scheduler'ga ulash (mavjud `@nestjs/schedule` naqshi; `employee-daily-kpi.cron.ts`
+   namuna) — **lekin avval** nega ulanmaganini tekshir (ehtimol ataylab kechiktirilgan).
+2. 🔴 Wiring qo'riqchisi: `app-boot.test.ts` yoki shunga o'xshash testda metod haqiqatan
+   chaqirilishini qulfla — aks holda keyingi refactor uni yana yetim qoldiradi.
+3. Eskalatsiya xabari (Telegram/bildirishnoma) kimga ketishini tekshir.
+
+**Qabul mezoni:** 3 kundan oshgan `pending` smena avtomatik eskalatsiya qilinadi
+(soxta soat bilan test), wiring-testi metod chaqirilishini qulflaydi.
+
+<details>
+<summary><b>📋 F13 SESSIYA PROMPTI</b></summary>
+
+```
+docs/superpowers/plans/2026-08-10-kassa-fazalar-ijro-reja.md faylini o'qi.
+§0 (O'ZGARMAS QOIDALAR) va §2 → F13 bo'limini bajarasan. FAQAT F13.
+
+MUHIM: avval `escalateOverdue`/`markStale` nega ulanmaganini tekshir (git log/izohlar) —
+ataylab kechiktirilgan bo'lishi mumkin. Ulashdan oldin xabar-yuborish yo'lini ham ko'r
+(kimga ketadi, spam bo'lmaydimi).
+
+Qoidalar (buzilmaydi):
+- F13 tugagach TO'XTA.
+- TDD: avval yiqiladigan test (soxta soat bilan — Date.now ni mock qil).
+- Wiring qo'riqchisi MAJBURIY: metod haqiqatan chaqirilishini qulflovchi test.
+- To'liq gate: money build → api typecheck → web typecheck → biome → api vitest → web vitest.
+- git add faqat aniq fayllar; commitdan keyin git show --stat HEAD.
+- Yakunda shu faylning §3 dagi «F13 hisoboti» shablonini Edit bilan to'ldir.
+
+Hisobotda majburiy: (1) nega ulanmagan edi (topgan sababing), (2) o'zgargan fayllar,
+(3) wiring qo'riqchisi qanday ishlaydi, (4) testlar, (5) gate, (6) commitlar.
+```
+</details>
+
+---
+
 ### F12 — Phase-2 QA: real kassa kompyuterida
 
 **Maqsad:** hamma fazalarni real muhitda tekshirish va yorliqni «Phase-1» dan
@@ -957,9 +1088,116 @@ buglar ro'yxati (tuzatilgan / qoldirilgan), commitlar.
 > Har faza agenti **faqat o'z blokini** to'ldiradi (`Edit` bilan, `Write` bilan emas).
 > Boshqa faza hisobotiga tegilmaydi.
 
+### Audit-to'lqini hisoboti (2026-08-11) — 21 bug tuzatildi
+
+**Holat:** ✅ bajarilgan · **Yorliq:** Phase-1 (test-tasdiqlangan, **brauzer-smoke YO'Q**)
+
+**Usul:** 5 parallel auditor (POS FE · retail-sale server · cashier-session/smena ·
+qarz+chop etish · auth/kiosk), refute-default; har topilma fayl:qator dalili bilan.
+Tuzatish 4 parallel agent + o'zim (auth), har biri TDD (RED ko'rilgan → fix → GREEN).
+
+#### Tuzatilgan buglar
+
+**Pul yo'qotish / xavfsizlik (eng jiddiy):**
+1. 🔴 **Vozvrat zanjiri — cheksiz pul generatori.** `refund()` originalning o'zi vozvrat-mirror
+   ekanini tekshirmasdi; mirror `posted` bo'lgani va payment-qatorlari yo'qligi uchun har
+   safar butun summa naqd qaytarilardi ⇒ cheksiz takrorlash. `retail-sale.service.ts:1136-1145`
+   + `retail-sale-refund-guards.test.ts`.
+2. 🔴 **PIN-kirish akkauntga bog'lanmagan edi.** `findByPin` global qidirardi; unique cheklov
+   esa `[accountId, posPinLookup]` — ya'ni ikki ijarachida bir xil PIN bo'lishi mumkin va
+   pepper global. Natija: haqiqiy kassir to'g'ri PIN bilan kira olmasdi va 5 urinishdan keyin
+   qurilma 15 daqiqaga qulflanardi (hujumchisiz DoS). `pos-pin.service.ts:109-134`.
+3. 🔴 **`pos-login` argon2'ni umuman tekshirmasdi** — butun kirish tuzsiz HMAC'ga tayanardi
+   (sxema shartnomasi buzilgan edi: «lookup topadi, hash tasdiqlaydi»). Endi ikki bosqich.
+4. 🔴 **Qarz to'lovi qulfsiz** (`addCashPayment`): `remaining` tekshiruvi tranzaksiyadan
+   tashqarida ⇒ ikki parallel to'lov bir qarzni ikki marta yopardi, kontragent balansi
+   manfiyga ketardi. Endi `SELECT … FOR UPDATE` + qulfdan keyin qayta o'qish.
+5. 🔴 **`retailShiftId` tekshiruvsiz yozilardi** — yopiq/begona smena id yuborilsa naqd pul
+   joriy smena hisobiga tushmasdi (kamomad yashirish yo'li). Endi `{id, accountId, open}`.
+6. 🔴 **Ruxsatsiz POS endpointlari:** `GET /debts/pos/summary/:id` va `pos/receipt/:batchId`
+   da `@RequirePermission` yo'q edi — istalgan xodim istalgan mijozning qarz ro'yxatini
+   o'qiy olardi. Endi `debtpayment.create` (oyna-ruxsati bilan bir xil).
+7. 🟠 **Kassir o'z kamomad aktini o'zi «ko'rildi» qila olardi** — endi 403.
+8. 🟠 **Smena a'zoligi tekshirilmasdi** — kassir begona smena id bilan ochib, vaqtdan-tashqari
+   nazoratni chetlab o'tardi.
+9. 🟠 **Manfiy ochilish naqdi** qabul qilinardi (`z.coerce.bigint()`) ⇒ kamomadni yashirish.
+   Endi asosiy sxema naqshi (`^\d+$`).
+10. 🟠 **`update()` POSTED chekni qayta yozardi** (tx ichida holat filtri yo'q edi, `post()`
+    esa `version`ni oshirmaydi) — to'langan chek boshqa tovarlarni ko'rsatib qolardi.
+11. 🟠 **`refund()` smenani atomik claim qilmasdi** — yopilgan smenaga vozvrat tushib, soxta
+    kamomad akti chiqardi (`post()` dagi SALES-07 naqshi qo'llandi).
+12. 🟡 **Tenant chegarasi:** `agentId` boshqa akkauntdan bo'lishi mumkin edi — endi tekshiriladi.
+
+**Ma'lumot to'g'riligi:**
+13. 🟡 **Naqd sotuvda mijoz tashlanardi** (`agentId` faqat qarzli to'lovda yozilardi) ⇒
+    loyalty ishlamasdi, chekda mijoz izi qolmasdi.
+14. 🟡 **Legacy z-report naqdni qaytimni ayirmay** ko'rsatardi (`Σcash` vs to'g'ri
+    `Σcash − Σchange`) — bir smenada ikki hisobot har qaytim summasiga farq qilardi.
+15. 🟢 **`zReport` `sessionId` Zod'siz** edi — noto'g'ri uuid P2023 → 500 (endi 400).
+16. 🔴 **`isWithinShift` TZ formulasi xato** — UTC+5 hostda soatni +10 deb o'qirdi
+    (14:00 → 19:00) ⇒ «vaqtdan tashqari» yolg'on talab, tunda esa teskarisi. Smena modulida
+    umuman test yo'q edi — endi 10 test.
+17. 🟢 Parallel smena ochishda xom P2002 → 500 (endi 409).
+
+**POS FE (kassir ko'radigan):**
+18. 🔴 **Narx maydoni bo'shatilsa ESKI narx ketardi** — ko'rinishda bo'sh, rasmiylashtirishda
+    eski qiymat (K-3, MK32 da o'lchangan, tuzatilmagan edi). Endi 0.
+19. 🔴 **«Tayyor» chek to'langach savat tozalanmasdi** ⇒ keyingi «Omborchiga yuborish»
+    **dublikat sotuv** yaratardi (chegirma ham qolardi).
+20. 🔴 **`5e3` kiritilsa butun POS yiqilardi** — smena yopish sanog'ida `Money.fromMajor`
+    render tanasida try/catchsiz, `type="number"` esa `e` harfini o'tkazadi.
+21. 🟡 USD farqi `$-10.00` (endi `-$10.00`) · uchala dialogda Radix `Description` warningi.
+
+**Qo'shimcha (F0 fazasi shu yerda bajarildi):**
+- 🔴 **Kiosk-kassir smena ocholmasdi:** allowlist `/smena/mine` deb yozgan, real yo'l
+  `/admin/smenas/*` ⇒ 403. Endi ikki **aniq** yo'l (butun `/admin` emas) + negativ testlar.
+- 🔴 `/sklad-keepers` allowlist'da yo'q edi ⇒ kiosk'da native chop etish jimgina
+  popup'ga tushardi.
+- 🔴 `pos-login` mutatsiya-qo'riqchi allowlist'ida yo'q edi — **oldingi kassa ishidan qolgan
+  qizil qo'riqchi** (`mutation-guard-coverage.test.ts` yiqilib turardi); sabab bilan qo'shildi.
+
+#### Gate natijalari
+
+- `pnpm --filter @moysklad/money build` → OK
+- `pnpm --filter @moysklad/api typecheck` → **0 xato**
+- `pnpm --filter @moysklad/web typecheck` → **0 xato**
+- `node scripts/check-lint.mjs` (loyiha lint gate'i) → **0 error**, 834 warning (siyosat bo'yicha ruxsat)
+- API vitest (to'liq) → §3 oxiridagi yakuniy raqamga qara
+- Web vitest (to'liq) → 3199 test; POS to'plami yolg'iz 85/85 yashil
+- 🔴 **Diqqat (kelgusi sessiyalarga sabog'i):** API va web to'plamlarini **bir vaqtda**
+  yugurtirganda 9 ta test 5000ms chegarasida timeout bo'ldi (argon2 va React render testlari).
+  Yolg'iz yugurtirilganda hammasi yashil. **To'plamlarni ketma-ket yugurtiring.**
+
+#### Yangi testlar (11 fayl)
+
+`retail-sale-refund-guards.test.ts` · `retail-sale-update-state-guard.test.ts` ·
+`retail-sale-post-agent.test.ts` · `retail-sale-zreport.test.ts` · `debt-pos-guard.test.ts` ·
+`pos-debt-payment.retail-shift.test.ts` · `debt-cash-payment-lock.test.ts` ·
+`smena.service.test.ts` (modul ilgari umuman testsiz edi) ·
+`acknowledge-variance-guard.test.ts` · `sotuv/__tests__/audit-fixlar.test.tsx` ·
+(+ `pos-pin.service.test.ts` kengaytirildi)
+
+#### Yangilangan mavjud testlar (sabab bilan)
+
+- `sales-screen-cart.test.tsx` ×2 — eski **buggy** xulqni (bo'sh maydon → eski narx) K-3
+  kuzatuvi sifatida qulflagan edi; endi 0-xulqni qulflaydi.
+- `sales-screen-shift.test.tsx` — `$-10.00` → `-$10.00`.
+- `shift-cash-faza-q1.test.ts` — `SESSION` fixture'i uuid shakliga o'tdi (yangi Zod
+  validatsiyasi tufayli); **assertion'lar tegilmagan** (netSum matematikasi o'sha-o'sha).
+- `retail-sale-refund-debt/pricing.test.ts`, `retail-sale-post-guards.test.ts`,
+  `retail-sale-tenders-wiring.test.ts`, `debt-cash-ledger.service.test.ts` — faqat mok-yuzasi
+  (yangi `updateMany`/`findFirst`/`$queryRaw` chaqiruvlari uchun); assertion'lar o'zgarmagan.
+
+#### Qoldirilgan (fazalarga biriktirildi)
+
+§0.9 jadvaliga qara — chek to'lov qatlami (F5), ikki qarz daftari (F9), kasr-miqdor crash
+(F8), valyuta filtri (F6), o'lik eskalatsiya avtomatikasi (F13).
+
+---
+
 ### F0 hisoboti
 
-- **Holat:** ⬜ bajarilmagan
+- **Holat:** ✅ **BAJARILDI** — audit-to'lqinida (yuqoriga qara). Qayta bajarilmaydi.
 - **Sana:**
 - **O'zgargan fayllar:**
 - **Qilingan ish:**
