@@ -657,3 +657,116 @@ describe('KPI-03 — qo`lda metrika fakti menejer belgisidan', () => {
     expect(written(metricUpsert, 'cash_revenue')?.autoValue).toBe(750_000n);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// KPI-05 — og'irlik ham KUNGA MUHRLANADI (og'irlik ixtiyoriy bo'lgani uchun)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Profil versiyasi maqsad + OG'IRLIK bilan (`kpi_profile_metrics`). */
+function profileWithWeights(entries: Array<[string, bigint | null, number | null]>) {
+  return [
+    {
+      positionId: null,
+      employeeId: EMP,
+      versions: [
+        {
+          id: 'ver-1',
+          effectiveFrom: new Date('2026-01-01T00:00:00Z'),
+          metrics: entries.map(([key, target, weight]) => ({
+            target,
+            weight,
+            metricDef: { key },
+          })),
+        },
+      ],
+    },
+  ];
+}
+
+function sealedWeight(metricUpsert: ReturnType<typeof vi.fn>, key: string) {
+  const call = metricUpsert.mock.calls.find((c) => c[0]?.create?.metricKey === key);
+  const create = call?.[0]?.create as
+    | { weightApplied: number | null; weightSource: string | null }
+    | undefined;
+  return { value: create?.weightApplied ?? null, source: create?.weightSource ?? null };
+}
+
+describe('KPI-05 — og`irlik manbai va kun muhri', () => {
+  it('biriktirilgan KPI og`irligi PROFIL og`irligidan ustun va muhrlanadi', async () => {
+    const { svc, metricUpsert, client } = makeService({
+      employeeTargets: [empTarget({ weight: 40 })],
+    });
+    client.kpiProfile.findMany.mockResolvedValue(
+      profileWithWeights([['cash_revenue', 500_000n, 70]]),
+    );
+    await svc.computeDay(ACCOUNT, DAY);
+    expect(sealedWeight(metricUpsert, 'cash_revenue')).toEqual({
+      value: 40,
+      source: 'employee_target',
+    });
+  });
+
+  it('🔴 og`irliksiz (NULL) biriktirilgan KPI profil og`irligini QAYTARMAYDI', async () => {
+    // Menejer KPI'ni ataylab ballsiz qo'ydi. Profildagi eski og'irlik uni
+    // jimgina qaytarib ballasa, «og'irlik ixtiyoriy» va'dasi buzilardi.
+    const { svc, metricUpsert, client } = makeService({
+      employeeTargets: [empTarget({ weight: null })],
+    });
+    client.kpiProfile.findMany.mockResolvedValue(
+      profileWithWeights([['cash_revenue', 500_000n, 70]]),
+    );
+    await svc.computeDay(ACCOUNT, DAY);
+    expect(sealedWeight(metricUpsert, 'cash_revenue')).toEqual({
+      value: null,
+      source: 'employee_target',
+    });
+  });
+
+  it('biriktirilmagan ko`rsatkichda PROFIL og`irligi muhrlanadi (regress yo`li)', async () => {
+    const { svc, metricUpsert, client } = makeService({});
+    client.kpiProfile.findMany.mockResolvedValue(
+      profileWithWeights([['cash_revenue', 500_000n, 70]]),
+    );
+    await svc.computeDay(ACCOUNT, DAY);
+    expect(sealedWeight(metricUpsert, 'cash_revenue')).toEqual({ value: 70, source: 'profile' });
+  });
+
+  it('og`irlik hech qayerda yo`q bo`lsa `none` MUHRLANADI (NULL ≠ muhrsiz)', async () => {
+    const { svc, metricUpsert } = makeService({});
+    await svc.computeDay(ACCOUNT, DAY);
+    expect(sealedWeight(metricUpsert, 'cash_revenue')).toEqual({ value: null, source: 'none' });
+  });
+
+  it('HAFTALIK qator kunlik og`irlikka aylanmaydi', async () => {
+    const { svc, metricUpsert, client } = makeService({
+      employeeTargets: [empTarget({ period: 'weekly', weight: 40 })],
+    });
+    client.kpiProfile.findMany.mockResolvedValue(
+      profileWithWeights([['cash_revenue', 500_000n, 70]]),
+    );
+    await svc.computeDay(ACCOUNT, DAY);
+    expect(sealedWeight(metricUpsert, 'cash_revenue')).toEqual({ value: 70, source: 'profile' });
+  });
+
+  it('MUHR QAYTA hisoblashda o`zgarmaydi — `update` da og`irlik ustunlari YO`Q', async () => {
+    const { svc, metricUpsert } = makeService({ employeeTargets: [empTarget({ weight: 40 })] });
+    await svc.computeDay(ACCOUNT, DAY);
+    const update = metricUpsert.mock.calls[0][0].update;
+    expect(update).not.toHaveProperty('weightApplied');
+    expect(update).not.toHaveProperty('weightSource');
+  });
+
+  it('MUTANT: og`irlik o`zgartirilsa yangi kun yangi qiymatni oladi', async () => {
+    const { svc, metricUpsert } = makeService({ employeeTargets: [empTarget({ weight: 33.5 })] });
+    await svc.computeDay(ACCOUNT, DAY);
+    expect(sealedWeight(metricUpsert, 'cash_revenue').value).toBe(33.5);
+  });
+
+  it('og`irlik qatordan SO`RALADI (select`da bor)', async () => {
+    const { svc, client } = makeService({});
+    await svc.computeDay(ACCOUNT, DAY);
+    expect(client.employeeKpiTarget.findMany.mock.calls[0][0].select).toMatchObject({
+      weight: true,
+    });
+  });
+});

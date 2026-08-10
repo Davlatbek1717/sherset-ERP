@@ -281,6 +281,12 @@ export interface EmployeeTargetRow {
   /** Ko'rsatkichning O'Z birligida. **NULL = RAQAMSIZ «todo»**, 0 EMAS. */
   targetValue: bigint | null;
   /**
+   * Kompozit balldagi og'irligi (foiz). **NULL = og'irlik QO'YILMAGAN** —
+   * KPI ataylab ballanmaydi, faqat kuzatiladi (KPI-05). `0` esa og'irlik
+   * qo'yilgan-u nol: ballash uchun bir xil, ekranda farqli.
+   */
+  weight: number | null;
+  /**
    * `manualDoneAt` ning MAHALLIY KUN YORLIG'I (`YYYY-MM-DD`), NULL =
    * belgilanmagan. Instant EMAS: bu modul tz'siz, taqqoslash yorliq ustidan
    * (xotira: `month-bounds-label-vs-instant`).
@@ -300,6 +306,28 @@ export interface EmployeeTargetRow {
 export const MANUAL_DONE_UNIT = 1n;
 
 /**
+ * Shu xodim va davr uchun g'olib qatorlar (ko'rsatkich kaliti bo'yicha).
+ *
+ * **YAGONA tanlov nuqtasi** — maqsad ham, og'irlik ham AYNAN shu qatordan
+ * o'qiladi. Ikki joyda takrorlansa bir kun kelib maqsad bir qatordan,
+ * og'irlik boshqasidan olinib, ekrandagi raqam hech qaysi sozlamaga mos
+ * kelmasdi (xotira: `copy-paste-loses-a-branch`).
+ */
+function pickEmployeeRows(
+  rows: readonly EmployeeTargetRow[],
+  employeeId: string,
+  period: TargetPeriod,
+): Map<string, EmployeeTargetRow> {
+  const best = new Map<string, EmployeeTargetRow>();
+  for (const row of rows) {
+    if (!row.active || row.employeeId !== employeeId || row.period !== period) continue;
+    const current = best.get(row.metricKey);
+    if (current == null || row.id < current.id) best.set(row.metricKey, row);
+  }
+  return best;
+}
+
+/**
  * Biriktirilgan KPI qatorlaridan shu davr uchun amaldagi maqsadlar.
  *
  * Qamrov savoli yo'q — qator allaqachon BITTA xodimniki. Determinizm uchun
@@ -312,12 +340,7 @@ export function resolveEmployeeTargets(
   employeeId: string,
   period: TargetPeriod,
 ): Map<string, ResolvedTarget> {
-  const best = new Map<string, EmployeeTargetRow>();
-  for (const row of rows) {
-    if (!row.active || row.employeeId !== employeeId || row.period !== period) continue;
-    const current = best.get(row.metricKey);
-    if (current == null || row.id < current.id) best.set(row.metricKey, row);
-  }
+  const best = pickEmployeeRows(rows, employeeId, period);
 
   const out = new Map<string, ResolvedTarget>();
   for (const [metricKey, row] of best) {
@@ -351,6 +374,56 @@ export function manualDailyOutcome(
 ): { fact: bigint; target: bigint } {
   const target = row.targetValue ?? MANUAL_DONE_UNIT;
   return { fact: row.manualDoneDate === date ? target : 0n, target };
+}
+
+/**
+ * Og'irlik qaysi pog'onadan keldi. `EmployeeDailyKpiMetric.weightSource` ga
+ * MUHRLANADI — «muhr bormi» savoliga javob shu ustunda (KPI-05).
+ */
+export type WeightSource = 'employee_target' | 'profile' | 'none';
+
+export interface ResolvedWeight {
+  metricKey: string;
+  /** Foiz. **NULL = og'irlik qo'yilmagan** — ballanmaydi, faqat kuzatiladi. */
+  value: number | null;
+  source: WeightSource;
+}
+
+/**
+ * Kunlik ball uchun og'irliklar — biriktirilgan KPI > profil versiyasi.
+ *
+ * 🔴 **Biriktirilgan qator og'irligi NULL bo'lsa ham USTUN turadi.** Qator
+ * MAVJUD, ya'ni menejer shu ko'rsatkichni ataylab ballsiz qo'ygan; profildagi
+ * eski og'irlik uni jimgina qaytarib ballasa, «og'irlik ixtiyoriy» va'dasi
+ * buzilardi. Aynan shu qoida maqsad tomonida ham amal qiladi
+ * (`resolveEmployeeTargets` — raqamsiz «todo» pastdagi pog'onalarni to'sadi).
+ *
+ * Haftalik/oylik qator kunlik og'irlikka KIRMAYDI — §KPI-03.3 bilan bir xil:
+ * u kunlik ballda umuman qatnashmaydi, demak og'irligi ham qatnashmaydi.
+ *
+ * Hech bir pog'onada topilmagan ko'rsatkich MAP'GA TUSHMAYDI — chaqiruvchi uni
+ * `none` deb muhrlaydi (bo'sh qoldirilmaydi).
+ */
+export function resolveDailyWeights(
+  employeeTargets: readonly EmployeeTargetRow[],
+  employeeId: string,
+  profileWeights: ReadonlyMap<string, number>,
+): Map<string, ResolvedWeight> {
+  const out = new Map<string, ResolvedWeight>();
+  for (const [metricKey, row] of pickEmployeeRows(
+    employeeTargets,
+    employeeId,
+    TARGET_PERIOD.daily,
+  )) {
+    out.set(metricKey, { metricKey, value: row.weight, source: 'employee_target' });
+  }
+
+  for (const [metricKey, value] of profileWeights) {
+    if (out.has(metricKey)) continue;
+    out.set(metricKey, { metricKey, value, source: 'profile' });
+  }
+
+  return out;
 }
 
 /**

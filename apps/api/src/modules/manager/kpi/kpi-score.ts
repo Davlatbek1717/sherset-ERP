@@ -58,8 +58,15 @@ export interface ScoreMetricInput {
   adjustValue: bigint | null;
   /** Kunlik maqsad (ko'rsatkichning o'z birligida). NULL = maqsadsiz. */
   target: bigint | null;
-  /** Kompozit balldagi og'irligi. 0 = ballga kirmaydi. */
-  weight: number;
+  /**
+   * Kompozit balldagi og'irligi.
+   *
+   * **NULL = og'irlik QO'YILMAGAN** (KPI-05): «biriktirilgan KPI» todo kabi
+   * qo'shilgan va ataylab ballanmaydi — faqat kuzatiladi. `0` esa og'irlik
+   * qo'yilgan-u nol. Ballash uchun ikkalasi bir xil (kirmaydi), lekin ekranda
+   * farqlanadi: NULL ≠ 0 intizomining shu qatlamdagi ko'rinishi.
+   */
+  weight: number | null;
   /** Qiymat to'liq manbadan hisoblanganmi. */
   complete: boolean;
 }
@@ -74,8 +81,15 @@ export interface ScoredMetric {
   /** Menejer tuzatganmi (ekranda belgi). */
   adjusted: boolean;
   target: bigint | null;
-  weight: number;
-  /** Bajarish foizi — CHEKSIZ (haqiqiy natija ko'rinadi). NULL = hisoblanmadi. */
+  /** Kirishdagi og'irlik AYNAN qaytadi: NULL = qo'yilmagan, 0 = nol qo'yilgan. */
+  weight: number | null;
+  /**
+   * Bajarish foizi — CHEKSIZ (haqiqiy natija ko'rinadi). NULL = hisoblanmadi.
+   *
+   * ⚠️ Og'irliksiz (ballanmagan) ko'rsatkichda ham TO'LDIRILADI: «og'irlik
+   * qo'yilmasa KPI shunchaki o'lchanadi/kuzatiladi» (KPI-05). Foiz yashirilsa
+   * kuzatuvning ma'nosi qolmasdi.
+   */
   achievementPercent: number | null;
   /** Ballga kirgan hissa — amaldagi cap bilan cheklangan. */
   contributionPercent: number | null;
@@ -167,12 +181,15 @@ export function scoreDay(
     const direction: MetricDirection = def?.direction ?? 'neutral';
     // Tuzatma g'olib, lekin avtomat qiymat saqlanadi (§3.2).
     const fact = input.adjustValue ?? input.autoValue;
-    const weight = Number.isFinite(input.weight) ? Math.max(0, input.weight) : 0;
-    weightTotal += weight;
+    const weight = normalizeWeight(input.weight);
+    weightTotal += weight ?? 0;
 
     const skipReason = resolveSkip(def == null, direction, fact, input.target, weight);
+    // Foiz og'irlikdan MUSTAQIL hisoblanadi: ballanmagan (og'irliksiz)
+    // ko'rsatkich ham o'lchanadi va ekranda natijasi bilan turadi. Ball esa
+    // pastda — faqat `scored` qatorlardan yig'iladi.
     const achievement =
-      skipReason == null && fact != null && input.target != null
+      def != null && fact != null && input.target != null
         ? achievementPercent(fact, input.target, direction)
         : null;
     // `achievementPercent` null qaytarishi mumkin (masalan higher_better,
@@ -180,7 +197,9 @@ export function scoreDay(
     const scored = skipReason == null && achievement != null;
     const contribution = scored ? Math.min(achievement, cap) : null;
 
-    if (scored && contribution != null) {
+    if (scored && contribution != null && weight != null) {
+      // `scored` ⇒ `skipReason == null` ⇒ og'irlik NULL ham, 0 ham emas
+      // (shart TS uchun ochiq yozildi — invariant `resolveSkip` da).
       weightScored += weight;
       weightedSum += weight * contribution;
       if (!input.complete) dataComplete = false;
@@ -213,16 +232,32 @@ export function scoreDay(
   };
 }
 
+/**
+ * Og'irlikni normallashtiradi: **NULL saqlanadi** (qo'yilmagan), buzuq son
+ * (NaN/Infinity) esa 0 ga tushadi va manfiy og'irlik qabul qilinmaydi.
+ *
+ * NULL ni 0 ga aylantirmaslik ataylab: ballash uchun ikkalasi bir xil bo'lsa
+ * ham, «qo'yilmagan» va «nol qo'yilgan» ekranda bir xil ko'rinsa menejer o'z
+ * sozlamasini o'qiy olmasdi (NULL ≠ 0).
+ */
+function normalizeWeight(weight: number | null): number | null {
+  if (weight == null) return null;
+  return Number.isFinite(weight) ? Math.max(0, weight) : 0;
+}
+
 function resolveSkip(
   unknownMetric: boolean,
   direction: MetricDirection,
   fact: bigint | null,
   target: bigint | null,
-  weight: number,
+  weight: number | null,
 ): SkipReason | null {
   if (unknownMetric) return 'unknown_metric';
   if (direction === 'neutral') return 'neutral';
-  if (weight <= 0) return 'no_weight';
+  // NULL (qo'yilmagan) va 0 (nol qo'yilgan) — ballash uchun bir xil. Sabab
+  // ATAYLAB `unmeasured` dan OLDIN: og'irliksiz qator o'lchov kamchiligi emas,
+  // u ataylab ballsiz (`data-quality-flag-layer`).
+  if (weight == null || weight <= 0) return 'no_weight';
   // NULL ≠ 0: o'lchanmagan ko'rsatkich nol deb ballanmaydi.
   if (fact == null) return 'unmeasured';
   if (target == null) return 'no_target';

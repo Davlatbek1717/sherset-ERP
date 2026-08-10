@@ -355,3 +355,74 @@ describe('KPI-03 — kun muhri profil maqsadidan USTUN', () => {
     expect(dayUpdateMany.mock.calls[0][0].data.scorePercent).toBeNull();
   });
 });
+
+/**
+ * KPI-05 — BALL MUHRLANGAN OG'IRLIKDAN o'qiladi.
+ *
+ * Og'irlik endi `EmployeeKpiTarget` dan ham kelishi mumkin, u qatlam esa
+ * versiyalanmaydi. O'quvchi muhrni ko'rmasa, menejerning bugungi og'irlik
+ * tahriri o'tgan kunlarning ballini QAYTA YOZARDI (KPI-03 maqsad muhri bilan
+ * bir xil sabab). Profil sukuti (og'irlik 100, maqsad 1000n) barcha
+ * testlarda bir xil — farqni FAQAT muhr keltiradi.
+ */
+describe('KPI-05 — kun muhridagi og`irlik profil og`irligidan USTUN', () => {
+  const metric = (over: Record<string, unknown> = {}) => ({
+    metricKey: 'cash_revenue',
+    autoValue: 800n,
+    adjustValue: null,
+    complete: true,
+    ...over,
+  });
+
+  it('muhrlangan NOL og`irlik ballga kirmaydi (profil 100 ni yengadi)', async () => {
+    const { svc, dayUpdateMany } = makeService({
+      state: 'pending',
+      metrics: [metric({ weightApplied: 0, weightSource: 'employee_target' })],
+    });
+    await svc.transition(MANAGER, ID, 'accept');
+    // Profil og'irligi o'qilsa 80% chiqardi.
+    expect(dayUpdateMany.mock.calls[0][0].data.scorePercent).toBeNull();
+  });
+
+  it('🔴 muhrlangan «og`irlik YO`Q» profil og`irligiga QAYTMAYDI', async () => {
+    // Menejer KPI'ni ataylab ballsiz qo'ygan kun. Profilga qaytilsa u kun
+    // jimgina ballanardi — «og'irlik ixtiyoriy» va'dasi buzilardi.
+    const { svc, dayUpdateMany } = makeService({
+      state: 'pending',
+      metrics: [metric({ weightApplied: null, weightSource: 'employee_target' })],
+    });
+    await svc.transition(MANAGER, ID, 'accept');
+    expect(dayUpdateMany.mock.calls[0][0].data.scorePercent).toBeNull();
+  });
+
+  it('MUHRLANMAGAN qator avvalgidek PROFIL og`irligiga tushadi (regress)', async () => {
+    // Migratsiyadan oldin hisoblangan kunlar: og'irlik 100 → 800/1000 = 80%.
+    const { svc, dayUpdateMany } = makeService({ state: 'pending', metrics: [metric()] });
+    await svc.transition(MANAGER, ID, 'accept');
+    expect(dayUpdateMany.mock.calls[0][0].data.scorePercent).toBe(80);
+  });
+
+  it('muhrlangan og`irliklar NISBATI ballni belgilaydi (profilniki emas)', async () => {
+    const { svc, dayUpdateMany } = makeService({
+      state: 'pending',
+      metrics: [
+        metric({ weightApplied: 90, weightSource: 'employee_target' }), // 80%
+        metric({
+          metricKey: 'late_minutes',
+          autoValue: 10n,
+          weightApplied: 10,
+          weightSource: 'employee_target',
+        }), // 100%
+      ],
+      profileVersion: {
+        metrics: [
+          { weight: 50, target: 1000n, metricDef: { key: 'cash_revenue' } },
+          { weight: 50, target: 10n, metricDef: { key: 'late_minutes' } },
+        ],
+      },
+    });
+    await svc.transition(MANAGER, ID, 'accept');
+    // (90×80 + 10×100) ÷ 100 = 82. Profil 50/50 bo'lsa 90 chiqardi.
+    expect(dayUpdateMany.mock.calls[0][0].data.scorePercent).toBe(82);
+  });
+});

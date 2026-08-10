@@ -9,9 +9,11 @@ import { KPI_METRICS, type MetricValue, measured, unmeasured } from './kpi-metri
 import {
   type EmployeeTargetRow,
   type ResolvedTarget,
+  type ResolvedWeight,
   TARGET_PERIOD,
   manualDailyOutcome,
   resolveDailyTargets,
+  resolveDailyWeights,
 } from './kpi-target.js';
 
 /**
@@ -159,12 +161,21 @@ export class EmployeeDailyKpiService {
         targetRows,
       );
 
+      // Og'irlik pog'onalari maqsad bilan BIR XIL tartibda (KPI-05):
+      // biriktirilgan KPI > profil versiyasi. Ustuvorlik `kpi-target.ts` da.
+      const resolvedWeights = resolveDailyWeights(
+        targetRows,
+        emp.id,
+        profile?.weights ?? new Map(),
+      );
+
       const { staleCandidate } = await this.upsertDay(accountId, emp.id, dateOnly, {
         profileVersionId: profile?.versionId ?? null,
         dataComplete,
         workedMinutes,
         values,
         targets: sealTargets(values, resolved, manualRows, manualDefs, dateLabel),
+        weights: sealWeights(values, resolvedWeights),
       });
       if (staleCandidate) staleCandidates.push(emp.id);
       written++;
@@ -542,6 +553,7 @@ export class EmployeeDailyKpiService {
         metricKey: true,
         period: true,
         targetValue: true,
+        weight: true,
         manualDoneAt: true,
         active: true,
       },
@@ -556,6 +568,9 @@ export class EmployeeDailyKpiService {
         metricKey: r.metricKey,
         period: r.period as EmployeeTargetRow['period'],
         targetValue: r.targetValue,
+        // Decimal → number. NULL SAQLANADI: «og'irlik qo'yilmagan» (ballanmaydi,
+        // faqat kuzatiladi) 0 ga aylantirilsa ekranda farqlanmasdi (KPI-05).
+        weight: r.weight == null ? null : Number(r.weight),
         // Instant → MAHALLIY KUN YORLIG'I. Sof modul tz bilmaydi, va bu
         // aylantirish aynan `localDateOnly` bilan qilinadi: instant bo'yicha
         // taqqoslash belgini bir kunga surib yuborardi.
@@ -606,8 +621,10 @@ export class EmployeeDailyKpiService {
             effectiveFrom: true,
             // KPI-03: maqsad ENG PAST pog'ona sifatida shu yerdan o'qiladi —
             // ilgari uni faqat o'quvchi (`scoreRow`) join qilardi, ya'ni har
-            // o'qishda qayta hisoblanardi.
-            metrics: { select: { target: true, metricDef: { select: { key: true } } } },
+            // o'qishda qayta hisoblanardi. KPI-05: og'irlik ham xuddi shunday.
+            metrics: {
+              select: { target: true, weight: true, metricDef: { select: { key: true } } },
+            },
           },
         },
       },
@@ -621,6 +638,14 @@ export class EmployeeDailyKpiService {
       const pick: ProfilePick = {
         versionId: version.id,
         targets: new Map((version.metrics ?? []).map((m) => [m.metricDef.key, m.target])),
+        // Og'irligi yo'q qator MAP'GA TUSHMAYDI (0 ga aylantirilmaydi):
+        // «og'irlik qo'yilmagan» va «nol qo'yilgan» farqi shu qatlamdan
+        // boshlab saqlanadi.
+        weights: new Map(
+          (version.metrics ?? [])
+            .filter((m) => m.weight != null)
+            .map((m) => [m.metricDef.key, Number(m.weight)]),
+        ),
       };
       // Individual (employeeId) profil lavozim profilidan ustun — u byEmployee'ga
       // tushadi va resolution xodimni avval shu yerdan qidiradi.
@@ -643,6 +668,8 @@ export class EmployeeDailyKpiService {
       values: MetricValue[];
       /** Ko'rsatkich kaliti → o'sha kunga MUHRLANADIGAN maqsad (KPI-03). */
       targets: Map<string, SealedTarget>;
+      /** Ko'rsatkich kaliti → o'sha kunga MUHRLANADIGAN og'irlik (KPI-05). */
+      weights: Map<string, SealedWeight>;
     },
   ): Promise<{ staleCandidate: boolean }> {
     let staleCandidate = false;
@@ -676,6 +703,7 @@ export class EmployeeDailyKpiService {
 
       for (const v of data.values) {
         const seal = data.targets.get(v.key) ?? NO_TARGET;
+        const weightSeal = data.weights.get(v.key) ?? NO_WEIGHT;
         await tx.employeeDailyKpiMetric.upsert({
           where: { dailyKpiId_metricKey: { dailyKpiId: day.id, metricKey: v.key } },
           create: {
@@ -687,6 +715,10 @@ export class EmployeeDailyKpiService {
             // 🔴 MUHR FAQAT SHU YERDA (`create`) — reja §KPI-03.2.
             targetValue: seal.value,
             targetSource: seal.source,
+            // 🔴 OG'IRLIK MUHRI ham faqat `create` da (KPI-05) — sabab bir xil:
+            // biriktirilgan KPI qatlami versiyalanmaydi.
+            weightApplied: weightSeal.value,
+            weightSource: weightSeal.source,
           },
           // FAQAT avtomat qiymat yangilanadi. `adjustValue` va `reasonCode`
           // menejerniki — tungi cron ularni o'chirib yubormaydi.
@@ -728,6 +760,8 @@ interface ProfilePick {
   versionId: string;
   /** Ko'rsatkich kaliti → profil maqsadi (NULL = qo'yilmagan). */
   targets: Map<string, bigint | null>;
+  /** Ko'rsatkich kaliti → profil og'irligi (KPI-05 muhrining eng past pog'onasi). */
+  weights: Map<string, number>;
 }
 
 /** Kun qatoriga muhrlanadigan maqsad (`EmployeeDailyKpiMetric`). */
@@ -738,6 +772,23 @@ interface SealedTarget {
 
 /** Hech bir pog'onada maqsad topilmagani — MUHRLANADI, bo'sh qoldirilmaydi. */
 const NO_TARGET: SealedTarget = { value: null, source: 'none' };
+
+/** Kun qatoriga muhrlanadigan og'irlik (KPI-05). */
+interface SealedWeight {
+  /** NULL = og'irlik qo'yilmagan (ballanmaydi, faqat kuzatiladi). */
+  value: number | null;
+  source: ResolvedWeight['source'];
+}
+
+/**
+ * Hech bir pog'onada og'irlik topilmagani — MUHRLANADI.
+ *
+ * `{value: null, source: 'none'}` va muhrsiz (`weight_source IS NULL`) qator
+ * BOSHQA-BOSHQA: birinchisi «bugun og'irlik yo'q edi» deb yozilgan fakt,
+ * ikkinchisi migratsiyadan oldingi qator bo'lib, o'quvchi uni profil
+ * og'irligiga tushiradi.
+ */
+const NO_WEIGHT: SealedWeight = { value: null, source: 'none' };
 
 /** `Date` (UTC yarim tun yorlig'i) → `YYYY-MM-DD`. */
 function dayLabel(d: Date): string {
@@ -786,6 +837,26 @@ function sealTargets(
     }
     const r = resolved.get(v.key);
     out.set(v.key, r == null ? NO_TARGET : { value: r.value, source: r.source });
+  }
+  return out;
+}
+
+/**
+ * Har o'lchangan ko'rsatkich uchun o'sha kunga muhrlanadigan og'irlik.
+ *
+ * Qo'lda (custom) ko'rsatkich uchun ALOHIDA qoida YO'Q — maqsaddan farqli
+ * ravishda og'irlik menejer belgisiga bog'liq emas, u shunchaki qatordan
+ * keladi (`resolveDailyWeights` allaqachon biriktirilgan qatorni ustun
+ * qo'ygan).
+ */
+function sealWeights(
+  values: readonly MetricValue[],
+  resolved: ReadonlyMap<string, ResolvedWeight>,
+): Map<string, SealedWeight> {
+  const out = new Map<string, SealedWeight>();
+  for (const v of values) {
+    const r = resolved.get(v.key);
+    out.set(v.key, r == null ? NO_WEIGHT : { value: r.value, source: r.source });
   }
   return out;
 }

@@ -246,3 +246,73 @@ describe('KPI-03 sxema — kunlik ko`rsatkichga MUHRLANGAN maqsad', () => {
     expect(sealSql).not.toMatch(/UPDATE "employee_daily_kpi_metrics"/);
   });
 });
+
+const WEIGHT_SEAL_MIGRATION = join(
+  REPO_ROOT,
+  'packages/db/prisma/migrations/20260810190000_daily_kpi_metric_weight_seal/migration.sql',
+);
+
+/**
+ * KPI-05 sxema — KUNGA MUHRLANGAN OG'IRLIK.
+ *
+ * Og'irlik endi `EmployeeKpiTarget.weight` dan ham kelishi mumkin, u qatlam esa
+ * VERSIYALANMAYDI. Ya'ni muhrsiz o'qilsa, menejerning bugungi og'irlik tahriri
+ * o'tgan kunlarning ballini QAYTA YOZARDI — `kpi_profile_versions` aynan shuni
+ * to'sish uchun bor edi. Maqsad tomonida bu kafolat KPI-03 muhrida; og'irlik
+ * tomonida — shu ikki ustunda.
+ */
+describe('KPI-05 sxema — kunlik ko`rsatkichga MUHRLANGAN og`irlik', () => {
+  const model = modelBlock('EmployeeDailyKpiMetric');
+  const sql = stripSqlComments(
+    existsSync(WEIGHT_SEAL_MIGRATION) ? readFileSync(WEIGHT_SEAL_MIGRATION, 'utf8') : '',
+  );
+
+  it('`weightApplied Decimal?` — o`sha kunga qo`llangan og`irlik qator ICHIDA', () => {
+    // Prisma `Decimal(5,2)` — `employee_kpi_targets.weight` va
+    // `kpi_profile_metrics.weight` bilan AYNAN bir xil aniqlik (yaxlitlash
+    // farqi ikki manbani bir kun kelib ajratib yuborardi).
+    expect(model).toMatch(/weightApplied\s+Decimal\?\s+@map\("weight_applied"\)/);
+    expect(model).toMatch(/weightApplied[\s\S]{0,60}@db\.Decimal\(5, 2\)/);
+  });
+
+  it('`weightSource` NULLABLE — NULL = MUHR YO`Q (eski qator profilga tushadi)', () => {
+    // 🔴 NULL ≠ 0: muhrlangan «og'irlik qo'yilmagan» (`weight_applied` NULL,
+    // manba `employee_target`) va umuman muhrlanmagan qatorni faqat shu ustun
+    // farqlaydi. NOT NULL qilinsa eski kunlar «og'irliksiz» bo'lib, ballari
+    // NULLga tushardi.
+    expect(model).toMatch(/weightSource\s+String\?\s+@map\("weight_source"\)\s+@db\.VarChar\(20\)/);
+  });
+
+  it('migratsiya ikki ustunni ham qo`shadi', () => {
+    expect(sql).toMatch(
+      /ALTER TABLE "employee_daily_kpi_metrics"[\s\S]*"weight_applied" DECIMAL\(5,\s*2\)/,
+    );
+    expect(sql).toMatch(
+      /ALTER TABLE "employee_daily_kpi_metrics"[\s\S]*"weight_source" VARCHAR\(20\)/,
+    );
+  });
+
+  it('manba lug`ati YOPIQ (CHECK) — `kpi-target.ts` `WeightSource` bilan bir xil', () => {
+    expect(sql).toMatch(
+      /CHECK\s*\(\s*"weight_source" IS NULL OR "weight_source" IN \('employee_target', 'profile', 'none'\)\s*\)/,
+    );
+  });
+
+  it('muhr BUTUN — og`irlik bor, manbasi yo`q holati taqiqlanadi', () => {
+    expect(sql).toMatch(
+      /CHECK\s*\(\s*"weight_applied" IS NULL OR "weight_source" IS NOT NULL\s*\)/,
+    );
+  });
+
+  it('og`irlik oralig`i 0…100 (manbadagi CHECK bilan bir xil)', () => {
+    // `employee_kpi_targets_weight_range` bilan bir xil chegara: manbada
+    // ruxsat etilgan qiymat muhrda rad etilsa, kun hisoblash YIQILARDI.
+    expect(sql).toMatch(
+      /CHECK\s*\(\s*"weight_applied" IS NULL OR \("weight_applied" >= 0 AND "weight_applied" <= 100\)\s*\)/,
+    );
+  });
+
+  it('mavjud qatorlar BACKFILL QILINMAYDI — eski kunlar balli o`zgarmaydi', () => {
+    expect(sql).not.toMatch(/UPDATE "employee_daily_kpi_metrics"/);
+  });
+});

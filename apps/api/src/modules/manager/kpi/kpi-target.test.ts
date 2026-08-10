@@ -8,6 +8,7 @@ import {
   type TargetSubject,
   manualDailyOutcome,
   resolveDailyTargets,
+  resolveDailyWeights,
   resolveEmployeeTargets,
   resolveTargets,
   weekdayBit,
@@ -310,6 +311,8 @@ function empTarget(over: Partial<EmployeeTargetRow> & { id: string }): EmployeeT
     metricKey: 'cash_revenue',
     period: TARGET_PERIOD.daily,
     targetValue: 777n,
+    // KPI-05: sukut bo'yicha OG'IRLIKSIZ — «todo kabi qo'shildi, ballanmaydi».
+    weight: null,
     manualDoneDate: null,
     active: true,
     ...over,
@@ -469,5 +472,102 @@ describe('manualDailyOutcome — qo`lda metrika fakti', () => {
       fact: 0n,
       target: MANUAL_DONE_UNIT,
     });
+  });
+});
+
+/**
+ * KPI-05 — OG'IRLIK POG'ONASI.
+ *
+ * Og'irlik ham maqsad kabi ikki manbadan kelishi mumkin: biriktirilgan KPI
+ * qatori (`EmployeeKpiTarget.weight`) va profil versiyasi
+ * (`KpiProfileMetric.weight`). Ustuvorlik MAQSAD bilan BIR XIL bo'lishi shart —
+ * aks holda bitta ko'rsatkichning maqsadi bir qatordan, og'irligi boshqasidan
+ * olinib, ekrандagi raqam hech qaysi sozlamaga mos kelmasdi.
+ */
+describe('resolveDailyWeights — og`irlik pog`onasi (KPI-05)', () => {
+  it('biriktirilgan qator og`irligi profilnikidan USTUN', () => {
+    const w = resolveDailyWeights(
+      [empTarget({ id: 'e1', weight: 40 })],
+      EMPLOYEE,
+      new Map([['cash_revenue', 70]]),
+    );
+    expect(w.get('cash_revenue')).toEqual({
+      metricKey: 'cash_revenue',
+      value: 40,
+      source: 'employee_target',
+    });
+  });
+
+  it('🔴 biriktirilgan qatorda og`irlik NULL bo`lsa ham USTUN — profilga TUSHMAYDI', () => {
+    // Menejer KPI'ni ataylab ballsiz qo'ydi. Profildagi eski og'irlik uni
+    // jimgina qaytarib ballasa, «og'irlik ixtiyoriy» va'dasi buzilardi.
+    const w = resolveDailyWeights(
+      [empTarget({ id: 'e1', weight: null })],
+      EMPLOYEE,
+      new Map([['cash_revenue', 70]]),
+    );
+    expect(w.get('cash_revenue')).toEqual({
+      metricKey: 'cash_revenue',
+      value: null,
+      source: 'employee_target',
+    });
+  });
+
+  it('biriktirilmagan ko`rsatkich profil og`irligini oladi', () => {
+    const w = resolveDailyWeights([], EMPLOYEE, new Map([['late_minutes', 30]]));
+    expect(w.get('late_minutes')).toEqual({
+      metricKey: 'late_minutes',
+      value: 30,
+      source: 'profile',
+    });
+  });
+
+  it('hech bir pog`onada yo`q ko`rsatkich umuman qaytmaydi', () => {
+    const w = resolveDailyWeights([], EMPLOYEE, new Map());
+    expect(w.has('cash_revenue')).toBe(false);
+  });
+
+  it('haftalik/oylik qator KUNLIK og`irlikka ta`sir qilmaydi', () => {
+    // §KPI-03.3 bilan bir xil qoida: haftalik qator kunlik ballga kirmaydi,
+    // demak uning og'irligi ham kunlik ballga tushmasligi kerak.
+    const w = resolveDailyWeights(
+      [empTarget({ id: 'e1', period: TARGET_PERIOD.weekly, weight: 40 })],
+      EMPLOYEE,
+      new Map([['cash_revenue', 70]]),
+    );
+    expect(w.get('cash_revenue')).toEqual({
+      metricKey: 'cash_revenue',
+      value: 70,
+      source: 'profile',
+    });
+  });
+
+  it('arxivlangan (active=false) qator og`irlik bermaydi', () => {
+    const w = resolveDailyWeights(
+      [empTarget({ id: 'e1', weight: 40, active: false })],
+      EMPLOYEE,
+      new Map([['cash_revenue', 70]]),
+    );
+    expect(w.get('cash_revenue')?.source).toBe('profile');
+  });
+
+  it('boshqa xodimning qatori tegmaydi', () => {
+    const w = resolveDailyWeights(
+      [empTarget({ id: 'e1', employeeId: 'emp-2', weight: 40 })],
+      EMPLOYEE,
+      new Map([['cash_revenue', 70]]),
+    );
+    expect(w.get('cash_revenue')?.value).toBe(70);
+  });
+
+  it('MAQSAD bilan BIR XIL qatorni tanlaydi (ikki manba ajralib ketmaydi)', () => {
+    const rows = [
+      empTarget({ id: 'a2', targetValue: 200n, weight: 20 }),
+      empTarget({ id: 'a1', targetValue: 100n, weight: 10 }),
+    ];
+    const t = resolveEmployeeTargets(rows, EMPLOYEE, TARGET_PERIOD.daily);
+    const w = resolveDailyWeights(rows, EMPLOYEE, new Map());
+    expect(t.get('cash_revenue')?.rowId).toBe('a1');
+    expect(w.get('cash_revenue')?.value).toBe(10); // aynan o'sha qatorniki
   });
 });

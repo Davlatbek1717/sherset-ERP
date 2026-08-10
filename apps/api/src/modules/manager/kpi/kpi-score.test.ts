@@ -273,3 +273,100 @@ describe('lower_better chegara nuqtalari (QAROR-B3)', () => {
     expect(day.metrics[0]?.contributionPercent).toBe(150);
   });
 });
+
+/**
+ * KPI-05 — OG'IRLIK IXTIYORIY.
+ *
+ * «Biriktirilgan KPI» qatlamida (`EmployeeKpiTarget.weight`) og'irlik NULL
+ * bo'lishi mumkin: menejer KPI'ni todo kabi qo'shadi, uni ballashni esa
+ * ATAYLAB xohlamaydi. Shu holat `weight = 0` dan farqlanadi (NULL ≠ 0):
+ *   • `null` — og'irlik QO'YILMAGAN (ekranda «—»);
+ *   • `0`    — og'irlik qo'yilgan-u nol (ekranda «0»).
+ * Ballash uchun ikkalasi bir xil (kirmaydi), lekin ekran ularni bir xil
+ * ko'rsatsa menejer «men og'irlik qo'ygandimku» deb adashardi.
+ */
+describe('KPI-05 — og`irlik ixtiyoriy (weight NULL)', () => {
+  it('og`irliksiz (NULL) ko`rsatkich ballga KIRMAYDI', () => {
+    const day = scoreDay([
+      m({ metricKey: 'cash_revenue', autoValue: 800_000n, target: 1_000_000n, weight: 100 }), // 80%
+      m({ metricKey: 'late_minutes', autoValue: 0n, target: 10n, weight: null }), // kuzatiladi
+    ]);
+    expect(day.score).toBe(80); // og'irliksiz qator ballni ko'tarmaydi
+    expect(day.metrics[1]?.scored).toBe(false);
+    expect(day.metrics[1]?.skipReason).toBe('no_weight');
+    expect(day.metrics[1]?.contributionPercent).toBeNull();
+  });
+
+  it('NULL og`irlik 0 ga aylanmaydi — ekran ikkisini farqlaydi', () => {
+    const day = scoreDay([
+      m({ metricKey: 'cash_revenue', autoValue: 5n, target: 10n, weight: null }),
+      m({ metricKey: 'late_minutes', autoValue: 5n, target: 10n, weight: 0 }),
+    ]);
+    expect(day.metrics[0]?.weight).toBeNull();
+    expect(day.metrics[1]?.weight).toBe(0);
+  });
+
+  it('og`irliksiz ko`rsatkich baribir O`LCHANADI — bajarish foizi ko`rinadi', () => {
+    // «Og'irlik qo'yilmasa — KPI shunchaki o'lchanadi/kuzatiladi» (reja §Variant A).
+    // Foiz yashirilsa kuzatuvning ma'nosi qolmasdi.
+    const day = scoreDay([
+      m({ metricKey: 'cash_revenue', autoValue: 750_000n, target: 1_000_000n, weight: null }),
+    ]);
+    expect(day.metrics[0]?.achievementPercent).toBe(75);
+    expect(day.metrics[0]?.contributionPercent).toBeNull();
+    expect(day.score).toBeNull();
+  });
+
+  /**
+   * Foiz FAQAT hisoblab bo'lganda ko'rinadi. Va sabab ustuvorligi
+   * O'ZGARMAYDI: og'irliksiz qator `no_weight` bo'lib qoladi, `unmeasured`
+   * BO'LMAYDI — u o'lchov kamchiligi emas, ataylab ballsiz (reja §KPI-05.3,
+   * `data-quality-flag-layer`). Aks holda menejer panelida ataylab qo'yilgan
+   * kuzatuv KPI'si «yig'ilmagan ma'lumot» bo'lib ko'rinardi.
+   */
+  it('o`lchab bo`lmaydigan holatda foiz NULL, sabab esa `no_weight` bo`lib qoladi', () => {
+    const day = scoreDay([
+      m({ metricKey: 'cash_revenue', autoValue: null, target: 10n, weight: null }), // fakt yo'q
+      m({ metricKey: 'late_minutes', autoValue: 5n, weight: null }), // maqsad yo'q
+      m({ metricKey: 'yolgon_kalit', autoValue: 5n, target: 10n, weight: null }), // katalogda yo'q
+    ]);
+    expect(day.metrics.map((x) => x.achievementPercent)).toEqual([null, null, null]);
+    expect(day.metrics.map((x) => x.skipReason)).toEqual([
+      'no_weight',
+      'no_weight',
+      'unknown_metric',
+    ]);
+  });
+
+  it('hammasi og`irliksiz bo`lsa kompozit NULL (0 EMAS)', () => {
+    const day = scoreDay([
+      m({ metricKey: 'cash_revenue', autoValue: 1_000_000n, target: 1_000_000n, weight: null }),
+      m({ metricKey: 'late_minutes', autoValue: 0n, target: 10n, weight: null }),
+    ]);
+    expect(day.score).toBeNull();
+    expect(day.weightTotal).toBe(0);
+    expect(day.coverage).toBeNull(); // mahraj yo'q ⇒ NULL, «0% qamrov» EMAS
+  });
+
+  /**
+   * 100% MAJBURIYATI YO'Q — kompozit MAVJUD og'irliklar yig'indisiga
+   * normallashtiriladi. Bitta KPI qo'shish qolganini «qayta muvozanatlash»
+   * talab qilmasligi shu yerda qulflanadi.
+   */
+  it('yolg`iz 60 og`irlik ÷60 ga normallashadi (÷100 EMAS)', () => {
+    const day = scoreDay([
+      m({ metricKey: 'cash_revenue', autoValue: 800_000n, target: 1_000_000n, weight: 60 }), // 80%
+    ]);
+    expect(day.score).toBe(80); // ÷100 bo'lsa 48 bo'lardi
+    expect(day.weightScored).toBe(60);
+  });
+
+  it('yig`indi 100 dan OSHSA ham normallashadi', () => {
+    const day = scoreDay([
+      m({ metricKey: 'cash_revenue', autoValue: 800_000n, target: 1_000_000n, weight: 80 }), // 80%
+      m({ metricKey: 'late_minutes', autoValue: 10n, target: 10n, weight: 80 }), // 100%
+    ]);
+    expect(day.score).toBe(90); // (80×80 + 80×100) ÷ 160
+    expect(day.weightScored).toBe(160);
+  });
+});

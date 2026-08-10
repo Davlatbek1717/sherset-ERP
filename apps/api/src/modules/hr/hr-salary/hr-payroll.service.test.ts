@@ -461,3 +461,45 @@ describe('HR-1 — fiks komponent Employee.salaryMinor ustunidan', () => {
     expect(arg.create.fixComponentMinor).toBe(0n);
   });
 });
+
+/**
+ * KPI-05 — OYLIK OG'IRLIKKA BOG'LIQ EMAS (to'langan oy qayta yozilmaydi).
+ *
+ * Og'irlik endi `EmployeeKpiTarget` dan ham kelishi va istalgan kuni
+ * tahrirlanishi mumkin. Agar oylik hisob og'irlikni o'qiganida edi, bugungi
+ * tahrir ALLAQACHON TO'LANGAN oyning raqamini qayta hisoblab yuborardi
+ * (`HrKpiMonthlyScore.upsert` idempotent — u eski qatorni bosib yozadi).
+ *
+ * Hozircha oylik faqat qabul qilingan kunlarning sotuv FAKTIDAN
+ * (`autoValue`/`adjustValue`) hisoblanadi. Bu test o'sha holatni QULFLAYDI:
+ * so'rovga og'irlik/ball maydoni qo'shilishi — «to'langan oy endi jonli
+ * qayta hisoblanadi» degan qarorning birinchi qadami, va u ko'r-ko'rona
+ * o'tib ketmasligi kerak.
+ */
+describe('KPI-05 — oylik hisob KPI og`irligini o`qimaydi', () => {
+  it('kunlik so`rov select`ida og`irlik/ball maydonlari YO`Q', async () => {
+    const prisma = makePrisma();
+    const svc = new HrPayrollService(
+      // biome-ignore lint/suspicious/noExplicitAny: test wiring
+      prisma as any,
+      // biome-ignore lint/suspicious/noExplicitAny: test wiring
+      makeSalary() as any,
+      // biome-ignore lint/suspicious/noExplicitAny: test wiring
+      makeBonusFine() as any,
+    );
+    prisma.client.employee.findFirst.mockResolvedValue({ id: 'emp-1', salaryConfig: {} });
+    prisma.client.employeeDailyKpi.findMany.mockResolvedValue([acceptedDay(1_000_00n)]);
+    prisma.client.hrKpiMonthlyScore.upsert.mockResolvedValue({});
+
+    await svc.computeMonthly('acc1', 'emp-1', '2026-05');
+
+    const args = prisma.client.employeeDailyKpi.findMany.mock.calls[0]?.[0] as {
+      select: unknown;
+    };
+    const shape = JSON.stringify(args.select);
+    expect(shape).not.toMatch(/weight/i);
+    expect(shape).not.toMatch(/score/i);
+    // Vacuous emas: so'rov haqiqatan fakt maydonlarini oladi.
+    expect(shape).toMatch(/autoValue/);
+  });
+});

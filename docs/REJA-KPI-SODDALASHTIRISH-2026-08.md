@@ -288,7 +288,7 @@ jadval olib tashlangan, hech qanday «og'irlik 100%» talabi qolmagan · browser
 
 ---
 
-### KPI-05 — Oylik ball og'irlikni IXTIYORIY qabul qiladi (100% majburiyati olib tashlanadi) ☐ HISOBOT
+### KPI-05 — Oylik ball og'irlikni IXTIYORIY qabul qiladi (100% majburiyati olib tashlanadi) ☑ HISOBOT (2026-08-10)
 **Bo'lim/blok:** KPI-soddalashtirish · **TZ:** §2.2, §4 (qabul→oylik)
 **Ustuvorlik:** P1 · **Bog'liqlik:** KPI-03
 **Maqsad:** Kompozit oylik ball og'irliklarni **mavjud og'irliklar yig'indisi bo'yicha normallashtirsin** —
@@ -620,5 +620,114 @@ key-existence gate uni ko'rmasdi** (gate faqat `app/(app)` ni skanlaydi,
 o'lik kod bo'lib qoldi) — KPI-05 dan keyin olib tashlash yoki ataylab qoldirish qarori kerak.
 **Browser-smoke YO'Q** (KPI-06).
 
-### KPI-05 — _(kutilmoqda)_
+### KPI-05 — ✅ 2026-08-10 (Phase-1: strukturaviy + unit + **jonli DB CHECK**-tasdiqlangan, browser-smoke YO'Q)
+
+**Nima qilindi.** Og'irlik endi HAQIQATAN ixtiyoriy: biriktirilgan KPI o'z og'irligi bilan
+kunlik ballga kiradi, og'irliksizi esa faqat kuzatiladi — va ikkalasi ham o'sha kunga
+MUHRLANADI, ya'ni bugungi tahrir o'tgan kunning ballini qayta yozmaydi.
+
+**🔴 Rejaning uch bandi kodda tekshirildi (O'ZGARMAS QOIDA №2) — uchalasi ham allaqachon
+bajarilgan yoki NOTO'G'RI da'vo bo'lib chiqdi:**
+
+1. **§1 «kompozit mavjud og'irliklar yig'indisiga normallashtirilsin, 100% majburiyati
+   olib tashlansin»** — `kpi-score.ts` da **allaqachon shunday edi**: `weightedSum /
+   weightScored` (÷100 EMAS), 100% talabi esa bu faylda umuman yo'q edi (u KPI-04 da UI
+   tomonidan olib tashlangan). Kod o'zgartirilmadi; shartnoma ikki OSHKORA test bilan
+   qulflandi (yolg'iz 60 → ÷60 · 80+80 → ÷160) va **mutant** bilan (`/ weightScored` →
+   `/ 100`) vacuous emasligi o'lchandi — 3 test yiqildi, keyin tiklandi.
+2. **§2 «`kpi-accrual` / `HrKpiMonthlyScore` yozuvchi normallashtirilgan ballni ishlatsin»** —
+   **NOTO'G'RI da'vo**: `HrKpiMonthlyScore` kompozit ballni **umuman o'qimaydi** (u qabul
+   qilingan kunlarning SOTUV faktidan hisoblanadi — `select: {autoValue, adjustValue}`),
+   `kpi-accrual` esa qabul lahzasida MUZLATILGAN `scorePercent` dan. Ya'ni og'irlik tahriri
+   to'langan oyga hech qanday yo'l bilan yeta olmaydi. Kod o'zgartirilmadi; o'rniga
+   **tripwire test** qo'yildi (`hr-payroll.service.test.ts`): kunlik so'rov `select` ida
+   `weight|score` maydonlari paydo bo'lsa test yiqiladi — «to'langan oy endi jonli qayta
+   hisoblanadi» qarori ko'r-ko'rona o'tib ketmasin.
+3. **§3 «`data-quality.service.ts` og'irliksizni «o'lchanmagan»dan farqlasin»** — panel
+   og'irlikni **umuman o'qimaydi** (bayroq `_count.autoValue` ustidan), ya'ni aralashtirish
+   imkoni yo'q. Kod o'zgartirilmadi. Farq `kpi-score.ts` da yashaydi: `no_weight` sababi
+   ATAYLAB `unmeasured` dan OLDIN turadi — og'irliksiz qator o'lchov kamchiligi EMAS,
+   ataylab ballsiz ([[data-quality-flag-layer]]).
+
+**HAQIQIY qarz shu fazada yopildi** (uni KPI-03 hisobotining o'zi KPI-05 ga qoldirgan edi):
+og'irlik hamon **FAQAT profil versiyasidan** o'qilardi, ya'ni profilda qatori yo'q
+biriktirilgan KPI **hech qachon ballanmasdi** — «og'irlik ixtiyoriy» va'dasining ikkinchi
+yarmi (og'irlik QO'YILSA ballga kirishi) ishlamasdi.
+
+- `EmployeeTargetRow.weight` + yangi sof funksiya **`resolveDailyWeights`** — pog'ona
+  **biriktirilgan KPI > profil versiyasi**. 🔴 Qatordagi `weight = NULL` **ham USTUN**:
+  menejer ataylab ballsiz qo'ygan KPI'ni profildagi eski og'irlik jimgina qaytarib
+  ballamaydi (maqsad tomonidagi «raqamsiz todo pastdagi pog'onani to'sadi» qoidasining
+  aynan o'zi).
+- **`pickEmployeeRows`** — maqsad ham, og'irlik ham AYNAN bir qatordan olinadi. Tanlov ikki
+  joyda takrorlansa, bir kun kelib maqsad bir qatordan, og'irlik boshqasidan kelib, ekrandagi
+  raqam hech qaysi sozlamaga mos kelmasdi ([[copy-paste-loses-a-branch]]).
+- **Sxema muhri:** `EmployeeDailyKpiMetric.weightApplied` (`Decimal(5,2)?`) + `weightSource`
+  (`VarChar(20)?`) — KPI-03 maqsad muhrining AYNAN naqshi. Migratsiya
+  `20260810190000_daily_kpi_metric_weight_seal`, **3 CHECK**: manba lug'ati yopiq
+  (`employee_target|profile|none`) · muhr butunligi (qiymat bor, manba yo'q — TAQIQ) ·
+  `0…100` oralig'i (manbadagi CHECK bilan bir xil, aks holda manbada ruxsat etilgan qiymat
+  muhrda tungi hisobni yiqitardi). **Backfill YO'Q** — eski qatorlar muhrsiz qoladi.
+- **Dvigatel** muhrni FAQAT `create` da yozadi (`update` payload'i avvalgidek
+  `{autoValue, complete}`); **o'quvchi** `effectiveWeight` — muhr ustun, muhrsiz qator
+  avvalgidek profil og'irligiga tushadi. Shu sababli jonli bazadagi **468 mavjud kun qatori**
+  bu deploydan keyin ham aynan avvalgi ballini beradi.
+- **`kpi-score.ts`: `weight: number | null`.** Og'irliksiz qator endi **bajarish foizini
+  KO'RSATADI** (kuzatiladi), lekin `contributionPercent: null` va ballga kirmaydi — «og'irlik
+  qo'yilmasa KPI shunchaki o'lchanadi» ning kod ifodasi. `NULL ≠ 0`: `ScoredMetric.weight`
+  kirishdagi qiymatni AYNAN qaytaradi (qo'yilmagan = `null`, nol qo'yilgan = `0`).
+
+**Fayllar.** `apps/api/src/modules/manager/kpi/kpi-score.ts` (+`.test.ts`) · `kpi-target.ts`
+(+`.test.ts`) · `employee-daily-kpi.service.ts` (+`.test.ts`) · `daily-kpi-acceptance.service.ts`
+(+`.test.ts`) · `employee-kpi-target-schema.test.ts` · `apps/api/src/modules/hr/hr-salary/
+hr-payroll.service.test.ts` · `packages/db/prisma/schema.prisma` ·
+`packages/db/prisma/migrations/20260810190000_daily_kpi_metric_weight_seal/migration.sql` (yangi) ·
+`scripts/probe-daily-kpi-weight-seal.mts` (yangi, jonli-DB probe).
+**`kpi-accrual.ts` va `data-quality.service.ts` — ATAYLAB TEGILMADI** (yuqoridagi §2/§3 sabab).
+
+**Testlar.** TDD: sof ball **3 RED** → yashil · og'irlik resolveri **8 RED** → yashil · sxema
+guard **6 RED** → yashil · dvigatel muhri **7 RED** → yashil · o'quvchi **3 RED** → yashil.
+- `kpi-score.test.ts` **35** · `kpi-target.test.ts` **47** · `employee-daily-kpi.service.test.ts`
+  **51** · `daily-kpi-acceptance.service.test.ts` **26** · `employee-kpi-target-schema.test.ts`
+  **35** · `hr-payroll.service.test.ts` **23** · butun `manager/kpi` moduli **474/474**.
+- **MUTANT bilan tasdiqlangan** (vacuous emas): (a) `weightedSum / weightScored` → `/ 100`
+  qilinganda normallashtirish testlari yiqildi; (b) payroll tripwire — `select` ga
+  `weightApplied: true` qo'shilganda darhol yiqildi; ikkalasi ham tiklandi (`git diff` toza).
+- **Jonli DB probe** (`climart_adopt`, rollback qilinadigan tranzaksiyada): **16/16** — ikkala
+  ustun bor va NULLABLE · mavjud **468 qatordan 0 tasi muhrlangan** (vacuous emasligi alohida
+  o'lchandi) · muhrlangan og'irliksizlik qabul qilinadi · noma'lum manba → **23514** · «qiymat
+  bor, manba yo'q» → **23514** · `100.01` va `-1` → **23514** · `0`/`100` chegaralari qabul ·
+  rollback haqiqatan bo'ldi.
+
+**Gate.** `@moysklad/api typecheck` **0** · `pnpm lint:product` **0 error** (832 warning,
+siyosat bo'yicha ruxsat) · `prisma migrate diff` yangi ustunlar bo'yicha **drift yo'q** ·
+`@moysklad/api vitest` **7640 passed / 2 skipped (534 fayl) — 0 yiqilish**, regress yo'q.
+⚠️ Birinchi to'liq yugurtishda 4 ta **5000ms timeout flake** bo'ldi (KPI-03 hisobotidagi ayni
+klass); toza qayta yugurtish **0 yiqilish** berdi. i18n gate — UI matn tegilmagani uchun tegishli emas
+(bu faza faqat API/DB).
+
+**Lokal DB.** Migratsiya `climart_adopt` ga `prisma db execute` bilan qo'llandi (`migrate dev`
+EMAS — shu bazada `_prisma_migrations` buzuq, [[climart-adopt-local-db-untracked]]).
+`prisma generate` qayta yugurtirildi (birinchi urinish EPERM bilan yiqildi, ikkinchisi o'tdi).
+
+**OPS-QADAM (prod).** `/deploy` → `prisma migrate deploy` ikki ustun + 3 CHECK'ni `sherset_v2`
+ga qo'llaydi. **Backfill YO'Q va bo'lmasligi ham SHART** — mavjud kunlar muhrsiz qolib,
+avvalgidek profil og'irligidan o'qiladi, ya'ni deploy hech bir mavjud kunning ballini
+o'zgartirmaydi.
+
+**Parallel sessiya.** Ish davomida boshqa sessiya KPI-02 va KPI-04 ni COMMIT qildi
+(`9bd914d7`, `c5b3a173`). Ularning fayllari bilan **kesishma yo'q** (tekshirildi:
+`git show --name-only` × mening ro'yxatim = 0). `schema.prisma` diff'i faqat mening bitta
+hunk'im (16 qator).
+
+**Ochiq qarz.**
+1. `daily-kpi-acceptance.detail()` javobida `weight: … ?? 0` — «og'irlik qo'yilmagan» ekranda
+   hamon `0` bo'lib chiqadi (DB'da, sof qatlamda va muhrda esa `null` saqlanadi). Bu maydonni
+   `null` ga o'tkazish `apps/web/src/lib/manager-api.ts` ni ham o'zgartirishni talab qiladi —
+   u KPI-04 sessiyasining fayli, shuning uchun ATAYLAB tegilmadi (CLAUDE.md §6.1).
+2. Eski `PUT manager/kpi/employee/:id/config` + `KpiConfigService` hamon tirik (KPI-04 qarzi) —
+   u profil versiyasiga og'irlik yozadi, ya'ni ikkinchi yozuv yo'li ochiq qolgan.
+3. `manualDoneAt` bitta timestamp (KPI-03 qarzi) — takrorlanuvchi kunlik todo uchun har kun
+   qayta belgilash kerak.
+**Browser-smoke YO'Q** (KPI-06).
 ### KPI-06 — _(kutilmoqda)_

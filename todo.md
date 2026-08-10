@@ -285,6 +285,12 @@ kuniga **3 sessiya** → **~6 hafta**.
       append-only jurnal) + FE ikkala yuzasi: xodim kartasi **todo-ro'yxati** (katalog jadvali va
       «og'irlik 100%» talabi olib tashlandi) va yangi **`/menejer/kpi`**. Og'irlik ixtiyoriy;
       so'm→tiyin faqat serverda. Qolgani: **KPI-05** (ball normalizatsiyasi) · **KPI-06** (brauzer QA).
+      **2026-08-10 (KPI-05):** og'irlik pog'onasi ulandi — biriktirilgan KPI og'irligi profil
+      versiyasidan USTUN (`resolveDailyWeights`), `weight = NULL` ham ustun (ataylab ballsiz) va
+      og'irlik endi kunga MUHRLANADI (`weight_applied`/`weight_source`,
+      `20260810190000_daily_kpi_metric_weight_seal`, backfill yo'q) — tahrir faqat kelajakka.
+      Kompozit allaqachon Σ(w) ga normallashardi; `HrKpiMonthlyScore` og'irlikni umuman
+      o'qimaydi (tripwire test qo'yildi). Qolgani: **KPI-06** (brauzer QA).
 - [ ] **4M Phase-2 QA** — rad→tushuntirish · eskalatsiya · majburiy yopish · tuzatma dialogi ·
       **RU-locale** · o'z-KPI dialogi · **xodim tomoni FE** (BE tayyor, FE yo'q)
 

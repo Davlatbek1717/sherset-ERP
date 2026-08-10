@@ -953,6 +953,8 @@ const SCORABLE_METRIC_SELECT = {
   complete: true,
   targetValue: true,
   targetSource: true,
+  weightApplied: true,
+  weightSource: true,
 } as const;
 
 interface ScorableRow {
@@ -965,6 +967,10 @@ interface ScorableRow {
     targetValue?: bigint | null;
     /** NULL = MUHR YO'Q → profil maqsadiga tushiladi. */
     targetSource?: string | null;
+    /** O'sha kunga muhrlangan og'irlik (KPI-05). NULL = og'irlik qo'yilmagan. */
+    weightApplied?: Prisma.Decimal | number | null;
+    /** NULL = MUHR YO'Q → profil og'irligiga tushiladi. */
+    weightSource?: string | null;
   }>;
   profileVersion: {
     metrics: ReadonlyArray<{
@@ -994,6 +1000,27 @@ function effectiveTarget(
 }
 
 /**
+ * Shu kun uchun amaldagi og'irlik — MUHR ustun, profil esa zaxira (KPI-05).
+ *
+ * Qoida maqsadnikiga AYNAN mos: `weightSource != null` = kun hisoblanganda
+ * og'irlik muhrlangan, undan keyingi tahrir bu kunga tegmaydi. Muhrlangan
+ * `null` = «o'sha kuni og'irlik qo'yilmagan edi» — profilga QAYTILMAYDI, aks
+ * holda menejer ataylab ballsiz qoldirgan ko'rsatkich jimgina ballanardi.
+ *
+ * Muhrsiz (migratsiyadan oldingi) qator avvalgidek profil og'irligiga tushadi,
+ * ya'ni eski kunlarning balli o'zgarmaydi.
+ */
+function effectiveWeight(
+  metric: ScorableRow['metrics'][number],
+  profileWeight: number | undefined,
+): number | null {
+  if (metric.weightSource != null) {
+    return metric.weightApplied == null ? null : Number(metric.weightApplied);
+  }
+  return profileWeight ?? null;
+}
+
+/**
  * DB qatorini sof ball hisoblagichiga o'tkazadi (`kpi-score.ts`).
  * Formula bu yerda TAKRORLANMAYDI — 1.4 dagi «yetti joyda uch xil foiz»
  * hodisasi aynan shunday boshlangan edi.
@@ -1010,7 +1037,7 @@ function scoreRow(row: ScorableRow, catalog: MetricCatalog = BUILT_IN_CATALOG): 
     autoValue: m.autoValue,
     adjustValue: m.adjustValue,
     target: effectiveTarget(m, cfg.get(m.metricKey)?.target),
-    weight: cfg.get(m.metricKey)?.weight ?? 0,
+    weight: effectiveWeight(m, cfg.get(m.metricKey)?.weight),
     complete: m.complete,
   }));
   return scoreDay(inputs, catalog);

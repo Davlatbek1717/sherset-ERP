@@ -10413,6 +10413,22 @@ model EmployeeDailyKpiMetric {
   /// holatlari farqlanmasdi va eski kunlar ballari nolga tushib ketardi.
   targetSource String? @map("target_source") @db.VarChar(20)
 
+  /// 🔴 KPI-05 — O'SHA KUNGA qo'llangan OG'IRLIK, qator ichida MUHRLANGAN.
+  /// **NULL = og'irlik qo'yilmagan** (ballanmaydi, faqat kuzatiladi), 0 EMAS.
+  ///
+  /// Nega muhr: og'irlik endi `EmployeeKpiTarget.weight` dan ham keladi, u
+  /// qatlam esa versiyalanmaydi. Muhrsiz o'qilsa bugungi og'irlik tahriri
+  /// o'tgan kunlarning ballini qayta yozardi — `kpi_profile_versions` aynan
+  /// shuni to'sish uchun bor edi (maqsad tomonida bu `targetValue` muhri).
+  weightApplied Decimal? @map("weight_applied") @db.Decimal(5, 2)
+  /// Og'irlik qaysi pog'onadan kelgani: `employee_target` | `profile` | `none`
+  /// (`kpi-target.ts` `WeightSource`).
+  ///
+  /// **NULL = MUHR YO'Q** — migratsiyadan oldin hisoblangan qator; o'quvchi
+  /// unda avvalgidek profil versiyasidagi og'irlikka tushadi. Bu ustunsiz
+  /// «muhrlangan og'irliksizlik» va «umuman muhrlanmagan» farqlanmasdi.
+  weightSource String? @map("weight_source") @db.VarChar(20)
+
   account  Account          @relation(fields: [accountId], references: [id], onDelete: Cascade)
   dailyKpi EmployeeDailyKpi @relation(fields: [dailyKpiId], references: [id], onDelete: Cascade)
 
