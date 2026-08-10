@@ -841,7 +841,7 @@ mobil navigatsiya · offline holatida aniq xato (soxta muvaffaqiyat yo'q).
 
 ---
 
-### MK25 — M2 **Phase-2 QA** (mobil qurilma + yangi menejer ekranlari) ☐ HISOBOT
+### MK25 — M2 **Phase-2 QA** (mobil qurilma + yangi menejer ekranlari) ◐ HISOBOT (2026-08-10) — QISMAN: MK15–MK21 ✅ · MK22–MK24 BAJARIB BO'LMADI
 **Tur:** QA sessiyasi · **Ustuvorlik:** P1 · **Bog'liqlik:** MK15–MK24
 **Qamrov:** **real telefonda** menejer nazorat oqimi va omborchi skaner oqimi · pul manzarasi
 paneli raqamlari ichki hisobotlar bilan solishtiriladi · qarz undirish eslatmasi jonli yuboriladi ·
@@ -4762,3 +4762,147 @@ o'chiq bo'lganda rol matritsasida `O'zining`/`Guruh` tanlovi yonida ochiq ogohla
 («bu tanlov hozir kuchga kirmaydi — qamrov 2/47»), aks holda admin yo'q chegarani qo'yganini
 biladi deb o'ylaydi. Shuningdek MK29 shablon FE + MK26 override FE (MK28) va MK35 (filial)
 bajarilgach MK40 qayta yugurtiriladi.
+
+## Faza MK25 — M2 **Phase-2 QA** (menejer nazorat ekranlari + omborchi/skaner) (sana: 2026-08-10)
+
+**Holat:** **QISMAN BAJARILDI** — MK15–MK21 real brauzerda tekshirildi (Playwright, `climart_adopt`
+@ 5432, web 3100 / api 4000). **MK22–MK24 bajarib bo'lmadi** — sababi pastda, «Bajarilmagan qamrov».
+Ikki defekt topildi va **darhol tuzatildi** (RED → GREEN, ikkalasi ham regress-qulfi bilan).
+
+### Bajarilmagan qamrov (ochiq aytiladi)
+
+MK25 bandi `MK15–MK24` ga bog'liq deb yozilgan, lekin sessiya boshida o'lchandi:
+
+| Band | Holat | MK25 uchun oqibati |
+|---|---|---|
+| **MK23** (1:1 suhbat) | ☐ qurilmagan — hisobot bo'limi yo'q | tekshiriladigan ekran YO'Q |
+| **MK24** (mobil rejim) | ☐ qurilmagan — `menejer/`, `omborchi/`, `scan/` da bironta touch-target/responsive kod yo'q (grep bilan o'lchandi) | «real telefonda mobil rejim» QA'sining **predmeti yo'q** |
+| **MK22** (maqsad kaskadi) | ☑ mantiqiy yadro, lekin **route yo'q** (o'sha bandning o'zi «runtime'da yetib bo'lmaydi» deb turibdi) | brauzerda ochib bo'lmaydi |
+
+Shuningdek **«real telefon» ishlatilmadi** — jismoniy qurilma yo'q. Uning o'rniga 390×844
+viewport'da (Chromium) tekshirildi. Bu **kamera-skaner**ni qoplamaydi: `/scan` headless brauzerda
+`BarcodeDetector` yo'qligini halol aytadi («Bu brauzer kamera-skanerni qo'llamaydi»), real telefonda
+esa kamera yo'li ochiladi va u **hamon tekshirilmagan**. MK24 qurilgach qayta QA shart.
+
+### Tekshirilgan va TASDIQLANGAN
+
+**MK15 — pul manzarasi raqamlari ichki hisobotga mos** (bandning asosiy talabi). Bir son
+**uch mustaqil manbadan** olinib qiyoslandi va brauzerdagi katak bilan solishtirildi:
+
+| Blok | Panel | Ichki hisobot | Natija |
+|---|---|---|---|
+| kassa | `11 810 000` minor | `/admin/cash-desks` yig'indisi `11 810 000` | ✅ teng |
+| mijoz qarzi | `550 000` | `/reports/counterparty-balance` → `totalDebtMinor 550 000` | ✅ teng |
+| ta'minotchi qarzi | `0` | `totalCreditMinor 0` | ✅ teng |
+| bank | `null` / «hisoblanmadi» | — | ✅ NULL ≠ 0 shartnomasi ekranda ham amal qiladi (`—`, `0,00 сум` EMAS) |
+| **sof qoldiq** | `—` | — | ✅ bitta blok o'lchanmagani uchun **yarim yig'indi berilmadi** |
+
+Formatlash mustaqil tekshirildi: spec `formatMoney` ni **import qilmaydi**, uni qayta hisoblaydi —
+aks holda formatlash bug'i ikkala tomonda barobar «to'g'ri» bo'lib qolardi.
+
+**MK19 — brifingdagi «uchta 17» soxta signal bo'lib chiqdi (refuted).** Ekranda `Jarayonda turgan
+ish 17`, `SLA buzilishi 17`, `Qabul kutayotgan kunlar 17` — nusxa-ko'chirish naqshiga o'xshaydi.
+O'lchandi: `stuck` = `Σ board.stages[].total`, `sla_breach` = `board.overdueCount`, ikkalasi bitta
+so'rovdan lekin **boshqa maydondan**; `/manager/sla` javobida `overdueCount: 17` va ochiq
+elementlar ham 17 — ya'ni barcha ochiq element muddati o'tgan (eskirgan demo-ma'lumot).
+`acceptance_pending` esa mutlaqo boshqa servisdan. **Wiring bug'i yo'q.**
+
+**MK16 — eslatma oqimining server tomoni to'g'ri.** O'chirilgan tugmani chetlab o'tib telefonsiz
+qarzga `POST /manager/collection/remind` yuborildi: `queued: 0`, `journaled: 0`, `skipped[reason]`,
+jurnalga yozuv **tushmadi** (`remindedToday` false qoldi, `lastContactAt` o'zgarmadi), ikkinchi
+urinish ham bir xil — **idempotent, soxta muvaffaqiyat yo'q**.
+
+**Авторизация** — token'siz `GET /manager/money-map` → `401`.
+
+**Skaner oqimi (390×844, funksional)** — jonli bazadagi shtrix-kod kiritilganda to'g'ridan-to'g'ri
+tovar kartasiga o'tadi; mavjud bo'lmagan kod **«topilmadi»** beradi va sahifada qoladi (jim
+qolmaydi, soxta muvaffaqiyat yo'q). Omborchi paneli telefon kengligida haqiqatan ishlatsa
+bo'ladigan holatda chiziladi.
+
+**Barcha M2 ekranlari** (`pul-manzarasi · undirish · mijoz-taqsimoti · xato-narx · brifing ·
+izoh-shablonlari · qarorlar · plan · omborchi · scan`) — konsol-xatosiz, `4xx/5xx` so'rovsiz,
+xom i18n kalitisiz ochiladi. 390×844 da **birontasi gorizontal toshmaydi** (`overflowBy: 0` ×10) —
+bu MK24 uchun o'lchangan boshlang'ich holat, `test-results/mk25/mk25-mobile-overflow.json`.
+
+### Topilgan defektlar va tuzatish
+
+**D1 (MK16) — o'tkazib yuborish sababi ekranga XOM i18n KALITI bo'lib chiqadi.** 🔴
+
+Sahifa sababni `t(\`reason_${s.reason}\` as never)` bilan chizardi. `as never` typecheck'ni
+o'chiradi, i18n gate esa dinamik kalitni umuman ko'rmaydi (gate o'zi aytadi: «12944 static t() keys
+checked, **328 dynamic + 39 ambiguous-var skipped**»). Jo'natgich esa kaliti yo'q kodlar qaytaradi:
+`no_chat` va `business_not_connected` (`telegram.service.ts:726,732`) — ikkalasining ham
+`pages.menejerCollection` da kaliti YO'Q edi; ustiga u **Telegram xatosining MATNINI** ham sabab
+qilib uzatadi (`reason: msg.slice(0, 200)`), ya'ni kodlar to'plami umuman yopiq emas.
+`debt.service.ts:385` dagi `res.reason ?? 'no_telegram_chat'` zaxirasi bu yerda **hech qachon
+ishlamaydi** — servis `undefined` emas, `no_chat` qaytaradi.
+
+O'lchangan natija (RED test chiqishi): ekranda menejerga
+`Romashka MChJ — pages.menejerCollection.reason_no_chat` ko'rinadi.
+
+**Tuzatish** — ikki qatlamli: (1) yetishmagan kalitlar qo'shildi (`reason_no_chat`,
+`reason_business_not_connected`); (2) `reasonLabel()` — kalit bo'lsa tarjima, bo'lmasa
+`reason_unknown` zaxira matni **va kodning O'ZI** (kod yashirilsa menejer nosozlikni aniqlay
+olmaydi). Ikkinchi qatlam bug-klassini yopadi: yangi sabab kodi endi ekranni buzolmaydi.
+
+**D2 (MK21) — qaror jurnalida holat UMUMAN tarjima qilinmasdi.** 🟠
+
+`{r.fromState} → {r.toState}` xom kod bilan chizilardi: menejer `escalated → force_accepted`
+ko'rardi, qo'shni `menejer` ekrani esa aynan shu holatlarni tarjima qiladi (sibling-parity buzilishi).
+
+**Tuzatish** — `stateLabel(src, code)` **manba bo'yicha mavjud lug'atni** tanlaydi: `daily_kpi` →
+`pages.menejer.state_*`, `work_item` → `pages.managerQueue.status_*`. **Uchinchi nusxa
+OCHILMADI** — sahifaning o'zi shu prinsipda yozilgan (`tQueue` aynan shu sabab bilan olingan).
+Lug'ati yo'q manba (`shift`, `supply`) yoki yangi holat — **xom kod** bo'lib qoladi, xom kalit yo'li
+emas: tarjima qarzi ko'rinib turadi, ekran buzilmaydi. Sabab kodi ham (`reasonLabel`) shu
+himoyani oldi.
+
+### Testlar (yangi)
+
+- `apps/web/src/app/(app)/menejer/undirish/page.test.tsx` (4 test) — MK16 sahifasida **umuman
+  komponent testi yo'q edi**. RED holatda uch test xom kalitni ushladi, tuzatishdan keyin GREEN.
+- `apps/web/src/app/(app)/menejer/qarorlar/page.test.tsx` (4 test) — MK21 holat yorlig'i.
+  **Mutatsiya bilan tekshirildi**: `daily_kpi` shoxi o'chirilganda test yiqiladi ⇒ yolg'on-yashil emas.
+- `apps/web/tests/e2e/mk25-manager-m2-qa.spec.ts` (6 test) — pul-manzarasi ikki-manba qiyosi,
+  авторизация, 10 ekran sog'lomligi, skaner oqimi (2), MK24 mobil baseline o'lchovi.
+
+### Gate
+
+- `pnpm typecheck` — **0** (10/10 paket)
+- `pnpm lint:product` — **0 error** (832 warning, siyosat bo'yicha ruxsat)
+- `pnpm i18n:gate` — **9/9 yashil** (ru+uz key-existence + no-hardcoded)
+- `apps/web` Vitest — **217 fayl / 3125 test yashil**, 26 skip, regress yo'q
+- Playwright `mk25-manager-m2-qa.spec.ts` — **6/6 yashil**
+
+`apps/api` tegilmadi (o'zgargan fayllar faqat FE + i18n), shuning uchun API suite yugurtirilmadi.
+
+### Fayllar
+
+**FE:** `app/(app)/menejer/undirish/page.tsx` (D1) · `app/(app)/menejer/qarorlar/page.tsx` (D2) ·
+`messages/{ru,uz}.json` (3 kalit × 2 til).
+**Testlar:** `menejer/undirish/page.test.tsx` · `menejer/qarorlar/page.test.tsx` (yangi) ·
+`tests/e2e/mk25-manager-m2-qa.spec.ts` (yangi).
+
+### Parallel sessiya
+
+Playwright **MCP** brauzer profili band edi (`mcp-chrome-4629af7`) — egasi buni parallel sessiya
+ishlatayotgani bilan tasdiqladi, shuning uchun **tegilmadi**; QA repo'ning o'z Playwright'i bilan
+alohida brauzerda yugurtirildi (boshqa profil, konflikt yo'q). `docs/REJA-MENEJER-KASSA-2026-08.md`
+da begona (mening emas) whitespace tahriri ishchi daraxtda turardi — commit «HEAD + faqat mening
+hunk'larim» blobi bilan qilindi, o'sha tahrir commit qilinmagan holda qoldirildi.
+
+### QARZ / keyingi qadam
+
+1. **MK23 va MK24 qurilishi kerak** — MK25 ularsiz yakunlanmaydi. MK24 bajarilgach MK25 **qayta**
+   yugurtiriladi, o'shanda: real qurilmada kamera-skaner, touch-target o'lchamlari, offline holat.
+2. **MK22** — runtime'ga ulanmagan (route yo'q); u ulangach QA'ga qo'shiladi.
+3. **Bug-klass ochiq qoladi:** `t(\`…\` as never)` naqshi web'da yana ~28 joyda bor
+   (`menejer/page.tsx`, `menejer/jonli`, `menejer/narx-nazorati`, `hr/equipment`, `hr/employees`
+   va b.). Ularning ko'pi FE'dagi **yopiq enum** bilan ishlaydi (xavfsiz), lekin qaysi biri
+   **serverdan kelgan ochiq matn** bilan ishlashini birma-bir o'lchash kerak — i18n gate buni
+   printsipial ravishda tuta olmaydi. Alohida band sifatida rejalashtirilsin.
+4. **Eslatma kanali sozlanmagani ro'yxatda ko'rinmaydi:** `canRemind` faqat telefon + «bugun
+   yuborilgan» ni biladi, kanal (SMS/Telegram) umuman sozlanmaganini EMAS. Telefoni bor qarzlarda
+   tugma yonaveradi va bosilganda hammasi `skipped` bo'ladi. Natija halol ko'rsatiladi
+   (`queued: 0` + sabablar), shuning uchun bu **bug emas**, lekin ish ro'yxatining yuqorisida
+   «kanal sozlanmagan» ogohlantirishi bo'lgani ma'qul — MK16 ga kichik qarz.

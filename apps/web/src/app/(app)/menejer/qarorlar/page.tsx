@@ -87,6 +87,45 @@ export default function MenejerQarorlarPage() {
   const tQueue = useTranslations('pages.managerQueue');
   const format = useFormatter();
 
+  /** Kunlik-KPI holat lug'ati — MK03 da tarjima qilingan, nusxa olinmaydi. */
+  const tKpi = useTranslations('pages.menejer');
+
+  /**
+   * Sabab kodi — kalit bo'lmasa xom kalit yo'li («pages.managerDecisions.
+   * reason_…») chizilmaydi, KODNING O'ZI qoladi. Sabab kodlari serverdan
+   * keladi va ro'yxati yopiq emas.
+   */
+  const reasonLabel = (code: string): string => {
+    const key = `reason_${code}`;
+    return t.has(key as never) ? t(key as never) : code;
+  };
+
+  /**
+   * Holat yorlig'i — MANBA bo'yicha. Jurnal bir necha manbani birlashtiradi va
+   * ularning holat lug'atlari BOSHQA-BOSHQA: `daily_kpi` da `escalated` =
+   * «Egada», `work_item` da esa «Egaga chiqarilgan». Ikkalasi ham allaqachon
+   * tarjima qilingan, shuning uchun bu yerda uchinchi nusxa OCHILMAYDI —
+   * mavjud lug'at tanlanadi (`tQueue` ham xuddi shu sabab bilan olingan).
+   *
+   * Lug'ati yo'q manba (`shift`, `supply`) yoki yangi holat — xom kod bo'lib
+   * qoladi: tarjima qarzi ko'rinib turadi, ekran esa buzilmaydi. Ilgari bu
+   * yerda holat UMUMAN tarjima qilinmasdi (MK25 QA topdi).
+   *
+   * `src` ataylab `string` — simda (`DecisionJournalRow.source`) u shunday
+   * keladi, ya'ni server yangi manba qo'shsa bu yer qulab tushmaydi.
+   */
+  const stateLabel = (src: string, code: string): string => {
+    if (src === 'daily_kpi') {
+      const key = `state_${code}`;
+      return tKpi.has(key as never) ? tKpi(key as never) : code;
+    }
+    if (src === 'work_item') {
+      const key = `status_${code}`;
+      return tQueue.has(key as never) ? tQueue(key as never) : code;
+    }
+    return code;
+  };
+
   const today = new Date();
   const monthAgo = new Date(today.getTime() - 29 * 86_400_000);
 
@@ -343,12 +382,10 @@ export default function MenejerQarorlarPage() {
                       {r.actorName ?? r.actorId ?? t('no_actor_name')} ·{' '}
                       {t(`actor_${r.actorType}` as never)}
                     </span>
-                    <span className="tabular-nums">
-                      {r.fromState} → {r.toState}
-                    </span>
                     <span>
-                      {r.reasonCode ? t(`reason_${r.reasonCode}` as never) : t('no_reason')}
+                      {stateLabel(r.source, r.fromState)} → {stateLabel(r.source, r.toState)}
                     </span>
+                    <span>{r.reasonCode ? reasonLabel(r.reasonCode) : t('no_reason')}</span>
                     {r.comment && <span className="min-w-0 truncate">«{r.comment}»</span>}
                   </div>
                 </li>

@@ -102,6 +102,19 @@ Foydalanuvchi `davom et` deganda men:
 > ⚠️ **Stack tuzatmasi (2026-08-10, o'lchangan):** yuqoridagi `moysklad_dev`@5433 **ESKIRGAN** —
 > haqiqiy lokal baza `climart_adopt`@**5432** (`packages/db/.env`), `CLAUDE.md` §1 dagi kabi.
 
+> **📊 MK25 — M2 menejer ekranlari Phase-2 QA (2026-08-10i): QISMAN ✅ / ochiq ⏳.**
+> ✅ Brauzerda tasdiqlangan (`mk25-manager-m2-qa.spec.ts`, 6/6): **MK15** pul manzarasi raqamlari
+> ichki hisobotga TENG (kassa/mijoz/ta'minotchi) + `null`≠`0` + yarim yig'indi berilmaydi ·
+> **MK16** eslatma idempotent, telefonsizga jurnal yozilmaydi · **MK19** «uchta 17» soxta signal
+> ekani o'lchandi · **MK21** filtr/eksport ekrani · skaner oqimi (kod→karta, yo'q kod→«topilmadi») ·
+> 10 ekran 390×844 da toshmaydi.
+> 🔴 Tuzatildi: **D1** eslatma sababi xom i18n kaliti bo'lib chiqardi
+> (`pages.menejerCollection.reason_no_chat`) · **D2** qaror jurnali holatni umuman tarjima
+> qilmasdi (`escalated → force_accepted`).
+> ⏳ Qoldi: **MK23 ☐ va MK24 ☐ umuman qurilmagan** ⇒ «real telefon / mobil rejim» QA'sining
+> predmeti yo'q; **real qurilma ishlatilmadi** (kamera-skaner tekshirilmagan); **MK22** route'siz.
+> **MK24 bajarilgach MK25 QAYTA yugurtiriladi.** Batafsil: REJA → «Faza MK25».
+
 > **🔐 MK40 — 4-Menejer ruxsatlar Phase-2 QA (2026-08-10): QISMAN ✅ / ochiq ⏳.**
 > ✅ Brauzerda tasdiqlangan: rol yaratish→biriktirish · record-scope OWN (bayroq ON da 3→1,
 > begona yozuv `404`) · G1 matritsa rad javobi · kassa kamomadi→navbat (CASH_VARIANCE, «Jiddiy») ·
@@ -317,6 +330,66 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 ---
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
+
+> **🕒 2026-08-10i (REJA-MENEJER-KASSA **MK25** — M2 **Phase-2 QA**, menejer nazorat ekranlari) —
+> 🌐 **BRAUZERDA O'LCHANDI** (repo Playwright'i, alohida brauzer profili; `climart_adopt`@5432 +
+> api 4000 + web 3100). Holat: **Phase-2 QISMAN** — «Phase-2 verified» EMAS. To'liq hisobot:
+> `docs/REJA-MENEJER-KASSA-2026-08.md` → «Faza MK25».**
+>
+> **⚠️ Qamrovning yarmi BAJARIB BO'LMADI va buni bilib turish kerak:** MK25 `MK15–MK24` ga
+> bog'liq, lekin **MK23 va MK24 hali qurilmagan** (`menejer/`, `omborchi/`, `scan/` da bironta
+> touch-target/responsive kod yo'q — o'lchandi), **MK22** esa route'siz. Ya'ni «real telefonda
+> mobil rejim» QA'sining **predmeti yo'q**. **Real telefon ham ishlatilmadi** (qurilma yo'q) —
+> 390×844 Chromium viewport'i bilan almashtirildi, bu **kamera-skanerni QOPLAMAYDI**.
+> **MK24 qurilgach MK25 QAYTA yugurtirilishi shart.**
+>
+> **✅ Bandning asosiy talabi bajarildi — pul manzarasi raqamlari ichki hisobotga mos.** Bir son
+> uch mustaqil manbadan olinib qiyoslandi va brauzerdagi katak bilan solishtirildi: kassa
+> `11 810 000` = `/admin/cash-desks` yig'indisi · mijoz qarzi `550 000` =
+> `counterparty-balance.totalDebtMinor` · ta'minotchi `0` = `totalCreditMinor` · bank `—`
+> («hisoblanmadi», `0,00 сум` EMAS) ⇒ **sof qoldiq `—`, yarim yig'indi berilmadi**. Spec
+> `formatMoney` ni import qilmaydi, qayta hisoblaydi (aks holda format bug'i ikkala tomonda
+> barobar «to'g'ri» bo'lardi).
+>
+> **🔴 D1 (MK16) — eslatma sababi ekranga XOM i18N KALITI bo'lib chiqardi.** O'lchangan chiqish:
+> «Romashka MChJ — **pages.menejerCollection.reason_no_chat**». Sabab: `t(\`reason_${…}\` as never)` —
+> `as never` typecheck'ni o'chiradi, i18n gate esa dinamik kalitni ko'rmaydi (gate o'zi aytadi:
+> «12944 static keys checked, **328 dynamic skipped**»), jo'natgich esa kaliti yo'q kodlar
+> qaytaradi (`no_chat`, `business_not_connected`) va ustiga **Telegram xatosining MATNINI** ham
+> sabab qilib uzatadi (`reason: msg.slice(0,200)`) ⇒ kodlar to'plami yopiq emas. Tuzatish ikki
+> qatlamli: yetishmagan kalitlar + `reasonLabel()` zaxirasi (kalit yo'q ⇒ zaxira matn **va kodning
+> o'zi**). MK16 sahifasida umuman komponent testi yo'q edi — 4 test yozildi (RED→GREEN).
+>
+> **🟠 D2 (MK21) — qaror jurnalida holat umuman tarjima qilinmasdi** (`escalated → force_accepted`),
+> qo'shni `menejer` ekrani esa o'sha holatlarni tarjima qiladi. `stateLabel(src, code)` endi
+> **manba bo'yicha mavjud lug'atni** tanlaydi (`daily_kpi`→`pages.menejer.state_*`,
+> `work_item`→`pages.managerQueue.status_*`) — **uchinchi nusxa ochilmadi**; lug'atsiz manba xom
+> KOD bo'lib qoladi (xom kalit yo'li emas). 4 test, **mutatsiya bilan tekshirildi** (shox
+> o'chirilganda yiqiladi ⇒ yolg'on-yashil emas).
+>
+> **Refuted (soxta signal):** brifingdagi «uchta 17» nusxa-ko'chirishga o'xshardi — o'lchandi,
+> `stuck`=`Σ stages.total`, `sla_breach`=`overdueCount`, jonli `/manager/sla` da ikkalasi ham
+> haqiqatan 17 (barcha ochiq element muddati o'tgan). Wiring bug'i YO'Q.
+>
+> **Yana tasdiqlandi:** o'chirilgan tugmani chetlab o'tib telefonsiz qarzga eslatma POST qilinsa —
+> `queued:0 · journaled:0`, jurnalga yozilmaydi, idempotent (soxta muvaffaqiyat yo'q) ·
+> token'siz `manager/money-map` → 401 · skaner: shtrix-kod → tovar kartasi, yo'q kod →
+> «topilmadi» (jim qolmaydi) · 10 M2 ekrani konsol/4xx/xom-kalitsiz · 390×844 da **birontasi
+> gorizontal toshmaydi** (MK24 uchun baseline: `test-results/mk25/mk25-mobile-overflow.json`).
+>
+> **Gate:** typecheck 0 · `lint:product` 0 · i18n 9/9 · web Vitest **217 fayl / 3125 test** ·
+> Playwright `mk25-manager-m2-qa.spec.ts` **6/6**. `apps/api` tegilmadi.
+>
+> **QARZ:** (1) MK23+MK24 qurilishi, keyin MK25 qayta · (2) MK22 route'ga ulanishi ·
+> (3) **bug-klass ochiq:** `t(\`…\` as never)` web'da yana ~28 joyda — ko'pi yopiq enum
+> (xavfsiz), qaysi biri serverdan kelgan ochiq matn bilan ishlashini birma-bir o'lchash kerak;
+> i18n gate buni printsipial tuta olmaydi · (4) MK16 ga kichik qarz: `canRemind` kanal
+> (SMS/Telegram) umuman sozlanmaganini bilmaydi, ro'yxat tepasida ogohlantirish kerak.
+>
+> **Parallel sessiya:** Playwright **MCP** brauzeri band edi (egasi «parallel sessiya ishlatyapti»
+> dedi) — **tegilmadi**, QA repo'ning o'z Playwright'i bilan alohida profilda yugurtirildi.
+> Reja hujjatida begona whitespace tahriri turardi — commit «HEAD + faqat mening hunk'larim»
+> blobi bilan qilindi, o'sha tahrir commit qilinmadi.
 
 > **🕒 2026-08-10h (REJA-MENEJER-KASSA **MK40** — 4-Menejer **Phase-2 QA**, ruxsatlar) —
 > 🌐 **BRAUZERDA O'LCHANDI** (Playwright MCP jonli, `climart_adopt`@5432 + api 4000 + web 3100).

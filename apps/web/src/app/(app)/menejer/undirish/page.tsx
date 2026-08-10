@@ -154,6 +154,24 @@ export default function MenejerUndirishPage() {
       year: 'numeric',
     });
 
+  /**
+   * O'tkazib yuborilgan qatorning SABABI — o'qiladigan matn.
+   *
+   * Jo'natgichlar sabab kodlarining YOPIQ ro'yxatini bermaydi:
+   * `TelegramService.notifyCounterparty` Telegram xatosining MATNINI ham sabab
+   * qilib uzatadi (`reason: msg.slice(0, 200)`), ya'ni kodni oldindan tarjima
+   * qilib bo'lmaydi. Kalitni to'g'ridan-to'g'ri `t()` ga berish bu holatda
+   * ekranga xom kalit yo'lini chizardi — MK25 QA da aynan shu ko'rindi:
+   * «Romashka MChJ — pages.menejerCollection.reason_no_chat».
+   *
+   * Shuning uchun: kalit bo'lsa — tarjima, bo'lmasa — zaxira matn va kodning
+   * O'ZI (kod yashirilsa menejer nosozlikni umuman aniqlay olmaydi).
+   */
+  const reasonLabel = (code: string): string => {
+    const key = `reason_${code}`;
+    return t.has(key as never) ? t(key as never) : t('reason_unknown', { code });
+  };
+
   return (
     <div className="flex h-full flex-col gap-4 p-4" data-test-id="menejer-collection-page">
       <header className="flex flex-wrap items-end justify-between gap-3">
@@ -259,7 +277,7 @@ export default function MenejerUndirishPage() {
             <span className="text-muted-foreground">
               {t('result_skipped', { count: lastResult.skipped.length })}:{' '}
               {lastResult.skipped
-                .map((s) => `${s.name || s.debtId} — ${t(`reason_${s.reason}` as never)}`)
+                .map((s) => `${s.name || s.debtId} — ${reasonLabel(s.reason)}`)
                 .join(' · ')}
             </span>
           )}
