@@ -226,13 +226,18 @@ alohida bajariladi. **Har faza agenti o'zi qo'shgan qadamni shu ro'yxatga yozadi
 | **T5** | F038–F044 | ONLAYN SOTUV / B2B / B2G (qolgani) |
 | **T6** | F045–F050 | HR (qolgani) |
 | **T7** | F051–F056 | ANALITIKA TOVAR TAHLILI VA FILIAL YAKUNI |
-| **T8** | F057–F061 | SIFAT QARZLARI (to'lqinlardan mustaqil, istalgan payt) |
+| **T8** | F057–F061 **+ F061a–F061g** | SIFAT QARZLARI (to'lqinlardan mustaqil, istalgan payt)<br>*F061a–F061g = 2026-08-10 yig'ish-oqimi kod-auditi topilmalari* |
 | **T9** | F062–F066 | MAHSULOT KENGAYISHI: F2 B2B KABINET · F3 B2C DO'KON · F4 MARKETPLACE |
 | **T10** | F067–F084 | MOYSKLAD VIZUAL 1:1 PARITY TREKI |
 | **T11** | F085–F088 | ISHONCHLILIK VA TAXMINLAR REVIZIYASI |
 | **T12** | F089–F089 | YAKUN |
 
-**Jami: 89 faza.**
+**Jami: 96 faza** (89 asosiy + F019b + F061a–F061g).
+
+> **F061a–F061g (2026-08-10):** yig'ish oqimining kod-auditidan. Ular **ijro grafigidagi
+> paketlarga kiritilmagan** — T8 qoidasi bo'yicha istalgan payt olinadi, lekin ichki tartibi
+> qat'iy: **F061a → F061f → F061b → F061c → F061e → F061d → F061g** (birini tuzatish
+> boshqasini ochib yuboradi). Batafsil — T8 bo'limidagi kirish bloki.
 
 ## 🚦 IJRO GRAFIGI — bir vaqtda nechta sessiya
 
@@ -1480,6 +1485,195 @@ o'tishlar ro'yxati; keyin tuzatish.
 **▶ SESSIYA-BOSHI PROMPT:**
 > `docs/REJA-8-BOLIM-2026-08.md` — **Faza F061** ni bajar. `/qa-cohort`. Conv-6 data-bog'liq
 > vizuallardan qolgan 10 tasini brauzerda tekshir (seed bilan). Hisobot → **TO'XTA**.
+
+---
+
+> ## 🔎 F061a–F061g — YIG'ISH OQIMI TOPILMALARI (2026-08-10, kod-o'qish auditi)
+>
+> **Manba:** omborchi «Tayyor» oqimini tushuntirish so'ralgan sessiya. Har topilma **kodda
+> o'lchandi** (fayl+qator ko'rsatilgan), taxmin emas. **Hech biri brauzerda tekshirilmagan** —
+> statik o'qish darajasida tasdiqlangan; har fazaning birinchi qadami — da'voni jonli
+> takrorlash (RED), keyin tuzatish.
+>
+> **Nega bir joyda:** F061a–F061c bir-birini yopib turibdi. Faqat bittasini tuzatish
+> boshqasini **ochib yuboradi** (masalan zona filtri qo'shilsa, ruxsatsiz omborchi muammosi
+> yashirinmay qoladi). Ijro tartibi: **F061a → F061f → F061b → F061c → F061e → F061d → F061g**.
+
+### F061a — Omborchi rolida `retailsale` ruxsati YO'Q → yig'ish oqimi ishlamaydi ☐ HISOBOT
+**Bo'lim/blok:** 7-B7 · **Ustuvorlik:** P1 · **Bog'liqlik:** yo'q
+**O'LCHANGAN MUAMMO:** `role-templates.ts:358-377` — `storekeeper` («Omborchi») shabloni
+`defaults: ALL_NO` bilan boshlanadi va `grants` ro'yxatida **`retailsale` umuman yo'q**
+(`demand`, `move/enter/loss/internalorder`, `inventory`, `supply`, `product…`, `store`, `label`
+bor). Lekin omborchi ekrani aynan shu entity'ga tayanadi:
+`GET /retail-sales` → `@RequirePermission({entity:'retailsale', action:'view'})`
+(`retail-sale.controller.ts:24`), «✓ Tayyor» → `POST /retail-sales/:id/mark-ready` →
+`action:'update'` (`retail-sale.controller.ts:61-62`).
+⇒ **Standart «Omborchi» shabloni bilan `/omborchi` ro'yxati bo'sh (403) va «Tayyor» 403 beradi.**
+Bugungacha bu sezilmagani — omborchilarga qo'lda kengaytirilgan rol berilgan bo'lishi mumkin;
+buni **avval prod-DB'da o'lchash** kerak (real rol satrlari), shablon bilan cheklanmasdan.
+**Qamrov:** `storekeeper` shabloniga `retailsale` grant'i (kamida `view` + `update`; `create`
+BERILMAYDI — omborchi sotuv yaratmaydi) · yoki yig'ish oqimini alohida entity-slug'ga ko'chirish
+(`restocktask`) — qaysi biri to'g'riligi **egasi qarori bilan** hal qilinadi, chunki `retailsale:
+update` omborchiga chekni **tahrirlash** huquqini ham beradi (`PATCH /retail-sales/:id` ayni
+action'da) · mavjud akkauntlarda rol satrlarini yangilash → **OPS-QADAM**.
+**Diqqat (yon ta'sir):** `retailsale:update` bitta action ostida `PATCH` (tahrir),
+`send-to-picking`, `mark-ready` va boshqalarni birlashtiradi — omborchiga `update` berish unga
+chek pozitsiyalarini o'zgartirish yo'lini ham ochadi. Shuning uchun `restocktask` slug varianti
+xavfsizroq; qaror hisobotda asoslansin.
+**Testlar (TDD):** (1) `storekeeper` shabloni bilan seed qilingan foydalanuvchi `/retail-sales?
+state=picking` dan **403 OLMAYDI**. (2) o'sha foydalanuvchi `mark-ready` ni bajara oladi.
+(3) o'sha foydalanuvchi `PATCH /retail-sales/:id` bilan chek pozitsiyasini o'zgartira **olmaydi**
+(tanlangan variant shuni kafolatlasa). (4) `role-templates.test.ts` snapshot yangilanadi.
+**▶ SESSIYA-BOSHI PROMPT:**
+> `docs/REJA-8-BOLIM-2026-08.md` — **Faza F061a** ni bajar. Avval prod/lokal DB'da omborchi
+> foydalanuvchilarining HAQIQIY rol satrlarini o'lcha (shablon emas) va 403 ni **jonli
+> takrorla** — da'vo tasdiqlanmasa fazani yop va sababini yoz. Keyin egasidan `retailsale:update`
+> vs yangi `restocktask` slug'i bo'yicha qaror ol. TDD, gate → **TO'XTA**.
+
+---
+
+### F061b — Kassir chekni o'zi «Tayyor» qila oladi (ombor tegmasdan) ☐ HISOBOT
+**Bo'lim/blok:** 7-B7 · **Ustuvorlik:** P1 · **Bog'liqlik:** F061a (ruxsat modeli avval hal bo'lsin)
+**O'LCHANGAN MUAMMO:** `mark-ready` faqat `retailsale:update` talab qiladi
+(`retail-sale.controller.ts:61-62`), `cashier` shablonida esa
+`grant(['retailsale'], {view:'ALL', create:'ALL', update:'ALL', print:'ALL'})`
+(`role-templates.ts:302-308`). Ya'ni kassir o'z chekiga «Tayyor» qo'ya oladi.
+Undan ham jiddiyrog'i — `markReady` ichidagi **zaxira shoxi**
+(`retail-sale.service.ts:1834-1869`): chaqiruvchiga tayinlangan picking-task topilmasa
+(`myTaskCount === 0`) «legacy behaviour» ishlaydi va **sale'ning HAMMA zonasidagi** tasklarni
+`done` qiladi. Kassirda hech qachon task bo'lmaydi ⇒ `remaining = 0` ⇒ chek darhol `ready`.
+**Natija:** tovar yig'ilmasdan chek to'lovga tayyor bo'ladi va mijoz cheki bosiladi.
+**Qamrov:** `mark-ready` ni **tayinlangan omborchi** (yoki uning o'rinbosari/admin) bilan
+cheklash · zaxira shoxini «hammasini yop» dan «hech narsani yopma va 409 ber» ga o'zgartirish
+(egasiz chek holati F061e da alohida hal qilinadi) · admin uchun **ochiq nomdagi** majburiy
+chetlab o'tish yo'li (`force` + sabab, audit-logga yoziladi) — jimgina emas.
+**Testlar (TDD):** (1) kassir `mark-ready` chaqirsa **rad etiladi**. (2) ikki skladli chekda
+faqat bitta omborchi «Tayyor» bosса chek `picking` da qoladi (bu xulq bugun **to'g'ri**, regress
+bo'lmasin). (3) admin `force` bilan yopsa audit-logda sabab bilan yozuv paydo bo'ladi.
+**▶ SESSIYA-BOSHI PROMPT:**
+> `docs/REJA-8-BOLIM-2026-08.md` — **Faza F061b** ni bajar. Avval RED: kassir tokeni bilan
+> `mark-ready` ni chaqirib chek `ready` bo'lishini **o'lchab ko'rsat**. Keyin tayinlanish
+> qulfini qo'y + admin `force` yo'lini oshkora qil. TDD, gate → **TO'XTA**.
+
+---
+
+### F061c — `assigneeId` filtri serverda YO'Q → har omborchi hamma chekni ko'radi ☐ HISOBOT
+**Bo'lim/blok:** 7-B7 · **Ustuvorlik:** P1 · **Bog'liqlik:** F061a
+**O'LCHANGAN MUAMMO:** frontend o'z zonasini so'raydi deb ishonadi —
+`omborchi/page.tsx:268-271` `state=picking&limit=50&assigneeId=${myId}`. Lekin
+`RetailSaleFilterSchema` (`retail-sale.schema.ts:183-193`) da `assigneeId` maydoni **yo'q** va
+`list()` (`retail-sale.service.ts:345-367`) uni `where` ga qo'shmaydi. Zod'ning standart
+(non-strict) xulqi noma'lum kalitni **jimgina tashlab yuboradi** — na xato, na ogohlantirish.
+⇒ **Har omborchi butun akkauntning `picking` cheklarini ko'radi.** Zona ajratmasi faqat ikki
+joyda ishlaydi: «Ko'rish» ichidagi varaqa (frontend filtri, `omborchi/page.tsx:82-85`) va
+`markReady` ning task-yopish mantig'i.
+**Qamrov:** `assigneeId` ni sxemaga + `where` ga qo'shish (`RestockTask` orqali: shu sale uchun
+`assigneeId` li picking-task mavjudmi) · **bilinmaydigan filtr klassini yopish** — noma'lum
+query kaliti kelganda jimgina tashlanmasin (kamida log/`strict` rejim tanlangan endpointlarda).
+**Diqqat:** filtr yoqilgach F061e (omborchisi yo'q chek) **ko'rinmas** bo'lib qoladi — ikkalasi
+bir sessiyada yoki ketma-ket bajarilsin.
+**Testlar (TDD):** (1) `assigneeId=A` bilan faqat A ga tayinlangan cheklar qaytadi.
+(2) `assigneeId` yuborilmasa xulq o'zgarmaydi (regress yo'q). (3) noma'lum query kaliti
+**jimgina yutilmaydi** (log yoki 400 — tanlangan siyosat bo'yicha).
+**▶ SESSIYA-BOSHI PROMPT:**
+> `docs/REJA-8-BOLIM-2026-08.md` — **Faza F061c** ni bajar. RED: ikki omborchi seed qilib,
+> `assigneeId` bilan so'rov **hamma** chekni qaytarayotganini o'lchab ko'rsat. Keyin filtrni
+> serverga qo'sh. F061e bilan birga rejalashtir. TDD, gate → **TO'XTA**.
+
+---
+
+### F061d — «Tayyor» hech narsani tasdiqlamaydi (sof holat almashtirish) ☐ HISOBOT
+**Bo'lim/blok:** 7-B7 · **Ustuvorlik:** P2 · **Bog'liqlik:** F061b · **F024 ning SHARTI**
+**O'LCHANGAN MUAMMO:** yig'ish oqimida qator-darajasidagi tasdiq **umuman so'ralmaydi**.
+`markReady` (`retail-sale.service.ts:1823-1895`) faqat FSM'ni tekshiradi va tasklarni `done`
+qiladi — miqdor, yacheyka, qoldiq solishtirilmaydi. Omborchi ekranida ham belgilash yo'q
+(`omborchi/page.tsx` da faqat «✓ Tayyor» tugmasi). Qator tasdiqlash/skanerlash endpointlari
+**mavjud** (`restock-task.controller.ts:55` `:id/lines/:lineId/confirm`, `:66` `:id/confirm-scan`),
+lekin ular faqat **joylashtirish** ekranida ishlatiladi
+(`app/(app)/restock-tasks/[id]/page.tsx:68,74`) — yig'ishda emas.
+**Nega F024 dan alohida:** F024 («qisman yig'ish + `PickingError`») yig'ilgan/yig'ilmagan
+farqini **biladi** deb faraz qiladi. Bugun bunday bilim manbai yo'q — F024 ni shu qadamsiz
+bajarib bo'lmaydi.
+**Qamrov:** yig'ish varaqasida qator tasdig'i (qo'lda ☑ yoki skaner) · «Tayyor» tugmasi
+tasdiqlanmagan qator bo'lganda **bloklamaydi, lekin oshkora ogohlantiradi** (qaysi qator) va
+oqibatni F024 ga uzatadi · tasdiqlangan miqdor jurnalda saqlanadi.
+**Testlar (TDD):** (1) tasdiqlanmagan qator bilan «Tayyor» bosilganda ogohlantirish qaytadi va
+qaysi qator ekani ko'rinadi. (2) tasdiq yozuvi jurnalga tushadi. (3) skaner bilan tasdiq qo'lda
+tasdiq bilan bir xil yozuv beradi.
+**▶ SESSIYA-BOSHI PROMPT:**
+> `docs/REJA-8-BOLIM-2026-08.md` — **Faza F061d** ni bajar. 7-bo'lim TZ §7. Yig'ishda qator
+> tasdig'i (☑/skaner) + jurnal. **Bloklamaydi — ogohlantiradi.** F024 shu fazadan keyin
+> bajariladi. TDD, gate → **TO'XTA**.
+
+---
+
+### F061e — `SkladKeeper` sozlanmagan bo'lsa: egasiz `picking` chek ☐ HISOBOT
+**Bo'lim/blok:** 7-B7 · **Ustuvorlik:** P2 · **Bog'liqlik:** F061c bilan birga
+**O'LCHANGAN MUAMMO:** `sendToPicking` (`retail-sale.service.ts:1683-1696`) holatni
+`picking` ga o'tkazadi, so'ng `createPickingTasksForSale` ni **best-effort** fonda chaqiradi
+(`.catch()` bilan) — «a failure here must not roll back the state change» izohi bilan. Ammo
+`createPickingTasksForSale` (`:1739-1743`) `SkladKeeper` yozuvi bo'lmasa **hech qanday task
+yaratmasdan** qaytadi (faqat `logger.warn`). ⇒ chek `picking` da, tayinlangan omborchi yo'q,
+kassirga ham hech narsa qaytmaydi. Bugun bu **ko'rinmayapti**, chunki F061c tufayli ro'yxat
+filtrsiz — chek baribir hammaga ko'rinadi. F061c tuzatilgach chek **butunlay ko'rinmas** bo'ladi.
+**Qamrov:** `SkladKeeper` yo'qligi/qisman bo'lishi **kassirga** darhol ko'rinsin (chek yuborilmadi
+yoki «tayinlanmagan» bayrog'i bilan) · sozlamalarda yetishmayotgan zona ro'yxati · task
+yaratilmagan holat **jim log emas**, hujjatda ko'rinadigan holat bo'lsin.
+**Testlar (TDD):** (1) `SkladKeeper` bo'lmasa `send-to-picking` natijasi kassirga ochiq xato/
+bayroq qaytaradi. (2) qisman sozlangan (bir zona bor, ikkinchisi yo'q) holatda yopilmagan zona
+ko'rsatiladi. (3) chek hech qachon «egasiz `picking`» holatida qolib ketmaydi.
+**▶ SESSIYA-BOSHI PROMPT:**
+> `docs/REJA-8-BOLIM-2026-08.md` — **Faza F061e** ni bajar. RED: `SkladKeeper` jadvalini bo'sh
+> qilib `send-to-picking` chaqir va chek egasiz `picking` da qolishini o'lchab ko'rsat. Keyin
+> holatni oshkora qil. F061c bilan ketma-ket. TDD, gate → **TO'XTA**.
+
+---
+
+### F061f — `restock-tasks` endpointlarida entity-ruxsat yo'q (mijoz ismi+telefoni ochiq) ☐ HISOBOT
+**Bo'lim/blok:** 7-B7 · **Ustuvorlik:** P1 · **Tur:** xavfsizlik
+**O'LCHANGAN MUAMMO:** `RestockTaskController` da faqat `@UseGuards(JwtAuthGuard)` bor;
+`@Get()` (`:23`) va `@Get('picking-sheets/:source/:id')` (`:45`) da `@RequirePermission`
+**YO'Q**. Sinf izohi buni qisman e'tirof etadi («Qatorlarni TASDIQLASH ataylab ochiq qoldi —
+Q10 DEFER»), lekin `picking-sheets` **2026-08-10 dan boshlab** chek shabloni uchun
+`buyerName` · `buyerPhone` · `sellerName` · `comment` ni ham qaytaradi
+(`restock-task.service.ts` — o'sha kungi commit). ⇒ **istalgan autentifikatsiyadan o'tgan
+foydalanuvchi** istalgan sotuv/buyurtmaning mijoz ismi va telefonini o'qiy oladi.
+**Diqqat:** bu qarzning **hajmi shu kuni o'sdi** — ilgari endpoint faqat tovar nomi + yacheyka
+qaytarardi. Kechiktirilsa, F061a ruxsat ishi ham noto'g'ri poydevorga qurilib qoladi.
+**Qamrov:** `picking-sheets` va `list` ga mos `@RequirePermission` · «mos entity-slug yo'q»
+muammosi F061a dagi `restocktask` slug qarori bilan **birga** hal qilinsin (ikki fazada ikki xil
+javob chiqmasin) · qaysi maydonlar haqiqatan kerakligini qayta ko'rib chiqish (telefon chekda
+kerakmi — egasi qaroriga havola).
+**Testlar (TDD):** (1) ruxsatsiz foydalanuvchi `picking-sheets` dan 403 oladi.
+(2) ruxsatli omborchi 200 oladi. (3) javobda mijoz telefoni faqat ruxsat berilgan rolga chiqadi.
+**▶ SESSIYA-BOSHI PROMPT:**
+> `docs/REJA-8-BOLIM-2026-08.md` — **Faza F061f** ni bajar. RED: past-ruxsatli token bilan
+> `picking-sheets` chaqirib mijoz telefoni qaytayotganini ko'rsat. Slug qarorini **F061a bilan
+> birga** ol. TDD, gate → **TO'XTA**.
+
+---
+
+### F061g — Mijoz cheki uch xil renderda, hech narsa ularni sinxron ushlamaydi ☐ HISOBOT
+**Bo'lim/blok:** 1-bo'lim chegarasi (kassa) · **Ustuvorlik:** P3 · **Tur:** sifat qarzi
+**O'LCHANGAN MUAMMO:** mijoz cheki uch alohida implementatsiya bilan chiziladi:
+`buildReceiptText()` (xom ESC/POS, `print-agent.ts:400`), `buildReceiptHtml()` (Electron,
+`print-agent.ts:~419`) va `/print/retail-sale/[id]/page.tsx` (brauzer, `PrintShell` + o'z
+monoshrift markup'i). Bugungi holatda ular **bir xil ma'lumot** beradi (`Chek № · Sana · Kassir ·
+Mijoz` bloki), ya'ni bu **jonli defekt EMAS** — lekin ularni bog'lab turadigan test yo'q, ya'ni
+biri o'zgarsa qolgani jimgina eskiradi.
+**Nega bu reja bandiga aylandi:** aynan shu klass omborchi varaqasida **jonli defekt bo'lib
+chiqqan** edi (uch renderer, nol qamrov — eski markup butunlay o'chirilganda 3152 testdan
+bittasi ham yiqilmadi). U 2026-08-10 da yopildi
+(`components/pick-list/__tests__/pick-receipt-template.test.tsx`); mijoz chekida qoldi.
+**Qamrov:** mijoz chekini bitta manbaga yig'ish (omborchi varaqasidagi `<PickReceiptBody>`
+naqshi) · uch kanalni qulflaydigan test · ESC/POS kanali jadval chizolmasligi **hujjatlashtirilgan
+cheklov** sifatida qolsin.
+**Testlar (TDD):** (1) uch kanal ham bir xil maydon to'plamini bir xil tartibda beradi.
+(2) ESC/POS kanali uchun kutilgan farq (chiziqsiz) **ochiq** tasdiqlanadi, jimgina emas.
+**▶ SESSIYA-BOSHI PROMPT:**
+> `docs/REJA-8-BOLIM-2026-08.md` — **Faza F061g** ni bajar. Mijoz chekini bitta renderga yig'.
+> Naqsh: `receipt-print-portal.tsx` → `<PickReceiptBody>` + `pick-receipt-template.test.tsx`.
+> TDD, gate → **TO'XTA**.
 
 ---
 
