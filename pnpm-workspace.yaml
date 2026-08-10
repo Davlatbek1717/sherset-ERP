@@ -3,6 +3,12 @@ packages:
   - "packages/*"
   - "tools/*"
   - "tests/*"
-  # Electron kassa o'rami (F2). Bog'liqliklari (electron/electron-builder)
-  # faqat shu paketda — `pnpm install --filter @moysklad/desktop`.
-  - "desktop"
+# `desktop/` (Electron kassa o'rami, F2) ATAYLAB workspace'da EMAS.
+# Sabab: uni qo'shish `pnpm-lock.yaml` ni ham yangilashni talab qiladi, aks holda
+# `pnpm install --frozen-lockfile` yiqiladi — u esa CI (.github/workflows/ci.yml,
+# deploy.yml) va `deploy/deploy-smart.sh` da ishlatiladi. Lockfile'ni yangilash esa
+# electron + electron-builder (~200 MB) ni BUTUN monorepoga, jumladan CI'ning har
+# yugurishiga tortadi — holbuki ular faqat .exe yig'ishda (F4) kerak.
+# `desktop/` o'z bog'liqligini o'zi o'rnatadi (desktop/README.md), va ko'prik
+# shartnoma-testi (apps/web/src/__tests__/electron-bridge-contract.test.ts)
+# `preload.js`/`main.js` ni MATN sifatida o'qiydi — paket a'zoligi kerak emas.

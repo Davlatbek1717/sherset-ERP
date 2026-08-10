@@ -27,16 +27,24 @@ Yupqa kiosk o'ram (spec §3.1): savdo mantiqi web ilovasida qoladi, bu jarayon f
 
 ## Ishga tushirish (dasturchi)
 
+🔴 `desktop/` monorepo workspace'iga **kirmaydi** (sabab `pnpm-workspace.yaml`
+izohida: `--frozen-lockfile` CI'ni sindirardi). Shuning uchun bog'liqliklar shu
+papkaning ICHIDA, alohida o'rnatiladi:
+
 ```bash
-pnpm install --filter @moysklad/desktop      # bir marta (electron yuklab olinadi ~100 MB)
-pnpm --filter @moysklad/desktop dev          # yoki:  pnpm --filter ./desktop dev
+cd desktop
+pnpm install            # bir marta (electron ~200 MB yuklab olinadi)
+pnpm run dev            # = electron .
 ```
 
 Server manzilini oldindan berish (setup ekranini o'tkazib yuborish):
 
 ```bash
-SHERSET_SERVER_URL=http://localhost:3100 pnpm --filter @moysklad/desktop dev
+cd desktop && SHERSET_SERVER_URL=http://localhost:3100 pnpm run dev
 ```
+
+`desktop/node_modules` va `desktop/pnpm-lock.yaml` monorepo lockfile'iga
+ta'sir qilmaydi.
 
 Manzil **kodga qotirilmagan** (spec §3.2): avval konfiguratsiya fayli, keyin
 `SHERSET_SERVER_URL`, ikkalasi ham bo'lmasa `setup.html` so'raydi.
