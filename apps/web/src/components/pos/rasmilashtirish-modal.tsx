@@ -213,7 +213,12 @@ export function RasmiyashtirishModal({
     >
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm" />
-        <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-[min(96vw,42rem)] -translate-x-1/2 -translate-y-1/2 rounded-2xl bg-[var(--ms-bg-surface)] shadow-2xl outline-none flex flex-col max-h-[92dvh]">
+        {/* K-1: tavsif matni ataylab yo'q — Radix'ning rasmiy opt-out'i
+            (`aria-describedby={undefined}`) console warning'ni o'chiradi. */}
+        <Dialog.Content
+          aria-describedby={undefined}
+          className="fixed left-1/2 top-1/2 z-50 w-[min(96vw,42rem)] -translate-x-1/2 -translate-y-1/2 rounded-2xl bg-[var(--ms-bg-surface)] shadow-2xl outline-none flex flex-col max-h-[92dvh]"
+        >
           {/* Header */}
           <div className="shrink-0 bg-[var(--ms-bg-app)] px-6 py-4 border-b border-[var(--ms-border)] rounded-t-2xl">
             <div className="flex items-start justify-between">

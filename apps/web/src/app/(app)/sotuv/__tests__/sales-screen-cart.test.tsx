@@ -165,7 +165,10 @@ describe('SalesScreen — savat qatorlari', () => {
     expect(screen.queryByTestId('sotuv-cart-line')).not.toBeInTheDocument();
   });
 
-  it('narx maydoni BO‘SHATILSA — ekranda bo‘sh, hisobda ESKI narx qoladi', async () => {
+  // K-3 TUZATILDI (audit-fixlar): ilgari bo'shatilgan maydon ekranda bo'sh
+  // ko'rinib, hisob-kitobga va rasmiylashtirishga ESKI narx ketardi. Endi
+  // parse bo'lmagan kiritma = 0 (ko'ringan narsa = yuboriladigan narsa).
+  it('narx maydoni BO‘SHATILSA — ekranda bo‘sh va hisobda 0 (eski narx KETMAYDI)', async () => {
     const user = userEvent.setup();
     renderWithProviders(<SotuvPage />);
 
@@ -173,19 +176,21 @@ describe('SalesScreen — savat qatorlari', () => {
     await user.clear(within(line).getByRole('textbox'));
 
     const after = screen.getByTestId('sotuv-cart-line');
-    // Maydon bo'sh ko'rinadi...
+    // Maydon bo'sh ko'rinadi va qator summasi ham aynan 0 dan hisoblanadi
+    // («tushirildi» yorlig'i kartochka narxidan to'liq pasayishni ko'rsatadi).
     expect(within(after).getByRole('textbox')).toHaveValue('');
-    // ...lekin qator summasi va foydasi HAMON eski narxdan hisoblanadi va
-    // rasmiylashtirishda ham aynan shu narx ketadi (`page.tsx` updatePrice:
-    // `Number.isNaN` bo'lsa `l.priceMinor` saqlanadi). Bu — QULFLANGAN FAKT,
-    // tavsiya emas: hisobotdagi «K-3» kuzatuvi shu yerdan.
-    expect(norm(after.textContent)).toContain('10 000,00 сум');
-    expect(norm(within(after).getByTestId('sotuv-cart-profit').textContent)).toBe(
-      'Foyda: +4 000,00 сум (40%)',
+    expect(norm(after.textContent)).toContain('Narx:0,00 сум');
+    expect(norm(within(after).getByTestId('sotuv-cart-markdown').textContent)).toBe(
+      '−10 000,00 сум tushirildi',
+    );
+    // 0 narx tan narxdan past — foyda manfiy, kassir buni darhol ko'radi.
+    expect(norm(within(after).getByTestId('sotuv-cart-profit').textContent)).toContain(
+      'Foyda: -6 000,00 сум',
     );
   });
 
-  it('narx maydoniga HARF yozilsa — narx o‘zgarmaydi (buzuq kiritma yutilmaydi)', async () => {
+  // K-3 TUZATILDI: buzuq kiritma ham endi eski narxni yashirmaydi — 0 bo'ladi.
+  it('narx maydoniga HARF yozilsa — narx 0 (eski narx yashirincha qolmaydi)', async () => {
     const user = userEvent.setup();
     renderWithProviders(<SotuvPage />);
 
@@ -194,7 +199,10 @@ describe('SalesScreen — savat qatorlari', () => {
 
     const after = screen.getByTestId('sotuv-cart-line');
     expect(within(after).getByRole('textbox')).toHaveValue('abc');
-    expect(norm(after.textContent)).toContain('10 000,00 сум');
+    expect(norm(after.textContent)).toContain('Narx:0,00 сум');
+    expect(norm(within(after).getByTestId('sotuv-cart-profit').textContent)).toContain(
+      'Foyda: -6 000,00 сум',
+    );
   });
 
   it('narxni tahrirlash qator summasi va foydasini darhol siljitadi', async () => {

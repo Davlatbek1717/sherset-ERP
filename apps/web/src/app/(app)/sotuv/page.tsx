@@ -20,6 +20,8 @@ import {
   cartCount as sumCartCount,
   toMinorOrNull,
 } from '@/lib/pos/cart-math';
+// Smena yopish sanog'i uchun xavfsiz pul-parse (buzuq kiritma → 0n, crash emas).
+import { parseAmountToMinor } from '@/lib/pos/parse-amount';
 import { printPickingViaAgent, printReceiptViaAgent } from '@/lib/print-agent';
 import {
   resolveDefaultSalePrice,
@@ -47,6 +49,16 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { CheckCircle, Clock, Receipt, Search, Settings, ShoppingCart, User } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+
+/**
+ * Dollar summani (sentda) ekranga chiqaradi — ishora `$` dan OLDIN: `-$10.00`
+ * (K-2 tuzatishi: ilgari `$-10.00` chiqardi va so'm qatoridagi
+ * «-5 000,00 сум» bilan boshqacha o'qilardi).
+ */
+function formatUsd(minor: bigint): string {
+  const abs = minor < 0n ? -minor : minor;
+  return `${minor < 0n ? '-' : ''}$${(Number(abs) / 100).toFixed(2)}`;
+}
 
 // ── Types ──────────────────────────────────────────────────────────────────
 //
@@ -837,7 +849,11 @@ function SalesScreen({ session }: { session: CurrentSession }) {
       prev.map((l) => {
         if (l.productId !== productId) return l;
         const num = Number.parseFloat(input.replace(/\s/g, '').replace(',', '.'));
-        const minor = !Number.isNaN(num) && num >= 0 ? BigInt(Math.round(num * 100)) : l.priceMinor;
+        // K-3: parse muvaffaqiyatsiz (bo'sh satr, harf) → 0n, ESKI narx EMAS.
+        // Ko'ringan narsa = yuboriladigan narsa: maydon bo'sh ko'rinib turib
+        // rasmiylashtirishga eski narx ketishi kassirni aldardi. 0 narxli
+        // qatorni esa ZARAR tasmasi darhol ko'rsatadi va server ham ushlaydi.
+        const minor = !Number.isNaN(num) && num >= 0 ? BigInt(Math.round(num * 100)) : 0n;
         return { ...l, priceStr: input, priceMinor: minor };
       }),
     );
@@ -857,6 +873,12 @@ function SalesScreen({ session }: { session: CurrentSession }) {
   const onSold = (saleId: string) => {
     setPayingSale(null);
     setCheckoutOpen(false);
+    // «Tayyor» chek to'langach savat va chegirma TOZALANADI — aks holda
+    // `loadReadyToCart` yuklagan pozitsiyalar savatda qolib, keyingi
+    // «Omborchiga yuborish» xuddi shu chekni DUBLIKAT sotuv qilib yaratardi
+    // (solishtir: `sendToPickingMut.onSuccess` ham shunday tozalaydi).
+    setCart([]);
+    setDiscountPct(0);
     qc.invalidateQueries({ queryKey: ['cashier-session-current'] });
     qc.invalidateQueries({ queryKey: ['products-sotuv'] });
     qc.invalidateQueries({ queryKey: ['retail-sales-session', session.id] });
@@ -1054,8 +1076,12 @@ function SalesScreen({ session }: { session: CurrentSession }) {
     enabled: showCloseForm,
   });
   const expectedCash = closePreview ? BigInt(closePreview.expectedCashMinor) : null;
+  // Sanoq XAVFSIZ parse qilinadi: `type="number"` inputi `e` harfini
+  // o'tkazadi («5e3») va `Money.fromMajor` render tanasida otilib butun
+  // sahifani yiqitardi. `parseAmountToMinor` buzuq kiritmani 0n deb qaytaradi
+  // — kassir farq qatorida darhol ko'radi, crash o'rniga.
   const countedCash =
-    closingCash.trim() === '' ? null : Money.fromMajor(closingCash, tillCurrency).toMinor();
+    closingCash.trim() === '' ? null : parseAmountToMinor(closingCash, tillCurrency);
   const closeVariance =
     expectedCash === null || countedCash === null ? null : countedCash - expectedCash;
 
@@ -1065,17 +1091,18 @@ function SalesScreen({ session }: { session: CurrentSession }) {
   // Oqim bo'lsa server sanoqni MAJBURIY qiladi — maydonsiz yopib bo'lmaydi.
   const expectedCashUsd = closePreview ? BigInt(closePreview.expectedUsdCashMinor) : null;
   const usdInPlay = expectedCashUsd !== null && expectedCashUsd !== 0n;
+  // Yuqoridagi so'm sanog'i bilan bir xil sabab: buzuq kiritma → 0n, crash emas.
   const countedCashUsd =
-    closingCashUsd.trim() === '' ? null : Money.fromMajor(closingCashUsd, 'USD').toMinor();
+    closingCashUsd.trim() === '' ? null : parseAmountToMinor(closingCashUsd, 'USD');
   const closeVarianceUsd =
     expectedCashUsd === null || countedCashUsd === null ? null : countedCashUsd - expectedCashUsd;
 
   const closeMut = useMutation({
     mutationFn: () =>
       api.post(`/cashier-sessions/${session.id}/close`, {
-        closingCashMinor: Money.fromMajor(closingCash || '0', tillCurrency)
-          .toMinor()
-          .toString(),
+        // Ekranda farq qanday sanoqdan hisoblangan bo'lsa, serverga ham AYNAN
+        // o'sha qiymat ketadi (bo'sh maydon avvalgidek 0 deb yuboriladi).
+        closingCashMinor: (countedCash ?? 0n).toString(),
         // Sanalmagan dollar UZATILMAYDI (0 emas): `null` va `0` server
         // uchun boshqa-boshqa ma'no — «sanalmagan» va «sanadim, yo'q».
         ...(countedCashUsd !== null ? { closingCashUsdMinor: countedCashUsd.toString() } : {}),
@@ -1683,7 +1710,7 @@ function SalesScreen({ session }: { session: CurrentSession }) {
                               {t('expected_cash_usd')}
                             </span>
                             <span className="font-medium tabular-nums">
-                              ${(Number(expectedCashUsd) / 100).toFixed(2)}
+                              {formatUsd(expectedCashUsd)}
                             </span>
                           </div>
                           {closeVarianceUsd !== null && (
@@ -1704,9 +1731,7 @@ function SalesScreen({ session }: { session: CurrentSession }) {
                                     ? t('variance_shortage')
                                     : t('variance_surplus')}
                               </span>
-                              <span className="tabular-nums">
-                                ${(Number(closeVarianceUsd) / 100).toFixed(2)}
-                              </span>
+                              <span className="tabular-nums">{formatUsd(closeVarianceUsd)}</span>
                             </div>
                           )}
                         </>

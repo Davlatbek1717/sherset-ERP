@@ -174,7 +174,12 @@ export function DebtPaymentDialog({
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-50 bg-black/50" />
-        <Dialog.Content className="-translate-x-1/2 -translate-y-1/2 fixed top-1/2 left-1/2 z-50 flex max-h-[92vh] w-full max-w-lg flex-col overflow-hidden rounded-2xl bg-[var(--ms-bg-surface)] shadow-2xl outline-none">
+        {/* K-1: tavsif matni ataylab yo'q — Radix'ning rasmiy opt-out'i
+            (`aria-describedby={undefined}`) console warning'ni o'chiradi. */}
+        <Dialog.Content
+          aria-describedby={undefined}
+          className="-translate-x-1/2 -translate-y-1/2 fixed top-1/2 left-1/2 z-50 flex max-h-[92vh] w-full max-w-lg flex-col overflow-hidden rounded-2xl bg-[var(--ms-bg-surface)] shadow-2xl outline-none"
+        >
           <div className="flex items-center justify-between border-[var(--ms-border)] border-b px-5 py-3">
             <Dialog.Title className="font-semibold text-[var(--ms-text-primary)] text-lg">
               {t('debt_title')}

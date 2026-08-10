@@ -412,10 +412,9 @@ describe('Smena yopish (kassa TZ §8.4/§8.5)', () => {
     await user.type(await screen.findByTestId('close-cash-usd'), '90');
     await user.type(screen.getByPlaceholderText(/Kassadagi naqd pul/), '50000');
 
-    // ⚠️ Hozirgi xulq: minus `$` dan KEYIN («$-10.00»), so'm qatoridan farqli
-    // («-5 000,00 сум»). Bu qulflangan FAKT, tavsiya emas — kosmetik nomuvofiqlik
-    // hisobotga yozilgan (MK32 kuzatuvi K-2).
-    expect(norm(screen.getByTestId('close-variance-usd').textContent)).toBe('Kamomad$-10.00');
+    // K-2 TUZATILDI (audit-fixlar): minus endi `$` dan OLDIN («-$10.00») —
+    // so'm qatoridagi «-5 000,00 сум» bilan bir xil o'qiladi.
+    expect(norm(screen.getByTestId('close-variance-usd').textContent)).toBe('Kamomad-$10.00');
     // Dollar farqi ham izoh maydonini ochadi.
     await user.type(screen.getByTestId('close-variance-note'), '10$ yo‘qoldi');
     await user.click(screen.getByRole('button', { name: 'Tasdiqlash' }));
