@@ -18,7 +18,8 @@
     "pair_cash_desk": "Касса",
     "pair_organization": "Организация",
     "pair_device_name": "Название устройства",
-    "error_unknown": "Произошла ошибка"
+    "error_unknown": "Произошла ошибка",
+    "logout": "Выход"
   },
   "unsaved_changes": {
     "title": "Несохранённые изменения",

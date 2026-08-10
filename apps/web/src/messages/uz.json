@@ -18,7 +18,8 @@
     "pair_cash_desk": "Kassa",
     "pair_organization": "Tashkilot",
     "pair_device_name": "Qurilma nomi",
-    "error_unknown": "Xatolik yuz berdi"
+    "error_unknown": "Xatolik yuz berdi",
+    "logout": "Chiqish"
   },
   "unsaved_changes": {
     "title": "Saqlanmagan o'zgarishlar",
