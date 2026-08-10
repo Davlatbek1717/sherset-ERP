@@ -36,8 +36,10 @@ describe('DetailToolbar', () => {
   it('shows position counter when provided', () => {
     renderWithProviders(<DetailToolbar {...baseProps} position={{ current: 5, total: 100 }} />);
     expect(screen.getByTestId('detail-toolbar-position')).toBeInTheDocument();
-    // toolbar.pager = «{current} из {total}» (moysklad record-nav format).
-    expect(screen.getByText(/5 из 100/)).toBeInTheDocument();
+    // moysklad record-nav format = «{current} из {total}»; RU shu holicha,
+    // UZ (test-utils locale) esa «{current} / {total}» — «из» o'zbek UI'ga
+    // sizib chiqmasin (MK40 brauzer-QA, list-pager bilan bir xil klass).
+    expect(screen.getByText(/5 \/ 100/)).toBeInTheDocument();
   });
 
   it('renders 3 dropdowns when createMenuItems is empty', () => {

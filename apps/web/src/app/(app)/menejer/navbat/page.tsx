@@ -354,6 +354,20 @@ export default function MenejerNavbatPage() {
                 </div>
               )}
 
+              {actingId === row.id && pendingAction === 'record_fine' && (
+                // MK40 brauzer-QA: «Jarima yozish» hozircha FAQAT jurnalga
+                // yozadi — `HrBonusFineLog` ga pul TUSHMAYDI (MK07 ochiq qarzi,
+                // `manager-queue.service.ts` da ham warn bilan belgilangan).
+                // Menejer element «Hal qilindi» bo'lganini ko'rib jarima
+                // ushlab qolindi deb o'ylamasin: qarz ekranda ochiq turadi.
+                <p
+                  className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-amber-800 text-xs"
+                  data-test-id={`manager-queue-fine-not-charged-${row.id}`}
+                >
+                  {t('fine_not_charged_notice')}
+                </p>
+              )}
+
               {actingId === row.id && pendingAction && (
                 <div className="mt-3 flex flex-wrap items-end gap-2">
                   <label className="flex flex-col gap-1">

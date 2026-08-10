@@ -32,6 +32,8 @@ import {
  */
 export const OWNER_ROLE_NAME = 'AccountOwner';
 export const POS_ROLE_NAME = 'PointOfSale';
+/** Cheksiz kirishga ega rollar — «o'zingda yo'q narsani bera olmaysan» tekshiruvi shularga tayanadi. */
+export const ADMINISH_ROLE_NAMES: readonly string[] = [OWNER_ROLE_NAME, 'Administrator'];
 
 export interface RoleListRow {
   id: string;
@@ -528,7 +530,7 @@ export class RolesService {
     // admin/owner may not strip their OWN admin access — they'd lose the
     // settings section they are standing in. Another admin (or the owner
     // via «Сделать владельцем») demotes them instead.
-    const ADMINISH = [OWNER_ROLE_NAME, 'Administrator'];
+    const ADMINISH = ADMINISH_ROLE_NAMES;
     if (
       actorId === employeeId &&
       beforeNames.some((n) => ADMINISH.includes(n)) &&
@@ -699,6 +701,26 @@ export class RolesService {
     });
     if (holders.length > 0 && !holders.some((h) => h.employeeId === actorEmployeeId)) {
       throw new ForbiddenException("Faqat joriy egasi egalikni o'tkaza oladi");
+    }
+    // MK40 brauzer-QA: egasi HALI YO'Q bo'lsa yuqoridagi shart butunlay
+    // o'chib qolardi — `employee:update` ruxsati bo'lgan oddiy xodim o'z
+    // kartasidagi «Egasi qilish» tugmasi bilan o'zini egasi qilib olardi
+    // (cheklangan roli o'chib, cheksiz egalik kelardi). G1 bu yo'lni ko'rmaydi:
+    // bu yerda matritsa yozilmaydi, tayyor tizim roli biriktiriladi.
+    // Birinchi egani faqat allaqachon cheksiz kirishga ega aktor tayinlaydi.
+    if (holders.length === 0) {
+      const actor = await this.prisma.client.employee.findUnique({
+        where: { id: actorEmployeeId },
+        select: { roles: { select: { role: { select: { name: true } } } } },
+      });
+      const actorIsAdminish = (actor?.roles ?? []).some((r) =>
+        ADMINISH_ROLE_NAMES.includes(r.role.name),
+      );
+      if (!actorIsAdminish) {
+        throw new ForbiddenException(
+          "Egani faqat administrator tayinlay oladi — o'zingizda yo'q huquqni bera olmaysiz",
+        );
+      }
     }
     if (holders.length === 1 && holders[0]?.employeeId === targetEmployeeId) {
       return { ok: true, ownerRoleId }; // idempotent — already the owner

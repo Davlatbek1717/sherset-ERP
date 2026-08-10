@@ -4,7 +4,7 @@ import { HomepageTabs } from '@/components/homepage-tabs';
 import { DavomatWidget } from '@/components/hr/davomat-widget';
 import { type UnconvertedAmountRow, UnconvertedNotice } from '@/components/reports/report-notices';
 import { api } from '@/lib/api-client';
-import { Button, Container, StickyHScroll, formatMoney } from '@moysklad/ui';
+import { Button, Container, ErrorState, StickyHScroll, formatMoney } from '@moysklad/ui';
 import { useQuery } from '@tanstack/react-query';
 import { useLocale, useTranslations } from 'next-intl';
 import dynamic from 'next/dynamic';
@@ -759,14 +759,22 @@ function RecentDocsSection({
 // ---------------------------------------------------------------------------
 
 export default function HomePage() {
+  const t = useTranslations('pages.homepage');
+  const tCommon = useTranslations('common');
   // moysklad's default visible tab is "Неделя" — we mirror it.
   const [period, setPeriod] = useState<Period>('week');
 
-  const { data, isLoading, refetch } = useQuery<DashboardResult>({
+  const { data, isLoading, error, refetch } = useQuery<DashboardResult>({
     queryKey: ['dashboard', period],
     queryFn: () => api.get<DashboardResult>(`/reports/dashboard?period=${period}`),
     staleTime: 60_000,
   });
+
+  // MK40 brauzer-QA: `report:view` ruxsati yo'q xodimda bu so'rov 403 qaytaradi.
+  // Ilgari xato UMUMAN ushlanmasdi — `data` undefined qolib, panellar «0 sotuv /
+  // 0,00 сум» chizardi, ya'ni RUXSAT YO'Q holati «bugun savdo bo'lmadi» ko'rinardi.
+  // O'lchanmagan ≠ nol: 403 va boshqa xatolarda raqam emas, sabab ko'rsatiladi.
+  const status = (error as (Error & { status?: number }) | null)?.status;
 
   return (
     <Container size="lg" className="space-y-8 py-4">
@@ -776,10 +784,28 @@ export default function HomePage() {
       {/* Page-level tabs (Показатели / Документы / Корзина / Аудит / Файлы / Начало работы) */}
       <HomepageTabs activeKey="metrics" />
 
-      <SalesSection data={data} loading={isLoading} period={period} setPeriod={setPeriod} />
-      <OverdueSection data={data} loading={isLoading} />
-      <MoneySection data={data} loading={isLoading} />
-      <RecentDocsSection docs={data?.recentDocs} loading={isLoading} onRefresh={() => refetch()} />
+      {error ? (
+        <ErrorState
+          title={t('load_error_title')}
+          description={
+            status === 403 || status === 401 ? t('load_error_forbidden') : t('load_error_generic')
+          }
+          onRetry={() => refetch()}
+          retryLabel={tCommon('retry')}
+          data-test-id="dashboard-error"
+        />
+      ) : (
+        <>
+          <SalesSection data={data} loading={isLoading} period={period} setPeriod={setPeriod} />
+          <OverdueSection data={data} loading={isLoading} />
+          <MoneySection data={data} loading={isLoading} />
+          <RecentDocsSection
+            docs={data?.recentDocs}
+            loading={isLoading}
+            onRefresh={() => refetch()}
+          />
+        </>
+      )}
     </Container>
   );
 }

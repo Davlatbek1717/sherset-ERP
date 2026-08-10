@@ -234,7 +234,7 @@
     "open_api": "API'da ochish"
   },
   "detail_toolbar": {
-    "pager": "{current} из {total}",
+    "pager": "{current} / {total}",
     "prev": "Oldingi",
     "next": "Keyingi"
   },
@@ -2141,6 +2141,9 @@
       "yellow_max": "Sariq chegarasi (% gacha)"
     },
     "homepage": {
+      "load_error_title": "Ko'rsatkichlarni yuklab bo'lmadi",
+      "load_error_forbidden": "Bu ma'lumotni ko'rishga ruxsatingiz yo'q. Bu — «nol», ya'ni «savdo bo'lmadi» degani EMAS: raqamlar shunchaki sizga ko'rsatilmayapti.",
+      "load_error_generic": "Ma'lumotni olishda xato. Ko'rsatilgan raqamlar to'liq bo'lmasligi mumkin.",
       "charts": {
         "sales_trend_title": "Sotuvlar dinamikasi",
         "sales_trend_subtitle": "Kunlik / haftalik sotuv summasi",
@@ -9051,6 +9054,7 @@
       "action_adjust": "Ko'rsatkich tuzatmasi"
     },
     "managerQueue": {
+      "fine_not_charged_notice": "⚠️ Bu amal faqat JURNALGA yoziladi — xodimning oyligidan pul USHLAB QOLINMAYDI. Jarimani HR → Oylik bo'limida qo'lda kiriting.",
       "title": "Ish navbati",
       "hint": "Bitta ro'yxat: qoida buzilishi, kassa farqi, narx sakrashi. ⚠️ Navbat hech qanday amalni TO'XTATMAYDI — u faqat «ko'rildi va nima qilindi» ni yozadi.",
       "loading": "Yuklanmoqda…",

@@ -1164,7 +1164,7 @@ sifatida (bu sessiyada prodga tegilmaydi).
 
 ---
 
-### MK40 — 4-Menejer **Phase-2 QA** (ruxsatlar) ☐ HISOBOT
+### MK40 — 4-Menejer **Phase-2 QA** (ruxsatlar) ☑ HISOBOT (2026-08-10, **QISMAN** — 6 defekt tuzatildi; filial/shablon/override qamrovi MK35+MK28+MK29-FE gacha ochiq)
 **Bo'lim/blok:** 4-bo'lim QA · **TZ:** §10.3 · **Tur:** QA sessiyasi
 **Ustuvorlik:** P1 · **Bog'liqlik:** MK39
 **Qamrov (real brauzer, uchdan-uchiga):** admin rol yaratadi → menejerga beradi → ko'rinish
@@ -4594,3 +4594,171 @@ ombor, birinchi oy ekranda «reja qo'yilmagan» bo'lib ko'rinadi.
 - Prisma `generate` da `EPERM: rename query_engine-windows.dll.node` chiqdi (boshqa jarayon DLL'ni
   ushlab turgan). TS klient TO'LIQ generatsiya bo'lgan (`salesPlan` delegati bor), engine binary
   esa o'zgarmagan ⇒ ta'sir yo'q; typecheck va 10 500+ test buni tasdiqladi.
+
+## Faza MK40 — 4-Menejer **Phase-2 QA** (ruxsatlar) (sana: 2026-08-10)
+
+**Holat:** **QISMAN BAJARILDI** — brauzer E2E yugurtirildi (Playwright MCP, `climart_adopt` @ 5432,
+api 4000 + web 3100 jonli). Talab qilingan zanjirning **5 bo'g'ini TASDIQLANDI**, **1 bo'g'in
+UZILGAN** (MK07 ochiq qarzi), **3 qamrov bandi BAJARIB BO'LMAYDI** (kutayotgan fazalar: MK35, MK28,
+MK29-FE). Yo'l-yo'lakay **6 defekt** topildi va **hammasi tuzatildi** — shundan bittasi 🔴
+**imtiyoz oshirish teshigi** (real hujum brauzerda bajarildi).
+
+**Muhim:** 4-bo'lim statusi **«Phase-2 verified» QILINMADI** — quyidagi «Bajarib bo'lmadi»
+bo'limidagi uch band qoplanmagan. Halol yorliq: **«Phase-2 QISMAN — ruxsat yadrosi tasdiqlangan,
+ko'rinish chegarasi PRODDA O'CHIQ»**.
+
+### 🔴 K1 (KRITIK, TUZATILDI) — egasi tayinlanmagan akkauntda imtiyoz oshirish
+
+**Brauzerda bajarilgan hujum:** faqat `employee:update` + `role:*` ruxsatiga ega oddiy xodim
+(`QA MK40 Menejer` roli, `customerorder:view=OWN`) o'z xodim-kartasidagi **«Egasi qilish»**
+tugmasini bosdi → `POST /roles/owner/transfer` **201** qaytardi → DB'da uning roli
+`["QA MK40 Menejer"]` dan `["AccountOwner"]` ga **almashdi**: cheklangan rol o'chib, cheksiz
+egalik (akkauntni o'chirish + yangi ega tayinlash) keldi.
+
+**Sabab:** `roles.service.ts::transferOwner` tekshiruvi `holders.length > 0 && …` shartidan
+boshlanardi — ya'ni **egasi hali yo'q bo'lsa hech kim tekshirilmasdi**. Yagona darvoza —
+`@RequirePermission({ entity: 'employee', action: 'update' })`. G1 (MK26) bu yo'lni **umuman
+ko'rmaydi**: bu yerda matritsa yozilmaydi, tayyor tizim roli biriktiriladi.
+
+**Tuzatish:** `holders.length === 0` shoxida aktor **allaqachon cheksiz kirishga ega** bo'lishi
+talab qilinadi (`ADMINISH_ROLE_NAMES = [AccountOwner, Administrator]`) — G1 ning aynan o'sha
+tamoyili. RED→GREEN: `apps/api/src/modules/permissions/owner-transfer-bootstrap.test.ts` (4 test;
+RED holati yozib olindi: «promise resolved "{ ok: true }" instead of rejecting»).
+**Brauzerda qayta tekshirildi:** tugma bosildi → toast «Amal bajarilmadi — Egani faqat
+administrator tayinlay oladi — o'zingizda yo'q huquqni bera olmaysiz», DB'da rol **o'zgarmadi**.
+
+### 🟠 K2 (TUZATILDI) — 16 hujjat-detal sahifasida `not_found` shoxi O'LIK edi
+
+Ko'rmaydigan yozuvni URL bilan ochganda sahifa **abadiy «Yuklanmoqda…»** holatida qolardi
+(9 daqiqa kutildi — o'zgarmadi). Sabab: shart tartibi
+`if (isLoading || !form) return <loading/>;` **keyin** `if (!data) return <not_found/>;` —
+`form` faqat `data` kelganda to'ladi, shuning uchun ikkinchi shox **hech qachon** bajarilmasdi.
+Deterministik skript 16 sahifada bir xil naqshni topdi (anchor topilmasa to'xtaydi):
+`customer-orders · demands · enters · internal-orders · inventories · invoices-in · invoices-out ·
+losses · moves · payrolls · processing-orders · processings · productions · purchase-orders ·
+purchase-returns · sales-returns`.
+Yangi shakl `if (!data) return isLoading ? <loading/> : <not_found/>;` — TS narrowing ham saqlanadi.
+**Brauzerda:** o'sha URL endi **«Topilmadi»** chizadi; o'z buyurtmasi normal ochiladi.
+
+*Nega MK40 da chiqdi:* record-scope yoqilganda begona yozuv `404` qaytaradi (bu **to'g'ri** —
+mavjudlik sizmaydi), ya'ni bu holat kundalik oqimga aylanadi.
+
+### 🟠 K3 (TUZATILDI) — bosh sahifa 403 da SOXTA NOL chizardi
+
+`report:view` ruxsati yo'q xodimda `/reports/dashboard` **403** qaytaradi. `useQuery` da xato
+**umuman ushlanmagan** edi → `data` undefined qolib, panellar «0 Sotuvlar · 0,00 сум» chizardi.
+Ya'ni **«ruxsat yo'q»** ekranda **«bugun savdo bo'lmadi»** bo'lib ko'rinardi (o'lchanmagan ≠ nol).
+Endi 401/403 va boshqa xatolarda `ErrorState`: «Ko'rsatkichlarni yuklab bo'lmadi» +
+«Bu ma'lumotni ko'rishga ruxsatingiz yo'q. Bu — «nol», ya'ni «savdo bo'lmadi» degani EMAS…»
+(ru+uz). Brauzerda tasdiqlandi.
+
+### 🟡 K4 (TUZATILDI) — hujjat-panjarasi `«1 из 1»` o'zbek UI'da
+
+`uz.json → detail_toolbar.pager` da ruscha `«из»` qattiq yozilgan edi (ro'yxat panjarasi
+2026-06-08 da tuzatilgan, detal-toolbar esa qolib ketgan — bir xil klass). UZ endi
+`{current} / {total}`, RU `«из»` bilan qoladi. `detail-toolbar.test.tsx` mos yangilandi
+(test-utils locale = `uz`).
+
+### 🟡 K5 (TUZATILDI) — G1 rad javobi `role="alert"` emas edi
+
+Rol yaratish/tahrirlashdagi xato matni oddiy `<span>` edi — ovozli o'quvchi e'lon qilmaydi,
+ko'rmaydigan admin «saqlandi» deb o'ylashi mumkin. `role="alert"` + `data-test-id` qo'shildi
+(`new-role-view.tsx`, `role-detail-view.tsx`).
+
+### 🟡 K6 (TUZATILDI — ochiq qarz endi EKRANDA) — «Jarima yozish» pul yozmaydi
+
+Navbatdagi `record_fine` amali **faqat jurnalga** yozadi; `HrBonusFineLog` ga pul **tushmaydi**
+(`manager-queue.service.ts` da `logger.warn(... PUL YOZILMADI (MK07 qarzi))`). Brauzerda
+o'lchandi: amaldan keyin element «Hal qilindi» bo'ladi, `HrBonusFineLog` = **0**,
+`/hr/payroll` → «JAMI JARIMA (SO'M) **0**». Menejer jarima ushlab qolindi deb o'ylashi mumkin edi.
+Endi sabab formasi ustida sariq ogohlantirish chiqadi (ru+uz):
+«⚠️ Bu amal faqat JURNALGA yoziladi — xodimning oyligidan pul USHLAB QOLINMAYDI…».
+**Qarzning o'zi yopilmadi** — u MK07/MK01 ishi.
+
+### ✅ TASDIQLANGAN (brauzer + DB ground-truth)
+
+| # | Oqim | Natija |
+|---|---|---|
+| T1 | Admin `/analitika/sozlamalar/rollar/yangi` da rol yaratdi (qidiruv-filtri bilan 7 katak) | DB'da aynan 7 katak: `customerorder:view=OWN · demand:view=OWN · employee:view/update=ALL · role:view/create/update=ALL` — filtr almashishi qiymatlarni yo'qotmadi |
+| T2 | Rolni xodimga `Kirish huquqlarini sozlash` modalidan berdi | `EmployeeRole` yangilandi; yangi rol ro'yxatda darhol ko'rindi |
+| T3 | Record-scope OWN — bayroq **OFF** | 3 buyurtmadan **3 tasi** ko'rindi (kutilgan: bayroq o'chiq ⇒ filtr YO'Q) |
+| T4 | Record-scope OWN — bayroq **ON** | 3 tadan **1 tasi** (faqat o'ziniki), footer «1-1 dan 1». Begona yozuv detali → **404** (403 emas — mavjudlik sizmaydi, to'g'ri naqsh) |
+| T5 | G1 — matritsa yo'li | `customerorder.view → ALL` yozishga urinish **rad etildi**: «Imtiyoz oshirish taqiqi (G1) — o'zingizda yo'q ruxsatni rolga yoza olmaysiz: customerorder.view → ALL (sizda: OWN)»; rol **yaratilmadi** |
+| T6 | Kassa kamomadi → navbat | «Yangilash» → 17 element; kamomad **«Kassa farqi · -300,00 сум»**, jiddiylik **«Jiddiy»**, takror aniqlash: «Shu oyda 2-marta — bu yakka hodisa emas» |
+| T7 | Navbat FSM | `record_fine` + sabab `policy_violation` → element `open → resolved`, `ManagerWorkItemEvent` yozildi (aktor `owner`) |
+
+*(Bayroq test tugagach **qayta O'CHIRILDI**; test roli o'chirildi, xodim asl `Manager` roliga,
+buyurtma egasi adminga qaytarildi.)*
+
+### 🔴 BAJARIB BO'LMADI (qamrov bandlari — kutayotgan fazalar, halol yorliq)
+
+1. **«Filial ∩ scope kesishmasi» — MK35 ☐ bajarilmagan.** Ground-truth: `Branch` modeli sxemada
+   bor, lekin **hech bir modelda `branchId` maydoni YO'Q** (`grep` = 0 ta) — hujjatlarda ham,
+   `Employee` da ham. Ya'ni kesishma sinaladigan narsa hali mavjud emas (MK35 ← `F003`).
+2. **«Shablon qo'llash» (MK29) — FE YO'Q.** BE tayyor: `GET /roles/templates` +
+   `POST /roles/:id/apply-template`. `apps/web` da bu endpointlarga **birorta chaqiruv yo'q**;
+   «Yangi rol yaratish» ekranida shablon tanlash elementi yo'q (brauzerda tekshirildi). 10 shablon
+   seed orqali tayyor **rol** sifatida turibdi — bu shablon *qo'llash* emas.
+3. **Xodim-override UI (MK26 G1/G2/G3) — FE YO'Q (MK28 ☐).** BE tayyor:
+   `PUT /roles/employee/:id/permissions` + `POST …/permissions/explain`. `apps/web` da **0 chaqiruv**,
+   `EmployeePermission` jadvali **bo'sh**.
+4. **`recordScopeEnforced` PRODDA O'CHIQ (qamrov 2/47 = 4%).** `pnpm record-scope:coverage`:
+   darvoza 🔴 **YOPIQ**, 45 bloker. Ya'ni **rol matritsasidagi `O'zining`/`Guruh` tanlovi bugun
+   ish bermaydi** va admin buni ekranda **bilmaydi** — matritsa bajarilmaydigan va'da beradi.
+   *(Bu MK39 ning ataylab qilingan holati, lekin MK40 uni brauzerda tasdiqladi: bayroq off'da
+   OWN roli 3/3 yozuvni ko'rsatadi.)*
+
+### Kuzatuvlar (tuzatilmadi — qaror/faza talab qiladi)
+
+- **Rol matritsasi obyektlarni xom slug bilan chizadi** (`product`, `productfolder`, `branch`…) —
+  moysklad'da inson o'qiy oladigan nomlar. `analitika/sozlamalar/rollar` J-cohort auditida
+  **ataylab qoldirilgan** edi; MK28 bilan birga qilinsa mantiqiy.
+- **Ikki «ega» roli birga yashaydi:** MK29 shabloni bergan `Egasi` (oddiy rol) va tizim
+  `AccountOwner` (xodim-kartasidagi «Egasi qilish» aynan shuni beradi). Ro'yxatda ikkalasi
+  ko'rinadi — chalkashlik manbai.
+- Matritsa `<select>` larida `aria-label` = **joriy qiymat** («Yo'q»), ustun/obyekt nomi emas —
+  bir qatordagi 6 select bir xil e'lon qilinadi (a11y).
+
+### Testlar (RED → GREEN)
+
+- `apps/api/src/modules/permissions/owner-transfer-bootstrap.test.ts` — **YANGI**, 4 test.
+  RED (fix'dan oldin): «oddiy xodim … 403» yiqildi — `{ ok: true }` qaytardi. GREEN: 4/4.
+- `apps/web/src/components/document-detail/detail-toolbar.test.tsx` — `5 из 100` → `5 / 100`
+  (uz locale kutilmasi; K4 bilan birga).
+
+### Gate natijasi (to'liq, commit nuqtasida)
+
+- `pnpm typecheck` — **10/10 muvaffaqiyatli, 0 xato** (butun monorepo).
+- `pnpm lint:product` — **0 error** (832 warning, siyosat bo'yicha ruxsat).
+- `pnpm i18n:gate` — **9/9** (463 fayl, 12 943 kalit; ru+uz parity + no-hardcoded).
+- `apps/web` Vitest — **215 fayl / 3117 test yashil** (26 skip), regress yo'q.
+- `apps/api` Vitest — **530 fayl / 7478 test yashil** (1 fayl + 2 test skip), regress yo'q
+  (§web-only-gate-misses-api-guards sabog'i: BE qo'riqchisi tegilgani uchun API to'liq yugurtirildi).
+
+### Fayllar
+
+**BE:** `permissions/roles.service.ts` (+`ADMINISH_ROLE_NAMES`, bootstrap qo'riqchisi) ·
+`permissions/owner-transfer-bootstrap.test.ts` (yangi).
+**FE:** 16 × `app/(app)/*/[id]/page.tsx` (K2 kodmodi) · `app/(app)/page.tsx` (K3) ·
+`app/(app)/menejer/navbat/page.tsx` (K6) ·
+`analitika/sozlamalar/_components/{new-role-view,role-detail-view}.tsx` (K5) ·
+`components/document-detail/detail-toolbar.test.tsx` (K4) ·
+`messages/{ru,uz}.json` (K3 3 kalit + K6 1 kalit + K4 tuzatma).
+
+### Parallel sessiya
+
+Sessiya davomida boshqa sessiya **MK17 (yo'qolgan mijozlar)** va **manager-thresholds** ustida
+ishladi (`manager/customers/*`, `manager/thresholds/*`, `manager.module.ts`,
+`menejer/_components/{customer-assignment-screen,lost-customers-panel}*`, `manager-*-api.ts`,
+`schema.prisma`, `migrations/20260810150000_lost_customer_reason/`). Ularga **TEGILMADI**.
+`messages/{ru,uz}.json` — **umumiy fayl**: mening kalitlarim aniq anchor bilan qo'shildi, commit
+faqat o'z hunk'larim bilan qilindi (§6.7 B naqshi), commitdan keyin `git show --stat HEAD` bilan
+tarkib tekshirildi.
+
+### Keyingi qadam (tavsiya)
+
+`MK40-B` (yoki MK28 ichida): **matritsa va'dasini haqiqatga moslash** — `recordScopeEnforced`
+o'chiq bo'lganda rol matritsasida `O'zining`/`Guruh` tanlovi yonida ochiq ogohlantirish
+(«bu tanlov hozir kuchga kirmaydi — qamrov 2/47»), aks holda admin yo'q chegarani qo'yganini
+biladi deb o'ylaydi. Shuningdek MK29 shablon FE + MK26 override FE (MK28) va MK35 (filial)
+bajarilgach MK40 qayta yugurtiriladi.

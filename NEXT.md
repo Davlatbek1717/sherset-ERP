@@ -99,6 +99,19 @@ Foydalanuvchi `davom et` deganda men:
 > **Phase 2** = alohida QA sessiyasi, **cohort bo'yicha** (browser + adversarial). To'liq qoida: loyiha
 > `CLAUDE.md` → «Audit ikki fazali». Stack: DB `moysklad_dev`@localhost:5433 · `pnpm dev` · `pnpm db:seed`.
 > Har audit sessiyasi shu yerga sahifani **Phase-1 ✓ / Phase-2 ⏳** deb qo'shadi; QA sessiyasi ⏳ → ✅ qiladi.
+> ⚠️ **Stack tuzatmasi (2026-08-10, o'lchangan):** yuqoridagi `moysklad_dev`@5433 **ESKIRGAN** —
+> haqiqiy lokal baza `climart_adopt`@**5432** (`packages/db/.env`), `CLAUDE.md` §1 dagi kabi.
+
+> **🔐 MK40 — 4-Menejer ruxsatlar Phase-2 QA (2026-08-10): QISMAN ✅ / ochiq ⏳.**
+> ✅ Brauzerda tasdiqlangan: rol yaratish→biriktirish · record-scope OWN (bayroq ON da 3→1,
+> begona yozuv `404`) · G1 matritsa rad javobi · kassa kamomadi→navbat (CASH_VARIANCE, «Jiddiy») ·
+> navbat FSM `open→resolved` + sabab kodi.
+> 🔴 Tuzatildi: **owner-transfer imtiyoz oshirish teshigi** + 16 detal sahifada o'lik `not_found`
+> (404 = abadiy spinner) + bosh sahifa 403→soxta nol + uz pager `«из»` + G1 `role="alert"` +
+> «Jarima yozish» pul yozmasligi ekranda ochildi.
+> ⏳ Qoldi (fazalar): filial ∩ scope (`MK35 ☐`, `branchId` sxemada yo'q) · shablon qo'llash FE
+> (`MK29` BE tayyor, FE 0 chaqiruv) · xodim-override FE (`MK28 ☐`) · `recordScopeEnforced`
+> **prodda O'CHIQ** (qamrov 2/47). Batafsil: REJA → «Faza MK40».
 
 > **🔬✅ Phase-2 BROWSER-QA natijalari (2026-06-08d, Playwright MCP jonli):** (foydalanuvchi «playwright ulanganku» dedi → optimistic-lock
 > rollout tugagach browser-QA qildim.) **MCP setup:** orphaned mcp-chrome profil-lock tozalandi (kill chrome tree); auth = httpOnly cookie,
@@ -304,6 +317,54 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 ---
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
+
+> **🕒 2026-08-10h (REJA-MENEJER-KASSA **MK40** — 4-Menejer **Phase-2 QA**, ruxsatlar) —
+> 🌐 **BRAUZERDA O'LCHANDI** (Playwright MCP jonli, `climart_adopt`@5432 + api 4000 + web 3100).
+> Holat: **Phase-2 QISMAN** — «Phase-2 verified» EMAS. To'liq hisobot:
+> `docs/REJA-MENEJER-KASSA-2026-08.md` → «Faza MK40».**
+>
+> **🔴 Eng muhimi — real imtiyoz oshirish teshigi topildi va yopildi.** Faqat `employee:update`
+> ruxsatiga ega oddiy xodim brauzerda «Egasi qilish» tugmasi orqali **o'zini `AccountOwner`
+> qildi** (cheklangan roli o'chib ketdi). Sabab: `transferOwner` tekshiruvi `holders.length > 0`
+> shartidan boshlanardi ⇒ **egasi hali yo'q akkauntda hech kim tekshirilmasdi**. G1 (MK26) bu
+> yo'lni ko'rmaydi — bu yerda matritsa yozilmaydi, tayyor tizim roli biriktiriladi. Endi birinchi
+> egani faqat `Administrator`/`AccountOwner` tayinlaydi (`ADMINISH_ROLE_NAMES`);
+> RED→GREEN test `permissions/owner-transfer-bootstrap.test.ts`, brauzerda qayta tasdiqlandi.
+>
+> **Yana 5 defekt tuzatildi (hammasi brauzerda ko'rindi, statik audit ko'rmagan):**
+> (K2) **16 hujjat-detal sahifasida `not_found` shoxi O'LIK edi** — `if (isLoading || !form)`
+> undan oldin turgani uchun 404 sahifani **abadiy «Yuklanmoqda…»** da qoldirardi; deterministik
+> kodmod bilan `if (!data) return isLoading ? … : …` shakliga o'tkazildi ·
+> (K3) **bosh sahifa 403 da soxta NOL chizardi** («ruxsat yo'q» ≡ «savdo bo'lmadi») — endi
+> `ErrorState` + ochiq matn · (K4) `detail_toolbar.pager` uz'da ruscha `«из»` · (K5) G1 rad
+> javobi `role="alert"` emas edi · (K6) **«Jarima yozish» pul yozmaydi** (MK07 qarzi) — endi
+> ekranda sariq ogohlantirish, aks holda menejer jarima ushlab qolindi deb o'ylardi.
+>
+> **🔴 Qamrovning 3 bandi BAJARIB BO'LMADI (kutayotgan fazalar, halol yorliq):**
+> **filial ∩ scope** — `MK35 ☐`, sxemada **hech bir modelda `branchId` YO'Q** (`Branch` modeli
+> bor, ishlatilmaydi) · **shablon qo'llash (MK29)** — BE bor
+> (`GET /roles/templates`, `POST /roles/:id/apply-template`), `apps/web` da **0 chaqiruv** ·
+> **xodim-override UI (MK26 G1/G2/G3)** — BE bor (`PUT /roles/employee/:id/permissions`,
+> `…/explain`), `apps/web` da **0 chaqiruv** (`MK28 ☐`, `EmployeePermission` jadvali bo'sh).
+>
+> **⚠️ Eng muhim ochiq xulosa:** `recordScopeEnforced` **prodda O'CHIQ** (qamrov **2/47 = 4%**,
+> darvoza 🔴 yopiq). Brauzerda o'lchandi: bayroq **off** da `O'zining` (OWN) roli **3 tadan 3**
+> yozuvni ko'rsatadi; **on** da **1 tasini** (mexanizm ishlaydi, begona yozuv detali `404`).
+> Ya'ni **rol matritsasidagi `O'zining`/`Guruh` tanlovi bugun bajarilmaydigan va'da** va admin
+> buni ekranda bilmaydi. Test uchun yoqilgan bayroq **qayta o'chirildi**; test roli o'chirildi,
+> QA xodim asl `Manager` roliga, buyurtma egasi adminga qaytarildi.
+>
+> **Keyingi qadam (tavsiya):** matritsada shu va'dani halollashtirish (bayroq o'chiq bo'lganda
+> `O'zining`/`Guruh` yonida ogohlantirish) — MK28 bilan birga; keyin MK35/MK28/MK29-FE
+> bajarilgach **MK40 qayta yugurtiriladi**.
+>
+> **Gate (commit nuqtasida, to'liq):** `typecheck` **10/10 · 0 xato** · `lint:product` **0 error** ·
+> `i18n:gate` **9/9** · web Vitest **215 fayl / 3117 test** · api Vitest **530 fayl / 7478 test**.
+>
+> **Parallel sessiya:** boshqa sessiya shu vaqtda MK17 ni qildi (`06c5c097`, `96f8e190`).
+> Mening diffim path-cheklangan; umumiy fayllar (`messages/*.json`, REJA doc) commitga
+> **faqat o'z hunk'larim** bilan tushdi (§6.7 B), commitdan keyin `git show --stat HEAD`
+> bilan tarkib tekshirildi.
 
 > **🕒 2026-08-10g (REJA-MENEJER-KASSA **MK17** — yo'qolgan mijozlar signali) —
 > ✅ **Phase-1: strukturaviy + unit-tasdiqlangan, BROWSER-SMOKE YO'Q** (commit `06c5c097`).

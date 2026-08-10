@@ -203,8 +203,14 @@ export function RoleDetailView({ id }: { id: string }) {
             {save.isSuccess && dirty === 0 && (
               <span className="text-[var(--ms-success-600)]">{t('role_saved')}</span>
             )}
+            {/* role="alert" — G1 rad javobi (mavjud rolga o'zingda yo'q scope
+                yozish) shu yerda chiqadi; ovozli o'quvchi e'lon qilishi kerak. */}
             {save.isError && !isOptimisticConflict(save.error) && (
-              <span className="text-[var(--ms-destructive-500)]">
+              <span
+                role="alert"
+                className="text-[var(--ms-destructive-500)]"
+                data-test-id="role-save-error"
+              >
                 {(save.error as Error)?.message}
               </span>
             )}

@@ -82,8 +82,15 @@ export function NewRoleView() {
 
       <div className="-mx-6 sticky bottom-0 z-20 border-[var(--ms-border)] border-t bg-white px-6 py-3 shadow-[0_-2px_8px_rgba(0,0,0,0.04)]">
         <div className="flex items-center justify-end gap-3">
+          {/* role="alert" — G1 imtiyoz-oshirish rad javobi (MK40 brauzer-QA'da
+              o'lchandi) shu yerda chiqadi; ovozli o'quvchi uni e'lon qilishi
+              kerak, aks holda ko'rmaydigan admin «saqlandi» deb o'ylaydi. */}
           {create.isError && (
-            <span className="text-[var(--ms-destructive-500)] text-xs">
+            <span
+              role="alert"
+              className="text-[var(--ms-destructive-500)] text-xs"
+              data-test-id="role-create-error"
+            >
               {(create.error as Error)?.message}
             </span>
           )}

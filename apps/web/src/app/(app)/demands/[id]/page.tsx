@@ -1009,10 +1009,18 @@ export default function DemandDetailPage() {
     });
   }, [form, data]);
 
-  if (isLoading || !form) {
+  // 404 (o'chirilgan hujjat yoki record-scope ko'rsatmaydigan yozuv) yuklash
+  // TUGAGACH shu yerda tutiladi. Ilgari bu shart quyidagi loading-shoxidan
+  // KEYIN turardi va HECH QACHON ishlamasdi (form faqat data kelganda
+  // to'ladi) — sahifa abadiy «Yuklanmoqda…» bo'lib qolardi (MK40 brauzer-QA).
+  if (!data)
+    return isLoading ? (
+      <div className="p-8 text-[var(--ms-text-muted)] text-sm">{tCommon('loading')}</div>
+    ) : (
+      <div className="p-8 text-sm">{tCommon('not_found')}</div>
+    );
+  if (!form)
     return <div className="p-8 text-[var(--ms-text-muted)] text-sm">{tCommon('loading')}</div>;
-  }
-  if (!data) return <div className="p-8 text-sm">{tCommon('not_found')}</div>;
 
   // moysklad locks a posted («Проведён») shipment — you unpost to edit (the FIFO
   // cost + stock cascade is booked at post). Draft stays fully editable.
