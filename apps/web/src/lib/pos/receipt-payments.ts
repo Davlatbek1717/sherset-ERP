@@ -66,7 +66,7 @@ export interface ReceiptPaymentLine {
 /** To'lov turlarining chekdagi tartibi — kassir odatlangan ketma-ketlik. */
 const ORDER = ['CASH_UZS', 'CASH_USD', 'CARD', 'TERMINAL', 'DEBT'] as const;
 
-const KIND_OF: Record<string, ReceiptLineKind> = {
+const KIND_OF: Record<string, Exclude<ReceiptLineKind, 'other'>> = {
   CASH_UZS: 'cash',
   CASH_USD: 'cashUsd',
   CARD: 'card',

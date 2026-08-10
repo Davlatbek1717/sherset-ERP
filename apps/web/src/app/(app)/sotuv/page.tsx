@@ -1023,6 +1023,8 @@ function SalesScreen({ session }: { session: CurrentSession }) {
       cardAmountMinor: bigint;
       terminalAmountMinor: bigint;
       debtAmountMinor: bigint;
+      cashUsdAmountMinor: bigint;
+      usdRateMinor: string | null;
       agentId?: string;
     }) => {
       if (!payingSale) throw new Error(t('no_sale_selected'));
@@ -1031,6 +1033,16 @@ function SalesScreen({ session }: { session: CurrentSession }) {
         cardAmountMinor: payment.cardAmountMinor.toString(),
         terminalAmountMinor: payment.terminalAmountMinor.toString(),
         debtAmountMinor: payment.debtAmountMinor.toString(),
+        // MK31 — dollar naqd SENTDA, kurs esa KANONIK ×10^8 satr (oynada
+        // serverdan olingan, qayta hisoblanmagan). Ikkalasi FAQAT dollar
+        // berilganda qo'shiladi: sxemada ikkisi ham `.default('0')` /
+        // `optional`, ya'ni eski payload shakli buzilmaydi.
+        ...(payment.cashUsdAmountMinor > 0n && payment.usdRateMinor
+          ? {
+              cashUsdAmountMinor: payment.cashUsdAmountMinor.toString(),
+              usdRateMinor: payment.usdRateMinor,
+            }
+          : {}),
         expectedSumMinor: payingSale.sumMinor.toString(),
         ...(payment.agentId ? { agentId: payment.agentId } : {}),
       });
