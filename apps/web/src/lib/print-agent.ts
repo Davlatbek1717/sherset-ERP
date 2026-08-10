@@ -171,14 +171,27 @@ interface AgentPickingLine {
   productName: string;
   quantity: string;
   binLocation: string | null;
+  uom?: string | null;
 }
 interface AgentPickingSheet {
   skladNo: number | null;
   omborchiName: string | null;
   lines: AgentPickingLine[];
 }
-interface AgentPickingSheetsResponse {
+/**
+ * `/restock-tasks/picking-sheets/:source/:id`. The header fields feed the
+ * «Товарный чек» template (climart namunasi) — they are what turns a bare line
+ * list into the receipt the owner asked for.
+ */
+export interface AgentPickingSheetsResponse {
   sourceName: string | null;
+  docNumber?: string | null;
+  /** ISO instant of the source document. */
+  docDate?: string | null;
+  buyerName?: string | null;
+  buyerPhone?: string | null;
+  sellerName?: string | null;
+  comment?: string | null;
   sheets: AgentPickingSheet[];
 }
 interface AgentKeeperRow {
@@ -186,66 +199,100 @@ interface AgentKeeperRow {
   printerName: string | null;
 }
 
-/** Plain-text (ESC/POS-bound) picking sheet for one warehouse zone. */
-function buildSheetText(sheet: AgentPickingSheet, orderName: string): string {
-  const sklad = sheet.skladNo != null ? String(sheet.skladNo).padStart(2, '0') : '—';
-  const bar = '================================';
-  const dash = '--------------------------------';
-  const lines: string[] = [
-    bar,
-    "      YIG'ISH VARAG'I",
-    `         SKLAD ${sklad}`,
-    bar,
-    `Buyurtma: ${orderName || '—'}`,
-    `Omborchi: ${sheet.omborchiName ?? '—'}`,
-    dash,
-  ];
-  let totalQty = 0;
-  sheet.lines.forEach((l, i) => {
-    const qty = Number(l.quantity);
-    totalQty += qty;
-    lines.push(`${i + 1}. ${l.productName}`);
-    lines.push(`   Joy: ${l.binLocation ?? '—'}   x ${qty}   [ ]`);
-  });
-  lines.push(dash);
-  lines.push(`Jami: ${sheet.lines.length} tovar, ${totalQty} dona`);
-  lines.push(bar);
-  return lines.join('\n');
+/** «01» / «Yacheykasiz» — the receipt's group heading for one sklad sheet. */
+export function pickGroupLabel(skladNo: number | null): string {
+  return skladNo != null ? String(skladNo).padStart(2, '0') : 'Yacheykasiz';
 }
 
-/** 80mm-thermal HTML picking sheet for Electron native printing (driver renders
- *  it — so Cyrillic works without ESC/POS codepages). */
-function buildSheetHtml(sheet: AgentPickingSheet, orderName: string): string {
-  const sklad = sheet.skladNo != null ? String(sheet.skladNo).padStart(2, '0') : '—';
-  let totalQty = 0;
+/** ISO instant → «DD.MM.YYYY» (the receipt's «от» line). */
+function receiptDateOf(iso: string | null | undefined): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${p(d.getDate())}.${p(d.getMonth() + 1)}.${d.getFullYear()}`;
+}
+
+const RECEIPT_BRAND = 'Sherset - savdo va ombor boshqaruvi';
+
+/**
+ * Plain-text picking sheet for the raw ESC/POS agent — an APPROXIMATION of the
+ * «Товарный чек» template, not a 1:1 copy: a raw thermal stream has no table
+ * borders, so the same information is printed in the same ORDER (header block →
+ * group heading → numbered lines with yacheyka + qty → «Jami nomlanish N» →
+ * brand line). Labels stay Latin here because the ESC/POS codepage is not
+ * negotiated by the agent — the Electron/browser paths render the real table.
+ */
+export function buildSheetText(sheet: AgentPickingSheet, res: AgentPickingSheetsResponse): string {
+  const dash = '--------------------------------';
+  const center = (s: string) =>
+    s.length >= 32 ? s : ' '.repeat(Math.floor((32 - s.length) / 2)) + s;
+  const L: string[] = [];
+  if (res.buyerName) L.push(res.buyerName);
+  L.push(center(`Tovar cheki № ${res.docNumber ?? res.sourceName ?? '—'}`));
+  const dateStr = receiptDateOf(res.docDate);
+  if (dateStr) L.push(center(dateStr));
+  L.push(`Sotuvchi: ${res.sellerName ?? ''}`);
+  L.push(`Xaridor: ${res.buyerName ?? ''}`);
+  L.push(`Telefon: ${res.buyerPhone ?? ''}`);
+  L.push(`Izoh: ${res.comment ?? ''}`);
+  L.push(dash);
+  L.push(pickGroupLabel(sheet.skladNo));
+  sheet.lines.forEach((l, i) => {
+    L.push(`${i + 1}. ${l.productName}`);
+    L.push(`   ${l.binLocation ?? '-'}   ${Number(l.quantity)} ${l.uom ?? 'dona'}`);
+  });
+  L.push(dash);
+  L.push(`Jami nomlanish ${sheet.lines.length}`);
+  L.push(RECEIPT_BRAND);
+  return L.join('\n');
+}
+
+/**
+ * 80mm-thermal HTML picking sheet for Electron native printing — the «Товарный
+ * чек» template 1:1 (the Windows driver renders it, so the bordered table and
+ * Cyrillic both survive; no ESC/POS codepage involved). Mirrors
+ * <PickReceiptBody> in components/pick-list/receipt-print-portal.tsx.
+ */
+export function buildSheetHtml(sheet: AgentPickingSheet, res: AgentPickingSheetsResponse): string {
   const rows = sheet.lines
-    .map((l, i) => {
-      const qty = Number(l.quantity);
-      totalQty += qty;
-      return `<div class="ln"><div class="nm">${i + 1}. ${escapeHtml(l.productName)}</div><div class="mt"><span class="loc">${escapeHtml(l.binLocation ?? '—')}</span><span>x ${qty}</span><span>&#9744;</span></div></div>`;
-    })
+    .map(
+      (l, i) =>
+        `<tr><td class="c">${i + 1}</td><td class="nm">${escapeHtml(l.productName)}</td><td class="c">${escapeHtml(l.uom ?? 'шт')}</td><td class="c qty">${Number(l.quantity)}</td><td class="c cell">${escapeHtml(l.binLocation ?? '–')}</td></tr>`,
+    )
     .join('');
   return `<!doctype html><html><head><meta charset="utf-8"><style>
 @page{margin:0}
 *{box-sizing:border-box}
-body{width:72mm;margin:0 auto;padding:2mm 1mm;font-family:'Segoe UI',Arial,sans-serif;font-size:12px;color:#000}
-.h{text-align:center;font-weight:700}
-.big{font-size:16px;line-height:1.2}
-.sep{border-top:1px dashed #000;margin:4px 0}
-.ln{margin-bottom:6px}
-.nm{font-weight:600}
-.mt{display:flex;justify-content:space-between;align-items:center;gap:6px}
-.loc{font-family:monospace;font-weight:700;letter-spacing:.04em}
+body{width:72mm;margin:0 auto;padding:2mm 1mm;font-family:Arial,Helvetica,sans-serif;font-size:11px;font-weight:600;color:#000}
+.agent{font-weight:700;font-size:14px}
+.title{text-align:center;font-weight:700;font-size:16px;margin-top:2px}
+.from{text-align:center;font-size:11px}
+.req{margin-top:2px;font-weight:700;font-size:11px;line-height:1.2}
+.grp{margin-top:6px;font-weight:700;font-size:15px}
+table{width:100%;table-layout:fixed;border-collapse:collapse;font-size:10px}
+th,td{border:1.5px solid #000;padding:1px 2px;vertical-align:top}
+th{text-align:center;font-weight:700}
+.c{text-align:center}
+.nm{font-size:11px;font-weight:700;word-break:break-word}
+.qty{font-size:11px;font-weight:700}
+.cell{white-space:nowrap;font-weight:800;font-variant-numeric:tabular-nums}
+.total{margin-top:3px;font-size:12px;font-weight:700}
+.brand{margin-top:12px;border-top:1px solid #000;padding-top:3px;font-size:11px;font-weight:700;font-style:italic}
 </style></head><body>
-<div class="h big">YIG'ISH VARAG'I</div>
-<div class="h big">SKLAD ${sklad}</div>
-<div class="sep"></div>
-<div>Buyurtma: <b>${escapeHtml(orderName || '—')}</b></div>
-<div>Omborchi: ${escapeHtml(sheet.omborchiName ?? '—')}</div>
-<div class="sep"></div>
-${rows}
-<div class="sep"></div>
-<div>Jami: ${sheet.lines.length} tovar, ${totalQty} dona</div>
+<div class="agent">${escapeHtml(res.buyerName ?? '')}</div>
+<div class="title">Товарный чек № ${escapeHtml(res.docNumber ?? res.sourceName ?? '—')}</div>
+<div class="from">от ${escapeHtml(receiptDateOf(res.docDate))}</div>
+<div class="req">
+<div>Продавец: ${escapeHtml(res.sellerName ?? '')}</div>
+<div>Покупатель: ${escapeHtml(res.buyerName ?? '')}</div>
+<div>Телефон: ${escapeHtml(res.buyerPhone ?? '')}</div>
+<div>Комментарий: ${escapeHtml(res.comment ?? '')}</div>
+</div>
+<div class="grp">${escapeHtml(pickGroupLabel(sheet.skladNo))}</div>
+<table><thead><tr><th style="width:5mm">№</th><th>Наименование</th><th style="width:7mm">Ед.изм</th><th style="width:8mm">Кол-во</th><th style="width:19mm">Yacheyka</th></tr></thead><tbody>${rows}</tbody></table>
+<div class="total">Всего наименований ${sheet.lines.length}</div>
+<div class="brand">${RECEIPT_BRAND}</div>
 </body></html>`;
 }
 
@@ -294,8 +341,8 @@ export async function printPickingViaAgent(saleId: string): Promise<PickingPrint
       // Electron shell → native driver print (HTML, Cyrillic-safe).
       // Plain browser → HTTP print-agent (raw ESC/POS).
       const r = el
-        ? await el.printSheet(printer, buildSheetHtml(sheet, sheetsRes.sourceName ?? ''))
-        : await agentPrint(printer, { text: buildSheetText(sheet, sheetsRes.sourceName ?? '') });
+        ? await el.printSheet(printer, buildSheetHtml(sheet, sheetsRes))
+        : await agentPrint(printer, { text: buildSheetText(sheet, sheetsRes) });
       return r.ok ? ('printed' as const) : ('error' as const);
     }),
   );

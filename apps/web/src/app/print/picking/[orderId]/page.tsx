@@ -19,11 +19,24 @@
  * the omborchi picks by bin LOCATION CODE (NN-NN-NN-NN), not by scanning a
  * per-line QR before even finding the product; the location code is now the
  * most prominent element on each line instead of competing with a QR image.
+ *
+ * 2026-08-10 (owner, climart namunasi): the bespoke «YIG'ISH VARAQASI» strip is
+ * gone — every sheet now renders the SHARED «Товарный чек» receipt template
+ * (<PickReceiptBody>), the same one the document «Лист сборки» prints. One
+ * receipt per sklad, so per-printer routing is unchanged; the sheet's sklad is
+ * the receipt's single group heading («01» / «Yacheykasiz»).
  */
 
+import { PickReceiptBody, type ReceiptData } from '@/components/pick-list/receipt-print-portal';
 import { ThermalShell } from '@/components/print/thermal-shell';
 import { api } from '@/lib/api-client';
-import { type PrintResult, agentPrint, checkPrintAgent } from '@/lib/print-agent';
+import {
+  type AgentPickingSheetsResponse,
+  type PrintResult,
+  agentPrint,
+  buildSheetText,
+  checkPrintAgent,
+} from '@/lib/print-agent';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { useParams, useSearchParams } from 'next/navigation';
@@ -34,6 +47,7 @@ interface SheetLine {
   productName: string;
   quantity: string;
   binLocation: string | null;
+  uom?: string | null;
   // Multi-bin: additional shelves this product also sits on (besides the primary).
   extraBins?: string[];
 }
@@ -43,8 +57,7 @@ interface PickingSheet {
   printerName: string | null;
   lines: SheetLine[];
 }
-interface PickingSheetsResponse {
-  sourceName: string | null;
+interface PickingSheetsResponse extends AgentPickingSheetsResponse {
   storeName: string | null;
   sheets: PickingSheet[];
 }
@@ -60,34 +73,44 @@ function fmtSklad(n: number | null): string {
   return n == null ? '—' : String(n).padStart(2, '0');
 }
 
+/** ISO instant → «DD.MM.YYYY» for the receipt's «от» line. */
+function receiptDateOf(iso: string | null | undefined): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${p(d.getDate())}.${p(d.getMonth() + 1)}.${d.getFullYear()}`;
+}
+
 /**
- * Plain-text strip for the ESC/POS print-agent (the agent adds init + cut).
- * The bin location code + product name carry the pick info (no QR — removed
- * from browser mode too, 2026-07-20g).
+ * One sklad sheet → the shared receipt's shape. `groups` is passed explicitly
+ * (a single group) so the server's serpentine pick-route ORDER survives —
+ * letting <PickReceiptBody> group the positions itself would re-sort them by
+ * cell code and send the omborchi walking the aisles twice.
  */
-function sheetToText(
+function sheetToReceipt(
   sheet: PickingSheet,
-  sourceName: string | null,
-  storeName: string | null,
-): string {
-  const bar = '--------------------------------';
-  const L: string[] = [];
-  L.push("       YIG'ISH VARAQASI");
-  L.push(`        SKLAD ${fmtSklad(sheet.skladNo)}`);
-  L.push(bar);
-  L.push(`Buyurtma: ${sourceName ?? '—'}`);
-  if (storeName) L.push(storeName);
-  L.push(`Omborchi: ${sheet.omborchiName ?? 'BELGILANMAGAN'}`);
-  L.push(bar);
-  sheet.lines.forEach((line, i) => {
-    L.push(`${i + 1}. ${line.productName}`);
-    L.push(`   ${line.binLocation ?? '—'}   ${Number(line.quantity)} dona  [ ]`);
-    if (line.extraBins?.length) L.push(`   yana: ${line.extraBins.join(', ')}`);
-  });
-  L.push(bar);
-  const qty = sheet.lines.reduce((s, l) => s + Number(l.quantity), 0);
-  L.push(`Jami: ${sheet.lines.length} mahsulot / ${qty} dona`);
-  return L.join('\n');
+  res: PickingSheetsResponse | undefined,
+  title: string,
+): ReceiptData {
+  const positions = sheet.lines.map((l) => ({
+    name: l.productName,
+    qty: Number(l.quantity),
+    uom: l.uom ?? null,
+    cell: l.binLocation,
+  }));
+  return {
+    title,
+    number: res?.docNumber ?? res?.sourceName ?? '—',
+    dateStr: receiptDateOf(res?.docDate),
+    agentName: res?.buyerName ?? null,
+    agentPhone: res?.buyerPhone ?? null,
+    ownerName: res?.sellerName ?? null,
+    description: res?.comment ?? null,
+    positions,
+    // null ⇒ the body renders the localized «Yacheykasiz» heading itself.
+    groups: [{ warehouse: sheet.skladNo != null ? fmtSklad(sheet.skladNo) : null, positions }],
+  };
 }
 
 export default function PrintPickingPage() {
@@ -97,6 +120,8 @@ export default function PrintPickingPage() {
   const source = searchParams.get('source') === 'retailsale' ? 'retailsale' : 'customerorder';
   const widthMm = searchParams.get('w') === '58' ? 58 : 80;
   const t = useTranslations('picking');
+  // The receipt template's own strings live with the shared body's namespace.
+  const tReceipt = useTranslations('pages.pickLists');
 
   const { data, isLoading, error } = useQuery<PickingSheetsResponse>({
     queryKey: ['picking-sheets', source, orderId],
@@ -131,7 +156,7 @@ export default function PrintPickingPage() {
       const res = await Promise.all(
         routed.map(async (s): Promise<DispatchResult> => {
           const r: PrintResult = await agentPrint(s.printerName as string, {
-            text: sheetToText(s, data.sourceName, data.storeName),
+            text: buildSheetText(s, data),
           });
           return { skladNo: s.skladNo, printer: s.printerName as string, ok: r.ok, error: r.error };
         }),
@@ -154,8 +179,8 @@ export default function PrintPickingPage() {
   const shouldBrowserPrint =
     (auto && mode === 'browser') || (mode === 'agent' && printSheets.length > 0);
 
-  const fs = widthMm === 58 ? 10 : 12;
-  const dash: React.CSSProperties = { borderTop: '1px dashed #000', margin: '5px 0' };
+  // The receipt column inside the paper (climart 1:1 uses 72mm on an 80mm roll).
+  const bodyWidthMm = widthMm === 58 ? 54 : 72;
 
   return (
     <>
@@ -216,78 +241,17 @@ export default function PrintPickingPage() {
 
       {printSheets.length > 0 && (
         <ThermalShell widthMm={widthMm} autoPrint={shouldBrowserPrint}>
+          <style>{`
+            .rcpt table th, .rcpt table td { border: 1.5px solid #000; }
+            .rcpt, .rcpt table { font-weight: 600; }
+            .rcpt td.rcpt-name { font-weight: 700; }
+          `}</style>
           {printSheets.map((sheet, idx) => (
-            <section
-              key={`${sheet.skladNo ?? 'none'}-${idx}`}
-              className="thermal-cut"
-              style={{ padding: '4mm 3mm', fontSize: fs, lineHeight: 1.35 }}
-            >
-              {/* Header */}
-              <div style={{ textAlign: 'center', fontWeight: 700, fontSize: fs + 4 }}>
-                {t('sheet_title')}
-              </div>
-              <div style={{ textAlign: 'center', fontWeight: 700, fontSize: fs + 6 }}>
-                {t('col_sklad')} {fmtSklad(sheet.skladNo)}
-              </div>
-              <div style={dash} />
-              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 6 }}>
-                <span>{t('sheet_order')}</span>
-                <span style={{ fontWeight: 700 }}>{data?.sourceName ?? '—'}</span>
-              </div>
-              {data?.storeName && (
-                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 6 }}>
-                  <span>{data.storeName}</span>
-                </div>
-              )}
-              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 6 }}>
-                <span>{t('col_omborchi')}</span>
-                <span style={{ fontWeight: 600 }}>
-                  {sheet.omborchiName ?? `⚠ ${t('keeper_unassigned')}`}
-                </span>
-              </div>
-              <div style={dash} />
-
-              {/* Lines: product name · [yacheyka kodi] · qty · ☐
-                  2026-07-20g: QR olib tashlandi — yacheyka kodi (NN-NN-NN-NN)
-                  endi eng ko'zga tashlanadigan element, chunki omborchi
-                  mahsulotni SHU kod bo'yicha topadi (skanerlash emas). */}
-              {sheet.lines.map((line, i) => (
-                <div key={`${line.productName}-${i}`} style={{ marginBottom: 7 }}>
-                  <div style={{ fontWeight: 600 }}>
-                    {i + 1}. {line.productName}
-                  </div>
-                  <div
-                    style={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                      gap: 6,
-                      marginTop: 2,
-                    }}
-                  >
-                    <span style={{ fontWeight: 700, fontSize: fs + 3, letterSpacing: '0.05em' }}>
-                      {line.binLocation ?? '—'}
-                    </span>
-                    <span>
-                      {Number(line.quantity)} {t('pcs')}
-                    </span>
-                    <span style={{ fontSize: fs + 4 }}>☐</span>
-                  </div>
-                  {line.extraBins && line.extraBins.length > 0 && (
-                    <div style={{ fontSize: fs - 1, color: '#555', marginTop: 1 }}>
-                      yana: {line.extraBins.join(' · ')}
-                    </div>
-                  )}
-                </div>
-              ))}
-
-              <div style={dash} />
-              <div style={{ color: '#333' }}>
-                {t('sheet_total', {
-                  products: sheet.lines.length,
-                  qty: sheet.lines.reduce((s, l) => s + Number(l.quantity), 0),
-                })}
-              </div>
+            <section key={`${sheet.skladNo ?? 'none'}-${idx}`} className="thermal-cut">
+              <PickReceiptBody
+                data={sheetToReceipt(sheet, data, tReceipt('receipt_title'))}
+                widthMm={bodyWidthMm}
+              />
             </section>
           ))}
         </ThermalShell>

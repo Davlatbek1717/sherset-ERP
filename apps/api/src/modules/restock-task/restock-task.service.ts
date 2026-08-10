@@ -163,25 +163,53 @@ export class RestockTaskService {
     let sourceName: string | null = null;
     let storeId: string | null = null;
     let positions: Array<{ productId: string | null; quantity: Prisma.Decimal }> = [];
+    // «Товарный чек» sarlavha bloki (climart namunasi): xaridor / sotuvchi /
+    // telefon / izoh / sana. Kontragent bo'lmasa (o'tkinchi mijoz) — xaridor
+    // o'rniga tashkilot nomi chiqadi, blok bo'sh qolmasin.
+    let docDate: Date | null = null;
+    let buyerName: string | null = null;
+    let buyerPhone: string | null = null;
+    let sellerName: string | null = null;
+    let comment: string | null = null;
 
     if (source === 'retailsale') {
       const sale = await this.prisma.client.retailSale.findFirst({
         where: { id: sourceId, accountId, deletedAt: null },
-        include: { positions: { orderBy: { position: 'asc' } } },
+        include: {
+          positions: { orderBy: { position: 'asc' } },
+          agent: { select: { name: true, phone: true } },
+          owner: { select: { name: true } },
+          organization: { select: { name: true } },
+        },
       });
       if (!sale) throw new NotFoundException('Kassa sotuvi topilmadi');
       sourceName = sale.name;
       storeId = sale.storeId ?? null;
       positions = sale.positions.map((p) => ({ productId: p.productId, quantity: p.quantity }));
+      docDate = sale.moment;
+      buyerName = sale.agent?.name ?? sale.organization?.name ?? null;
+      buyerPhone = sale.agent?.phone ?? null;
+      sellerName = sale.owner?.name ?? null;
+      comment = sale.description ?? null;
     } else {
       const order = await this.prisma.client.customerOrder.findFirst({
         where: { id: sourceId, accountId, deletedAt: null },
-        include: { positions: { orderBy: { position: 'asc' } } },
+        include: {
+          positions: { orderBy: { position: 'asc' } },
+          agent: { select: { name: true, phone: true } },
+          owner: { select: { name: true } },
+          organization: { select: { name: true } },
+        },
       });
       if (!order) throw new NotFoundException('Buyurtma topilmadi');
       sourceName = order.name;
       storeId = order.storeId ?? null;
       positions = order.positions.map((p) => ({ productId: p.productId, quantity: p.quantity }));
+      docDate = order.moment;
+      buyerName = order.agent?.name ?? order.organization?.name ?? null;
+      buyerPhone = order.agent?.phone ?? null;
+      sellerName = order.owner?.name ?? null;
+      comment = order.description ?? null;
     }
 
     if (positions.length === 0) {
@@ -204,6 +232,8 @@ export class RestockTaskService {
         id: true,
         name: true,
         attributes: true,
+        // «Ед.изм» ustuni (climart namunasi) — chekda har qatorda ko'rinadi.
+        uom: true,
       },
     });
     const byId = new Map(products.map((p) => [p.id, p]));
@@ -263,13 +293,26 @@ export class RestockTaskService {
             // suffix so every existing consumer (omborchi panel + print strip)
             // shows it without a shape change. No qty tracked → plain code.
             binLocation: e.prod ? cellOf(e.prod.attributes) || null : null,
+            uom: e.prod?.uom ?? null,
             // climart'da tovarga BITTA `__yacheyka` — qo'shimcha javonlar yo'q.
             extraBins: [],
           })),
         };
       });
 
-    return { sourceName, storeName, sheets };
+    return {
+      sourceName,
+      storeName,
+      // «Товарный чек» sarlavha bloki — chek shabloni shu maydonlar bilan
+      // to'ldiriladi (sourceName = chek raqami, eski iste'molchilar uchun qoldi).
+      docNumber: sourceName,
+      docDate: docDate ? docDate.toISOString() : null,
+      buyerName,
+      buyerPhone,
+      sellerName,
+      comment,
+      sheets,
+    };
   }
   async list(accountId: string, userId: string, raw: unknown) {
     const f = RestockTaskFilterSchema.parse(raw);
