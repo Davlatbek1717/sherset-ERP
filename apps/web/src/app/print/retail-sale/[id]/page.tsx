@@ -2,6 +2,12 @@
 
 import { PrintShell } from '@/components/print/print-shell';
 import { api } from '@/lib/api-client';
+import {
+  type ReceiptPaymentRow,
+  formatForeignMajor,
+  formatFrozenRate,
+  receiptPaymentLines,
+} from '@/lib/pos/receipt-payments';
 import { formatMoney } from '@moysklad/ui';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
@@ -23,6 +29,13 @@ interface RetailSaleDetail {
   state: string;
   moment: string;
   sumMinor: string;
+  /**
+   * Kassa TZ §6.1 — chekning to'lov qatlami (`RetailSalePayment`). Ilgari bu
+   * sahifa faqat quyidagi ikki legacy ustunni chizardi, ya'ni terminal · qarz ·
+   * dollar chekda UMUMAN ko'rinmasdi. Endi matnli/HTML renderer'lar bilan bir
+   * manbadan (`receiptPaymentLines`).
+   */
+  payments?: ReceiptPaymentRow[] | null;
   cashAmountMinor: string;
   cardAmountMinor: string;
   changeMinor: string;
@@ -61,9 +74,7 @@ export default function PrintRetailSalePage() {
   if (isLoading) return <div style={{ padding: 24 }}>Loading...</div>;
   if (!data) return <div style={{ padding: 24 }}>Not found</div>;
 
-  const cashAmount = BigInt(data.cashAmountMinor);
-  const cardAmount = BigInt(data.cardAmountMinor);
-  const change = BigInt(data.changeMinor);
+  const paymentLines = receiptPaymentLines(data);
 
   return (
     <PrintShell autoPrint={auto}>
@@ -158,24 +169,42 @@ export default function PrintRetailSalePage() {
 
         {/* Payment split */}
         <div style={{ marginBottom: 8, fontSize: 12 }}>
-          {cashAmount > 0n && (
-            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <span>Naqd</span>
-              <span>{formatMoney(cashAmount)}</span>
+          {paymentLines.map((p) => (
+            <div key={p.kind === 'other' ? `other-${p.label}` : p.kind}>
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  fontWeight: p.kind === 'change' ? 700 : 400,
+                }}
+              >
+                <span>{p.label}</span>
+                {/* Chet valyutada — mijoz BERGAN asl summa turadi. */}
+                <span>
+                  {p.foreign
+                    ? formatForeignMajor(p.foreign.amountMinor, p.foreign.currency)
+                    : formatMoney(p.baseMinor)}
+                </span>
+              </div>
+              {p.foreign && (
+                // Chekka MUZLATILGAN kurs + so'mdagi ekvivalenti (serverning
+                // raqami, FE uni qayta hisoblamaydi).
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    fontSize: 11,
+                    color: '#666',
+                  }}
+                >
+                  <span>
+                    1{p.foreign.currency} = {formatFrozenRate(p.foreign.rateMinor)}
+                  </span>
+                  <span>{formatMoney(p.baseMinor)}</span>
+                </div>
+              )}
             </div>
-          )}
-          {cardAmount > 0n && (
-            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <span>Karta</span>
-              <span>{formatMoney(cardAmount)}</span>
-            </div>
-          )}
-          {change > 0n && (
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700 }}>
-              <span>Qaytim</span>
-              <span>{formatMoney(change)}</span>
-            </div>
-          )}
+          ))}
         </div>
 
         {data.description && (

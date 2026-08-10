@@ -15,6 +15,22 @@ export const RATE_SCALE = 100_000_000n; // 10^8
 
 const SCALE = RATE_SCALE;
 
+/**
+ * Kanonik (×10^8) kurs bo'yicha minor→minor o'girish — **yagona formula**.
+ *
+ * Serverda buni `retail-tenders.ts` (`usdBaseMinor`) va `debt.schema.ts`
+ * (`usdCentsToSomTiyin`) ishlatadi; kassa ekrani esa dollar to'lovining
+ * so'mdagi ekvivalentini KO'RSATISH uchun (chekka yoziladigan raqamni
+ * server hisoblaydi, ekran uni oldindan aynan shu formula bilan chizadi —
+ * aks holda kassir ko'rgan qaytim serverning qaytimidan farq qilardi).
+ *
+ * ⚠️ Yaxlitlash **pastga** (bigint bo'linishi) — ataylab va butun tizim
+ * bo'ylab bir xil.
+ */
+export function convertByRateE8(minor: bigint, rateE8: bigint): bigint {
+  return (minor * rateE8) / RATE_SCALE;
+}
+
 export interface ExchangeRateJSON {
   from: CurrencyCode;
   to: CurrencyCode;

@@ -413,6 +413,21 @@ export class RetailSaleService {
         },
         agent: { select: { id: true, name: true, legalTitle: true } },
         refundedFrom: { select: { id: true, name: true } },
+        // Kassa TZ §6.1 — chekning to'lov qatlami. Uchala chek renderer'i
+        // (ESC/POS matn · Electron HTML · `/print/retail-sale` React) endi
+        // AYNAN shu qatorlardan o'qiydi: legacy `cashAmountMinor`/
+        // `cardAmountMinor` ustunlaridan terminalni naqdsizdan, dollarni
+        // so'mdan, qarzni esa umuman ajratib bo'lmaydi.
+        payments: {
+          select: {
+            method: true,
+            amountMinor: true,
+            currency: true,
+            rateMinor: true,
+            amountBaseMinor: true,
+          },
+          orderBy: { createdAt: 'asc' },
+        },
         positions: {
           include: {
             // buyPrice + salePrices ride along so the POS can show cost / the
