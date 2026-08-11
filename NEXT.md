@@ -331,6 +331,68 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-08-11b (DEPLOY → erp.sherset.uz · ✅ DEPLOYED · kod o'zgarmadi) —**
+> **`ff7e0a8b → e622d5da` (174 fayl) prod'da.** Migratsiya `20260810180000_pos_device_and_pin_lookup`
+> qo'llandi · money+web build · api/web restart. Deploy `deploy-smart.sh DS_TARGET=v2` bilan.
+>
+> **🔴 Deploy API'ni O'LDIRDI — yangi boot-guard uchun env yo'q edi.** `POS_PIN_PEPPER`
+> (`auth/boot-secrets.ts`, prod'da fail-closed) box'dagi qo'lda yuritiladigan `apps/api/.env` da yo'q →
+> Nest DI `PosPinService` da yiqilib turdi, `:4001` tinglamadi, sayt **502**. Tuzatildi: `.env` ga
+> tasodifiy 64-belgili pepper qo'shildi (backup `/root/sherset-v2-env-backup-*.env`), api restart →
+> health 200. **Sabog'i:** yangi majburiy env `deploy-smart.sh` diff'ida ko'rinmaydi — `.env.example`
+> yangilangan bo'lsa deploy'dan OLDIN box `.env` bilan solishtir. Shartnoma: pepper o'zgarsa hamma
+> POS PIN yaroqsiz bo'ladi (PIN qayta beriladi) — `pos-pin-lookup.ts` izohi.
+>
+> **Test kassirlari yaratildi (egasi so'radi — real savdo testi uchun):** rol «Kassir»
+> (`cashier` shablonidan, uiMode=**kiosk**, 26 katakcha) · jadval «Kassa 24/7» (00:00–23:59) ·
+> smena «Kassa smenasi» · 3 xodim `kassir1/2/3` (parol `Kassir<N>!2026`, PIN `1111/2222/3333`),
+> har biri rolga + smenaga biriktirilgan. Skript (idempotent, repo'da untracked):
+> `scripts/ops-create-test-cashiers.ts`. **Jonli tasdiq:** login 201 · `uiMode=kiosk` ·
+> `/admin/smenas/mine` smenani qaytardi · `products`/`retail-sales`/`counterparties` 200 ·
+> `reports/profitability`/`demands` **403** (kiosk guard ishlayapti) · `hasPin:true`.
+> **Browser-QA YO'Q** — POS ekranining o'zi brauzerda sinalmagan; smena ochilmadi (prod'da
+> ortiqcha yozuv qoldirmaslik uchun) — birinchi real savdoni egasi ochadi.
+>
+> **⚠️ Disk:** `/` 93% (7.2G bo'sh), `/root/sherset-v2-backups` 2.7G/5 fayl — keyingi deploy'dan
+> oldin tozalash kerak bo'lishi mumkin.
+>
+> **Kassa installer BIRINCHI marta yig'ildi (F4 «strukturaviy» → endi o'lchangan).** Egasi
+> monobloklarga yuklash uchun so'radi. `desktop/build/icon.ico` yasaldi (web `icon.svg`
+> brendidan — ko'k→binafsha chaqmoq, 6 o'lcham PNG-payload ICO) · `pnpm install
+> --ignore-workspace` + `pnpm run dist` Windows'da **o'tdi** → `dist/Sherset-Kassa-Setup-1.1.0.exe`
+> (82 MB, MZ+Nullsoft tasdiqlandi) + `latest.yml` + `.blockmap`. Versiya `1.1.0-dev` → **`1.1.0`**
+> (README talabi: prerelease→reliz avtoyangilanishi sinalmagan); qo'riqchi test README'dagi fayl
+> nomini ham talab qildi — README yangilandi, `kassa-installer-config.test.ts` 30/30 yashil.
+> Paket: `desktop/dist/Sherset-Kassa-1.1.0-ORNATISH.zip` (exe + `ORNATISH.txt` + `server-uchun/`).
+>
+> **🔴 Yig'ish paytida topilgan qarz:** `desktop/package.json` da top-level `productName` YO'Q
+> (faqat `build.productName`), shuning uchun paketlangan ilovada `app.getName()` = `@moysklad/desktop`
+> ⇒ sozlama fayli `%APPDATA%\@moysklad\desktop\kassa-config.json` da turadi, «Sherset Kassa» da
+> EMAS. README'dagi `%APPDATA%/<app>/` shu sababdan noaniq edi. Tuzatish (`productName` qo'shish)
+> mavjud o'rnatmalarning konfigini «yo'qotadi» — birinchi tarqatishdan OLDIN qilinsa arzon.
+>
+> **Sinalmagan (halol):** Electron ilovasi hech qachon ishga tushirilmagan · juftlash · chop etish ·
+> mijoz-ekran · avtoyangilanish oqimi. `/downloads/desktop/` kanali serverga hali QO'YILMAGAN.
+>
+> **🔴 REAL MONOBLOKDA IKKI BLOKER TOPILDI VA TUZATILDI → v1.1.1** (egasi qurilmaga o'rnatdi;
+> statik audit ham, qo'riqchi testlar ham buni ko'rmagan edi — faqat qurilmada ko'rindi):
+> 1. **Sozlash ekranida yozib bo'lmasdi.** `kiosk: true` oyna hamma narsaning ustida turadi ⇒
+>    Windows ekran klaviaturasi input bosilganda orqaga o'tib ketardi; ilovaning o'z klaviaturasi
+>    esa faqat PIN ekranida bor. Klaviaturasiz sensorli qurilmada na server manzilini, na juftlash
+>    parolini kiritib bo'lardi. **Yechim:** `kiosk: paired` / `frame: !paired` — sozlash oddiy
+>    oynada, juftlangach `app.relaunch()` bilan kiosk'ga o'tadi (`setKiosk(true)` yetarli emas:
+>    `frame` ish paytida olib tashlanmaydi).
+> 2. **Chiqib bo'lmasdi.** Yagona yo'l `Ctrl+Alt+Shift+Q` — klaviatura shart edi. **Yechim:**
+>    chap yuqori burchakni 2s ushlash → `shell:request-quit` → native tasdiq dialogi. Imo
+>    **`preload.js` da** (web ilova `script-src 'self'` CSP bilan keladi — `executeJavaScript`
+>    o'sha siyosatga tayanib qolardi, o'lchanmagan; preload CSP'ga bo'ysunmaydi). Tinglovchilar
+>    passiv (`.preventDefault(` yo'q) — burchakdagi haqiqiy tugmalar to'silmaydi.
+>
+> Qo'riqchi `electron-bridge-contract.test.ts` dagi `kiosk: true` LITERAL sharti yangi niyat bilan
+> qayta yozildi (o'chirilmadi): endi bog'liqlik (`kiosk: paired`) + relaunch yo'li + imo joylashuvi
+> qulflanadi. **97/97 yashil.** Nozik joy: «preventDefault yo'q» tekshiruvi izohdagi so'zdan
+> yiqilgan edi — regex `.preventDefault\s*\(` CHAQIRUVIga tor qilindi.
+
 > **🕒 2026-08-11a (Ombor «Scan» + «Sanash» — egasining TZ v3 si; reja+ijro, 10 commit) —
 > **Phase-1: strukturaviy + unit/xulq testlari bilan tasdiqlangan, BROWSER-SMOKE YO'Q.**
 > TZ matni: `docs/superpowers/specs/2026-08-10-yacheyka-scan-sanash-tz-v3.md` · reja:

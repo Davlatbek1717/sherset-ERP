@@ -133,6 +133,31 @@ export class PosPinService {
     return valid ? { employeeId: row.id } : null;
   }
 
+  /**
+   * PIN bo'yicha xodimni AKKAUNTSIZ topish — qurilmasiz kirish (2026-08-11).
+   *
+   * `findByPin` akkauntni qurilmadan olardi. Juftlash olib tashlangach akkauntni
+   * ko'rsatadigan narsa qolmadi, shuning uchun qidiruv global.
+   *
+   * 🔴 IKKI XIL MOSLIK = RAD ETISH. Unique cheklov `[accountId, posPinLookup]` —
+   * ya'ni ikki ijarachida bir xil PIN bo'lishi MUMKIN va pepper global, demak
+   * ularning lookup qiymati aynan bir xil chiqadi. `findFirst` tartibsiz birini
+   * qaytarib, BEGONA odamni kiritib yuborardi. Noaniqlikda kiritmaymiz.
+   */
+  async findByPinAnyAccount(pin: string): Promise<{ employeeId: string } | null> {
+    const rows = await this.prisma.client.employee.findMany({
+      where: { posPinLookup: posPinLookupHash(pin, this.pepper), archived: false },
+      select: { id: true, posPinHash: true },
+      take: 2,
+    });
+    if (rows.length !== 1) return null;
+
+    const row = rows[0];
+    if (!row?.posPinHash) return null;
+    const valid = await argon2.verify(row.posPinHash, pin).catch(() => false);
+    return valid ? { employeeId: row.id } : null;
+  }
+
   /** PIN o'rnatilganmi — FE qulfni ko'rsatish/ko'rsatmaslikni shundan biladi. */
   async hasPin(accountId: string, employeeId: string): Promise<{ hasPin: boolean }> {
     const row = await this.prisma.client.employee.findFirst({

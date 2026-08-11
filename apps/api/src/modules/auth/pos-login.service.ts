@@ -39,21 +39,28 @@ export class PosLoginService {
     mediaToken: string;
     user: LoginResponse['user'];
     device: {
-      id: string;
+      id: string | null;
       name: string;
-      storeId: string;
-      cashDeskId: string;
-      organizationId: string;
+      storeId: string | null;
+      cashDeskId: string | null;
+      organizationId: string | null;
     };
   }> {
-    const device = await this.devices.verify(input.deviceId, input.deviceSecret);
+    // Qurilma kaliti IXTIYORIY (2026-08-11, egasining qarori — `auth.schema.ts`
+    // dagi izoh). Berilsa avvalgi qattiq yo'l ishlaydi; berilmasa PIN o'zi
+    // yetarli va akkaunt xodimning o'zidan aniqlanadi.
+    const device =
+      input.deviceId && input.deviceSecret
+        ? await this.devices.verify(input.deviceId, input.deviceSecret)
+        : null;
 
-    // Akkaunt qurilmadan keladi — PIN qidiruvi shu akkaunt ICHIDA bo'ladi
-    // (`findByPin` izohi: pepper global, shuning uchun filtrsiz qidiruv begona
-    // ijarachining qatoriga tushib, haqiqiy kassirni bloklardi).
-    const found = await this.pins.findByPin(device.accountId, input.pin);
+    // Qurilma bo'lsa akkaunt undan keladi va PIN qidiruvi shu akkaunt ICHIDA
+    // bo'ladi (`findByPin` izohi). Bo'lmasa — global qidiruv, noaniqlikda rad.
+    const found = device
+      ? await this.pins.findByPin(device.accountId, input.pin)
+      : await this.pins.findByPinAnyAccount(input.pin);
     if (!found) {
-      await this.devices.registerFailure(device.id);
+      if (device) await this.devices.registerFailure(device.id);
       throw new UnauthorizedException(GENERIC);
     }
 
@@ -71,8 +78,8 @@ export class PosLoginService {
     // oldin akkauntni ko'rsatmaydi), shuning uchun moslikni SHU YERDA
     // tekshiramiz — aks holda bir akkauntning PIN'i boshqasining kassasida
     // ishlab ketardi.
-    if (!employee || employee.accountId !== device.accountId) {
-      await this.devices.registerFailure(device.id);
+    if (!employee || (device && employee.accountId !== device.accountId)) {
+      if (device) await this.devices.registerFailure(device.id);
       throw new UnauthorizedException(GENERIC);
     }
 
@@ -84,7 +91,13 @@ export class PosLoginService {
       where: { id: employee.id },
       data: { failedLoginAttempts: 0, lockedUntil: null, lastLoginAt: new Date() },
     });
-    await this.devices.registerSuccess(device.id);
+    if (device) await this.devices.registerSuccess(device.id);
+
+    // Qurilmasiz kirishda do'kon/kassa/tashkilot hisobning SUKUT qiymatlaridan
+    // olinadi — kassirdan tanlash SO'RALMAYDI (egasining talabi). Bittasi
+    // topilmasa `null` qaytadi: smena ochilishida server o'zi ham shu tartibda
+    // aniqlaydi (`smena.service.ts` — eng eski arxivlanmagan yozuv).
+    const fallback = device ? null : await this.resolveAccountDefaults(employee.accountId);
 
     const authUser: AuthenticatedUser = {
       sub: employee.id,
@@ -120,14 +133,46 @@ export class PosLoginService {
         hrPermissions: authUser.hrPermissions,
       },
       // Kassir smenani ochganda do'kon/kassa/tashkilotni qayta tanlamasin —
-      // ular qurilmaga juftlash paytida muhrlangan.
+      // qurilma bo'lsa juftlashda muhrlangan, bo'lmasa hisob sukutlaridan.
       device: {
-        id: device.id,
-        name: device.name,
-        storeId: device.storeId,
-        cashDeskId: device.cashDeskId,
-        organizationId: device.organizationId,
+        id: device?.id ?? null,
+        name: device?.name ?? 'Kassa',
+        storeId: device?.storeId ?? fallback?.storeId ?? null,
+        cashDeskId: device?.cashDeskId ?? fallback?.cashDeskId ?? null,
+        organizationId: device?.organizationId ?? fallback?.organizationId ?? null,
       },
+    };
+  }
+
+  /**
+   * Hisobning sukut do'kon/kassa/tashkiloti — eng eski arxivlanmagan yozuv.
+   *
+   * AYNAN shu tartib `smena.service.ts` dagi smena ochish mantiqi bilan bir xil
+   * bo'lishi shart: aks holda kirishda bir do'kon, smenada boshqasi ko'rinib,
+   * kassir qaysi omborga sotayotganini bilmay qolardi.
+   */
+  private async resolveAccountDefaults(accountId: string) {
+    const [store, cashDesk, organization] = await Promise.all([
+      this.prisma.client.store.findFirst({
+        where: { accountId, archived: false },
+        orderBy: { createdAt: 'asc' },
+        select: { id: true },
+      }),
+      this.prisma.client.cashDesk.findFirst({
+        where: { accountId, archived: false },
+        orderBy: { createdAt: 'asc' },
+        select: { id: true },
+      }),
+      this.prisma.client.organization.findFirst({
+        where: { accountId, archived: false },
+        orderBy: { createdAt: 'asc' },
+        select: { id: true },
+      }),
+    ]);
+    return {
+      storeId: store?.id ?? null,
+      cashDeskId: cashDesk?.id ?? null,
+      organizationId: organization?.id ?? null,
     };
   }
 }

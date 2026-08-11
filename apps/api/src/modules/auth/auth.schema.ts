@@ -127,9 +127,21 @@ export type SetPosPinInput = z.infer<typeof SetPosPinSchema>;
  * qurilma kaliti «kim so'rayapti» savoliga javob beradi. Usiz endpoint
  * ochiq internetda 10 000 variantli taxmin maydoniga aylanardi.
  */
+/**
+ * Kassa kirishi — PIN.
+ *
+ * 🔴 `deviceId`/`deviceSecret` 2026-08-11 da IXTIYORIY qilindi (egasining aniq
+ * talabi: «juftlash degan narsani to'liq olib tashla, faqat PIN chiqadi»).
+ * Ular berilsa qurilma AVVALGIDEK tekshiriladi (eski o'rnatmalar buzilmaydi);
+ * berilmasa xodim PIN bo'yicha topiladi.
+ *
+ * NIMA YO'QOTILDI (ochiq yozib qo'yilsin): qurilma kaliti ikkinchi omil edi —
+ * usiz kassa hisobiga kirish 4–6 raqamga qolади va manzilni bilgan har kim
+ * PIN sinab ko'ra oladi. Egasi bu almashuvdan xabardor holda qaror qildi.
+ */
 export const PosLoginSchema = z.object({
-  deviceId: z.string().uuid(),
-  deviceSecret: z.string().min(32),
+  deviceId: z.string().uuid().optional(),
+  deviceSecret: z.string().min(32).optional(),
   pin: z.string().regex(/^\d{4,6}$/, 'PIN 4-6 raqamdan iborat bo`lishi kerak'),
 });
 export type PosLoginInput = z.infer<typeof PosLoginSchema>;

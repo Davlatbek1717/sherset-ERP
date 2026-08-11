@@ -1,9 +1,8 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const page = readFileSync(join(process.cwd(), 'src/app/kassa-kirish/page.tsx'), 'utf8');
-const pair = readFileSync(join(process.cwd(), 'src/app/kassa-kirish/juftlash/page.tsx'), 'utf8');
 
 /**
  * Sahifa simlari qo'riqchisi. Komponent testlari PinKeypad'ni tekshiradi,
@@ -19,12 +18,31 @@ describe('/kassa-kirish simlari', () => {
     expect(page).toContain('posLogin(');
   });
 
-  it('qurilma ma`lumoti readPosDevice orqali o`qiladi', () => {
+  it('qurilma ma`lumoti readPosDevice orqali o`qiladi (eski o`rnatmalar uchun)', () => {
     expect(page).toContain('readPosDevice(');
   });
 
-  it('juftlanmagan holat uchun alohida shox bor', () => {
-    expect(page).toContain('not_paired_title');
+  /**
+   * 🔴 2026-08-11 — SHARTNOMA TESKARISIGA O'ZGARDI.
+   *
+   * Ilgari bu yerda «juftlanmagan» shoxi TALAB qilinardi. Egasi qurilma
+   * juftlashni butunlay olib tashlashni buyurdi («faqat pinkod chiqadi,
+   * tamom»), shuning uchun endi teskarisi qulflanadi: PIN klaviaturasi
+   * HAR DOIM ko'rinadi, hech qanday shartli shox yo'q.
+   *
+   * Nega test o'chirilmadi: shox jimgina qaytib kelsa (masalan eski kodni
+   * nusxalashda) kassir yana «juftlanmagan» devoriga urilardi.
+   */
+  it('juftlanmagan shoxi YO`Q — PIN har doim ko`rinadi', () => {
+    expect(page).not.toContain('not_paired_title');
+    expect(page).not.toContain('pair_link');
+    expect(page).not.toContain('admin_login');
+    // PinKeypad shartli render ichida turmasin.
+    expect(page).not.toMatch(/device\s*\?[\s\S]{0,200}<PinKeypad/);
+  });
+
+  it('juftlash sahifasi umuman mavjud EMAS', () => {
+    expect(existsSync(join(process.cwd(), 'src/app/kassa-kirish/juftlash/page.tsx'))).toBe(false);
   });
 
   it('muvaffaqiyatdan keyin /sotuv ga yo`naltiriladi', () => {
@@ -43,29 +61,19 @@ describe('/kassa-kirish simlari', () => {
 });
 
 /**
- * Juftlash ekrani — bir martalik admin amali. Kalit FAQAT javobda keladi,
- * shuning uchun darhol saqlanishi shart (aks holda qayta juftlash kerak).
+ * Qurilmasiz kirish shartnomasi (`auth-store.posLogin`).
+ *
+ * Kalit bo'lsa YUBORILADI (eski juftlangan kassalar buzilmasin), bo'lmasa
+ * faqat PIN ketadi. Ikkinchisi tushib qolsa yangi o'rnatmalar 400 olardi.
  */
-describe('/kassa-kirish/juftlash simlari', () => {
-  it('pair endpointi chaqiriladi', () => {
-    expect(pair).toContain("'/auth/pos-device/pair'");
+describe('posLogin — qurilma ixtiyoriy', () => {
+  const store = readFileSync(join(process.cwd(), 'src/lib/auth-store.ts'), 'utf8');
+
+  it('creds null bo`lishi mumkin', () => {
+    expect(store).toMatch(/creds:\s*\{[^}]*\}\s*\|\s*null/);
   });
 
-  it('javob writePosDevice bilan saqlanadi', () => {
-    expect(pair).toContain('writePosDevice(');
-  });
-
-  it('do`kon/kassa/tashkilot ro`yxatlari o`qiladi', () => {
-    expect(pair).toContain("'/stores'");
-    expect(pair).toContain("'/cash-desks'");
-    expect(pair).toContain("'/organizations'");
-  });
-
-  it('juftlashdan keyin /kassa-kirish ga qaytadi', () => {
-    expect(pair).toContain("'/kassa-kirish'");
-  });
-
-  it('qurilma kaliti brauzer saqlagichiga QO`LDA yozilmaydi (writePosDevice orqali)', () => {
-    expect(pair).not.toMatch(/localStorage\.setItem\(/);
+  it('kalitsiz holatda faqat pin yuboriladi', () => {
+    expect(store).toMatch(/creds\s*\?[\s\S]{0,160}:\s*\{\s*pin\s*\}/);
   });
 });

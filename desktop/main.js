@@ -40,6 +40,26 @@ const TAIL_MICRONS = 4000; // 4mm quyruq: oxirgi qator kesilmasin
 
 const isDev = !app.isPackaged;
 
+/**
+ * Chiqish IMOSI — chap YUQORI burchakni 2 soniya ushlash (`preload.js` da).
+ *
+ * NEGA KERAK: kiosk oynadan chiqish yagona yo'li `Ctrl+Alt+Shift+Q` edi — ya'ni
+ * KLAVIATURA shart. Sensorli monoblokda klaviatura yo'q, demak ilovani umuman
+ * yopib bo'lmasdi (real hodisa, 2026-08-11).
+ *
+ * 🔴 NEGA `preload.js` DA, `executeJavaScript` bilan EMAS: web ilova qat'iy CSP
+ * (`script-src 'self'`) bilan keladi va sahifaga skript ekish shu siyosatga
+ * tayanib qolardi — men uni o'lchay olmadim. Preload esa sahifa CSP'siga
+ * BO'YSUNMAYDI va har navigatsiyada avtomatik qayta ishlaydi. Bitta nusxa —
+ * ikkinchi implementatsiya eskirib qolmasin.
+ *
+ * Tasodifiy chiqishdan himoya: 2 soniya ushlash + barmoq siljisa bekor +
+ * shu yerdagi tasdiq dialogi (`shell:request-quit`).
+ */
+
+/** Tasdiq dialogi bir vaqtda bitta — imo takror otilsa oyna to'planib ketmasin. */
+let quitDialogOpen = false;
+
 /** @type {BrowserWindow | null} */
 let win = null;
 /** Mijoz-ekran oynasi (2-monitor). Yopiq bo'lsa null. @type {BrowserWindow | null} */
@@ -115,9 +135,20 @@ function loadApp() {
 // ─── Kiosk oyna ─────────────────────────────────────────────────────────────
 
 function createWindow() {
+  // 🔴 KIOSK FAQAT SERVER MANZILI KIRITILGANDAN KEYIN (2026-08-11, real
+  // monoblokda o'lchandi). Kiosk oyna hamma narsaning USTIDA turadi — sozlash
+  // bosqichida u ekran klaviaturasini bosib qo'yardi. Endi birinchi ekran
+  // (server manzili) oddiy oynada ochiladi, manzil saqlangach ilova o'zi qayta
+  // ishga tushib qulflanadi (`config:set-server-url` ishlovchisi).
+  //
+  // Ilgari shart `juftlangan qurilma` edi — juftlash 2026-08-11 da butunlay
+  // olib tashlandi (egasining talabi), shuning uchun mezon manzilga ko'chdi.
+  const configured = !!serverBase();
   win = new BrowserWindow({
-    kiosk: true,
-    frame: false,
+    kiosk: configured,
+    frame: !configured,
+    width: 1280,
+    height: 800,
     show: false,
     autoHideMenuBar: true,
     backgroundColor: '#0f172a',
@@ -131,12 +162,19 @@ function createWindow() {
     },
   });
 
-  win.once('ready-to-show', () => win?.show());
+  win.once('ready-to-show', () => {
+    win?.show();
+    if (!configured) win?.maximize();
+  });
 
   // Kassir oynani yopa olmasin (Alt+F4, tizim tugmasi) — chiqish faqat
-  // operator kaliti (Ctrl+Alt+Shift+Q) yoki `app.quit()` orqali.
+  // operator kaliti (Ctrl+Alt+Shift+Q), burchak-imosi yoki `app.quit()` orqali.
+  //
+  // Juftlanmagan (sozlash) oynada esa oddiy «X» ISHLAYDI: hali kassir yo'q,
+  // qulflaydigan narsa ham yo'q — aks holda klaviaturasiz monoblokda ilovani
+  // umuman yopib bo'lmasdi.
   win.on('close', (e) => {
-    if (!allowQuit) e.preventDefault();
+    if (!allowQuit && win?.isKiosk()) e.preventDefault();
   });
   win.on('closed', () => {
     win = null;
@@ -162,7 +200,20 @@ function createWindow() {
   });
 
   // Kiosk oynasi hech qachon boshqa saytga ketmaydi (spec §6.2).
+  // 🔴 O'Z SAYTIMIZNING popup'i TASHQI BRAUZERGA CHIQARILMAYDI (2026-08-11).
+  //
+  // Ilgari HAR QANDAY popup `shell.openExternal` ga ketardi. Chek chop etish esa
+  // aynan popup bilan ishlaydi: chek printeri sozlanmagan bo'lsa web
+  // `/print/retail-sale/<id>?auto=1` ni ochadi. U tashqi brauzerda ochilgani
+  // uchun SESSIYA yo'q edi va kassirdan LOGIN so'ralardi — chek esa chiqmasdi
+  // (real hodisa monoblokda). Endi o'z manzilimiz ichki oynada ochiladi:
+  // sessiya (cookie) o'sha, `?auto=1` sahifasi o'zi chop etadi.
   win.webContents.setWindowOpenHandler(({ url }) => {
+    const base = serverBase();
+    if (base && url.startsWith(base)) {
+      openInternalPopup(url);
+      return { action: 'deny' };
+    }
     if (/^https?:\/\//i.test(url)) void shell.openExternal(url);
     return { action: 'deny' };
   });
@@ -184,6 +235,39 @@ function createWindow() {
 
   loadApp();
   if (isDev) win.webContents.openDevTools({ mode: 'detach' });
+}
+
+/**
+ * O'z saytimiz popup'i uchun ICHKI oyna (chek/PKO/Z-hisobot chop etish).
+ *
+ * Asosiy oyna bilan AYNI sessiyada ochiladi (default partition) — shuning uchun
+ * login qayta so'ralmaydi. `?auto=1` sahifasi o'zi `window.print()` chaqiradi va
+ * chop dialogi yopilgach oyna ham yopiladi.
+ *
+ * Kiosk EMAS va ramkali: kassir chop dialogi bilan ishlashi va oynani yopa
+ * olishi kerak. Bu oyna savdo sahifasi emas — qulflashning ma'nosi yo'q.
+ */
+function openInternalPopup(url) {
+  const popup = new BrowserWindow({
+    parent: win ?? undefined,
+    width: 420,
+    height: 720,
+    autoHideMenuBar: true,
+    backgroundColor: '#ffffff',
+    webPreferences: {
+      // Preload ATAYLAB berilmaydi: chop sahifasiga qurilma kaliti ham,
+      // chiqish imosi ham kerak emas (kichik hujum yuzasi).
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  });
+  popup.setMenu(null);
+  // 🔴 Avtomatik yopish ATAYLAB yo'q: Electron'da chop dialogi tugaganini
+  // beradigan OMMAVIY hodisa yo'q (ichki `-webContents-print-finished` ga
+  // tayanish keyingi versiyada jimgina o'lardi). Oyna ramkali — kassir
+  // «X» bilan yopadi.
+  popup.loadURL(url);
 }
 
 function quitShell() {
@@ -483,7 +567,16 @@ function registerIpc() {
     if (!(await probeHealth())) {
       return { ok: false, error: 'Server javob bermadi. Manzil va tarmoqni tekshiring.' };
     }
-    loadApp();
+    // Sozlash tugadi → kiosk rejimiga o'tamiz. `setKiosk(true)` EMAS, balki
+    // QAYTA ISHGA TUSHIRISH: oyna ramkasini (`frame`) ish paytida olib
+    // bo'lmaydi, ya'ni yarim-kiosk oyna qolardi (kassir uni sudrab/yopib
+    // qo'yardi). Qayta ishga tushish deterministik — ilova
+    // `configured = true` bilan boshlanadi va to'liq qulflanadi.
+    setTimeout(() => {
+      allowQuit = true; // `close` qo'riqchisi qayta ishga tushishga xalaqit bermasin
+      app.relaunch();
+      app.exit(0);
+    }, 400);
     return { ok: true, url: normalized };
   });
 
@@ -493,6 +586,49 @@ function registerIpc() {
     return { ok };
   });
   ipcMain.on('shell:quit', () => quitShell());
+
+  /**
+   * Ekran klaviaturasi bosilgan kalit (`preload.js` → `installTouchKeyboard`).
+   *
+   * 🔴 `sendInputEvent` ATAYLAB: sahifa React bilan yozilgan va u `value` ni
+   * o'z kuzatuvchisi bilan boshqaradi — qiymatni to'g'ridan-to'g'ri yozish
+   * React holatini yangilamay, matn keyingi render'da yo'qolardi. Bu esa
+   * Chromium darajasidagi HAQIQIY klaviatura hodisasi.
+   */
+  ipcMain.on('kbd:key', (_e, key) => {
+    if (!win || typeof key !== 'string') return;
+    if (key === 'Backspace') {
+      win.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Backspace' });
+      win.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Backspace' });
+      return;
+    }
+    // Faqat BITTA belgi — uzun satr yuborilsa u kalit emas, xato/hujum.
+    if ([...key].length !== 1) return;
+    win.webContents.sendInputEvent({ type: 'char', keyCode: key });
+  });
+
+  // Burchak-imosi shu yerga keladi — TASDIQSIZ chiqarmaymiz: 2 soniyalik
+  // ushlash tasodifan ham bo'lishi mumkin, savdo o'rtasida ilova yopilib
+  // ketishi esa kassirning savatini yo'qotardi.
+  ipcMain.on('shell:request-quit', async () => {
+    if (!win || quitDialogOpen) return;
+    quitDialogOpen = true;
+    try {
+      const { response } = await dialog.showMessageBox(win, {
+        type: 'question',
+        buttons: ['Chiqish', 'Bekor qilish'],
+        defaultId: 1,
+        cancelId: 1,
+        noLink: true,
+        title: 'Kassadan chiqish',
+        message: 'Ilovani yopmoqchimisiz?',
+        detail: 'Ochiq smena avtomatik yopilmaydi — uni ERP dan yopish kerak.',
+      });
+      if (response === 0) quitShell();
+    } finally {
+      quitDialogOpen = false;
+    }
+  });
 
   // ── Chop etish (spec §6.4) ──────────────────────────────────────────────
   // 🔴 `print-agent.ts` ko'prik mavjud bo'lsa HTTP-agentga QAYTMAYDI, ya'ni

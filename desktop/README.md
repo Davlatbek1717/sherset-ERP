@@ -54,8 +54,24 @@ Manzil **kodga qotirilmagan** (spec §3.2): avval konfiguratsiya fayli, keyin
 
 ## Operator uchun
 
-- **Chiqish:** `Ctrl + Alt + Shift + Q`. Boshqa yo'l yo'q — `Alt+F4`, `Ctrl+W` va
-  oyna tugmalari ataylab bloklangan (kassir savdo o'rtasida oynani yopib qo'ymasin).
+- **Chiqish — ikki yo'l** (2026-08-11 da ikkinchisi qo'shildi):
+  1. `Ctrl + Alt + Shift + Q` — klaviatura bilan;
+  2. **chap YUQORI burchakni 2 soniya bosib turish** — barmoq bilan, so'ng
+     tasdiq dialogi («Chiqish» / «Bekor qilish»).
+
+  Ikkinchisi SENSORLI monoblok uchun MAJBURIY edi: klaviatura ulanmagan
+  qurilmada ilovani umuman yopib bo'lmasdi (real hodisa). Imo **passiv**
+  tinglovchilar bilan qilingan — burchakdagi haqiqiy tugmalar to'silmaydi;
+  2 soniya + barmoq siljisa bekor + tasdiq dialogi = tasodifan chiqib
+  ketmaydi. `Alt+F4`, `Ctrl+W` va oyna tugmalari kiosk holatida ataylab
+  bloklangan.
+
+- **Kiosk FAQAT juftlashdan keyin.** Qurilma juftlanmagan bo'lsa ilova oddiy
+  (ramkali, maksimal) oynada ochiladi — Windows ekran klaviaturasi uning
+  ustida normal ishlaydi, ya'ni klaviaturasiz monoblokda ham server manzilini
+  va juftlash parolini kiritish mumkin. Juftlangan zahoti ilova **o'zi qayta
+  ishga tushadi** va kiosk rejimida qulflanadi. Sozlash oynasini oddiy «X»
+  bilan yopsa bo'ladi (hali kassir yo'q, qulflaydigan narsa ham yo'q).
 - **Qurilmani juftlash:** ilova ichida `/kassa-kirish` → «Juftlash» → admin login →
   do'kon/kassa/tashkilot tanlanadi. Kalit shu kompyuterda DPAPI bilan shifrlanadi.
 - **Qurilmani bekor qilish (unpair):** hozircha UI'da tugma **YO'Q** (F1 dan qolgan
@@ -176,16 +192,18 @@ pnpm install            # bir marta (electron + electron-builder ≈ 200 MB)
 pnpm run dist           # = node check-build-assets.js && electron-builder --win nsis
 ```
 
-Natija (hozirgi `version: 1.1.0-dev` uchun):
+Natija (hozirgi `version: 1.1.1` uchun):
 
 ```
-desktop/dist/Sherset-Kassa-Setup-1.1.0-dev.exe
+desktop/dist/Sherset-Kassa-Setup-1.1.1.exe
+desktop/dist/Sherset-Kassa-Setup-1.1.1.exe.blockmap
 desktop/dist/latest.yml
 ```
 
 Fayl nomi `build.win.artifactName` dan keladi va `${version}` ni
 `package.json` dagi versiyadan oladi — nom hech qachon qo'lda yozilmaydi.
-Relizdan oldin `version` ni `-dev` siz qiymatga ko'taring (masalan `1.1.0`).
+🔴 Versiyani ko'targanda **shu yerdagi nomni ham** yangilang — qo'riqchi test
+(`kassa-installer-config.test.ts`) ikkalasi mos kelishini talab qiladi.
 
 ### 2. Imzo — 1-versiya IMZOSIZ (spec §8.2, ongli qaror)
 
@@ -253,11 +271,14 @@ default**. Ish paytida manzil qurilma juftlangan serverdan olinadi
 
 ### Ma'lum cheklovlar (o'lchanmagan / qarz)
 
-- Butun oqim (yig'ish → yuklash → topilishi → o'rnatish) **hech qachon
-  yugurtirilmagan**. Phase-2 (F12, real kassa PC) da o'lchanadi.
-- `1.1.0-dev` — prerelease semver. `electron-updater` prerelease'dan
-  relizga o'tishni qo'llab-quvvatlaydi, lekin bu **tekshirilmagan**;
-  birinchi reliz `-dev` siz chiqarilsin.
+- **Yig'ish o'lchandi (2026-08-11):** `pnpm install --ignore-workspace` +
+  `pnpm run dist` Windows'da o'tdi, `dist/Sherset-Kassa-Setup-1.1.0.exe`
+  chiqdi (`build/icon.ico` web brendidan yasaldi — ko'k→binafsha chaqmoq).
+  Qolgan oqim (yuklash → topilishi → o'rnatish) **hali yugurtirilmagan**;
+  Electron ilovasining o'zi ham hech qachon ishga tushirilmagan.
+  Phase-2 (F12, real kassa PC) da o'lchanadi.
+- Birinchi reliz **`1.1.0`** — ataylab prerelease EMAS: `electron-updater` ning
+  prerelease→reliz o'tishi bu loyihada tekshirilmagan.
 - Yangilanish o'rnatilgach ilova **qaytadan ochilmaydi** (`isForceRunAfter: false`) —
   kassir «Chiqish» bosgan edi, demak ish tugagan.
 - **Pul yashigi impulsi** — yuqoridagi qarz (Electron API'sida yo'l yo'q).

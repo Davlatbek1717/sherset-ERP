@@ -37,6 +37,7 @@ function makeDeps(over: { employee?: unknown; device?: unknown; pin?: unknown } 
   };
   const pins = {
     findByPin: vi.fn().mockResolvedValue({ employeeId: 'emp-1' }),
+    findByPinAnyAccount: vi.fn().mockResolvedValue({ employeeId: 'emp-1' }),
     ...((over.pin as object) ?? {}),
   };
   const prisma = {
@@ -47,6 +48,10 @@ function makeDeps(over: { employee?: unknown; device?: unknown; pin?: unknown } 
           .mockResolvedValue(over.employee === undefined ? EMPLOYEE : over.employee),
         update: vi.fn().mockResolvedValue(EMPLOYEE),
       },
+      // Qurilmasiz kirishda hisob sukutlari shu yerdan olinadi.
+      store: { findFirst: vi.fn().mockResolvedValue({ id: 'store-default' }) },
+      cashDesk: { findFirst: vi.fn().mockResolvedValue({ id: 'desk-default' }) },
+      organization: { findFirst: vi.fn().mockResolvedValue({ id: 'org-default' }) },
     },
   };
   const tokens = {
@@ -137,5 +142,59 @@ describe('PosLoginService.login', () => {
     const data = prisma.client.employee.update.mock.calls[0]?.[0]?.data;
     expect(data).toMatchObject({ failedLoginAttempts: 0, lockedUntil: null });
     expect(data.lastLoginAt).toBeInstanceOf(Date);
+  });
+});
+
+/**
+ * QURILMASIZ KIRISH (2026-08-11 — egasi juftlashni butunlay olib tashlashni
+ * buyurdi: «faqat pinkod chiqadi, tamom»).
+ *
+ * Eski, juftlangan o'rnatmalar buzilmasligi uchun qurilma yo'li YO'QOLMADI —
+ * yuqoridagi bloк o'shani tekshiradi. Bu blok esa kalitsiz yo'lni qulflaydi.
+ */
+describe('PosLoginService.login — qurilma kalitisiz', () => {
+  const PIN_ONLY = { pin: '1234' };
+
+  it('kalitsiz kirishda qurilma TEKSHIRILMAYDI va PIN global qidiriladi', async () => {
+    const { svc, devices, pins } = makeDeps();
+    await svc.login(PIN_ONLY, META);
+    expect(devices.verify).not.toHaveBeenCalled();
+    expect(pins.findByPin).not.toHaveBeenCalled();
+    expect(pins.findByPinAnyAccount).toHaveBeenCalledWith('1234');
+  });
+
+  it('do`kon/kassa/tashkilot hisob SUKUTLARIDAN keladi (kassir tanlamaydi)', async () => {
+    const { svc } = makeDeps();
+    const out = await svc.login(PIN_ONLY, META);
+    expect(out.device).toMatchObject({
+      id: null,
+      storeId: 'store-default',
+      cashDeskId: 'desk-default',
+      organizationId: 'org-default',
+    });
+  });
+
+  it('PIN topilmasa RAD ETADI va qurilma hisoblagichiga tegmaydi', async () => {
+    const { svc, devices } = makeDeps({
+      pin: { findByPinAnyAccount: vi.fn().mockResolvedValue(null) },
+    });
+    await expect(svc.login(PIN_ONLY, META)).rejects.toThrow(UnauthorizedException);
+    // Qurilma yo'q — `registerFailure` chaqirilsa `undefined.id` bilan yiqilardi.
+    expect(devices.registerFailure).not.toHaveBeenCalled();
+  });
+
+  it('sukut do`kon topilmasa `null` qaytadi (smena ochilishida server aniqlaydi)', async () => {
+    const { svc, prisma } = makeDeps();
+    prisma.client.store.findFirst.mockResolvedValue(null);
+    const out = await svc.login(PIN_ONLY, META);
+    expect(out.device.storeId).toBeNull();
+  });
+
+  it('kalit BERILSA eski qattiq yo`l ishlaydi (regress qo`rig`i)', async () => {
+    const { svc, devices, pins } = makeDeps();
+    const out = await svc.login(INPUT, META);
+    expect(devices.verify).toHaveBeenCalled();
+    expect(pins.findByPin).toHaveBeenCalledWith('acc-1', '1234');
+    expect(out.device.storeId).toBe('store-1');
   });
 });

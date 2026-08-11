@@ -140,15 +140,24 @@ export async function login(identifier: string, password: string): Promise<User>
  * (`apps/api/src/modules/auth/auth.schema.ts:130-134`) faqat
  * `deviceId`/`deviceSecret`/`pin` ni kutadi.
  */
+/**
+ * Kassa kirishi — PIN.
+ *
+ * `creds` 2026-08-11 da IXTIYORIY bo'ldi (juftlash olib tashlandi, egasining
+ * talabi). Eski juftlangan o'rnatmalarda kalit hamon yuboriladi va server uni
+ * avvalgidek tekshiradi; yangi o'rnatmalarda esa faqat PIN ketadi.
+ */
 export async function posLogin(
-  creds: { deviceId: string; deviceSecret: string },
+  creds: { deviceId: string; deviceSecret: string } | null,
   pin: string,
 ): Promise<User> {
   const res = await fetch(`${BASE}/auth/pos-login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
-    body: JSON.stringify({ deviceId: creds.deviceId, deviceSecret: creds.deviceSecret, pin }),
+    body: JSON.stringify(
+      creds ? { deviceId: creds.deviceId, deviceSecret: creds.deviceSecret, pin } : { pin },
+    ),
   });
   if (!res.ok) {
     const body = (await res.json().catch(() => ({}))) as { message?: string };

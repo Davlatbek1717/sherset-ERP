@@ -283,9 +283,72 @@ describe('desktop/main.js — kiosk oyna qattiqligi (spec §6.2)', () => {
     expect(mainSrc).not.toMatch(/nodeIntegration\s*:\s*true/);
   });
 
-  it('kiosk + ramkasiz oyna', () => {
-    expect(mainSrc).toMatch(/kiosk\s*:\s*true/);
-    expect(mainSrc).toMatch(/frame\s*:\s*false/);
+  /**
+   * Kiosk qattiqligi JUFTLASHGA BOG'LANGAN (2026-08-11 da o'zgardi).
+   *
+   * Ilgari bu yerda `kiosk: true` LITERAL talab qilinardi. Real monoblokda
+   * ma'lum bo'ldiki, u holat sozlashni imkonsiz qiladi: kiosk oyna hamma
+   * narsaning ustida turgani uchun Windows ekran klaviaturasi input bosilganda
+   * orqaga o'tib ketardi, ilova esa o'z klaviaturasini bermaydi ⇒ klaviaturasiz
+   * qurilmada na server manzilini, na juftlash parolini kiritib bo'lardi.
+   *
+   * Yangi shartnoma: sozlash bosqichi oddiy oynada, KASSIR bosqichi kiosk'da.
+   * Test shu bog'liqlikni qulflaydi — kimdir `kiosk: false` deb qo'yib qo'ysa
+   * (yoki bog'liqlikni butunlay olib tashlasa) yiqiladi.
+   */
+  it('kiosk + ramkasizlik SOZLANGANLIK holatiga bog`langan (literal `true` emas)', () => {
+    expect(mainSrc).toMatch(/const\s+configured\s*=\s*!!\s*serverBase\(\)/);
+    expect(mainSrc).toMatch(/kiosk\s*:\s*configured/);
+    expect(mainSrc).toMatch(/frame\s*:\s*!configured/);
+    // Kiosk hech qachon o'chirilgan holda QOTIRILMASIN.
+    expect(mainSrc).not.toMatch(/kiosk\s*:\s*false/);
+  });
+
+  it('sozlangach kiosk rejimiga QAYTA ISHGA TUSHISH bilan o`tiladi', () => {
+    // `setKiosk(true)` yetarli emas: `frame` ish paytida olib tashlanmaydi,
+    // ya'ni yarim-kiosk oyna qolardi (kassir uni sudrab/yopib qo'yardi).
+    expect(mainSrc).toMatch(/app\.relaunch\(\)/);
+    expect(mainSrc).toMatch(/win\??\.isKiosk\(\)/);
+  });
+
+  it('yopish qo`riqchisi KIOSK holatida ishlaydi (kassir Alt+F4 bilan chiqmasin)', () => {
+    expect(mainSrc).toMatch(
+      /if\s*\(!allowQuit\s*&&\s*win\?\.isKiosk\(\)\)\s*e\.preventDefault\(\)/,
+    );
+  });
+
+  /**
+   * Klaviaturasiz chiqish yo'li (2026-08-11 qarzi yopildi): kiosk oynadan
+   * yagona chiqish `Ctrl+Alt+Shift+Q` edi — sensorli monoblokda klaviatura
+   * yo'q, ya'ni ilovani UMUMAN yopib bo'lmasdi.
+   */
+  it('chiqish imosi TASDIQ dialogi orqali o`tadi (main tomoni)', () => {
+    expect(mainSrc).toMatch(/ipcMain\.on\(\s*'shell:request-quit'/);
+    expect(mainSrc).toMatch(/showMessageBox/);
+  });
+
+  /**
+   * Imo AYNAN preload'da bo'lishi shart: web ilova `script-src 'self'` CSP
+   * bilan keladi, ya'ni `executeJavaScript` bilan sahifaga ekilgan imo o'sha
+   * siyosatga tayanib qolardi (o'lchanmagan). Preload CSP'ga bo'ysunmaydi.
+   */
+  it('imo PRELOAD da (CSP ta`sir qilmaydi) va PASSIV', () => {
+    const preload = readOrEmpty(preloadPath);
+    expect(preload).toContain('installExitGesture');
+    expect(preload).toMatch(/ipcRenderer\.send\(\s*'shell:request-quit'\s*\)/);
+    expect(preload).toMatch(/pointerdown/);
+    // Sahifa tugmalarini to'smasligi — IMO hodisani bekor QILMAYDI.
+    // 🔴 Tekshiruv AYNAN `installExitGesture` tanasiga qaraydi: butun fayl
+    // bo'yicha qidirilsa ekran klaviaturasidan yiqilardi — u tugmalarida
+    // `mousedown` ni ataylab bekor qiladi (fokus maydonda qolishi uchun,
+    // aks holda bosilgan harf hech qayerga tushmaydi).
+    const gesture = preload.slice(
+      preload.indexOf('function installExitGesture'),
+      preload.indexOf('function installTouchKeyboard'),
+    );
+    expect(gesture.length).toBeGreaterThan(200);
+    expect(gesture).not.toMatch(/\.preventDefault\s*\(/);
+    expect(mainSrc).not.toMatch(/executeJavaScript\(\s*EXIT_GESTURE/);
   });
 
   it('yagona nusxa qulfi bor', () => {
