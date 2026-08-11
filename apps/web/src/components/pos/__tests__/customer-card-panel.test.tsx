@@ -4,16 +4,24 @@ import { renderWithProviders, screen, userEvent, waitFor } from '@/test-utils';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 /**
- * F9 — POS mijoz kartasi.
+ * F9 — POS mijoz kartasi · **P2 (2026-08-12) da qayta yozilgan shartnoma**.
  *
  * Kassir bir joyda ko'radi: KIM (telefon bo'yicha topiladi), QANCHA QARZI
- * bor (ikki daftar ochiq), NIMA olgan (oxirgi cheklar), qanday ZAKAZlari
- * bor. Tez amallar panelning o'zida emas — ular chaqiruvchiga (POS sahifasi)
- * callback bilan qaytadi, ya'ni panel savat/to'lov mantig'iga TEGMAYDI.
+ * bor, NIMA olgan (oxirgi cheklar), qanday ZAKAZlari bor. Tez amallar
+ * panelning o'zida emas — ular chaqiruvchiga (POS sahifasi) callback bilan
+ * qaytadi, ya'ni panel savat/to'lov mantig'iga TEGMAYDI.
  *
- * 🔴 Bu ekranda qulflanadigan eng muhim shartnoma — **NULL ≠ 0**:
- * `balanceMinor: null` = «o'lchanmagan», va u hech qachon «0 so'm» deb
- * chizilmaydi (xotira: «Ma'lumot sifati bayrog'i qatlami»).
+ * 🔴 P2 — **BITTA HALOL RAQAM.** Ilgari kartada IKKI katta son yonma-yon
+ * turardi («Umumiy qarz» = balans va «Reyestrda» = `Debt` reyestri) — mijoz
+ * ham, kassir ham qaysi biriga ishonishni bilmasdi. P1 dan keyin POS balansni
+ * ham to'lay oladi, ya'ni yagona mazmunli son — **`payableMinor`**: server
+ * AYNAN shu summagacha qabul qiladi (bir formula: `debtPayable`). Ikki
+ * daftarning farqi endi ogohlantirish emas — u ASOSIY RAQAM ICHIDA.
+ *
+ * 🔴 Ikkinchi shartnoma — **NULL ≠ 0 yashirilmaydi**: balans qatori yo'q
+ * bo'lsa (`balanceMinor: null`) ekran buni OCHIQ aytadi
+ * (`customer-card-balance-missing`), chunki «0 so'm» ko'rgan kassir mijozda
+ * qarz yo'q deb o'ylardi (xotira: «Ma'lumot sifati bayrog'i qatlami»).
  */
 
 vi.mock('@/lib/api-client', () => ({
@@ -45,6 +53,8 @@ const ORDER = {
 };
 
 interface SummaryOver {
+  payableMinor?: string;
+  adoptableMinor?: string;
   outstandingMinor?: string;
   balanceMinor?: string | null;
   unregisteredMinor?: string | null;
@@ -52,12 +62,53 @@ interface SummaryOver {
   otherCurrencyBalances?: Array<{ currency: string; balanceMinor: string }>;
 }
 
-function routes(summaryOver: SummaryOver = {}, opts: { orders?: unknown[] } = {}) {
+interface HistoryOver {
+  openingMinor?: string | null;
+  totalCount?: number;
+  hasMore?: boolean;
+  entries?: Array<{
+    at: string;
+    docType: string;
+    docId: string | null;
+    number: string | null;
+    deltaMinor: string;
+    increase: boolean;
+  }>;
+}
+
+const HISTORY_ENTRY = {
+  at: '2026-08-09T10:00:00.000Z',
+  docType: 'retailsale',
+  docId: 'rs-1',
+  number: 'CHK-00007',
+  deltaMinor: '100000',
+  increase: true,
+};
+
+function routes(
+  summaryOver: SummaryOver = {},
+  opts: { orders?: unknown[]; history?: HistoryOver } = {},
+) {
   return async (path: string) => {
     if (path.startsWith('/counterparties')) return { items: [CP] };
+    if (path.startsWith('/debts/pos/history')) {
+      return {
+        counterparty: CP,
+        currency: 'UZS',
+        openingMinor: '5000000',
+        totalCount: 1,
+        hasMore: false,
+        entries: [HISTORY_ENTRY],
+        ...(opts.history ?? {}),
+      };
+    }
     if (path.startsWith('/debts/pos/summary')) {
       return {
         counterparty: CP,
+        // P1 shartnomasi: `payableMinor` = max(reyestr, balans) — POS AYNAN
+        // shu summagacha qabul qiladi.
+        payableMinor: '100000',
+        adoptableMinor: '60000',
         outstandingMinor: '40000',
         openCount: 1,
         oldestAt: '2026-07-01T00:00:00.000Z',
@@ -133,48 +184,57 @@ describe('F9 — telefon bo`yicha qidiruv', () => {
   });
 });
 
-describe('F9 — qarz bloki: ikki daftar', () => {
-  it('umumiy qarz (balans) va reyestr qoldig`i AJRATIB ko`rsatiladi', async () => {
+describe('P2 — qarz bloki: BITTA halol raqam', () => {
+  it('asosiy son = `payableMinor` (server qabul qiladigan summa)', async () => {
     const user = userEvent.setup();
     renderPanel();
     await pick(user);
 
-    // Balans — mijozning haqiqiy qarzi (100 000 tiyin = 1 000,00 so'm).
-    expect(screen.getByTestId('customer-card-balance')).toHaveTextContent(/1\s?000,00/);
-    // Reyestr — POS FIFO'si yopa oladigan qism (40 000 tiyin = 400,00 so'm).
-    expect(screen.getByTestId('customer-card-registry')).toHaveTextContent(/400,00/);
+    // 100 000 tiyin = 1 000,00 so'm — balans va reyestrdan KATTAsi.
+    expect(screen.getByTestId('customer-card-payable')).toHaveTextContent(/1\s?000,00/);
   });
 
-  it('🔴 reyestrsiz qarz uchun OGOHLANTIRISH chiqadi (POS uni to`lay olmaydi)', async () => {
+  it('🔴 IKKI raqobatchi katta son BOSHQA ko`rsatilmaydi', async () => {
     const user = userEvent.setup();
     renderPanel();
     await pick(user);
 
-    expect(screen.getByTestId('customer-card-unregistered')).toBeInTheDocument();
+    expect(screen.queryByTestId('customer-card-balance')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('customer-card-registry')).not.toBeInTheDocument();
+    // «Reyestrdan tashqarida» ogohlantirishi ham yo'q: u endi asosiy raqam
+    // ICHIDA (P1 dan keyin kassada to'lash mumkin — ogohlantirish yolg'on).
+    expect(screen.queryByTestId('customer-card-unregistered')).not.toBeInTheDocument();
   });
 
-  it('farq nol bo`lsa ogohlantirish YO`Q', async () => {
+  it('🔴 NULL ≠ 0 — balans qatori yo`qligi OCHIQ aytiladi', async () => {
     vi.mocked(api.get).mockImplementation(
-      routes({ balanceMinor: '40000', unregisteredMinor: '0' }),
+      routes({ payableMinor: '40000', balanceMinor: null, unregisteredMinor: null }),
     );
     const user = userEvent.setup();
     renderPanel();
     await pick(user);
 
-    expect(screen.queryByTestId('customer-card-unregistered')).not.toBeInTheDocument();
+    // Reyestrdagi qarz o'lchangan — u ko'rsatiladi.
+    expect(screen.getByTestId('customer-card-payable')).toHaveTextContent(/400,00/);
+    // Lekin balans qatori yo'qligi YASHIRILMAYDI.
+    expect(screen.getByTestId('customer-card-balance-missing')).toBeInTheDocument();
   });
 
-  it('🔴 NULL ≠ 0 — o`lchanmagan balans «0» deb chizilmaydi', async () => {
-    vi.mocked(api.get).mockImplementation(routes({ balanceMinor: null, unregisteredMinor: null }));
+  it('balans o`lchangan bo`lsa «qator yo`q» izohi CHIQMAYDI', async () => {
     const user = userEvent.setup();
     renderPanel();
     await pick(user);
 
-    const cell = screen.getByTestId('customer-card-balance');
-    expect(cell).toHaveTextContent('—');
-    expect(cell.textContent ?? '').not.toMatch(/\b0\b/);
-    // O'lchanmaganda farq ham chizilmaydi (yolg'on «hammasi reyestrda» degani).
-    expect(screen.queryByTestId('customer-card-unregistered')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('customer-card-balance-missing')).not.toBeInTheDocument();
+  });
+
+  it('🔴 teskari nomuvofiqlik (reyestr > balans) ogohlantirishi QOLADI', async () => {
+    vi.mocked(api.get).mockImplementation(routes({ registryExceedsBalance: true }));
+    const user = userEvent.setup();
+    renderPanel();
+    await pick(user);
+
+    expect(screen.getByTestId('customer-card-registry-exceeds')).toBeInTheDocument();
   });
 
   it('boshqa valyutadagi qoldiq ko`rinadi (jimgina yo`qolmaydi)', async () => {
@@ -218,6 +278,72 @@ describe('F9 — tarix va zakazlar', () => {
     expect(await screen.findByTestId(`customer-card-order-${ORDER.id}`)).toHaveTextContent(
       'ZKZ-00003',
     );
+  });
+});
+
+describe('P2 — qarz TARIXI (balans jurnalidan)', () => {
+  it('tarix AYNAN shu mijoz va kassa valyutasi bo`yicha so`raladi', async () => {
+    const user = userEvent.setup();
+    renderPanel();
+    await pick(user);
+
+    await waitFor(() => {
+      expect(vi.mocked(api.get)).toHaveBeenCalledWith(
+        expect.stringContaining(`/debts/pos/history/${CP.id}?currency=UZS`),
+      );
+    });
+  });
+
+  it('harakat qatori hujjat raqami va summasi bilan chiziladi', async () => {
+    const user = userEvent.setup();
+    renderPanel();
+    await pick(user);
+
+    const row = await screen.findByTestId('customer-card-history-rs-1');
+    expect(row).toHaveTextContent('CHK-00007');
+    expect(row).toHaveTextContent(/1\s?000,00/);
+  });
+
+  it('🔴 boshlang`ich qoldiq ALOHIDA qator (bugungi «harakat» emas)', async () => {
+    const user = userEvent.setup();
+    renderPanel();
+    await pick(user);
+
+    expect(await screen.findByTestId('customer-card-history-opening')).toHaveTextContent(
+      /50\s?000,00/,
+    );
+  });
+
+  it('🔴 `openingMinor: null` — boshlang`ich qoldiq qatori CHIZILMAYDI', async () => {
+    vi.mocked(api.get).mockImplementation(routes({}, { history: { openingMinor: null } }));
+    const user = userEvent.setup();
+    renderPanel();
+    await pick(user);
+
+    await screen.findByTestId('customer-card-history');
+    expect(screen.queryByTestId('customer-card-history-opening')).not.toBeInTheDocument();
+  });
+
+  it('tarix bo`sh bo`lsa buni AYTADI (jim bo`shliq emas)', async () => {
+    vi.mocked(api.get).mockImplementation(
+      routes({}, { history: { entries: [], openingMinor: null, totalCount: 0 } }),
+    );
+    const user = userEvent.setup();
+    renderPanel();
+    await pick(user);
+
+    expect(await screen.findByTestId('customer-card-history-empty')).toBeInTheDocument();
+  });
+
+  it('kesilgan tarixda «yana bor» belgisi chiqadi', async () => {
+    vi.mocked(api.get).mockImplementation(
+      routes({}, { history: { hasMore: true, totalCount: 120 } }),
+    );
+    const user = userEvent.setup();
+    renderPanel();
+    await pick(user);
+
+    expect(await screen.findByTestId('customer-card-history-more')).toBeInTheDocument();
   });
 });
 

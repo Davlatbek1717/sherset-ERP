@@ -11,7 +11,7 @@ import { useTranslations } from 'next-intl';
 import { useEffect, useState } from 'react';
 
 /**
- * F9 — POS MIJOZ KARTASI.
+ * F9 — POS MIJOZ KARTASI · **P2 (2026-08-12): bitta halol raqam + tarix.**
  *
  * Kassir bir joyda ko'radi: kim (telefon bo'yicha topiladi), qancha qarzi
  * bor, nima olgan, qanday zakazlari bor. Tez amallar (qarz to'lash, zakazni
@@ -19,18 +19,26 @@ import { useEffect, useState } from 'react';
  * chaqiruvchiga callback bilan qaytadi. Sabab ataylab: bu panel savat,
  * miqdor, chegirma va to'lov mantig'iga UMUMAN tegmaydi.
  *
- * 🔴 IKKI QARZ DAFTARI ochiq ko'rsatiladi (server `pos-customer-debt.ts`
- * qoidasi bo'yicha hisoblaydi):
- *   · «Umumiy qarz» — `CounterpartyBalance`. POS'da qarzga sotilgan chek
- *     AYNAN shu yerga tushadi.
- *   · «Reyestrda» — `Debt` registri. POS «Qarz to'lovi» FIFO'si FAQAT shuni
- *     yopa oladi.
- * Farq bo'lsa kassir OGOHLANTIRISH ko'radi: bu pulni kassada qabul qilib
- * bo'lmaydi. Ilgari u faqat `pos/pay` 400 xatosi bo'lib chiqardi.
+ * 🔴 NIMA O'ZGARDI VA NEGA. Ilgari bu yerda IKKI katta son yonma-yon turardi:
+ * «Umumiy qarz» (`CounterpartyBalance`) va «Reyestrda» (`Debt` registri) —
+ * chunki POS FIFO'si faqat ikkinchisini yopa olardi va farq uchun kassirga
+ * ogohlantirish chiqardi. **P1 dan keyin bu ogohlantirish YOLG'ON**: to'lov
+ * balansdan ham qabul qilinadi (adopsiya). Ikki raqamni qoldirish endi shunchaki
+ * chalg'itish edi — mijoz ham, kassir ham qaysi biriga ishonishni bilmasdi.
  *
- * 🔴 NULL ≠ 0: `balanceMinor: null` = O'LCHANMAGAN (balans qatori yo'q).
- * `formatMoney(null)` uni «—» qilib chizadi va farq bloki umuman
- * ko'rsatilmaydi — «hammasi reyestrda» degan yolg'on chiqmasin.
+ * Endi ekranda BITTA son bor — `payableMinor`, ya'ni **server AYNAN shu
+ * summagacha qabul qiladi** (bitta formula: `pos-customer-debt.ts#debtPayable`,
+ * ekran ham, `POST /debts/pos/pay` ham o'shandan yuradi). «Halol» aynan shu
+ * ma'noda: ekrandagi raqam = tizimning xulqi.
+ *
+ * 🔴 NULL ≠ 0 SAQLANADI, lekin boshqacha: balans qatori yo'qligi endi
+ * raqamni «—» qilib yashirmaydi (kassirni harakatsiz qoldirardi) — u ALOHIDA
+ * qator bo'lib OCHIQ aytiladi (`customer-card-balance-missing`).
+ *
+ * 🔴 TARIX (P2 ning ikkinchi yarmi) — `GET /debts/pos/history/:id`, manba
+ * `CounterpartyBalanceEntry` jurnali, ya'ni asosiy raqam bilan BIR daftar.
+ * Mijoz «men bunchalik qarzdor emasman» desa kassirning javobi shu ro'yxat.
+ * Backfilldan oldin jurnalda 2 qator bor edi — ya'ni javob YO'Q edi.
  */
 
 export interface CustomerCardRow {
@@ -41,20 +49,65 @@ export interface CustomerCardRow {
   version?: number;
 }
 
-/** `GET /debts/pos/summary/:id` javobi (F9 da kengaytirilgan). */
+/** `GET /debts/pos/summary/:id` javobi (F9 · P1 da kengaytirilgan). */
 interface DebtSummary {
   counterparty: CustomerCardRow;
+  /**
+   * 🔴 P1/P2 — EKRANDAGI YAGONA SON: POS shu summagacha qabul qiladi
+   * (`max(reyestr, balans)`; manfiy balans qarz sifatida olinmaydi).
+   */
+  payableMinor: string;
   /** `Debt` reyestri — POS FIFO'si yopadigan qism. */
   outstandingMinor: string;
   openCount: number;
   oldestAt: string | null;
   /** `CounterpartyBalance` — umumiy qarz. `null` = O'LCHANMAGAN. */
   balanceMinor: string | null;
-  /** Balansda bor, reyestrda yo'q — POS to'lay OLMAYDI. `null` = o'lchanmagan. */
-  unregisteredMinor: string | null;
   registryExceedsBalance: boolean;
   otherCurrencyBalances: Array<{ currency: string; balanceMinor: string }>;
 }
+
+/** `GET /debts/pos/history/:id` javobi (P2). */
+interface DebtHistory {
+  currency: string;
+  /** Tarixiy boshlang'ich qoldiq; `null` = jurnalda `opening` qatori yo'q. */
+  openingMinor: string | null;
+  /** Jurnaldagi barcha qatorlar soni. */
+  totalCount: number;
+  hasMore: boolean;
+  entries: Array<{
+    at: string;
+    docType: string;
+    docId: string | null;
+    /** Hujjat raqami; `null` = yorliq topilmadi (qator baribir chiqadi). */
+    number: string | null;
+    deltaMinor: string;
+    increase: boolean;
+  }>;
+}
+
+/**
+ * Jurnalda uchraydigan hujjat turlari — YORLIQ uchun (saldoga aloqasi yo'q).
+ * Ro'yxatda yo'q tur qator CHIZILISHINI to'xtatmaydi: u raqam/«—» bilan
+ * chiqadi (server `counterparty-balance-doc-resolver.ts` bilan bir xil
+ * degradatsiya qoidasi — «xato yorliq, yo'qolgan qator emas»).
+ */
+const KNOWN_DOC_TYPES = new Set([
+  'retailsale',
+  'debt',
+  'debtpayment',
+  'invoiceOut',
+  'invoiceIn',
+  'supply',
+  'purchaseReturn',
+  'paymentIn',
+  'paymentOut',
+  'cashIn',
+  'cashOut',
+  'prepayment',
+  'prepaymentReturn',
+  'adjustment',
+]);
 
 interface SaleRow {
   id: string;
@@ -111,6 +164,7 @@ export function CustomerCardPanel({
   onReprintReceipt,
 }: Props) {
   const t = useTranslations('pages.pos');
+  const tDoc = useTranslations('pages.pos.customer_card_doc');
   const tCommon = useTranslations('common');
   const qc = useQueryClient();
 
@@ -142,6 +196,13 @@ export function CustomerCardPanel({
     // Valyuta kalitda: kassa valyutasi o'zgarsa boshqa qoldiq o'qiladi.
     queryKey: ['customer-card-debt', agent?.id, currency],
     queryFn: () => api.get(`/debts/pos/summary/${agent?.id}?currency=${currency}`),
+    enabled: open && !!agent,
+  });
+
+  // P2 — tarix: asosiy raqam bilan BIR daftardan (balans jurnali).
+  const { data: history } = useQuery<DebtHistory>({
+    queryKey: ['customer-card-history', agent?.id, currency],
+    queryFn: () => api.get(`/debts/pos/history/${agent?.id}?currency=${currency}`),
     enabled: open && !!agent,
   });
 
@@ -190,12 +251,12 @@ export function CustomerCardPanel({
     setError(null);
   }
 
-  const balanceMinor = summary?.balanceMinor ?? null;
-  const unregisteredMinor = summary?.unregisteredMinor ?? null;
-  // Ogohlantirish FAQAT o'lchangan va musbat farqda. `null` (o'lchanmagan)
-  // holatida jim qolamiz — «hammasi joyida» degan taassurot bermaslik uchun
-  // qoldiq allaqachon «—» bo'lib turadi.
-  const showUnregistered = unregisteredMinor !== null && BigInt(unregisteredMinor) > 0n;
+  // 🔴 P2 — kassir ko'radigan YAGONA son. Server bilan bitta formuladan
+  // (`debtPayable`) chiqadi, ya'ni ekran tizim xulqidan ajralib keta olmaydi.
+  const payableMinor = summary?.payableMinor ?? null;
+  // Balans qatori yo'qligi YASHIRILMAYDI (NULL ≠ 0) — lekin endi u raqamni
+  // «—» qilib bloklamaydi, alohida qator bo'lib aytiladi.
+  const balanceMissing = !!summary && summary.balanceMinor === null;
 
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
@@ -318,46 +379,30 @@ export function CustomerCardPanel({
                   </div>
                 )}
 
-                {/* ── Qarz bloki: IKKI DAFTAR ──────────────────────────── */}
+                {/* ── Qarz bloki: BITTA HALOL RAQAM (P2) ───────────────── */}
                 <div
                   data-test-id="customer-card-debt"
                   className="rounded-xl border border-[var(--ms-border)] p-3"
                 >
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <p className="text-[var(--ms-text-muted)] text-xs">
-                        {t('customer_card_balance')}
-                      </p>
-                      {/* 🔴 `formatMoney(null)` → «—». O'lchanmagan qoldiq
-                          hech qachon «0» deb chizilmaydi. */}
-                      <p
-                        data-test-id="customer-card-balance"
-                        className="font-semibold text-[var(--ms-text-primary)] text-lg"
-                      >
-                        {formatMoney(balanceMinor, currency)}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-[var(--ms-text-muted)] text-xs">
-                        {t('customer_card_registry')}
-                      </p>
-                      <p
-                        data-test-id="customer-card-registry"
-                        className="font-semibold text-[var(--ms-text-primary)] text-lg"
-                      >
-                        {formatMoney(summary?.outstandingMinor ?? null, currency)}
-                      </p>
-                    </div>
-                  </div>
+                  <p className="text-[var(--ms-text-muted)] text-xs">
+                    {t('customer_card_payable')}
+                  </p>
+                  <p
+                    data-test-id="customer-card-payable"
+                    className="font-semibold text-2xl text-[var(--ms-text-primary)]"
+                  >
+                    {formatMoney(payableMinor, currency)}
+                  </p>
+                  <p className="text-[var(--ms-text-muted)] text-xs">
+                    {t('customer_card_payable_hint')}
+                  </p>
 
-                  {showUnregistered && (
+                  {balanceMissing && (
                     <p
-                      data-test-id="customer-card-unregistered"
-                      className="mt-3 rounded-lg bg-orange-50 px-3 py-2 text-orange-800 text-xs"
+                      data-test-id="customer-card-balance-missing"
+                      className="mt-3 rounded-lg bg-[var(--ms-bg-hover)] px-3 py-2 text-[var(--ms-text-muted)] text-xs"
                     >
-                      {t('customer_card_unregistered', {
-                        amount: formatMoney(unregisteredMinor, currency),
-                      })}
+                      {t('customer_card_balance_missing')}
                     </p>
                   )}
                   {summary?.registryExceedsBalance && (
@@ -388,6 +433,77 @@ export function CustomerCardPanel({
                   >
                     {t('customer_card_pay_debt')}
                   </button>
+                </div>
+
+                {/* ── Qarz tarixi: balans jurnalidan (P2) ──────────────── */}
+                <div
+                  data-test-id="customer-card-history"
+                  className="rounded-xl border border-[var(--ms-border)] p-3"
+                >
+                  <p className="mb-2 font-semibold text-[var(--ms-text-muted)] text-xs uppercase tracking-widest">
+                    {t('customer_card_history')}
+                  </p>
+                  {(history?.entries.length ?? 0) === 0 && history?.openingMinor == null && (
+                    <p
+                      data-test-id="customer-card-history-empty"
+                      className="text-[var(--ms-text-muted)] text-sm"
+                    >
+                      {t('customer_card_history_empty')}
+                    </p>
+                  )}
+                  <ul className="flex flex-col gap-1">
+                    {(history?.entries ?? []).map((e) => (
+                      <li
+                        key={`${e.docType}-${e.docId ?? ''}-${e.at}`}
+                        data-test-id={`customer-card-history-${e.docId ?? e.docType}`}
+                        className="flex items-center justify-between gap-2 text-sm"
+                      >
+                        <span className="font-medium">
+                          {e.number ?? (KNOWN_DOC_TYPES.has(e.docType) ? tDoc(e.docType) : '—')}
+                        </span>
+                        <span className="text-[var(--ms-text-muted)] text-xs">
+                          {KNOWN_DOC_TYPES.has(e.docType) ? tDoc(e.docType) : e.docType}
+                        </span>
+                        <span className="text-[var(--ms-text-muted)]">{fmtDate(e.at)}</span>
+                        {/* Belgi konvensiyasi serverdan keladi (`increase`) —
+                            ekran uni QAYTA hisoblamaydi. */}
+                        <span
+                          className={
+                            e.increase
+                              ? 'font-medium text-[var(--ms-text-primary)]'
+                              : 'font-medium text-emerald-700'
+                          }
+                        >
+                          {e.increase ? '+' : '−'}
+                          {formatMoney(e.deltaMinor.replace('-', ''), currency)}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                  {/* 🔴 Boshlang'ich qoldiq — HARAKAT EMAS. U backfill kuni
+                      yozilgan, ya'ni oddiy qator qilib chizilsa «bugun katta
+                      qarz paydo bo'ldi» degan yolg'on chiqardi. */}
+                  {history?.openingMinor != null && (
+                    <p
+                      data-test-id="customer-card-history-opening"
+                      className="mt-2 flex items-center justify-between border-[var(--ms-border)] border-t pt-2 text-sm"
+                    >
+                      <span className="text-[var(--ms-text-muted)]">
+                        {t('customer_card_history_opening')}
+                      </span>
+                      <span className="font-medium">
+                        {formatMoney(history.openingMinor, currency)}
+                      </span>
+                    </p>
+                  )}
+                  {history?.hasMore && (
+                    <p
+                      data-test-id="customer-card-history-more"
+                      className="mt-2 text-[var(--ms-text-muted)] text-xs"
+                    >
+                      {t('customer_card_history_more', { count: history.totalCount })}
+                    </p>
+                  )}
                 </div>
 
                 {/* ── Oxirgi xaridlar ──────────────────────────────────── */}

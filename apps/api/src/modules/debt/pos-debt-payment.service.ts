@@ -3,6 +3,12 @@ import type { Prisma } from '@moysklad/db';
 import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { allocateDocumentNumber } from '../../prisma/document-number.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
+import {
+  type BalanceDocClient,
+  resolveBalanceDocs,
+} from '../counterparty-balance/counterparty-balance-doc-resolver.js';
+import { OPENING_DOC_TYPE } from '../counterparty-balance/counterparty-balance-doc-types.js';
+import { journalWhere } from '../counterparty-balance/counterparty-balance-journal.util.js';
 import { CounterpartyBalanceService } from '../counterparty-balance/counterparty-balance.service.js';
 import { MoneyService } from '../money/money.service.js';
 import { debtCashDeskDeltas } from './debt-cash-ledger.js';
@@ -20,6 +26,7 @@ import {
   usdCentsToSomTiyin,
 } from './debt.schema.js';
 import { debtPayable, planAdoption, splitDebtSources } from './pos-customer-debt.js';
+import { type PosHistoryLabel, foldPosHistory } from './pos-debt-history.js';
 
 /** FIFO/chek uchun kerakli maydonlar — qulfli va qulfsiz o'qish bir xil shaklda. */
 const DEBT_FIFO_SELECT = {
@@ -42,6 +49,9 @@ const DEBT_FIFO_SELECT = {
  * ayrilardi.
  */
 const DEBT_LEDGER_CURRENCY = 'UZS';
+
+/** P2 — mijoz kartasidagi tarix oynasi (klient boshqasini so'rashi mumkin). */
+const POS_HISTORY_LIMIT_DEFAULT = 20;
 
 /**
  * POS «Qarz to'lovi» oynasi (kassa TZ §7.2).
@@ -138,6 +148,89 @@ export class PosDebtPaymentService {
         // bo'lib ko'rinardi va ro'yxat tartibi server yopadigan FIFO
         // tartibidan (`toFifo` → `createdAt`) farq qilardi.
         orderAt: d.createdAt,
+      })),
+    };
+  }
+
+  /**
+   * P2 — mijoz kartasidagi QARZ TARIXI (`GET /debts/pos/history/:cpId`).
+   *
+   * Manba — `CounterpartyBalanceEntry` jurnali, ya'ni kartadagi asosiy raqam
+   * bilan AYNAN bir daftar. Kassir «bu qarz qayerdan?» degan savolga shu
+   * ro'yxatdan javob beradi; ilgari javob YO'Q edi (jurnalda 2 qator).
+   *
+   * ⚠️ `docType` bo'yicha FILTR YO'Q — `journalWhere()` shakli aynan shuni
+   * kafolatlaydi (chala-ro'yxat bug-klassi, `counterparty-balance-journal.util`
+   * sarlavhasi). Yangi hujjat turi qo'shilsa bu metod o'zgarmaydi.
+   *
+   * `opening` (backfill) qatori ALOHIDA so'rov bilan olinadi — u sahifalashdan
+   * mustaqil bo'lishi shart: tarixi uzun mijozda birinchi sahifaga tushmasa
+   * boshlang'ich qoldiq jimgina yo'qolardi.
+   */
+  async history(
+    accountId: string,
+    counterpartyId: string,
+    currency = 'UZS',
+    limit = POS_HISTORY_LIMIT_DEFAULT,
+  ) {
+    const cp = await this.prisma.client.counterparty.findFirst({
+      where: { id: counterpartyId, accountId },
+      select: { id: true, name: true },
+    });
+    if (!cp) throw new NotFoundException('Mijoz topilmadi');
+
+    // Kassir ekrani cheksiz so'rov yubormasin (klient `?limit=` ni o'zi beradi).
+    const take = Math.min(Math.max(Math.trunc(limit) || POS_HISTORY_LIMIT_DEFAULT, 1), 100);
+    const where = journalWhere({ accountId, counterpartyId, currency });
+    const journal = this.prisma.client.counterpartyBalanceEntry;
+
+    const [page, opening, totalCount] = await Promise.all([
+      // `take + 1` — 1 ta ortiqcha qator «yana bor» degan aniq signal.
+      journal.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        take: take + 1,
+        select: { deltaMinor: true, docType: true, docId: true, createdAt: true },
+      }),
+      // 🔴 `_sum` Prisma'da qator bo'lmasa `null` qaytaradi — bu AYNAN kerakli
+      // «o'lchanmagan» signali (`0n` bo'lsa qator bor va nol).
+      journal.aggregate({
+        where: { ...where, docType: OPENING_DOC_TYPE },
+        _sum: { deltaMinor: true },
+      }),
+      journal.count({ where }),
+    ]);
+
+    const hasMore = page.length > take;
+    const rows = hasMore ? page.slice(0, take) : page;
+
+    // Yorliqlar (hujjat raqami + O'Z sanasi) — umumiy resolverdan, o'z
+    // hujjat-ro'yxatidan EMAS (`DUP-06`: bitta ro'yxat, N iste'molchi).
+    const resolved = await resolveBalanceDocs(
+      this.prisma.client as unknown as BalanceDocClient,
+      accountId,
+      rows.map((r) => ({ docType: r.docType, docId: r.docId })),
+    );
+    const labels = new Map<string, PosHistoryLabel>();
+    for (const [k, v] of resolved) labels.set(k, { number: v.number, moment: v.moment });
+
+    const fold = foldPosHistory(rows, labels, opening._sum.deltaMinor ?? null);
+
+    return {
+      counterparty: cp,
+      currency,
+      /** Tarixiy boshlang'ich qoldiq; `null` = backfill qatori yo'q. */
+      openingMinor: fold.openingMinor?.toString() ?? null,
+      /** Jurnaldagi BARCHA qatorlar soni (`opening` bilan birga). */
+      totalCount,
+      hasMore,
+      entries: fold.lines.map((l) => ({
+        at: l.at,
+        docType: l.docType,
+        docId: l.docId,
+        number: l.number,
+        deltaMinor: l.deltaMinor.toString(),
+        increase: l.increase,
       })),
     };
   }

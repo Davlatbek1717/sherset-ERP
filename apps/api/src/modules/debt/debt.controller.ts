@@ -366,6 +366,32 @@ export class DebtController {
    * Kassir qaysi qarzga tushishini tanlamaydi — eng eskisidan yopiladi (Q9).
    */
   /**
+   * P2 — mijoz kartasidagi QARZ TARIXI (balans jurnalidan).
+   *
+   * Ruxsat `posSummary` bilan AYNAN bir xil (`debtpayment.create`) va sabab
+   * ham bir xil: bu — o'sha oynaning ma'lumoti. Guard'siz qolsa istalgan
+   * xodim istalgan mijozning butun hujjat tarixini o'qiy olardi.
+   */
+  @Get('pos/history/:counterpartyId')
+  @RequirePermission({ entity: 'debtpayment', action: 'create' })
+  posHistory(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('counterpartyId') counterpartyId: string,
+    @Query('currency') currency?: string,
+    @Query('limit') limit?: string,
+  ) {
+    // Number('') === 0 va Number(undefined) === NaN — ikkalasi ham servisdagi
+    // default'ga tushadi, u yerda chegara ham qo'yilgan (`calls/today` naqshi).
+    const raw = Number(limit);
+    return this.pos.history(
+      user.accountId,
+      counterpartyId,
+      currency || 'UZS',
+      Number.isFinite(raw) && raw > 0 ? raw : undefined,
+    );
+  }
+
+  /**
    * PKO chekini qayta chop etish (kassir yo'qotdi / printer tiqildi).
    * Ruxsat — `posSummary` bilan bir xil sabab: chek moliyaviy hujjat, uni
    * o'qish ham POS oynasining `debtpayment.create` ruxsati ostida turadi.
