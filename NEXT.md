@@ -358,8 +358,35 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 > `JWT_REFRESH_SECRET`, `JWT_ACCESS_TTL`, `JWT_REFRESH_TTL`, `PASSWORD_HASH_ROUNDS`, `CBRU_API_BASE`, `TZ`,
 > `LOG_LEVEL`, `LOG_PRETTY`) **hech biri kodda o'qilmaydi** (o'lchandi: 0 o'quvchi; LOG_* da default bor).
 > Ya'ni bloker EMAS, lekin `.env.example` diff'i endi shovqin — POS_PIN_PEPPER retsepti (§deploy) uchun
-> yolg'on-pozitiv manbai. (2) **Disk `/` 93% band, 7.2G bo'sh**; `/root/sherset-v2-backups` 2.7G/6 fayl —
-> keyingi FE-build'li deploy'dan oldin tozalash kerak bo'lishi mumkin.
+> yolg'on-pozitiv manbai. (2) **Disk** — quyida alohida blok.
+>
+> **💾 DISK TOZALANDI: 93% (7.2G bo'sh) → 88% (12.0G bo'sh), +4.8G** (egasi so'radi; hech qanday
+> restart bo'lmadi — sherset-v2 uptime uzilmadi, 10 ta ijarachi ilova online).
+> Tozalangani (hammasi qayta tiklanadigan): `.next/cache/webpack` **2.1G** (sof build-keshi —
+> `.next/cache` da ISR/image keshi YO'Q edi, ishlayotgan serverga tegmaydi) · journal vacuum 227M ·
+> `/root/.cache/pnpm` 509M · apt clean · npm cache · `pnpm store prune` (atigi 4 paket — qolgani
+> ishlatilyapti) · pm2 log flush (sherset-v2). Egasi qarori bilan `/root/sherset-v2-backups` dan
+> **eng eski 3 pre-deploy dump o'chirildi** (~1.5G); eng yangi 2 tasi (10-avgust) + `role_permissions`
+> qoldi. **Tegilmadi:** `/var/backups/sherset` 26G (biznesjon deploymenti — o'zi tozalanadi, quyida) ·
+> `/root/akademiya-backups` 17G (**begona ijarachi**).
+>
+> **🔴 Tozalash paytida topilgan ASOSIY nosozlik — `sherset` (biznesjon) bazasi 4 kun ZAXIRASIZ.**
+> `/var/log/sherset-backup.log`: 08·09·10·11-avgust → `XATO: diskda 10 GB dan kam joy — zaxira
+> o'tkazib yuborildi`. `/root/sherset-backup.sh` da qattiq guard: `FREE_KB < 10485760` ⇒ `exit 1`.
+> Ya'ni disk to'lgani jimgina zaxirani o'chirgan (oxirgi muvaffaqiyatli dump — **7-avgust**).
+> Baza o'sishi esa **tushunarli, bug emas**: skript izohi — `attachments` jadvalidagi fayllar TOAST
+> ichida (~2.9G), shuning uchun `KEEP_DAYS=5`. Endi bo'sh joy **12.0G > 10G chegara (marja +1.9G)**
+> ⇒ bugun 03:00 dagi zaxira ishlashi kerak; muvaffaqiyatli dumpdan keyin `find -mtime +5 -delete`
+> 6 ta eski faylni o'chirib **~21G** bo'shatadi (muammo o'z-o'zidan yopiladi).
+>
+> **🔴🔴 F2 UCHUN VAQT SHARTI:** `next build` webpack keshini (**2.1G**) qayta yaratadi ⇒ bo'sh joy
+> ~10.27G ga tushadi, bu **10.48G chegaradan PAST** ⇒ **bugungi 03:00 zaxira YANA o'tkazib yuboriladi**.
+> Shuning uchun: **F2 deploy'ini bugun kechasi 03:00 dan KEYIN qil**, yoki deploy'dan oldin qo'shimcha
+> ~1G bo'shat (nomzodlar: `/var/log/sherset/*.log` 400M truncate · `/root/rollback-*-2026-07-28-*`
+> 353M). Zaxira bir marta o'tsa bu shart yo'qoladi (21G bo'shaydi).
+>
+> ℹ️ `pm2 flush sherset-v2-*` `api.err.log` tarixini ham o'chirdi (ichidagi POS_PIN_PEPPER hodisasi
+> logi) — undan olingan dalillar yuqorida saqlangan; log 03:37 UTC dan keyin baribir bo'sh edi.
 >
 > **BROWSER-QA YO'Q** — F8/F9/PIN ekranlari brauzerda bosib ko'rilmagan (reja bo'yicha egasi qiladi).
 > Status: **Phase-1 + jonli marshrut/build verifikatsiyasi**, runtime-UI tasdiqlanmagan.
