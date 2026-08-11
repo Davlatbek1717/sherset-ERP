@@ -331,6 +331,36 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-08-11g (REJA-KASSA-PROD **FAZA P1** — qarz: POS to'lovi BALANS bo'yicha ·
+> ✅ DEPLOYED + JONLI TASDIQ) — `bf1483da` prodda** (`Deploy done: 2a0160af… → 0cc09114…`,
+> BUILD_ID `Dv1POETnhwI1uIzDUOZVy`).
+>
+> **Yoriq (prodda qayta o'lchandi):** `Debt` reyestri 0 qator, `DebtPayment` 0, lekin balansda
+> 15+ kontragentda katta qoldiq. POS FIFO'si faqat reyestrni yopgani uchun **mijoz kassaga pul
+> olib kelsa qabul qilib bo'lmasdi** — egasining 4 qarz-shikoyatining yagona manbai
+> ([[pos-debt-two-ledger-split]]).
+>
+> **Qaror — ADOPSIYA:** to'lov paytida balansdagi qarzning **aynan to'lanayotgan qismi** uchun
+> reyestrga qator ochiladi (`Debt.balanceAdopted = true`) va o'sha tranzaksiyada yopiladi.
+> Adopsiya qatori balansga `+total` **YOZMAYDI** (qarz u yerda bor) ⇒ `remove()` ham unga
+> `−total` yozmaydi. To'lanadigan qarz = `max(reyestr, balans)`. Qulf tartibi **BALANS →
+> QARZLAR** (reyestr bo'sh mijozda `debts FOR UPDATE` hech nimani ushlamaydi).
+> Rad etilgan variant: `DebtPayment.debtId` nullable — modulning o'qi, blast radius juda katta.
+>
+> **Jonli verify (HTTP, ishlab turgan API — controller + guard + servis):** «AAAA XARIDOR»ga
+> 1 000 so'm → balans −1 000 · kassa +1 000 · smena qarz-naqdi +1 000 · jurnal +1; **storno**
+> hammasini AYNAN qaytardi; sinov qatorini `DELETE` qilganda **balans tegilmadi** (qo'riqchi
+> jonli tasdiqlandi). **10/10.** Prod yakuniy holati: ochiq qarz 0.
+> Qayta yugurtirish: `apps/api/src/scripts/ops-p1-live-verify.ts` (DRY default, `--live` bilan yozadi).
+>
+> **Gate:** typecheck 0 · lint:product 0 · i18n 9/9 · api 7995 · web 3588.
+> **Phase-1 + jonli API tasdiq; brauzer-QA (kassir ekranidan qo'lda) YO'Q** — P10 ga.
+>
+> **Keyingi:** `docs/REJA-KASSA-PROD-2026-08.md` → **FAZA P2** (mijoz kartasi bitta halol raqam +
+> `CounterpartyBalanceEntry` backfill). P1 hisobotidagi shartnoma ustiga quriladi. 🔴 P2 uchun
+> eslatma: storno adopsiya qatorini OCHIQ qoldiradi (shartnoma bo'yicha to'g'ri, lekin qarzdorlar
+> ro'yxati/eslatma cron uni ko'radi).
+
 > **🕒 2026-08-11f (kassa: narx→oyna · marja ekrandan olib tashlandi · ✅ DEPLOYED) —**
 > **`f1f90e88` prodda** (`Deploy done: 913e3c2a… → f1f90e88…`, BUILD_ID 2026-08-11 15:33 +0200).
 > Egasining **jonli monoblok sinovidan** chiqqan ikki talab:

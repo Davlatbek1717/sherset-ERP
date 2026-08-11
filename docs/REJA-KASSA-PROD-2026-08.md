@@ -161,7 +161,7 @@ rezerv bo'shaydi (`page 997–1014`) · smena farqi → farq akti → menejer na
 
 | Faza | Nomi | Tegadigan joy | Deploy | Holat |
 |---|---|---|---|---|
-| **P1** | Qarz: POS to'lovi BALANS bo'yicha ishlaydi | api `debt`/`retail-sale` + web POS | ✅ | ☐ |
+| **P1** | Qarz: POS to'lovi BALANS bo'yicha ishlaydi | api `debt`/`retail-sale` + web POS | ✅ | ✅ `bf1483da` (jonli tasdiq; brauzer-QA yo'q) |
 | **P2** | Qarz: mijoz kartasi bitta halol raqam + tarix | api + web + backfill | ✅ | ☐ |
 | **P3** | Chek hayot sikli: picking-qotish + to'g'ri yo'l | api + web POS | ✅ | ☐ |
 | **P4** | Smena: unutilgan smena himoyasi + jonli yopish sinovi | api + prod-op | ✅ | ☐ |
@@ -766,7 +766,120 @@ Faza tugagach «HISOBOTLAR» ga P15 hisobotini yoz va ISHNI TO'XTAT.
 **Ochiq xavf / keyingi fazaga eslatma:**
 ```
 
-### P1 — ☐ hali bajarilmagan
+### P1 — Qarz: POS to'lovi BALANS bo'yicha ishlaydi · 2026-08-11 · `bf1483da`
+
+**Holat:** ✅ tugadi — **prodda jonli tasdiqlangan** (1 000 so'mlik sinov to'lovi + storno,
+10/10 tekshiruv o'tdi). Brauzer-QA (kassir ekranidan qo'lda) QILINMADI — pastga qarang.
+
+**O'lchov (avval, reja §0.6):** prod holati qayta o'lchandi (`ops-debt-audit.ts`) — reja §1.A
+dalillari HAMON amal qiladi: `Debt` = 0 qator · `DebtPayment` = 0 · `CounterpartyBalanceEntry`
+= 0, lekin `CounterpartyBalance`da 15+ kontragentda katta qoldiq.
+- **Ishora konvensiyasi HUJJATLASHTIRILDI** (taxmin emas, koddan):
+  `counterparty-balance.service.ts:49-62` — **musbat = mijoz BIZGA qarzdor**, manfiy = biz
+  unga qarzdormiz. `retail-sale.service.ts#post` qarzga sotuvni `+debtAmount` bilan yozadi
+  (`InvoiceOut.post` bilan bir yo'nalish). Prod misollari mos: «Madaniyat Shurik» +461 705 000
+  (mijoz qarzdor), «avaz aka ziyo bar» −183 250 000 (biz qarzdormiz — ta'minotchi).
+- **Smena-naqd zanjiri:** `cashier-session.service.ts:836` — «kutilgan naqd» hisobiga
+  `DebtPayment.amountMinor` (shu smena, `reversedAt: null`) yig'indisi kiradi; yashiqqa esa
+  `debt-cash-ledger.debtCashDeskDeltas` faqat `method='cash'` va kassa ko'rsatilganda yozadi.
+  Ikkalasi ham P1 da O'ZGARMADI — adopsiya ularning ustidan yuradi.
+
+**Dizayn qarori (ikki variant ko'rildi):**
+- ❌ **(A) `DebtPayment.debtId` ni nullable qilish** («reyestrsiz to'lov»). RAD ETILDI: `debtId`
+  butun modulning o'qi — `recalcDebt`, storno marshruti `/debts/:debtId/payments/:id/reverse`,
+  PKO cheki `payment.debt.name`, hisobotlar. Har o'quvchida yangi `null` shoxi ochilardi.
+- ✅ **(B) ADOPSIYA (tanlandi):** to'lov paytida balansdagi qarzning **aynan to'lanayotgan
+  qismi** uchun reyestrga qator ochiladi (`Debt.balanceAdopted = true`) va o'sha tranzaksiyada
+  to'liq yopiladi. Pastdagi butun zanjir — FIFO · `recalcDebt` · kassa daftari · smena naqdi ·
+  PKO cheki · storno — **o'zgarishsiz** ishlaydi.
+  - 🔴 Adopsiya qatori balansga `+total` **YOZMAYDI** (qarz u yerda allaqachon bor — aks holda
+    ikki karra sanalardi). Shu sababli `remove()` ham unga `−total` yozmaydi (simmetriya).
+  - **Nega butun qoldiq emas, faqat to'lanayotgan qism:** butun qoldiqni adopsiya qilsak 15
+    kontragent birinchi to'lovdayoq reyestrga OCHIQ qarz bo'lib kirardi va qarzdorlar ro'yxati /
+    eslatma cron / Telegram oqimi kutilmaganda portlardi. Adopsiya qatori tug'ilib darhol
+    yopiladi — u TARIX, dunning nishoni emas.
+  - **To'lanadigan qarz = `max(reyestr qoldig'i, balans)`** (`debtPayable`, sof funksiya).
+    `null` balans = O'LCHANMAGAN ⇒ faqat reyestr; manfiy balans ⇒ qarz sifatida olinmaydi.
+  - **Qulf tartibi BALANS → QARZLAR:** reyestr bo'sh mijozda `debts … FOR UPDATE` hech nimani
+    ushlamaydi, ya'ni balansdan ortiq yozishga qarshi YAGONA to'siq — balans qatori qulfi.
+    Bu ayni paytda `addCashPayment` yo'lidagi tartib bilan mos (deadlock xavfi kamaydi).
+
+**Fayllar:**
+- `packages/db/prisma/schema.prisma` + `migrations/20260811120000_debt_balance_adopted/` →
+  `Debt.balanceAdopted` (default `false`, backfill kerak emas)
+- `apps/api/src/modules/debt/pos-customer-debt.ts` → sof `debtPayable` + `planAdoption` va
+  «ADOPSIYA» qaror bo'limi (F9 ning «uchrashtirilmaydi» qarori BEKOR qilingani yozildi)
+- `apps/api/src/modules/debt/pos-debt-payment.service.ts` → `lockBalance` (raw `FOR UPDATE`),
+  `adoptBalanceDebt`, `pay()` yangi qaror zanjiri, `summary()` ga `payableMinor`/`adoptableMinor`
+- `apps/api/src/modules/debt/debt.service.ts` → `remove()` da adopsiya qatoriga teskari delta
+  yozilmaydi
+- `apps/web/src/components/pos/debt-payment-dialog.tsx` → `payableMinor` o'qiladi (ilgari
+  reyestrga qarab tasdiqlash tugmasi UMUMAN render bo'lmasdi) + «Balans bo'yicha qarz» qatori
+- `apps/web/src/messages/{ru,uz}.json` → `debt_from_balance`; mijoz kartasidagi «Kassada to'lab
+  bo'lmaydi» endi YOLG'ON bo'lgani uchun matn tuzatildi (to'liq karta ishi P2 da)
+- `apps/api/src/scripts/ops-p1-live-verify.ts` → qayta yugurtiriladigan jonli verify (DRY/`--live`)
+
+**Testlar (TDD — RED avval o'lchandi):**
+- `pos-debt-balance-payable.test.ts` (12) — sof qoida. RED: 12/12 yiqildi (funksiya yo'q edi).
+- `pos-debt-payment.balance-adoption.test.ts` (11) — servis + **parallel to'lov qulfi**.
+  RED: 8/11 yiqildi (3 tasi mavjud rad-etish qo'riqchilari, ataylab yashil edi).
+- `debt-remove-adopted.test.ts` (2) — simmetriya. RED: 1/2 yiqildi (`−500 000` yozilardi).
+- `debt-payment-balance.test.tsx` (4, web) — ekran shartnomasi. RED: 3/4 yiqildi.
+- Mavjud 4 test-double yangi `FOR UPDATE` so'rovini bilmasdi — ular tuzatildi (balans qatori
+  seed qilinmagan ⇒ «qator yo'q»), fixture'lar `payableMinor` bilan to'ldirildi.
+
+**Gate:** typecheck **0** · lint:product **0 error** (849 warning, siyosat ruxsat beradi) ·
+i18n:gate **9/9** · api vitest **7995 passed / 573 fayl** · web vitest **3588 passed / 252 fayl**.
+
+**Deploy:** ✅ qilindi (`DS_TARGET=v2`, `bf1483da`).
+- `prisma migrate deploy` prodda `20260811120000_debt_balance_adopted` ni **qo'lladi**.
+- box HEAD tarixida `bf1483da` BOR; `sherset-v2-web` va `sherset-v2-api` restart bo'ldi;
+  web `localhost:3011/login` = **200**; yangi kod bundle'da (`debt_from_balance` →
+  `.next/static/chunks/app/(app)/sotuv/page-f80809b4b3914b03.js`), `BUILD_ID=Dv1POETnhwI1uIzDUOZVy`.
+- **Jonli verify (HTTP, ishlab turgan API orqali — controller + guard + servis):**
+  kontragent «AAAA XARIDOR», smena `fc9a42ae…`, kassa «Asosiy kassa».
+
+  | O'lchov | Oldin | To'lovdan keyin | Stornodan keyin |
+  |---|---|---|---|
+  | balans | 2 341 175 224 so'm | 2 341 174 224 (−1 000) | 2 341 175 224 ✅ |
+  | kassa qoldig'i | 84 495 so'm | 85 495 (+1 000) | 84 495 ✅ |
+  | smena qarz-naqdi | 0 | 1 000 | 0 ✅ |
+  | jurnal qatorlari | 0 | 1 | 2 (simmetrik) |
+
+  Adopsiya qatori: `QRZ-2026-00001 total=100000 paid=100000 paid adopted=true closedAt=bor`.
+  **10/10 tekshiruv OK.** Sinov qoldig'i tozalandi: `DELETE /debts/:id` → 200 va **balans
+  TEGILMADI** (2 341 175 224 → 2 341 175 224) — ya'ni `remove()` qo'riqchisi ham JONLI
+  tasdiqlandi. Yakuniy prod holati: ochiq qarz **0**, jurnal 2 qator (tarix), adopsiya qatori
+  soft-delete.
+
+**Nima QILINMADI:**
+- **Brauzer-QA yo'q** — kassir ekranidan qo'lda («Qarzni to'lash» oynasini ochib, numpad bilan
+  summa kiritib) SINALMADI. Ekran shartnomasi faqat Vitest bilan qulflangan. → **P10**.
+- **Kiosk/kassir roli bilan sinalmadi** — jonli to'lov `Admin User` tokeni bilan ketdi.
+  Kassirning `debtpayment.create` ruxsati prodda bormi — **o'lchanmagan**
+  (`stale-seeded-db-missing-permission-rows` xotirasi bu klassni bir marta tutgan). → P5/P10.
+- **Mijoz kartasining o'zi soddalashtirilmadi** (ikki raqam hamon ko'rinadi) — bu ataylab **P2**
+  ishi; P1 faqat endi-yolg'on bo'lgan ikki matn qatorini tuzatdi.
+- **Jurnal backfill qilinmadi** (`CounterpartyBalanceEntry` tarixiy qatorlari yo'q) — **P2**.
+- **USD adopsiyasi sinalmadi:** dollar to'lovi so'mga o'girilib adopsiya qilinadi (kod yo'li
+  bor), lekin jonli sinov FAQAT so'mda o'tdi. → P5 matritsasi.
+- Lokal `prisma migrate deploy` YUGURMADI: `climart_adopt` bazasida eskidan (2026-08-08)
+  yiqilgan `20260419135104_init` bor (bu sessiyaga aloqasiz). Migratsiya SQL'i lokal bazaga
+  to'g'ridan-to'g'ri qo'llanib tekshirildi (idempotent, Prisma klienti maydonni o'qiydi).
+
+**Ochiq xavf / keyingi fazaga eslatma:**
+1. 🔴 **Storno adopsiya qatorini OCHIQ qoldiradi** (`status: unpaid`, `paidMinor: 0`). Bu
+   shartnoma bo'yicha to'g'ri — qarz balansda hamon bor va endi reyestrda ham ko'rinadi,
+   `debtPayable` MAX olgani uchun ikki karra sanalmaydi. **Lekin** qarzdorlar ro'yxati /
+   eslatma cron / Telegram bu qatorni ko'radi. P2 kartani soddalashtirganda buni hisobga oling.
+2. **Smena «kutilgan naqd» dollarda noto'g'ri:** `cashier-session.service.ts:836` `amountMinor`
+   (so'm) ni yig'adi, yashiqqa esa dollar to'lovida `amountOriginalMinor` (sent) tushadi. Bu
+   P1 dan OLDIN ham shunday edi — tegilmadi, **P5** da o'lchansin.
+3. **Kassada 2 ta bir xil nomli «Asosiy kassa» bor** (reja §1.G) — jonli verify smenaga
+   bog'langanini oldi. POS qaysi birini tanlashi P3/P5 da aniqlashtirilsin.
+4. `ops-p1-live-verify.ts` qayta yugurtiriladi (DRY default) — P2 dan keyin regressiya
+   tekshiruvi sifatida ishlating.
+
 ### P2 — ☐ hali bajarilmagan
 ### P3 — ☐ hali bajarilmagan
 ### P4 — ☐ hali bajarilmagan
