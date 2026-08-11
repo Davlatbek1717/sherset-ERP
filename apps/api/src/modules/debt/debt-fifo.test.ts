@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { type FifoDebt, allocateFifo, outstandingOf, summarize } from './debt-fifo.js';
+import {
+  type FifoDebt,
+  allocateFifo,
+  outstandingOf,
+  splitOriginalMinor,
+  summarize,
+} from './debt-fifo.js';
 
 /**
  * FIFO taqsimlash — sof qoidalar testi (kassa TZ §7.2, Q9).
@@ -144,5 +150,47 @@ describe('summarize — POS oynasining yuqori qismi', () => {
 
   it('bo`sh ro`yxat', () => {
     expect(summarize([])).toEqual({ outstandingMinor: 0n, openCount: 0, oldestAt: null });
+  });
+});
+
+/**
+ * F6 — DOLLAR to'lovining ASL (sent) summasini FIFO qatorlariga bo'lish.
+ *
+ * NEGA KERAK: mijoz $100 beradi, u FIFO bo'yicha 3 qarzga bo'linadi. Har
+ * `DebtPayment` qatori o'zining `amountOriginalMinor` ini olishi SHART —
+ * STORNO qatordan-qatorga ishlaydi (`debt.service.reverseCashDeskDelta`
+ * aynan shu maydondan yashiqdan chiqadigan JISMONIY summani oladi). Qator
+ * sentsiz qolsa storno so'm qiymatini dollar deb yashiqdan chiqarardi.
+ *
+ * 🔴 INVARIANT: bo'laklar yig'indisi ASL summaga AYNAN teng — bir sent ham
+ * yo'qolmaydi va tug'ilmaydi (yashiq daftari nolga qaytishi shundan).
+ */
+describe('splitOriginalMinor — F6 dollar summasini FIFO qatorlariga bo`lish', () => {
+  it('bo`laklar yig`indisi asl summaga AYNAN teng (qoldiq oxirgi qatorga)', () => {
+    // 3 qarz: 33 333 / 33 333 / 33 334 tiyin; jami 100 000 tiyin = $10.00.
+    const parts = splitOriginalMinor([33_333n, 33_333n, 33_334n], 1000n);
+    expect(parts.reduce((a, b) => a + b, 0n)).toBe(1000n);
+    expect(parts).toHaveLength(3);
+  });
+
+  it('bitta qator — hammasi o`shanga tushadi', () => {
+    expect(splitOriginalMinor([128_000_000n], 10_000n)).toEqual([10_000n]);
+  });
+
+  it('proporsional: teng qatorlar teng bo`lakni oladi', () => {
+    expect(splitOriginalMinor([50_000n, 50_000n], 1000n)).toEqual([500n, 500n]);
+  });
+
+  it('yaxlitlash qoldig`i OXIRGI qatorga qo`shiladi (jim yo`qolmaydi)', () => {
+    // 1 sentni 3 qatorga bo'lib bo'lmaydi: 0 + 0 + 1.
+    expect(splitOriginalMinor([100n, 100n, 100n], 1n)).toEqual([0n, 0n, 1n]);
+  });
+
+  it('bo`sh ro`yxat — bo`sh natija (0 ga bo`lish yo`q)', () => {
+    expect(splitOriginalMinor([], 1000n)).toEqual([]);
+  });
+
+  it('jami 0 bo`lsa ham 0 ga bo`lmaydi', () => {
+    expect(splitOriginalMinor([0n, 0n], 500n)).toEqual([0n, 500n]);
   });
 });

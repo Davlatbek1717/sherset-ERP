@@ -2,11 +2,13 @@
 
 import { api } from '@/lib/api-client';
 import { formatAmountInput, parseAmountToMinor } from '@/lib/pos/parse-amount';
+import { formatForeignMajor } from '@/lib/pos/receipt-payments';
+import { RATE_SCALE, convertByRateE8 } from '@moysklad/money';
 import type { CurrencyCode } from '@moysklad/money/currencies';
 import { Input, formatMoney } from '@moysklad/ui';
 import * as Dialog from '@radix-ui/react-dialog';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Banknote, CreditCard, X } from 'lucide-react';
+import { Banknote, CreditCard, DollarSign, X } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useCallback, useEffect, useState } from 'react';
 
@@ -40,12 +42,28 @@ interface PayResult {
     batchId: string;
     paidMinor: string;
     currency: string;
+    /** F6 — mijoz bergan ASL summa (USD → sent); so'm to'lovda `null`. */
+    originalMinor: string | null;
+    /** F6 — chekka MUZLATILGAN kurs, kanonik ×10^8; so'm to'lovda `null`. */
+    exchangeRate: string | null;
     method: string;
     lines: Array<{ debtName: string; amountMinor: string; closed: boolean }>;
     outstandingAfterMinor: string;
   };
   closedCount: number;
 }
+
+/** `GET /exchange-rates/rate?currency=USD` javobi (kerakli qismi). */
+interface UsdRateRow {
+  date: string;
+  currency: string;
+  rate: string;
+  /** Kanonik ×10^8 — payload'ga AYNAN shu ketadi (FE qayta hisoblamaydi). */
+  rateMinor: string;
+}
+
+/** To'lov valyutasi — serverdagi `PosDebtPaymentSchema.currency` bilan bir xil. */
+type PayCurrency = 'UZS' | 'USD';
 
 interface Props {
   open: boolean;
@@ -106,6 +124,8 @@ export function DebtPaymentDialog({
   const [agent, setAgent] = useState<CounterpartyRow | null>(null);
   const [amountInput, setAmountInput] = useState('');
   const [method, setMethod] = useState<'cash' | 'terminal'>('cash');
+  /** F6 — mijoz qaysi valyutada to'layapti. Kassa valyutasidan MUSTAQIL. */
+  const [payCurrency, setPayCurrency] = useState<PayCurrency>('UZS');
   const [error, setError] = useState<string | null>(null);
 
   const { data: cpData, isLoading: cpLoading } = useQuery<{ items: CounterpartyRow[] }>({
@@ -120,18 +140,78 @@ export function DebtPaymentDialog({
     enabled: open && !!agent,
   });
 
+  /**
+   * F6 — kunlik dollar kursi SERVERDAN. 🔴 Kassir uni QO'LDA kiritmaydi
+   * (`rasmilashtirish-modal.tsx` bilan bir xil naqsh va bir xil so'rov).
+   *
+   * `retry: false` — kurs YO'Q kun normal holat (CBU dam olish kunlarida
+   * e'lon qilmaydi; carry-forward server tomonda).
+   */
+  const { data: usdRate, isLoading: usdRateLoading } = useQuery<UsdRateRow>({
+    queryKey: ['pos-usd-rate'],
+    queryFn: () => api.get<UsdRateRow>('/exchange-rates/rate?currency=USD'),
+    enabled: open,
+    retry: false,
+    staleTime: 5 * 60 * 1000,
+  });
+  const usdRateE8 = usdRate?.rateMinor ? BigInt(usdRate.rateMinor) : null;
+  /** Kurs yo'q ⇒ dollar tanlovi yopiq. Jim 1:1 ga tushish TAQIQ (TZ §6.2). */
+  const usdBlocked = usdRateE8 == null || usdRateE8 <= 0n;
+  const isUsd = payCurrency === 'USD';
+
   const outstanding = BigInt(summary?.outstandingMinor ?? '0');
   // FE-09: yagona pul-parse. Ilgari bu yerda lokal `toMinor` yashardi —
   // float orqali yaxlitlardi va valyuta scale'ini qattiq 100 deb olardi.
-  const amountMinor = parseAmountToMinor(amountInput, currency);
-  const overpay = amountMinor > outstanding ? amountMinor - outstanding : 0n;
-  const canConfirm = amountMinor > 0n && overpay === 0n && outstanding > 0n;
+  //
+  // F6: dollar ALOHIDA valyutada parse qilinadi (sent ≠ tiyin). `amountMinor`
+  // serverga AYNAN shu ko'rinishda ketadi — so'mga o'girishni SERVER qiladi.
+  const amountMinor = parseAmountToMinor(amountInput, isUsd ? 'USD' : currency);
+  /**
+   * So'm ekvivalenti — FAQAT ko'rsatish va ortiqcha-to'lov chegarasi uchun.
+   * Formula server bilan bitta (`convertByRateE8` ≡ `usdCentsToSomTiyin`);
+   * payload'ga bu qiymat YUBORILMAYDI (ikki manba bo'lmasin).
+   */
+  const somMinor =
+    isUsd && usdRateE8 != null ? convertByRateE8(amountMinor, usdRateE8) : isUsd ? 0n : amountMinor;
+  const overpay = somMinor > outstanding ? somMinor - outstanding : 0n;
+  const canConfirm =
+    amountMinor > 0n &&
+    somMinor > 0n &&
+    overpay === 0n &&
+    outstanding > 0n &&
+    !(isUsd && usdBlocked);
+
+  /**
+   * «Hammasi» tugmasi qiymati.
+   *
+   * 🔴 Dollarda PASTGA yaxlitlanadi: 1 sent ≈ 124 tiyin, ya'ni so'mdagi
+   * qarzni dollar bilan tiyin-ba-tiyin yopib bo'lmaydi. Yuqoriga yaxlitlansa
+   * server ortiqcha to'lovni RAD etardi (qaytim faqat naqddan, §6.2) —
+   * kassir tushunarsiz 400 olardi. Yopilmay qolgan qoldiq esa OCHIQ
+   * ko'rsatiladi (pastdagi izoh), jimgina yo'qolmaydi.
+   */
+  const payAllMinor =
+    isUsd && usdRateE8 != null && usdRateE8 > 0n
+      ? (outstanding * RATE_SCALE) / usdRateE8
+      : isUsd
+        ? 0n
+        : outstanding;
+  const payAllInput = formatAmountInput(payAllMinor, isUsd ? 'USD' : currency);
+  /** «Hammasi» bosilganda yopilmay qoladigan so'm (dollar granulyarligi). */
+  const payAllResidual =
+    isUsd && usdRateE8 != null && usdRateE8 > 0n
+      ? outstanding - convertByRateE8(payAllMinor, usdRateE8)
+      : 0n;
 
   const payMut = useMutation<PayResult>({
     mutationFn: () =>
       api.post<PayResult>('/debts/pos/pay', {
         counterpartyId: agent?.id,
+        // 🔴 To'lov VALYUTASINING minor birligida (UZS → tiyin, USD → sent).
         amountMinor: amountMinor.toString(),
+        currency: payCurrency,
+        // Kurs MUZLATILADI — serverdan olingan satr aynan qaytariladi.
+        ...(isUsd && usdRate?.rateMinor ? { exchangeRate: usdRate.rateMinor } : {}),
         method,
         cashDeskId: cashDeskId ?? null,
         retailShiftId: sessionId,
@@ -153,7 +233,23 @@ export function DebtPaymentDialog({
     setAgent(null);
     setAmountInput('');
     setMethod('cash');
+    setPayCurrency('UZS');
     setError(null);
+  }, []);
+
+  /**
+   * Valyuta almashtirilganda kiritilgan summa TOZALANADI: «100» so'mda
+   * 100 so'm, dollarda $100 — bir xil raqam ikki xil pul. Tozalamasak
+   * kassir bir bosishda summani ~12 000× oshirib yuborardi.
+   *
+   * Dollar TERMINAL orqali kelmaydi (terminal — so'mdagi karta o'tkazmasi),
+   * shuning uchun USD tanlanganda usul naqdga qaytadi.
+   */
+  const selectCurrency = useCallback((next: PayCurrency) => {
+    setPayCurrency(next);
+    setAmountInput('');
+    setError(null);
+    if (next === 'USD') setMethod('cash');
   }, []);
 
   useEffect(() => {
@@ -301,10 +397,63 @@ export function DebtPaymentDialog({
                       ))}
                     </div>
 
-                    {/* ── 3-qadam: to'lov turi ────────────────────────────────── */}
+                    {/* ── 3-qadam: to'lov VALYUTASI (F6) ──────────────────────── */}
                     <div className="flex gap-2">
                       <button
                         type="button"
+                        data-test-id="debt-pay-currency-uzs"
+                        onClick={() => selectCurrency('UZS')}
+                        className={`flex flex-1 items-center justify-center gap-2 rounded-lg border py-2 font-medium text-sm transition-colors ${
+                          !isUsd
+                            ? 'border-emerald-400 bg-emerald-50 text-emerald-700'
+                            : 'border-[var(--ms-border)] text-[var(--ms-text-muted)]'
+                        }`}
+                      >
+                        <Banknote size={16} /> {t('debt_currency_uzs')}
+                      </button>
+                      <button
+                        type="button"
+                        data-test-id="debt-pay-currency-usd"
+                        disabled={usdBlocked}
+                        onClick={() => selectCurrency('USD')}
+                        className={`flex flex-1 items-center justify-center gap-2 rounded-lg border py-2 font-medium text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+                          isUsd
+                            ? 'border-teal-400 bg-teal-50 text-teal-700'
+                            : 'border-[var(--ms-border)] text-[var(--ms-text-muted)]'
+                        }`}
+                      >
+                        <DollarSign size={16} /> {t('debt_currency_usd')}
+                      </button>
+                    </div>
+
+                    {/* Kurs holati — sana bilan (carry-forward tufayli bugungi
+                        bo'lmasligi mumkin) yoki bloklash sababi. */}
+                    {usdBlocked ? (
+                      usdRateLoading ? null : (
+                        <p
+                          data-test-id="debt-usd-rate-missing"
+                          className="-mt-2 font-medium text-[11px] text-orange-500"
+                        >
+                          {t('usd_rate_missing')}
+                        </p>
+                      )
+                    ) : (
+                      <p
+                        data-test-id="debt-usd-rate"
+                        className="-mt-2 text-[11px] text-[var(--ms-text-muted)] tabular-nums"
+                      >
+                        {t('usd_rate_hint', {
+                          rate: usdRate?.rate ?? '',
+                          date: usdRate?.date ?? '',
+                        })}
+                      </p>
+                    )}
+
+                    {/* ── 4-qadam: to'lov turi ────────────────────────────────── */}
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        data-test-id="debt-pay-method-cash"
                         onClick={() => setMethod('cash')}
                         className={`flex flex-1 items-center justify-center gap-2 rounded-lg border py-2 font-medium text-sm transition-colors ${
                           method === 'cash'
@@ -316,8 +465,12 @@ export function DebtPaymentDialog({
                       </button>
                       <button
                         type="button"
+                        data-test-id="debt-pay-method-terminal"
+                        // Dollar terminal orqali kelmaydi — terminal so'mdagi
+                        // karta o'tkazmasi (`debt-cash-ledger.ts` qoidasi).
+                        disabled={isUsd}
                         onClick={() => setMethod('terminal')}
-                        className={`flex flex-1 items-center justify-center gap-2 rounded-lg border py-2 font-medium text-sm transition-colors ${
+                        className={`flex flex-1 items-center justify-center gap-2 rounded-lg border py-2 font-medium text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
                           method === 'terminal'
                             ? 'border-purple-400 bg-purple-50 text-purple-700'
                             : 'border-[var(--ms-border)] text-[var(--ms-text-muted)]'
@@ -327,24 +480,44 @@ export function DebtPaymentDialog({
                       </button>
                     </div>
 
-                    {/* ── 4-qadam: summa ─────────────────────────────────────── */}
+                    {/* ── 5-qadam: summa ─────────────────────────────────────── */}
                     <div className="rounded-xl border-2 border-[var(--ms-brand)] bg-[var(--ms-brand)]/5 px-4 py-3">
                       <div className="text-[var(--ms-text-muted)] text-xs">{t('pay_amount')}</div>
                       <div
                         className="font-bold text-2xl text-[var(--ms-text-primary)] tabular-nums"
                         data-test-id="debt-pay-amount"
                       >
-                        {amountInput ? formatMoney(amountMinor) : '0'}
+                        {amountInput
+                          ? isUsd
+                            ? formatForeignMajor(amountMinor, 'USD')
+                            : formatMoney(amountMinor)
+                          : '0'}
                       </div>
+                      {/* So'm ekvivalenti — SERVER formulasi bilan, JONLI.
+                          Qarz daftari so'mda yuriladi, kassir qancha yopilishini
+                          bosishdan OLDIN ko'rsin. */}
+                      {isUsd && amountMinor > 0n && (
+                        <div
+                          data-test-id="debt-usd-equivalent"
+                          className="text-[var(--ms-text-muted)] text-xs tabular-nums"
+                        >
+                          ≈ {formatMoney(somMinor)}
+                        </div>
+                      )}
                     </div>
 
                     <div className="flex gap-2">
                       <button
                         type="button"
-                        onClick={() => setAmountInput(formatAmountInput(outstanding, currency))}
+                        data-test-id="debt-pay-all"
+                        onClick={() => setAmountInput(payAllInput)}
                         className="flex-1 rounded-lg border border-[var(--ms-border)] py-2 font-medium text-xs hover:bg-[var(--ms-bg-hover)]"
                       >
-                        {t('debt_pay_all', { sum: formatMoney(outstanding) })}
+                        {t('debt_pay_all', {
+                          sum: isUsd
+                            ? formatForeignMajor(payAllMinor, 'USD')
+                            : formatMoney(outstanding),
+                        })}
                       </button>
                       <button
                         type="button"
@@ -370,6 +543,14 @@ export function DebtPaymentDialog({
                       ))}
                     </div>
 
+                    {isUsd && payAllResidual > 0n && (
+                      <p
+                        data-test-id="debt-usd-residual"
+                        className="text-[11px] text-[var(--ms-text-muted)]"
+                      >
+                        {t('debt_usd_residual', { sum: formatMoney(payAllResidual) })}
+                      </p>
+                    )}
                     {overpay > 0n && (
                       <p className="rounded-lg bg-red-50 px-3 py-2 text-red-700 text-xs">
                         {t('debt_overpay', { sum: formatMoney(overpay) })}

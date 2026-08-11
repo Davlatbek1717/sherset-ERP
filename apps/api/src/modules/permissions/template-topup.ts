@@ -71,8 +71,16 @@ export interface ExistingPermissionRow {
  * ro'yxat qaytaradi, skript «0 qator qo'shildi» deb muvaffaqiyatli tugaydi va
  * rol jimgina 403 beraveradi. Union tipi shu jim no-op'ni KOMPILYATSIYADA
  * to'xtatadi.
+ *
+ * 🔴 `customerorder` (F7, 2026-08-11) — bu YANGI entity EMAS, kassir
+ * shabloniga yangi qo'shilgan katakcha (`view` + `approve`). Ro'yxatga
+ * kirgani uchun uning tiriltirish xavfi storecell'nikidan KATTAROQ:
+ * `customerorder` owner/admin/sales_manager/seller shablonlarida ham musbat,
+ * ya'ni o'sha rollardan entity'ni BUTUNLAY olib tashlagan akkaunt keyingi
+ * run'da uni qaytarib olishi mumkin. Shuning uchun prod run'idan keyin
+ * DARHOL olib tashlanadi.
  */
-export const TOPUP_ENTITIES: readonly PermissionEntity[] = ['storecell'];
+export const TOPUP_ENTITIES: readonly PermissionEntity[] = ['storecell', 'customerorder'];
 
 /**
  * Shablon matritsasidan roldagi YETISHMAYOTGAN qatorlar.

@@ -129,6 +129,18 @@ export function usePermissions() {
     return scope === undefined || scope !== 'NO';
   };
 
+  /**
+   * Ixtiyoriy (entity, action) katakchasi ochiqmi — `view` dan boshqa amallar
+   * uchun (`approve`, `create`…). Fail-open, `canView` bilan bir xil sabab:
+   * matritsa yuklanmaguncha tugma yo'qolib turmasin. Haqiqiy qulf serverda
+   * (`PermissionsGuard`), bu — UX qatlami.
+   */
+  const can = (entity: string, action: string): boolean => {
+    if (!matrix) return true;
+    const scope = matrix[entity]?.[action];
+    return scope === undefined || scope !== 'NO';
+  };
+
   /** A module is visible when any of its entities is viewable. */
   const canSeeModule = (moduleKey: string): boolean => {
     if (!matrix) return true;
@@ -147,5 +159,5 @@ export function usePermissions() {
     return match[1].some((e) => canView(e));
   };
 
-  return { matrix, isLoading: query.isLoading, canView, canSeeModule, canSeeRoute };
+  return { matrix, isLoading: query.isLoading, can, canView, canSeeModule, canSeeRoute };
 }

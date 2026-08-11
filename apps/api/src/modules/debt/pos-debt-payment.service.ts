@@ -5,9 +5,13 @@ import { PrismaService } from '../../prisma/prisma.service.js';
 import { CounterpartyBalanceService } from '../counterparty-balance/counterparty-balance.service.js';
 import { MoneyService } from '../money/money.service.js';
 import { debtCashDeskDeltas } from './debt-cash-ledger.js';
-import { type FifoDebt, allocateFifo, summarize } from './debt-fifo.js';
+import { type FifoDebt, allocateFifo, splitOriginalMinor, summarize } from './debt-fifo.js';
 import { recalcDebt } from './debt-recalc.js';
-import { type PosDebtPaymentInput, PosDebtPaymentSchema } from './debt.schema.js';
+import {
+  type PosDebtPaymentInput,
+  PosDebtPaymentSchema,
+  usdCentsToSomTiyin,
+} from './debt.schema.js';
 
 /** FIFO/chek uchun kerakli maydonlar — qulfli va qulfsiz o'qish bir xil shaklda. */
 const DEBT_FIFO_SELECT = {
@@ -89,7 +93,26 @@ export class PosDebtPaymentService {
    */
   async pay(accountId: string, userId: string, raw: unknown) {
     const input: PosDebtPaymentInput = PosDebtPaymentSchema.parse(raw);
-    const amountMinor = BigInt(input.amountMinor);
+
+    // ── To'lovni SO'MGA keltirish (F6) ──────────────────────────────────────
+    // Mijoz dollar berishi mumkin, qarz daftari esa so'mda yuriladi. Ikki
+    // qiymat ajratiladi va IKKALASI ham saqlanadi:
+    //   amountMinor         — qarzga tushadigan SO'M (FIFO shundan)
+    //   originalTotalMinor  — mijoz JISMONAN bergan pul (USD → sent), yashiq
+    //                         daftari va chek shundan.
+    // O'girish formulasi `retail-tenders.ts` bilan BITTA (`usdCentsToSomTiyin`).
+    // 🔴 Klientning so'm hisobiga ishonilmaydi — u umuman yuborilmaydi.
+    const enteredMinor = BigInt(input.amountMinor);
+    const rateE8 = input.exchangeRate ? BigInt(input.exchangeRate) : null;
+    const isUsd = input.currency === 'USD';
+    if (isUsd && (rateE8 == null || rateE8 <= 0n)) {
+      // Schema majburiy qilgan; bu — ikkinchi qatlam (servis to'g'ridan-to'g'ri
+      // chaqirilsa ham sent tiyin deb o'qilmasin).
+      throw new BadRequestException('Dollar to`lovida kurs majburiy');
+    }
+    const amountMinor =
+      isUsd && rateE8 != null ? usdCentsToSomTiyin(enteredMinor, rateE8) : enteredMinor;
+    const originalTotalMinor = isUsd ? enteredMinor : null;
     if (amountMinor <= 0n) {
       throw new BadRequestException('To`lov summasi noldan katta bo`lishi kerak');
     }
@@ -132,10 +155,22 @@ export class PosDebtPaymentService {
         );
       }
 
-      const currency = input.currency ?? rows[0]?.currency ?? 'UZS';
+      const currency = input.currency;
       const receipts: Array<{ debtName: string; amountMinor: bigint; closed: boolean }> = [];
 
-      for (const alloc of plan.allocations) {
+      // F6: mijoz bergan ASL summa (sent) FIFO qatorlariga bo'linadi — har
+      // qator o'z `amountOriginalMinor` ini oladi, chunki STORNO qatordan-
+      // qatorga ishlaydi va yashiqdan aynan o'sha jismoniy summani chiqaradi.
+      // Bo'lish qoldig'i oxirgi qatorga: Σ bo'laklar = asl summa (invariant).
+      const originalParts =
+        originalTotalMinor == null
+          ? null
+          : splitOriginalMinor(
+              plan.allocations.map((a) => a.amountMinor),
+              originalTotalMinor,
+            );
+
+      for (const [index, alloc] of plan.allocations.entries()) {
         const debt = rows.find((r) => r.id === alloc.debtId);
         if (!debt) continue;
 
@@ -143,9 +178,13 @@ export class PosDebtPaymentService {
           data: {
             accountId,
             debtId: alloc.debtId,
+            // HAR DOIM so'mda — qarz hisobi shu ustundan yuriladi.
             amountMinor: alloc.amountMinor,
             method: input.method,
             currency,
+            // Kurs CHEKKA MUZLATILADI: ertangi kurs bilan qayta baholanmaydi.
+            exchangeRate: rateE8,
+            amountOriginalMinor: originalParts?.[index] ?? null,
             cashDeskId: input.cashDeskId ?? null,
             retailShiftId: input.retailShiftId ?? null,
             batchId,
@@ -187,6 +226,9 @@ export class PosDebtPaymentService {
             cashDeskId: input.cashDeskId ?? null,
             currency,
             amountMinor: plan.appliedMinor,
+            // F6: yashiqda mijoz bergan JISMONIY pul yotadi — dollar bo'lsa
+            // sent, so'm ekvivalenti emas (`debt-cash-ledger.ts` qoidasi).
+            amountOriginalMinor: originalTotalMinor,
           },
           { sign: 1n, documentId: batchId, counterpartyId: input.counterpartyId },
         ),
@@ -203,8 +245,13 @@ export class PosDebtPaymentService {
       /** PKO (prixodnik order) cheki uchun — TZ §7.2/5-qadam. */
       receipt: {
         batchId,
+        /** Qarz daftariga tushgan SO'M — chekning «TO'LANDI» qatori. */
         paidMinor: result.appliedMinor.toString(),
         currency: result.currency,
+        /** Mijoz bergan ASL summa (USD → sent). So'm to'lovda `null`. */
+        originalMinor: originalTotalMinor?.toString() ?? null,
+        /** Chekka MUZLATILGAN kurs, kanonik ×10^8. So'm to'lovda `null`. */
+        exchangeRate: rateE8?.toString() ?? null,
         method: input.method,
         lines: result.receipts.map((r) => ({
           debtName: r.debtName,
@@ -234,6 +281,10 @@ export class PosDebtPaymentService {
         amountMinor: true,
         method: true,
         currency: true,
+        // F6 — PKO chekidagi dollar qatori uchun (qayta chop etishda ham
+        // AYNAN o'sha kurs va asl summa ko'rinishi shart).
+        exchangeRate: true,
+        amountOriginalMinor: true,
         createdAt: true,
         reversedAt: true,
         debt: { select: { id: true, name: true, counterpartyId: true } },
@@ -257,9 +308,11 @@ export class PosDebtPaymentService {
     ]);
 
     // Qaytarilmagan qatorlar yig'indisi — chekdagi «jami».
-    const paidMinor = rows
-      .filter((r) => r.reversedAt === null)
-      .reduce((acc, r) => acc + r.amountMinor, 0n);
+    const live = rows.filter((r) => r.reversedAt === null);
+    const paidMinor = live.reduce((acc, r) => acc + r.amountMinor, 0n);
+    // F6 — chet valyutadagi ASL summa ham qatorlardan yig'iladi (bo'laklarni
+    // qayta hisoblamaymiz: chek moliyaviy hujjat, u YOZILGANINI ko'rsatadi).
+    const originalMinor = live.reduce((acc, r) => acc + (r.amountOriginalMinor ?? 0n), 0n);
 
     const rest = counterpartyId ? await this.loadOpenDebts(accountId, counterpartyId) : [];
     const after = summarize(rest.map(toFifo));
@@ -272,6 +325,10 @@ export class PosDebtPaymentService {
       paidAt: rows[0]?.createdAt ?? null,
       method: rows[0]?.method ?? 'cash',
       currency: rows[0]?.currency ?? 'UZS',
+      /** Mijoz bergan ASL summa (USD → sent); so'm to'lovda `null`. */
+      originalMinor: originalMinor > 0n ? originalMinor.toString() : null,
+      /** Muzlatilgan kurs (kanonik ×10^8); so'm to'lovda `null`. */
+      exchangeRate: rows[0]?.exchangeRate?.toString() ?? null,
       paidMinor: paidMinor.toString(),
       outstandingAfterMinor: after.outstandingMinor.toString(),
       lines: rows.map((r) => ({

@@ -218,3 +218,40 @@ describe('allow-list — skript faqat aytilgan entity`ni ko`radi', () => {
     expect(out).toEqual([{ entity: 'store', action: 'view', scope: 'ALL' }]);
   });
 });
+
+/**
+ * F7 — kassirga `customerorder` (view + approve) berildi. Bu YANGI entity
+ * emas, MAVJUD entity'ning yangi shablon-katakchasi: ya'ni allaqachon
+ * seed qilingan bazalarda kassir roli uchun qator YO'Q va u prodda 403
+ * olaveradi (xotira: «eski seed'li bazada ruxsat qatorlari yo'q»).
+ *
+ * ⚠️ Shu sababdan `customerorder` allow-listga QO'SHILDI — va aynan shu
+ * sababdan prod run'idan keyin OLIB TASHLANISHI shart: `customerorder`
+ * boshqa shablonlarda (owner/admin/sales_manager/seller) ham musbat, ya'ni
+ * ro'yxatda qolsa «admin butun entity'ni olib tashlagan» rolni keyingi run
+ * tiriltirib qo'yishi mumkin.
+ */
+describe('F7 — kassir zakaz ruxsati eski bazaga ham yetib boradi', () => {
+  it('joriy to`lqin allow-listida `customerorder` bor', () => {
+    expect(TOPUP_ENTITIES).toContain('customerorder');
+  });
+
+  it('kassir roliga AYNAN view + approve qo`shadi', () => {
+    const rows = resolveTemplateMatrix('cashier')
+      .filter((c) => c.scope !== 'NO' && c.entity !== 'customerorder')
+      .map((c) => ({ entity: c.entity, action: c.action, scope: c.scope }));
+
+    expect(missingTemplateCells('cashier', ['customerorder'], rows)).toEqual([
+      { entity: 'customerorder', action: 'view', scope: 'ALL' },
+      { entity: 'customerorder', action: 'approve', scope: 'ALL' },
+    ]);
+  });
+
+  it('zakaz qatori ALLAQACHON bor rol chetlab o`tiladi (tiriltirish himoyasi)', () => {
+    // Admin kassirga faqat `view` qoldirgan bo'lsa — `approve` QAYTARILMAYDI.
+    const rows: ExistingPermissionRow[] = [
+      { entity: 'customerorder', action: 'view', scope: 'ALL' },
+    ];
+    expect(missingTemplateCells('cashier', ['customerorder'], rows)).toEqual([]);
+  });
+});

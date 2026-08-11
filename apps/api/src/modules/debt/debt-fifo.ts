@@ -100,6 +100,40 @@ export function allocateFifo(debts: readonly FifoDebt[], paymentMinor: bigint): 
 }
 
 /**
+ * ASL valyutadagi (USD → sent) summani FIFO qatorlariga bo'lish — F6.
+ *
+ * NEGA KERAK: mijoz $100 beradi, u FIFO bo'yicha bir necha qarzga bo'linadi.
+ * `DebtPayment` qatorining `amountMinor` i so'mda (qarz hisobi shundan), lekin
+ * `amountOriginalMinor` — mijoz JISMONAN bergan pul. Storno aynan shu maydondan
+ * yashiqdan chiqadigan summani oladi (`debt-cash-ledger.debtCashDeskDeltas`),
+ * ya'ni qator sentsiz qolsa so'm qiymati dollar deb yashiqdan chiqarilardi.
+ *
+ * 🔴 INVARIANT: `Σ natija === totalOriginalMinor` — bo'lish qoldig'i OXIRGI
+ * qatorga qo'shiladi. Bir sent yo'qolsa ham hamma qator storno qilinganda
+ * yashiq daftari nolga qaytmasdi.
+ *
+ * Bo'lish `weights` (so'mdagi allokatsiyalar) ga proporsional; jami og'irlik 0
+ * bo'lsa (nazariy holat) hammasi oxirgi qatorga tushadi — 0 ga bo'lish yo'q.
+ */
+export function splitOriginalMinor(
+  weights: readonly bigint[],
+  totalOriginalMinor: bigint,
+): bigint[] {
+  if (weights.length === 0) return [];
+  const totalWeight = weights.reduce((a, b) => a + b, 0n);
+  const out: bigint[] = [];
+  let used = 0n;
+  for (let i = 0; i < weights.length - 1; i++) {
+    const part =
+      totalWeight > 0n ? ((weights[i] as bigint) * totalOriginalMinor) / totalWeight : 0n;
+    out.push(part);
+    used += part;
+  }
+  out.push(totalOriginalMinor - used);
+  return out;
+}
+
+/**
  * Mijozning qarz xulosasi — POS oynasining yuqori qismi (TZ §7.2/2-qadam).
  *
  * Kassir to'lovni qabul qilishdan OLDIN uchta narsani ko'rishi kerak:

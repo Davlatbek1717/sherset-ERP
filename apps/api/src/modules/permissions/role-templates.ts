@@ -318,6 +318,13 @@ export const ROLE_TEMPLATES: Record<RoleTemplateSlug, RoleTemplate> = {
       grant(['product', 'productfolder', 'pricetype'], { view: 'ALL' }),
       grant(['counterparty'], { view: 'ALL', create: 'ALL' }),
       grant(['debt', 'debtpayment'], { view: 'ALL', create: 'ALL' }),
+      // F7 — zakazlar POS'da. `view` (ro'yxat + detal) va `approve`
+      // (`draft → confirmed`, rezerv avtomatik tushadi) — boshqa hech nima.
+      // `create`/`update` ATAYLAB yo'q: zakazni savdo menejeri tuzadi, kassir
+      // faqat qabul qiladi. Kiosk tomonidagi juftligi — `KIOSK_ALLOWED` dagi
+      // uch aniq qator (`/customer-orders`, `/customer-orders/:id`,
+      // `…/transitions/confirmed`).
+      grant(['customerorder'], { view: 'ALL', approve: 'ALL' }),
       grant(['cashout'], { view: 'ALL', create: 'ALL', print: 'ALL' }),
       grant(['expenseitem', 'currency', 'exchangerate'], { view: 'ALL' }),
       grant(['settings'], { view: 'ALL' }),

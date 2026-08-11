@@ -5,6 +5,7 @@ import { DebtPaymentDialog } from '@/components/pos/debt-payment-dialog';
 import { RasmiyashtirishModal } from '@/components/pos/rasmilashtirish-modal';
 import { useDestructiveMutation } from '@/hooks/use-destructive-mutation';
 import { useFillViewport } from '@/hooks/use-fill-viewport';
+import { usePermissions } from '@/hooks/use-permissions';
 import { api } from '@/lib/api-client';
 import { useAuth } from '@/lib/auth-store';
 // B8 — savat matematikasi sof modulda (20 test). Ilgari bu qoidalar shu
@@ -53,7 +54,16 @@ import {
 import { isCurrencyCode } from '@moysklad/money/currencies';
 import { Badge, Button, Input, formatMoney, useToast } from '@moysklad/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { CheckCircle, Clock, Receipt, Search, Settings, ShoppingCart, User } from 'lucide-react';
+import {
+  CheckCircle,
+  ClipboardList,
+  Clock,
+  Receipt,
+  Search,
+  Settings,
+  ShoppingCart,
+  User,
+} from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
@@ -602,6 +612,154 @@ function ChekDetailPanel({ saleId, onBack }: { saleId: string; onBack: () => voi
   );
 }
 
+// ── Zakazlar (F7) ────────────────────────────────────────────────────────────
+
+/**
+ * POS'da ko'rinadigan zakaz holatlari — CustomerOrder FSM'ning boshlanish
+ * qismi (`customer-order.service.ts#validateTransition`).
+ *
+ * 🔴 Bu YANGI holat-o'qi EMAS. CustomerOrder'da allaqachon ikkita bor:
+ * FSM `state` va tenant sozlaydigan `statusId`. Uchinchisini qo'shish
+ * chalkashtirardi, shuning uchun POS mavjud `state` ni o'qiydi va mavjud
+ * transition endpointini chaqiradi.
+ */
+const POS_ORDER_STATES = ['draft', 'confirmed', 'awaiting_payment'] as const;
+type PosOrderState = (typeof POS_ORDER_STATES)[number];
+
+interface OrderRow {
+  id: string;
+  name: string;
+  moment: string;
+  sumMinor: string;
+  state: string;
+  agent: { id: string; name: string } | null;
+}
+
+interface OrderPosition {
+  id: string;
+  quantity: string;
+  /** Rezerv qilingan miqdor — tasdiqlashdan keyin shu raqam ko'tariladi. */
+  reservedQty: string;
+  priceMinor: string;
+  discount: string;
+  product: { id: string; name: string; code: string | null; uom: string | null } | null;
+}
+
+interface OrderDetail extends OrderRow {
+  positions: OrderPosition[];
+}
+
+/**
+ * Zakaz detali + `draft → confirmed` tasdiqlash.
+ *
+ * Tasdiqlash AYNAN `POST /customer-orders/:id/transitions/confirmed` ga
+ * boradi — kiosk allowlist'da ochilgan yagona yozuv yo'li. Rezervni FE
+ * QO'YMAYDI: server `confirmed` da uni o'zi qo'yadi
+ * (`customer-order.service.ts` → `applyReservationInvariant('hold-remaining')`),
+ * shuning uchun bu yerda `bulk-reserve` kabi ikkinchi chaqiruv YO'Q.
+ */
+function ZakazDetailPanel({ orderId, onBack }: { orderId: string; onBack: () => void }) {
+  const t = useTranslations('pages.sotuv');
+  const qc = useQueryClient();
+  const { toast } = useToast();
+  const { can } = usePermissions();
+
+  const { data, isLoading } = useQuery<OrderDetail>({
+    queryKey: ['pos-customer-order', orderId],
+    queryFn: () => api.get(`/customer-orders/${orderId}`),
+  });
+
+  const confirmMut = useMutation({
+    mutationFn: () => api.post(`/customer-orders/${orderId}/transitions/confirmed`, {}),
+    onSuccess: () => {
+      toast.success(t('orders_confirm_success'));
+      qc.invalidateQueries({ queryKey: ['pos-customer-order', orderId] });
+      qc.invalidateQueries({ queryKey: ['pos-customer-orders'] });
+    },
+    // Server xatosi (masalan «O'tkazilmaydi: cancelled → confirmed») kassirga
+    // AYNAN ko'rsatiladi — jim yutilsa u tugmani qayta-qayta bosardi.
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  if (isLoading || !data) {
+    return (
+      <div className="flex flex-1 items-center justify-center text-sm text-[var(--ms-text-muted)]">
+        {t('loading')}
+      </div>
+    );
+  }
+
+  // Tugma FAQAT `draft` da: qolgan holatlarda server ham rad etadi
+  // (`validateTransition`), ya'ni ko'rsatish yolg'on va'da bo'lardi.
+  const canConfirm = data.state === 'draft' && can('customerorder', 'approve');
+
+  return (
+    <div className="flex flex-1 flex-col overflow-hidden">
+      <div className="flex shrink-0 items-center gap-3 border-b border-[var(--ms-border)] px-4 py-3">
+        <button
+          type="button"
+          onClick={onBack}
+          className="flex h-8 w-8 items-center justify-center rounded-lg border border-[var(--ms-border)] text-[var(--ms-text-muted)] hover:bg-[var(--ms-bg-hover)]"
+        >
+          ‹
+        </button>
+        <div className="min-w-0 flex-1">
+          <div className="font-bold text-[var(--ms-text-primary)]">{data.name}</div>
+          <div className="truncate text-xs text-[var(--ms-text-muted)]">
+            {data.agent?.name ?? t('orders_no_agent')}
+            {' · '}
+            {t(`orders_filter_${data.state === 'awaiting_payment' ? 'awaiting' : data.state}`, {})}
+          </div>
+        </div>
+        <div className="shrink-0 text-right font-bold tabular-nums text-[var(--ms-text-primary)]">
+          {formatMoney(BigInt(data.sumMinor))}
+        </div>
+      </div>
+
+      <div className="flex-1 overflow-y-auto p-3">
+        <p className="mb-1.5 font-bold text-[10px] text-[var(--ms-text-muted)] uppercase tracking-widest">
+          {t('orders_positions')}
+        </p>
+        <div className="flex flex-col gap-1.5">
+          {data.positions.map((p) => (
+            <div
+              key={p.id}
+              className="rounded-xl border border-[var(--ms-border)] bg-[var(--ms-bg-app)] px-3 py-2"
+            >
+              <div className="truncate font-medium text-[var(--ms-text-primary)] text-sm">
+                {p.product?.name ?? '—'}
+              </div>
+              <div className="mt-0.5 flex items-center gap-2 text-[var(--ms-text-muted)] text-xs">
+                <span className="tabular-nums">
+                  {normalizeQtyDecimal(p.quantity)} × {formatMoney(BigInt(p.priceMinor))}
+                </span>
+                <span>·</span>
+                {/* Rezerv — F7 ning butun qiymati shu raqamda ko'rinadi:
+                    tasdiqlashdan keyin u miqdorga tenglashadi. */}
+                <span className="tabular-nums">
+                  {t('orders_reserved')}: {normalizeQtyDecimal(p.reservedQty)}
+                </span>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {canConfirm && (
+        <div className="shrink-0 border-t border-[var(--ms-border)] p-3">
+          <Button
+            className="h-12 w-full text-base"
+            disabled={confirmMut.isPending}
+            onClick={() => confirmMut.mutate()}
+          >
+            {t('orders_confirm')}
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Z-hisobot chop etish (F11) ───────────────────────────────────────────────
 
 /**
@@ -667,7 +825,9 @@ function SalesScreen({
 
   const printZReport = usePrintZReport();
 
-  const [tab, setTab] = useState<'savat' | 'jarayonda' | 'tayyor' | 'cheklar' | 'smena'>('savat');
+  const [tab, setTab] = useState<
+    'savat' | 'jarayonda' | 'tayyor' | 'zakazlar' | 'cheklar' | 'smena'
+  >('savat');
   const [search, setSearch] = useState('');
   const [cart, setCart] = useState<CartLine[]>([]);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
@@ -841,6 +1001,27 @@ function SalesScreen({
     refetchInterval: 8000,
   });
   const pickingSales = pickingSalesData?.items ?? [];
+
+  // ── ZAKAZLAR (F7) ──────────────────────────────────────────────────────────
+  // Holat filtri SERVERGA ketadi (`state=`), FE saralamaydi: aks holda
+  // `limit` chegarasi «yangi» zakazlarni yopiq zakazlar bilan to'ldirib
+  // yuborardi va kassir kutayotgan zakazni umuman ko'rmasdi.
+  //
+  // `storeId` ham SERVER filtri — kassir o'z do'konining zakazini ko'radi.
+  const { can: canDo } = usePermissions();
+  const canSeeOrders = canDo('customerorder', 'view');
+  const [orderState, setOrderState] = useState<PosOrderState>('draft');
+  const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
+
+  const { data: ordersData } = useQuery<ListResponse<OrderRow>>({
+    queryKey: ['pos-customer-orders', orderState, session.store?.id ?? null],
+    queryFn: () =>
+      api.get(
+        `/customer-orders?state=${orderState}&storeId=${session.store?.id ?? ''}&limit=50&sortBy=moment&sortDir=desc`,
+      ),
+    enabled: tab === 'zakazlar' && canSeeOrders,
+  });
+  const orders = ordersData?.items ?? [];
 
   // Ready sale selected for payment
   const [payingSale, setPayingSale] = useState<{ id: string; sumMinor: bigint } | null>(null);
@@ -1385,6 +1566,24 @@ function SalesScreen({
               </span>
             )}
           </button>
+          {/* ── ZAKAZLAR (F7) ──
+              Yorliq `customerorder.view` bo'yicha yashiriladi. Bu FAQAT UX:
+              haqiqiy qulf serverda (`KioskGuard` allowlist'i +
+              `@RequirePermission`) — «UI yashirish yetarli emas» (TZ §3.1). */}
+          {canSeeOrders && (
+            <button
+              type="button"
+              onClick={() => setTab('zakazlar')}
+              className={`flex flex-1 items-center justify-center gap-1.5 py-2.5 text-sm font-medium transition-colors border-b-2 ${
+                tab === 'zakazlar'
+                  ? 'border-[var(--ms-text-brand)] text-[var(--ms-text-brand)]'
+                  : 'border-transparent text-[var(--ms-text-muted)] hover:text-[var(--ms-text-primary)]'
+              }`}
+            >
+              <ClipboardList className="h-4 w-4" />
+              {t('tab_orders')}
+            </button>
+          )}
           <button
             type="button"
             onClick={() => setTab('cheklar')}
@@ -1511,6 +1710,75 @@ function SalesScreen({
               </div>
             )}
           </div>
+        )}
+
+        {/* ── ZAKAZLAR TAB ── jarayondagi mijoz zakazlari ── */}
+        {tab === 'zakazlar' && !selectedOrderId && (
+          <div className="flex flex-1 flex-col overflow-hidden">
+            {/* Holat filtri — har chip serverga boshqa `state` yuboradi. */}
+            <div className="flex shrink-0 gap-1.5 border-[var(--ms-border)] border-b p-2">
+              {POS_ORDER_STATES.map((s) => (
+                <button
+                  key={s}
+                  type="button"
+                  onClick={() => setOrderState(s)}
+                  className={`flex-1 rounded-lg border px-2 py-1.5 font-medium text-xs transition-colors ${
+                    orderState === s
+                      ? 'border-[var(--ms-brand)] bg-[var(--ms-brand)] text-white'
+                      : 'border-[var(--ms-border)] text-[var(--ms-text-muted)] hover:bg-[var(--ms-bg-hover)]'
+                  }`}
+                >
+                  {t(`orders_filter_${s === 'awaiting_payment' ? 'awaiting' : s}`)}
+                </button>
+              ))}
+            </div>
+            <div className="flex-1 overflow-y-auto p-3">
+              {orders.length === 0 ? (
+                <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-[var(--ms-text-muted)]">
+                  <ClipboardList className="h-10 w-10 opacity-30" />
+                  <p className="text-sm">{t('orders_empty')}</p>
+                  <p className="text-xs">{t('orders_empty_hint')}</p>
+                </div>
+              ) : (
+                <div className="flex flex-col gap-1.5">
+                  {orders.map((o) => (
+                    <button
+                      type="button"
+                      key={o.id}
+                      onClick={() => setSelectedOrderId(o.id)}
+                      className="flex items-center gap-2 rounded-xl border border-[var(--ms-border)] bg-[var(--ms-bg-app)] px-3 py-2.5 text-left hover:bg-[var(--ms-bg-hover)]"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate font-semibold text-[var(--ms-text-primary)] text-sm">
+                          {o.name}
+                        </div>
+                        <div className="truncate text-[var(--ms-text-muted)] text-xs">
+                          {o.agent?.name ?? t('orders_no_agent')}
+                        </div>
+                      </div>
+                      <div className="shrink-0 text-right">
+                        <div className="font-semibold text-[var(--ms-text-primary)] text-sm tabular-nums">
+                          {formatMoney(BigInt(o.sumMinor))}
+                        </div>
+                        <div className="text-[var(--ms-text-muted)] text-xs tabular-nums">
+                          {new Date(o.moment).toLocaleDateString('uz-UZ', {
+                            day: '2-digit',
+                            month: '2-digit',
+                          })}
+                        </div>
+                      </div>
+                      <span className="shrink-0 text-[var(--ms-text-muted)] text-xs">›</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ── ZAKAZ DETALI ── */}
+        {tab === 'zakazlar' && selectedOrderId && (
+          <ZakazDetailPanel orderId={selectedOrderId} onBack={() => setSelectedOrderId(null)} />
         )}
 
         {/* ── CHEKLAR TAB ── */}

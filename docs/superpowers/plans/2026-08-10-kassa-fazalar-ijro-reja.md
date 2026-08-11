@@ -1341,42 +1341,343 @@ Tuzatish 4 parallel agent + o'zim (auth), har biri TDD (RED ko'rilgan → fix �
 
 ### F2 hisoboti
 
-- **Holat:** ⬜ bajarilmagan
-- **Sana:**
+- **Holat:** ✅ bajarildi (kod + qo'riqchi darajasida; Electron ishga TUSHIRILMAGAN)
+- **Sana:** 2026-08-11 · worktree `D:/projects/sherset-kassa-f2`, branch `kassa-f2`
 - **O'zgargan fayllar:**
+  - yangi `desktop/main.js` — kiosk oyna, klaviatura qulflari, IPC, offline ekran, tashqi havolalar
+  - yangi `desktop/preload.js` — `contextBridge` → `window.electronAPI` (+ qobiq sahifalari uchun `window.shersetShell`)
+  - yangi `desktop/device-store.js` — `safeStorage` (DPAPI) qurilma kaliti + server manzili (`kassa-config.json`)
+  - yangi `desktop/setup.html` (birinchi ishga tushish: server manzili) · `desktop/offline.html` (aloqa yo'q ekrani)
+  - yangi `desktop/package.json` (`@moysklad/desktop`, electron + electron-builder + electron-updater) · `desktop/README.md`
+  - yangi `apps/web/src/__tests__/electron-bridge-contract.test.ts` (26 test)
+  - `pnpm-workspace.yaml` — `desktop` workspace paketi sifatida qo'shildi
 - **Qilingan ish:**
+  - Yupqa kiosk o'ram (spec §3.1): `kiosk:true`, `frame:false`, menyu yo'q, `requestSingleInstanceLock`,
+    prod'da DevTools o'chiq (`devTools: isDev` + `F12`/`Ctrl+Shift+I` ushlanadi), `Ctrl+W` va `Alt+F4`
+    ushlanadi — `Alt+F4` uchun ishonchli to'siq `win.on('close')` da (OS darajasidagi yopishni
+    `before-input-event` doim ko'rmaydi). Operator chiqishi: `Ctrl+Alt+Shift+Q` (README'da).
+  - Tashqi havolalar: `setWindowOpenHandler` → `deny` + `shell.openExternal`; `will-navigate` faqat
+    server origini va `file://` ga ruxsat beradi.
+  - Aloqa uzilishi (spec §3.1): `did-fail-load` (mainFrame, `ERR_ABORTED` bundan mustasno) → `offline.html`;
+    fonda har 5 s `GET <server>/api/v1/health` (`apps/api/src/health.controller.ts` + `main.ts:72`
+    `setGlobalPrefix('api/v1')`), javob berishi bilan ilova o'zi qayta yuklanadi.
+  - Server manzili KODGA QOTIRILMAGAN (spec §3.2): konfiguratsiya → `SHERSET_SERVER_URL` (build/env
+    default) → `setup.html`. Saqlashdan oldin `/health` bilan tekshiriladi (xato manzil kassirni bo'sh
+    ekranga tashlamasin).
+  - DPAPI: `safeStorage` mavjud bo'lmasa qurilma kaliti **saqlanmaydi** va `dialog.showErrorBox` chiqadi —
+    ochiq matnda jimgina saqlash TAQIQ (web `setDevice` natijasini ko'rmaydi, shuning uchun xatoni qobiq ko'rsatadi).
+  - Chop etish/mijoz-ekran IPC ishlovchilari **ochiq xato** qaytaradi («F3 da ulanadi»), jim `ok` emas —
+    sabab: `print-agent.ts:105-118` ko'prik mavjud bo'lganda HTTP-agentga QAYTMAYDI.
 - **Shartnoma-testi nimani qo'riqlaydi:**
-- **Qo'lda o'lchash natijasi:**
-- **Gate natijasi:**
-- **Commit(lar):**
+  - Metod nomlari **ikki manbadan, manba-matndan** o'qiladi (qo'lda ro'yxat yo'q):
+    `print-agent.ts` → `interface ElectronBridge` (`isSherset`, `version`, `listPrinters`, `printSheet`,
+    `pushCart`, `toggleCustomerDisplay`, `customerDisplayStatus`) **VA** `pos-device.ts` → `interface ShellBridge`
+    (`getDevice`, `setDevice`, `clearDevice`). 🔴 Ikkinchisi F1 agentining ogohlantirishi bo'yicha qo'shildi:
+    metod tushib qolsa `pos-device.ts` jimgina `localStorage` ga tushadi — DPAPI umuman ishlamaydi va hech
+    narsa shikoyat qilmaydi. Spec'dagi `pair(...)` amalda `setDevice(creds)` (juftlashning o'zi web'da,
+    `kassa-kirish/juftlash/page.tsx:86`) — shuning uchun shartnomaga MANBADAGI nom kiritildi.
+  - Har nom `preload.js` da `contextBridge.exposeInMainWorld('electronAPI', {…})` obyektining **tashqi**
+    kalitlaridan biri ekani tekshiriladi (ichma-ich payload maydonlari sanalmaydi).
+  - `getDevice`/`setDevice`/`clearDevice` **sinxron** (`ipcRenderer.sendSync`, `async` emas) bo'lishi shart —
+    `pos-device.ts:44-47` natijani darhol `isComplete` bilan tekshiradi, Promise unga «juftlanmagan» bo'lib
+    ko'rinadi (abadiy juftlash sikli).
+  - `main.js` qattiqligi: `preload.js` oynaga ULANGAN, `contextIsolation:true`, `nodeIntegration:true` YO'Q,
+    `kiosk:true`, `frame:false`, `requestSingleInstanceLock`, `setApplicationMenu(null)`, va manbada
+    localhost'dan boshqa `http(s)://` **qotirilgan domen yo'q** (spec §3.2 qo'riqchisi).
+  - **Vacuity qo'riqchisi:** parser buzilsa (satr/izoh skaneri) manba-a'zolar bo'sh chiqib testlar «o'tib»
+    ketardi — shuning uchun ikki test langar nomlar topilganini alohida tasdiqlaydi.
+  - **Qanday yiqilardi (o'lchangan):** (a) `desktop/` yo'q holatida 26 testdan 23 tasi qizil edi;
+    (b) mutatsiya bilan tekshirildi — `preload.js` dan `getDevice` olib tashlanib, `setDevice`
+    `invoke` ga o'tkazilganda 4 test yiqildi (ya'ni qo'riqchi vakuum emas), keyin fayl tiklandi.
+- **Qo'lda o'lchash natijasi:** 🔴 **BAJARILMADI — ataylab.** Bu to'lqinda uch agent parallel ishlagan
+  (`pnpm dev` portlari 3100/4000 bitta sessiyaga tegishli), `pnpm install` esa butun monorepo uchun
+  taqiqlangan edi (electron ~100 MB yuklab olinadi). Ya'ni kiosk oyna ochilgani, PIN bilan `/sotuv` ga
+  kirilgani va `Alt+F4` ishlamasligi **o'lchanmagan**. O'lchash qadamlari (F3 yoki merge'dan keyingi QA):
+  1. `pnpm install --filter @moysklad/desktop`
+  2. `pnpm dev` (web 3100, api 4000) — `:4000` qaysi worktree'dan ekanini tekshir
+  3. `SHERSET_SERVER_URL=http://localhost:3100 pnpm --filter @moysklad/desktop dev` → kiosk oyna ochiladi va `/kassa-kirish` ko'rinadi
+  4. Juftlash → admin login → do'kon/kassa/tashkilot → `%APPDATA%/…/kassa-config.json` da `device` **shifrlangan** (base64, ochiq matn emas) ekanini ko'z bilan tasdiqla
+  5. PIN → `/sotuv` ochiladi (qurilma kaliti DPAPI'dan o'qildi degani)
+  6. `Alt+F4`, `Ctrl+W`, `F12` — oyna yopilmaydi/DevTools ochilmaydi; `Ctrl+Alt+Shift+Q` — yopiladi
+  7. `pnpm dev` ni to'xtat → offline ekrani chiqadi; qayta yoq → kassa **o'zi** qaytadi
+  8. Manzilsiz ishga tushir (`SHERSET_SERVER_URL` yo'q, konfiguratsiya o'chirilgan) → `setup.html`; noto'g'ri manzil → «Server javob bermadi»
+- **Gate natijasi (ketma-ket yugurtirildi):** `money build` OK · `api typecheck` 0 · `web typecheck` 0 ·
+  `biome check desktop apps/web/src/__tests__/electron-bridge-contract.test.ts pnpm-workspace.yaml` 0 ·
+  `api test` 551 fayl / 7784 test yashil, **5 yiqilish = yuk timeout'i** (`pos-device.service`,
+  `pos-pin.service`, `publication.service` — hammasi 5000ms argon2), **yolg'iz yugurtirilganda 3 fayl /
+  45 test yashil** · `web test` 239 fayl / 3338 test yashil (0 yiqilish; +26 shu fazadan) · `i18n:gate` OK.
+- **Commit(lar):** `e45770a` — `feat(kassa): electron kiosk o'rami (desktop/) + ko'prik shartnoma qo'riqchisi`
+  (+ shu hisobot commit'i). ⚠️ `docs/progress.json` commit'ga lint-staged orqali qo'shildi (hook qayta
+  generatsiya qilgan: `branch: kassa-f2`) — merge'da `climart-adoption` versiyasi olinsin.
 - **Kelgusi fazalarga qoldirilgan:**
-- **Yorliq:**
+  - **F3 (chop etish/mijoz-ekran):** `print:list` → `[]`, `print:sheet`/`cfd:toggle` → ochiq xato,
+    `cfd:push` → no-op. 🔴 `print-agent.ts:105-118` ko'prik mavjud bo'lganda HTTP-agentga **qaytmaydi**,
+    shuning uchun F3 gacha bu qobiqda chop etish umuman yo'q (jim emas, xato bilan).
+  - **F3:** mijoz-ekran oynasi uchun **ikkinchi ko'prik** kerak — `apps/web/src/app/customer-display/page.tsx:40-47`
+    `window.customerDisplay.onCart(cb)` ni kutadi (`preload-customer.js`). Shartnoma-testi hozir buni
+    QAMRAMAYDI — F3 da o'sha testga qo'shilsin (aks holda xuddi shu «jim eskirish» klassi qaytadi).
+  - **F4:** `build/icon.ico` yo'q (binar fayl — bu sessiyada yaratilmadi), `electron-builder` NSIS
+    konfiguratsiyasi, `electron-updater` simlari, `latest.yml` uchun nginx `location /downloads/desktop/`.
+    `desktop/package.json` versiyasi ataylab `1.1.0-dev` — chop etish ulangach F3/F4 ko'taradi.
+  - **F1 dan kelgan qarz (yopilmadi):** `clearPosDevice()` ni hech kim chaqirmaydi — POS'da «qurilmani
+    bekor qilish» tugmasi YO'Q. F2 da UI qo'shilmadi (bu POS sahifasi ishi, F2 fayl chegarasidan tashqarida);
+    vaqtinchalik yo'l README'da (`kassa-config.json` dagi `device` maydonini o'chirish).
+  - **O'lchanmagan taxminlar (kod bilan tasdiqlanmagan, faqat hujjat bilan):** `sandbox: true` preload'da
+    `ipcRenderer.sendSync` ishlashi; `did-fail-load` xato kodlari; `dialog.showErrorBox` kiosk oynasi ustida
+    ko'rinishi. Birinchi qo'lda o'lchashda shular alohida tekshirilsin.
+  - `pnpm install` **yugurtirilmagan** — `desktop/` bog'liqliklari (electron) hali yuklab olinmagan,
+    `pnpm-lock.yaml` yangilanmagan. Merge'dan keyin bir marta `pnpm install` kerak.
+- **Yorliq:** **Phase-1 — strukturaviy, runtime-tasdiqlanmagan.** Electron o'rami hech qachon ishga
+  tushirilmagan; real kassa PC'da (va umuman brauzerdan tashqarida) sinalmagan.
 
 ### F3 hisoboti
 
-- **Holat:** ⬜ bajarilmagan
-- **Sana:**
+- **Holat:** ✅ bajarildi (kod + qo'riqchi darajasida; Electron ishga TUSHIRILMAGAN, printer sinalmagan)
+- **Sana:** 2026-08-11 · worktree `D:/projects/sherset-kassa-f3`, branch `kassa-f3` (baza `b5e10c85`)
 - **O'zgargan fayllar:**
+  - `desktop/main.js` — chop etish (`print:list`/`print:sheet`) va mijoz-ekran (`cfd:push`/`cfd:toggle`/`cfd:status`)
+    ishlovchilari F2 ning ochiq-xato zaglushkalari o'rniga haqiqiy implementatsiya (+272 qator)
+  - yangi `desktop/preload-customer.js` — mijoz-ekran oynasining ALOHIDA ko'prigi → `window.customerDisplay.onCart(cb)`
+  - `desktop/README.md` — chop etish/mijoz-ekran bo'limlari, «Chop etishni o'lchash» qadamlari, pul-yashigi qarzi
+  - `apps/web/src/__tests__/electron-bridge-contract.test.ts` — 26 → **61 test**
+  - `docs/progress.json` — hook qayta generatsiya qildi (`branch: kassa-f3`), merge'da `climart-adoption` versiyasi olinsin
 - **Qilingan ish:**
-- **Chop etish qanday o'lchandi:**
+  - **Chop etish (spec §6.4).** `listPrinters()` → `webContents.getPrintersAsync()` — 🔴 sinxron `getPrinters()`
+    Electron 25+ da OLIB TASHLANGAN, uni ishlatgan qobiq ishga tushganda yiqilardi. `printSheet(printerName,
+    html, pageSizeMicrons?)` → HTML **vaqtinchalik faylga** (`%TEMP%`, UTF-8; `data:` URL EMAS — uzun chek
+    URL chegarasiga urilardi, kirill kodlash ishonchsiz edi) → yashirin `BrowserWindow` → `webContents.print(
+    { silent:true, deviceName, printBackground:true, margins:none, pageSize })`. Qog'ozga **Windows drayveri**
+    bosadi ⇒ ESC/POS kodpage muammosi yo'q.
+  - **Qog'oz o'lchami.** Web `pageSizeMicrons` bersa (senik/label) — o'sha; bermasa chek rejimi: eni 80mm
+    (legacy), bo'yi esa **mazmun bo'yicha** (`scrollHeight` × 264.58 mkm + 4mm quyruq). Aks holda drayver
+    har chekni A4 gacha cho'zib qog'oz sarflardi. Yashirin oynaning ENI qog'oz eniga tenglashtiriladi —
+    odatiy 800px viewport'da `width:100%` li shakl kalta o'lchanib, chek oxiri kesilardi.
+  - **Osilib qolish yo'q.** Render 15s / chop 60s chegarasi; har yo'lda `{ ok, error? }` qaytadi. Sabab
+    (F2 dan meros): `print-agent.ts:105-118` qobiq mavjud bo'lganda HTTP-agentga **qaytmaydi**, ya'ni bu
+    yerdagi javob oxirgi so'z — jim `ok` yoki tugamaydigan va'da chekni yo'qotardi.
+  - **Mijoz-ekran (spec §6.5).** `toggleCustomerDisplay()` → `screen.getAllDisplays()` ikkinchi displey bounds'ida
+    ramkasiz fullscreen oyna `<server>/customer-display`; ekran yo'q bo'lsa `{ open:false, error }` (shartnoma).
+    Savat yo'li: `pushCart` → `cfd:push` → main → `cfd:cart` → `preload-customer.js` → sahifadagi `onCart`.
+    Main **oxirgi savatni saqlaydi** va oyna yuklangach darhol yuboradi (aks holda ekran keyingi o'zgarishgacha
+    bo'sh turardi). 🔴 Alohida `partition` **berilmaydi** — sahifa `refresh()` bilan kassir bilan umumiy cookie
+    sessiyasidan token oladi. Yuklanish xato bo'lsa oyna yopiladi (mijoz oldida Chrome xato sahifasi qolmasin);
+    kassir oynasi yopilsa mijoz-ekran ham yopiladi (aks holda `window-all-closed` otilmay ilova ko'rinmas
+    holda tirik qolardi).
+  - **`tools/print-agent` (PowerShell) — TEGILMADI.** 🔴 Kuzatuv: u repo'da UMUMAN YO'Q (`git ls-files` va
+    ikkala checkout'da ham) — HTTP zaxira qatlamining faqat MIJOZ tomoni (`print-agent.ts`) versiyalangan,
+    agentning o'zi kassa PC'siga alohida o'rnatiladi. Shuning uchun «olib tashlanmadi» bandi shu qatlamning
+    web tomonini buzmaslik bilan bajarildi (qo'riqchi test bilan qulflandi).
+- **Shartnoma-testi qamrovi qanday kengaydi (26 → 61):**
+  - **Mijoz-ekran ko'prigi** (F2 da umuman qamralmagan edi): metod nomi `customer-display/page.tsx` dagi
+    `interface CustomerBridge` dan **manbadan** o'qiladi; `preload-customer.js` uni `contextBridge` orqali
+    berishi, yo'nalish PUSH (`ipcRenderer.on`) ekani, `require` faqat `electron` dan ekani tekshiriladi.
+  - **IPC kanal-yo'nalish qulfi (yangi bug-klass qo'riqchisi):** ikkala preload'dagi HAR `ipcRenderer.*('kanal')`
+    uchun `main.js` da mos registratsiya bo'lishi shart — `invoke`↔`ipcMain.handle`, `send`/`sendSync`↔`ipcMain.on`,
+    renderer `on`↔main `.send(...)`. Ya'ni «kanal bor-u ishlovchi yo'q» yoki «`invoke` ga `ipcMain.on` javob
+    beradi» (va'da hech qachon tugamaydi) holati endi statik tutiladi.
+  - **Chop etish qo'riqlari:** zaglushka matni qolmagani, `getPrintersAsync` (va sinxron `getPrinters()` YO'Qligi),
+    `silent:true` + `deviceName`, preload payload maydonlari (`printerName`/`html`/`pageSizeMicrons`) main'da
+    o'qilishi, `pageSize` uzatilishi, `ok:true`/`ok:false` ikkala yo'l borligi.
+  - **Mijoz-ekran qo'riqlari:** `getAllDisplays`, `/customer-display` yuklanishi, `preload-customer.js` ULANGANI,
+    ekransiz holatda `{open:false, error}`, `frame:false`, **`partition` yo'qligi**.
+  - **Uch qatlamli fallback qulfi:** `print-agent.ts` da `127.0.0.1:17777` va `agentPrint` qolgani + Electron'siz
+    shox (`await agentPrint(`) uchtala chaqiruvchida (chek, yacheyka varaqasi, Z-hisobot) saqlanib qolgani.
+  - **Mutatsiya sinovi (o'lchangan, keyin tiklandi) — 5/5 tutildi:** (1) `preload-customer.js` dan `onCart`
+    nomini o'zgartirish → «onCart berilgan» qizil; (2) `ipcMain.handle('cfd:toggle')` → `ipcMain.on` → kanal-yo'nalish
+    testi qizil; (3) cfd oynasiga `partition:'cfd'` qo'shish → partition testi qizil; (4) cfd oynasidan `preload`
+    ni olib tashlash → «preload-customer.js ULANGAN» qizil; (5) `getPrintersAsync()` → `getPrinters()` → asinxron-API
+    testi qizil. Implementatsiyadan OLDIN 13 yangi test qizil edi (TDD: red → yashil).
+- **Chop etish qanday o'lchandi:** 🔴 **HECH QANDAY — BAJARILMADI.** Sessiya promptida Electron'ni o'rnatish
+  (`cd desktop && pnpm install` ≈ 200 MB) va ishga tushirish TAQIQLANGAN edi (foydalanuvchi roziligi yo'q,
+  parallel faza). Ya'ni hech bir printerga (real ham, virtual PDF ham) bitta chek ham yuborilmagan; kirill
+  matn, 80mm eni va chek uzunligi **o'lchanmagan**. Ishonch darajasi — statik: `node --check` sintaksis +
+  shartnoma-testi + kod o'qish. O'lchash qadamlari `desktop/README.md` → «Chop etishni o'lchash» bo'limida
+  (virtual «Microsoft Print to PDF» stsenariysi bilan): printer ro'yxati → chek → PDF'da kirill/eni/uzunlik →
+  yacheyka varaqasi va Z-hisobot → **noto'g'ri printer nomi bilan xato ko'rinishi** → 2-monitorda mijoz-ekran.
 - **Mijoz-ekran / pul yashigi holati:**
-- **Gate natijasi:**
-- **Commit(lar):**
+  - Mijoz-ekran: kod yozildi va shartnoma bilan qulflandi, lekin **2-monitor ulanmagan holatda ham,
+    ulangan holatda ham sinalmagan** (Electron ishga tushirilmadi).
+  - **Pul yashigi impulsi (cash drawer kick) — QILINMADI, QARZ sifatida qayd etilmoqda.** Sabab o'lchangan:
+    `webContents.print` faqat drayverga HUJJAT beradi, ESC/POS `ESC p` impulsi esa printerga **xom bayt**
+    yuborishni talab qiladi — Electron API'sida bunday yo'l yo'q va qo'shimcha native modul o'rnatish bu
+    fazada taqiqlangan edi. Ixtiro qilinmadi. Ikki mumkin yechim (F3 dan tashqarida): (a) yashik impulsi bilan
+    boshlanadigan drayver profiliga bosish, (b) xom baytni HTTP print-agent orqali yuborish (u repo'da yo'q).
+- **F2 ning uchta tasdiqlanmagan taxmini — holati:**
+  - 🔴 **Uchalasi ham HAMON TASDIQLANMAGAN.** Sabab o'lchangan: bu daraxtda Electron paketi umuman o'rnatilmagan
+    (`node_modules/.pnpm` da faqat `electron-to-chromium`, `electron.d.ts` yo'q), ya'ni `sandbox: true` preload'da
+    `ipcRenderer.sendSync` ishlashini, `did-fail-load` xato kodlarini va `dialog.showErrorBox` kiosk ustida
+    ko'rinishini **kod bilan tekshirib bo'lmadi** (faqat hujjat bilan).
+  - Yumshatuvchi holat: F3 qo'shgan ko'priklar `sendSync` ga BOG'LIQ EMAS — chop etish `invoke`, mijoz-ekran
+    `send`/`on` ustida. `sendSync` riski faqat qurilma kaliti metodlarida (F1/F2 hududi) qoladi.
+  - `did-fail-load` bo'yicha yagona yangi qaram joy — mijoz-oynaning xato-yopilishi; u ham F2 dagi `-3`
+    (`ERR_ABORTED`) konvensiyasini takrorlaydi, ya'ni taxmin noto'g'ri bo'lsa ikkala joy birga tuzatiladi.
+- **Gate natijasi (ketma-ket yugurtirildi):**
+  - `money build` OK · `api typecheck` 0 · `web typecheck` 0 · `biome check` (4 tegilgan yo'l) 0 · `i18n:gate` OK (9 test)
+  - `web test`: **243 fayldan 237 yashil, 6 fayl / 15 test qizil — hammasi yuk artefakti.** Oltalasi ham
+    YOLG'IZ yugurtirilganda yashil (`cell-count-modal`, `cell-scan-bind-modal`, `debt-payment-usd`,
+    `sales-screen-shift`, `audit-fixlar`, `sales-screen-cart`) — ya'ni 243/243 yashil. Yiqilishlar 5000ms
+    atrofida, mashinada 38 ta node jarayoni ishlayotgan edi (foydalanuvchining `pnpm dev` steki + parallel faza).
+  - `api test`: **558 fayldan 557 yashil**, 1 qizil — `permissions/mutation-guard-coverage.test.ts` →
+    «POS qarz to'lovi kassa to'lovi bilan BIR XIL ruxsatda». 🔴 Bu **MENIKI EMAS va yolg'iz yugurtirilganda ham
+    qizil** (3 marta takrorlandi): test tanasida `import('../debt/debt.controller.js')` butun qarz-servis grafini
+    tortadi va 5000ms testtimeout'ga sig'maydi. `apps/api` da **bitta ham fayl o'zgartirmadim** (`git status`
+    bilan tasdiqlangan), `testTimeout` ni oshirish esa taqiqlangan — shuning uchun oldindan-qizil sifatida
+    qoldirildi va bu yerda ochiq yozildi.
+- **Commit(lar):** `31d905fe` — `feat(kassa): exe'da chop etish va mijoz-ekran ulandi (f3)` (+ shu hisobot commit'i).
+  `docs/progress.json` commit'ga lint-staged orqali qo'shildi (hook qayta generatsiya qilgan) — merge'da
+  `climart-adoption` versiyasi olinsin.
 - **Kelgusi fazalarga qoldirilgan:**
-- **Yorliq:**
+  - **F12 (real kassada QA) — asosiy qarz:** yuqoridagi «Chop etishni o'lchash» ro'yxati; unsiz «chop etish
+    ishlaydi» deb aytish mumkin EMAS.
+  - **Pul yashigi impulsi** (yuqoridagi ikki yo'ldan biri tanlansin).
+  - **F4:** `build/icon.ico`, `electron-builder` NSIS konfiguratsiyasi (unda `preload-customer.js` ham `files`
+    ro'yxatiga tushishi shart), `electron-updater`, `latest.yml` uchun nginx. `desktop/package.json` versiyasi
+    ataylab `1.1.0-dev` da qoldirildi — hech qanday build/relaz bo'lmagani uchun ko'tarishga asos yo'q
+    (web hech qayerda `version` ni solishtirmaydi — tekshirildi).
+  - **HTTP print-agent manbasi repo'da yo'q** — zaxira qatlamning serveri versiyalanmagan; kimdir uni
+    yo'qotsa/yangilasa iz qolmaydi (kuzatuv, F3 hududidan tashqarida).
+- **Yorliq:** **Phase-1 — strukturaviy, runtime-tasdiqlanmagan · printer-tasdiqlanmagan.** Electron o'rami
+  hech qachon ishga tushirilmagan; chop etish va mijoz-ekran hech bir qurilmada sinalmagan.
 
 ### F4 hisoboti
 
-- **Holat:** ⬜ bajarilmagan
-- **Sana:**
-- **O'zgargan fayllar:**
+- **Holat:** ✅ bajarildi (worktree `D:/projects/sherset-kassa-f4`, branch `kassa-f4`, baza `b5e10c85`, merge kutilmoqda)
+- **Sana:** 2026-08-11
+
+- **O'zgargan fayllar (10):**
+  - *desktop (yangi):* `desktop/updater.js` · `desktop/check-build-assets.js`
+  - *desktop (tahrir):* `desktop/package.json` (`build` bloki + `dist` scripti) ·
+    `desktop/main.js` (🔴 3 qator — F3 bilan konflikt kutiladi) · `desktop/README.md` (QO'SHILDI, mavjud bo'limlar buzilmadi)
+  - *qo'riqchi test (yangi):* `apps/web/src/__tests__/kassa-installer-config.test.ts` (30 test)
+  - *deploy:* `deploy/nginx-sherset.biznesjon.uz.conf` · `deploy/nginx-climart.biznesjon.uz.conf` ·
+    `deploy/nginx-climartgroup.uz.conf` · `deploy/DEPLOY-sherset.md` (yangi §7)
+  - *avtomatik:* `docs/progress.json` (pre-commit hook o'zi qo'shadi — `pnpm -s progress`)
+
 - **Qilingan ish:**
+  1. **NSIS konfiguratsiyasi** — `desktop/package.json` → `build`: `appId: uz.sherset.kassa`,
+     `productName: Sherset Kassa`, `win.target: nsis (x64)`,
+     `artifactName: Sherset-Kassa-Setup-${version}.exe`, `nsis.oneClick: false`,
+     `nsis.perMachine: true`, `allowToChangeInstallationDirectory`, `installerLanguages: [ru_RU]`.
+     **Qaror: alohida `electron-builder.yml` EMAS, `package.json` ichidagi `build` bloki.**
+     Sabab (o'lchangan): monorepoda YAML parseri YO'Q — `yaml` va `js-yaml` na ildizdan,
+     na `apps/web`, na `apps/api` dan `require.resolve` bo'lmaydi. YAML variantida
+     «konfiguratsiya parse bo'ladi» qo'riqchisi qo'lda yozilgan soxta parserga
+     suyanardi; `build` bloki esa `JSON.parse` bilan haqiqatan tekshiriladi.
+  2. **Imzo — 1-versiya IMZOSIZ** (spec §8.2, ongli qaror). Sertifikat kalitlari repo'ga
+     yozilmadi; qo'riqchi test `certificateFile`/`certificatePassword`/`certificateSubjectName`
+     `package.json` da YO'Qligini tekshiradi (mutatsiya bilan tasdiqlandi).
+  3. **Avtoyangilanish** — `desktop/updater.js`, `electron-updater` `generic` provider.
+     🔴 Manzil kodga qotirilmagan (spec §3.2): `setFeedURL` qurilma **juftlangan serverdan**
+     yasaydi — `<server>` + `/downloads/desktop/`. Ishga tushganda + **har 4 soatda**
+     tekshiradi, fonda yuklaydi. Birinchi ishga tushishda server manzili hali yo'q bo'lsa
+     `updater.js` o'zi 60 soniyada qayta uradi (aks holda avtoyangilanish faqat keyingi
+     ishga tushishda tirilardi). Har qanday nosozlik — **jim** (kassirga dialog yo'q).
+  4. **O'rnatish vaqti (spec §8.3)** — `autoInstallOnAppQuit = false` (Electron o'zi hech
+     qachon o'rnatmaydi), `update-downloaded` faqat bayroq qo'yadi; o'rnatish **faqat**
+     `main.js` → `quitShell()` → `updater.installOnQuit()` yo'lida
+     (`quitAndInstall(isSilent=true, isForceRunAfter=false)`).
+  5. **`build/icon.ico` — binar, repo'da YO'Q.** Konfiguratsiyada yo'l ko'rsatilgan;
+     `check-build-assets.js` yig'ishni birinchi qadamda ANIQ xabar bilan to'xtatadi.
+  6. **nginx + deploy hujjati** — pastda.
+
+- **Qo'yilgan qo'riqchi testlar + mutatsiya natijasi:**
+  `apps/web/src/__tests__/kassa-installer-config.test.ts` — **30 test**, TDD (avval qizil:
+  21 yiqilgan / 8 o'tgan, keyin yashil). **18 mutatsiya sinaldi, HAMMASI qizardi:**
+  nginx yo'li · `autoInstallOnAppQuit=true` · 4 soat→1 soat · `update-downloaded` ichida
+  o'rnatish · versiya 1.2.0 · `perMachine=false` · artifactName qotirildi · `quitShell`
+  o'rnatishni chaqirmaydi · `dist` qo'riqchisiz · README dan `latest.yml` olib tashlandi ·
+  README dan kanal yo'li olib tashlandi · DEPLOY doc yo'li · `autoDownload=false` ·
+  `UPDATE_PATH` · `publish.url` · `app.isPackaged` qo'riqchisi · sertifikat paroli
+  qo'shildi · `win.icon` olib tashlandi.
+  🔴 **Bitta haqiqiy vacuity TOPILDI va tuzatildi:** `autoInstallOnAppQuit = false`
+  matni fayl boshidagi JSDoc'da ham aynan shunday yozilgan edi — kodni `true` ga
+  o'zgartirganda test YASHIL qolardi (regex izohga tushardi). Yechim: xulq testlari
+  endi `stripComments()` dan o'tgan **kod** ustida ishlaydi + `= true` YO'Qligi ham
+  tekshiriladi. (Bug-klass: «qo'riqchi o'z hujjatini o'qib turibdi».)
+
 - **Installer yig'ildimi (buyruq + natija):**
-- **Deploy uchun kerakli qadamlar:**
-- **Gate natijasi:**
+  🔴 **YO'Q — `.exe` HECH QACHON yig'ilmagan.** `desktop/` monorepo workspace'ida emas va
+  `electron` + `electron-builder` (~200 MB) ataylab o'rnatilmadi (foydalanuvchi rozilik
+  bermagan). Ya'ni «`.exe` yig'iladi» — **tasdiqlanmagan da'vo**.
+  Yig'ish qadamlari (operator/dasturchi qo'lda bajaradi):
+  1. `desktop/build/icon.ico` ni qo'sh (ko'p o'lchamli `.ico`, kamida 256×256).
+  2. `cd desktop && pnpm install` (bir marta).
+  3. `pnpm run dist` (= `node check-build-assets.js && electron-builder --win nsis`).
+  4. Natija: `desktop/dist/Sherset-Kassa-Setup-1.1.0-dev.exe` + `desktop/dist/latest.yml`.
+     Relizdan oldin `package.json` → `version` ni `-dev` siz qiymatga ko'tarish.
+  **Ikonka yo'qligida nima bo'ladi (o'lchangan):** `node desktop/check-build-assets.js`
+  → `exit 1` + «Yig`ish TO`XTATILDI — kerakli fayllar yo`q: desktop/build/icon.ico».
+  electron-builder ning O'Z xulqi (xato beradimi yoki default Electron ikonkasi bilan
+  jim davom etadimi) — **o'lchanmagan**; qo'riqchi aynan shu noaniqlikni yopish uchun
+  qo'yildi.
+
+- **`latest.yml` / kanal yo'li qaysi joylarda yozilgan (drift-lock, 5 joy):**
+  1. `desktop/updater.js` → `const UPDATE_PATH = '/downloads/desktop/'` (runtime feed)
+  2. `desktop/package.json` → `build.publish[0].url` (build vaqtidagi default)
+  3. `deploy/nginx-*.conf` ×3 → `location /downloads/desktop/`
+  4. `desktop/README.md` → operator yo'riqnomasi (`latest.yml` + kanal URL)
+  5. `deploy/DEPLOY-sherset.md` §7 → deploy qadamlari
+  Beshalasi ham qo'riqchi testda **bitta konstantaga** bog'langan.
+
+- **Deploy uchun kerakli qadamlar (🔴 VPS'ga QO'LLANMAGAN — kutmoqda):**
+  1. `sudo mkdir -p /var/www/kassa-downloads/desktop` (git checkout'idan TASHQARIDA —
+     `git pull`/`deploy-smart.sh` tegmaydi).
+  2. Yangilangan nginx конфini ko'chir + `sudo nginx -t && sudo systemctl reload nginx`.
+  3. Artefaktlarni yukla — **avval `.exe`, OXIRIDA `latest.yml`** (manifest — trigger;
+     u birinchi tushsa har bir kassa hali yo'q `.exe` ni so'raydi).
+  4. `curl -I https://<server>/downloads/desktop/latest.yml` → 200 va `.exe` → 200.
+  5. `latest.yml` ni QO'LDA tahrirlama (ichida `.exe` ning SHA-512 si; mos kelmasa har
+     bir kassa yangilanishni **jim** rad etadi). Eski `.exe` ni kamida bir reliz saqla.
+  Tafsilot: `deploy/DEPLOY-sherset.md` → «7. Kassa (Electron) installer + update channel».
+
+- **F3 bilan kutilayotgan konflikt:** `desktop/main.js` da **3 qator** (F3 ayni paytda shu
+  faylda `print:*`/`cfd:*` ishlovchilarini yozyapti): (a) `require('./updater')` — import
+  bloki; (b) `app.whenReady()` ichida `updater.start(serverBase);`;
+  (c) `quitShell()` ichida `if (updater.installOnQuit()) return;`. Uchalasi ham F3 ning
+  hududidan (`registerIpc` dagi `print:*`/`cfd:*`, `preload*.js`) **tashqarida** —
+  merge'da matn-konflikt bo'lsa **ikkala tomonni ham saqlash** kerak, birini tanlash EMAS.
+  `desktop/package.json` da faqat `build` bloki va `scripts.dist` qo'shildi;
+  `main`/`dependencies` TEGILMADI.
+
+- **Gate natijasi (to'liq, qisqartirilmagan):**
+  - `pnpm --filter @moysklad/money build` ✅
+  - `pnpm --filter @moysklad/api typecheck` ✅ 0 xato
+  - `pnpm --filter @moysklad/web typecheck` ✅ 0 xato
+  - `pnpm biome check <tegilgan 5 yo'l>` ✅ 0 xato (dastlab 5 `useOptionalChain` +
+    1 keraksiz suppression — tuzatildi)
+  - `pnpm --filter @moysklad/api test` — 7840 ✅ / **11 timeout** (`pos-device`,
+    `pos-pin`, `publication`, `mutation-guard-coverage`). Har biri **YOLG'IZ qayta
+    yugurtirildi → 4/4 YASHIL** ⇒ yuk artefakti (5 agent parallel, 56 node jarayoni),
+    defekt EMAS. `testTimeout` oshirilmadi.
+  - `pnpm --filter @moysklad/web test` — 3411 ✅ / **1 timeout**
+    (`menejer/_components/comment-template-settings.test.tsx`) → yolg'iz **YASHIL**
+    (5044ms, chegara ustida) ⇒ yuk artefakti. Bu fayl F4 tegmagan hududda.
+  - `pnpm i18n:gate` ✅ (UI matni tegilmadi)
+  - Qo'shimcha: `node --check` desktop `.js` fayllari ✅, `JSON.parse(package.json)` ✅
+
 - **Commit(lar):**
+  - `1ea00968` — `feat(kassa): nsis installer + avtoyangilanish (f4)` (7 fayl)
+  - `0c0bea3` — `chore(deploy): kassa yangilanish kanali uchun nginx location (f4)` (5 fayl)
+  - *(bu hisobot — uchinchi commit)*
+  Ikkalasida ham `docs/progress.json` bor: uni **repo'ning o'z pre-commit hooki** qo'shadi
+  (`pnpm -s progress && git add docs/progress.json`) — parallel sessiya ishi EMAS.
+
 - **Kelgusi fazalarga qoldirilgan:**
-- **Yorliq:**
+  - **F12 (Phase-2 QA):** butun oqim — yig'ish → yuklash → topilishi → «Chiqish» da
+    o'rnatilishi — **hech qachon yugurtirilmagan**. Shu jumladan: `perMachine: true`
+    bo'lgani uchun `isSilent=true` da ham Windows **UAC** so'raydi; kassani yopayotgan
+    xodim «Да» bosmasa yangilanish keyingi «Chiqish» ga qoladi (README da yozilgan,
+    o'lchanmagan).
+  - `1.1.0-dev` prerelease'dan relizga o'tish `electron-updater` da **tekshirilmagan** —
+    birinchi reliz `-dev` siz chiqarilsin.
+  - `build.publish[0].url` da build vaqtidagi default domen (`sherset.biznesjon.uz`)
+    qotirilgan — runtime uni baribir bosib o'tadi, lekin uch domen (`climart.biznesjon.uz`,
+    `climartgroup.uz`, xotiradagi `erp.sherset.uz`) noaniqligi hamon hal qilinmagan.
+  - Qurilmani **unpair** qilish UI'si hamon yo'q (F1 qarzi, README da qayd etilgan).
+  - Kod imzolash sertifikati olingach `build.win` ga env orqali qo'shiladi — kod o'zgarmaydi.
+
+- **Yorliq:** **Phase-1: strukturaviy, runtime-tasdiqlanmagan · `.exe` yig'ilmagan ·
+  VPS'ga deploy qilinmagan.** «done»/«production-ready»/«verified» — F12 dan oldin TAQIQ.
 
 ### F5 hisoboti
 
@@ -1528,33 +1829,311 @@ Tuzatish 4 parallel agent + o'zim (auth), har biri TDD (RED ko'rilgan → fix �
 
 ### F6 hisoboti
 
-- **Holat:** ⬜ bajarilmagan
-- **Sana:**
+- **Holat:** ✅ bajarildi (Phase-1)
+- **Sana:** 2026-08-11 · worktree `sherset-kassa-f6`, branch `kassa-f6`
+
 - **O'zgargan fayllar:**
-- **Qilingan ish:**
-- **Schema guard'lari:**
+  - *Server:*
+    - `apps/api/src/modules/debt/debt.schema.ts` — `PosDebtPaymentSchema` kengaytirildi
+    - `apps/api/src/modules/debt/debt-fifo.ts` — yangi `splitOriginalMinor`
+    - `apps/api/src/modules/debt/pos-debt-payment.service.ts` — USD→so'm o'girish, kurs muzlatish, chek maydonlari
+    - `apps/api/src/modules/cashier-session/cashier-session.service.ts` — §6 + §7 valyuta ajratmasi
+    - `apps/api/src/modules/cashier-session/cashier-session-reconciliation.ts` — `ShiftUsdCashInputs.debtUsdMinor`
+  - *Ekran:*
+    - `apps/web/src/components/pos/debt-payment-dialog.tsx` — valyuta tanlovi, kurs, ekvivalent
+    - `apps/web/src/app/print/debt-payment/[batchId]/page.tsx` — PKO dollar qatori
+    - `apps/web/src/messages/{ru,uz}.json` — 3 yangi kalit
+  - *Testlar:* `debt.schema.test.ts` (+6) · `debt-fifo.test.ts` (+6) ·
+    `pos-debt-payment.usd.test.ts` (yangi, 8) · `shift-usd-debt-currency.test.ts` (yangi, 6) ·
+    `foreign-cash-desk-guard.test.ts` (yangi, 7) · `debt-payment-usd.test.tsx` (yangi, 11) ·
+    `pko-usd.test.tsx` (yangi, 3) · `pos-debt-payment-wiring.test.ts` (+3, 2 tasi F6 uchun yangilandi) ·
+    `sales-screen-shift.test.tsx` (payload'ga `currency` qo'shildi)
+
+- **Qilingan ish (reja 8 bandi):**
+  1. **Sxema** — `currency` (`UZS|USD`, default UZS) + kanonik ×10⁸ `exchangeRate`;
+     USD'da kurs majburiy; **stale-scale guard** (`< 10⁹` → 400).
+     🔴 `amountMinor` endi **to'lov valyutasining minor birligida** (UZS→tiyin, USD→sent) —
+     `PostRetailSaleSchema.cashUsdAmountMinor` bilan bir xil konvensiya.
+     Klient so'mdagi ekvivalentni **umuman yubormaydi** (ikki manba muqarrar uzoqlashadi).
+  2. **Servis** — o'girish `usdCentsToSomTiyin` bilan (nusxa emas, `retail-tenders.ts` bilan
+     bitta funksiya). Qarzga tushadigan qiymat, kassa daftari va PKO cheki bir manbadan.
+  3. **Kurs muzlatiladi** — `DebtPayment.exchangeRate` (+ `amountOriginalMinor`); `receipt()`
+     ularni qaytaradi, ya'ni chek qayta chop etilganda AYNAN o'sha kurs chiqadi.
+     Migratsiya **kerak emas**: ustunlar `DebtPayment` da allaqachon bor
+     (`schema.prisma:11380-11382`, 2026-07-13 dan).
+  4. **Dialog** — So'm/Dollar tanlovi; kurs `GET /exchange-rates/rate?currency=USD` dan
+     (kanonik `rateMinor`, F5 merosi — masshtab FE'da qayta hisoblanmaydi); so'm ekvivalenti
+     jonli; kurssiz kunda USD **bloklanadi**. Qo'shimcha ikki qaror:
+     · valyuta almashganda summa **tozalanadi** (sent ≠ tiyin, bir bosishda ~12 000× xato);
+     · USD'da **terminal bloklanadi** (dollar terminal orqali kelmaydi) va usul naqdga qaytadi.
+  5. **PKO cheki** — «Dollar $100.00 × 12450.27» qatori; yorliq va formatlar
+     `lib/pos/receipt-payments.ts` dan (savdo cheki bilan **bitta lug'at**, F5 uslubi).
+  6. **§F6.6 AUDIT — YOPILDI** (pastda alohida).
+  7. **§F6.7 AUDIT — YOPILDI** (pastda alohida).
+  8. **i18n** — `debt_currency_uzs`, `debt_currency_usd`, `debt_usd_residual` (ru+uz);
+     `usd_rate_hint` / `usd_rate_missing` F5 dan qayta ishlatildi.
+
+- **Schema guard'lari** (`debt.schema.test.ts` → «PosDebtPaymentSchema — F6»):
+  | Guard | Xulq | Test |
+  |---|---|---|
+  | USD + kurssiz | 400 (jim 1:1 TAQIQ) | «🔴 KURSSIZ USD to'lovni RAD etadi» |
+  | USD + eski ×10⁴ kurs (`128000000`) | 400 | «🔴 ESKI (×10⁴) masshtabdagi kursni RAD etadi» |
+  | kurs `0` / manfiy | 400 | «nol yoki manfiy kursni RAD etadi» |
+  | `currency: 'EUR'` | 400 (kassa oqimi yo'q) | «noma'lum valyutani RAD etadi» |
+  | UZS kursisiz | o'tadi (regressiya yo'q) | «so'm to'lovi kursisiz ishlayveradi» |
+  Servisda **ikkinchi qatlam** ham bor: `currency==='USD'` bo'lib kurs yo'q bo'lsa servis
+  to'g'ridan-to'g'ri chaqirilganda ham `BadRequestException` (sent tiyin deb o'qilmasin).
+
 - **Qarz daftariga ta'siri qanday tekshirildi:**
-- **Smena USD hisobiga ta'siri:**
-- **Brauzer o'lchovi:**
-- **Gate natijasi:**
+  Simmetriya (`create +total` · `to'lov −paid`) **buzilmadi** — o'zgarish faqat «qancha so'm»
+  savolida, «qaysi ishorada» savolida emas. Dalil:
+  · `pos-debt-payment.usd.test.ts` → «qarz daftari simmetriyasi: to'lov MANFIY delta va
+  SO'MDA (sent emas)» — `balanceDeltas === [{ currency: 'UZS', deltaMinor: -128_000_000n }]`
+  ($100 × 12 800 kurs). Ya'ni delta **manfiy**, **so'mda** va **qarz valyutasida**
+  (`recalcDebt` `debt.currency` ni ishlatadi, to'lov valyutasini emas).
+  · «$100 to'lovi qarzni SO'M ekvivalentiga kamaytiradi» — `debt.paidMinor === 128 000 000n`.
+  · Tuzatishdan OLDIN bu ikkala test `10 000n` (sent tiyin deb o'qilgan) bilan **yiqilardi** —
+    non-vacuity o'lchandi (yiqilish ko'rildi, keyin tuzatildi).
+  · «bir necha qarzga bo'linsa har qator O'Z sentini oladi (Σ = asl summa)» — FIFO 2 qarzga
+    bo'lganda `amountOriginalMinor` bo'laklari `[5 000, 5 000]`, jami 10 000 sent.
+    Bu **storno** uchun hal qiluvchi: `debt.service.reverseCashDeskDelta` yashiqdan
+    chiqadigan JISMONIY summani aynan shu maydondan oladi.
+  · «SO'M to'lovi o'zgarmagan» — daftar ham, yashiq ham so'mda, `exchangeRate: null`.
+
+- **Smena USD hisobiga ta'siri (§F6.6 — KOD BILAN tekshirildi, taxmin emas):**
+  - **Muammo (o'lchangan):** `collectCashInputs` naqd qarz to'lovini `method:'cash'` bo'yicha
+    yig'ardi, **valyuta filtrisiz**; `DebtPayment.amountMinor` esa har doim so'm ekvivalenti.
+    ⇒ USD to'lovda yashiqqa **dollar** tushib, **so'm**-kutilgani dollarning so'm qiymatiga
+    oshardi, USD-kutilgani esa uni ko'rmasdi ⇒ **soxta so'm kamomadi + hisobga olinmagan dollar**.
+  - **Yechim:** so'm agregatiga `currency: BASE_CURRENCY` filtri; dollar to'lovlari
+    `collectUsdCashInputs` da **`amountOriginalMinor`** bo'yicha alohida yig'iladi
+    (`ShiftUsdCashInputs.debtUsdMinor`, `expectedUsdCashMinor` ga qo'shildi).
+    Ikki filtr **juft**: bir to'lov ikkala jamiga ham tushmaydi, birortasidan ham tushib qolmaydi.
+  - **Qo'riqchi:** `shift-usd-debt-currency.test.ts` — (1) manba-qulf: so'm agregatida
+    `currency: BASE_CURRENCY`, dollar agregatida `currency: 'USD'` + `amountOriginalMinor`
+    (🔴 `amountMinor` emas) + `method:'cash'` + `retailShiftId` + `reversedAt: null`;
+    (2) `BASE_CURRENCY === 'UZS'` konstantasi qulflandi; (3) sof formula testi
+    (`debtUsdMinor` kutilgan dollarni aynan o'sha summaga oshiradi, berilmasa 0).
+    Manba-qulf ATAYLAB: `debtUsdMinor` ixtiyoriy maydon ⇒ uzatish tushib qolsa **typecheck jim
+    o'tadi** va sof testlar yashil qoladi (`DocumentEditor` prop-drop klassi).
+  - **Kutilgan yon ta'sir (ijobiy):** `close()` da `expectedUsd !== 0n && closingCashUsd === null`
+    ⇒ 400. Ya'ni smenada **USD qarz to'lovi bo'lsa** kassir endi smenani dollarni sanamasdan
+    yopa olmaydi. Bu avtomatik ravishda `collectUsdCashInputs` orqali keldi.
+
+- **Valyutali kassa (§F6.7 — YOPILDI):**
+  - **Muammo (o'lchangan):** drawer-in/out va cash-out hujjatlariga `session.cashDesk.currency`
+    yoziladi (`:554`, `:588`, `:1143` — endi siljigan), `collectCashInputs` esa `sumMinor` ni
+    valyuta bo'yicha filtrlamasdi ⇒ so'm bo'lmagan kassada **sent so'm formulasiga** kirardi.
+  - **Yechim — ikki qatlam:** (1) `retailDrawerCashIn/Out` agregatlariga
+    `currency: BASE_CURRENCY`; (2) `loadOpenShiftForDrawer` (uch chaqiruvchining **yagona**
+    qo'riqchisi: `drawerCashIn`, `drawerCashOut`, `posCashOut`) so'm bo'lmagan kassada
+    **ochiq `BadRequestException`** beradi, xato matnida kassa valyutasi ko'rsatiladi.
+    Sabab: smena hisobining butun oqimi (opening · sales · expected · variance) so'm
+    semantikasida — USD-kassa **qo'llab-quvvatlanmaydi**, jim noto'g'ri hisobdan ko'ra ochiq
+    to'xtash. Dollar oqimi `CASH_USD` tenderi va F6 dollar qarz to'lovi orqali **alohida**
+    sanaladi.
+  - **Qo'riqchi:** `foreign-cash-desk-guard.test.ts` (7 test) — agregat filtrlari,
+    `kind` filtri **hamon yo'q** (§8.2 regressiyasi qaytmasin), USD kassada Внесение/Изъятие
+    bloklanadi, xato matni sababni aytadi, so'm kassada qo'riqchi **to'smaydi** (vacuity).
+  - **Bugungi bazada xulq o'zgarmaydi:** lokal `climart_adopt` da 1 ta valyuta bor —
+    UZS (default). Ya'ni filtr bugun hech narsani kesmaydi, kelajakdagi jim xatoni yopadi.
+
+- **🟠 KURS MANBAI DIVERGENSIYASI (ochiq biznes savoli — QAROR QILINMADI):**
+  - **Ikki manba, dalil bilan:**
+    | Manba | Kim o'qiydi | Margin |
+    |---|---|---|
+    | `ExchangeRate` jadvali → `GET /exchange-rates/rate` | **F5 dollar savdo**, **F6 dollar qarz to'lovi** | **YO'Q** — `exchange-rate.service.ts:44` `cbuRateToRateValue(r.rate, r.nominal, **0**)` |
+    | `Currency.rateValue` | hujjatlar (cash-in/out, contract, invoice, commission-report…) | **BOR** — `currency.service.ts:265` `cbuRateToRateValue(src.rate, src.nominal, **c.margin**)` |
+    Formula bitta (`currency-rate-source.ts:16`), farq faqat uchinchi argumentda.
+  - **F6 qarori:** manba **O'ZGARTIRILMADI** — F5 bilan bir xil (`/exchange-rates/rate`).
+    Izchillik muhimroq: kassadagi dollar savdo va dollar qarz to'lovi bir xil kursda yopilsin.
+  - **Amalda nima bo'ladi:** `margin > 0` bo'lsa `Currency.rateValue > CBU`, ya'ni mijozning
+    $100 i **ko'proq so'm** qarz yopardi ⇒ do'kon **kamroq oladi**. Margin sotuvda (chiqayotgan
+    tovarni chet valyutada narxlashda) ma'noli; **kiruvchi** naqdga qo'llanganda teskari ishlaydi.
+    Ya'ni hozirgi tanlov (xom CBU) kiruvchi to'lov uchun do'kon foydasiga **konservativ**.
+  - **Miqdoriy misol (lokal DB'dan o'lchangan):** `ExchangeRate` USD = **11 952.10**
+    (2026-08-10, `source: CBRU`, `nominal: 1`) ⇒ `rateMinor = 1195210000000`.
+    Mijoz $100 bersa qarz **1 195 210,00 so'm**ga kamayadi. Agar `Currency` da margin **2%** li
+    USD qatori bo'lsa, o'sha $100 **1 219 114,20 so'm** yopardi — bitta to'lovda
+    **23 904,20 so'm** farq (do'kon zarariga). *(2% — misol uchun olingan taxminiy qiymat;
+    haqiqiy `Currency.margin` prod bazada o'lchanmagan.)*
+  - **🔴 O'lchangan holat:** lokal `climart_adopt` bazasida `Currency` jadvalida **umuman
+    USD qatori YO'Q** (jami 1 qator: `860`/`UZS`, `MANUAL`, `margin: null`, default).
+    Ya'ni bugun divergensiya **latent** — hujjat yo'li USD kursini oladigan joy yo'q.
+    (Prod bazada o'lchanmagan.)
+  - **O'zgartirish kerak bo'lsa qayerda:** **bitta joy** — `exchange-rate.service.ts:44`
+    dagi `cbuRateToRateValue(r.rate, r.nominal, 0)` ning uchinchi argumenti (yoki bu endpoint
+    `Currency.rateValue` ni o'qishga o'tkaziladi). F5 ham, F6 ham shu bitta endpointdan
+    oziqlangani uchun ikkalasi birga o'zgaradi.
+  - ⚠️ **Bu pul qarori — foydalanuvchiniki.** Javob kelgunicha jim «to'g'irlash» qilinmadi.
+
+- **Brauzer o'lchovi:** ❌ **BAJARILMADI** (to'lqin qoidasi — `pnpm dev` portlari band, 3 agent
+  parallel). **Phase-2 da o'lchanadigan stsenariylar (kutilgan raqamlar bilan):**
+  | # | Stsenariy | Kutilgan natija |
+  |---|---|---|
+  | 1 | Qarz 2 000 000 so'm, kurs 11 952.10, mijoz **$100 naqd** | qarz `2 000 000 − 1 195 210 = 804 790` so'mga tushadi; PKO chekda «Dollar $100.00 × 11952.1» va «TO'LANDI 1 195 210» |
+  | 2 | O'sha to'lovdan keyin smenani yopish | so'm-kutilgan **o'zgarmaydi**; USD-kutilgan **+10 000 sent**; dollar sanalmasa `close()` **400** beradi («dollar naqd oqimi bor») |
+  | 3 | Qarz 1 000 so'm, mijoz $100 | tugma **bloklangan** (ortiqcha to'lov), server ham 400 |
+  | 4 | Kurs yo'q kun (`/exchange-rates/rate` 404) | «Dollar» tugmasi **disabled**, `usd_rate_missing` matni; so'm to'lovi ishlaydi |
+  | 5 | FIFO: 2 ta qarz (600 000 + 595 210 so'm), mijoz $100 | ikkala qarz yopiladi; ikkita `DebtPayment` qatori, `amountOriginalMinor` bo'laklari **jami 10 000 sent** |
+  | 6 | «Hammasi» dollarda, qarz 2 000 000 so'm | maydonga **`167.33`** ($167.33 = 1 999 944,89 so'm), yopilmagan **55,11 so'm** izohda ko'rinadi, to'lov **400 bermaydi** *(raqamlar shu sessiyada hisoblab tekshirildi: `200 000 000 × 10⁸ / 1 195 210 000 000 = 16 733` sent)* |
+  | 7 | Storno (dollar to'lovini qaytarish) | kassa daftaridan **10 000 sent** (USD) chiqadi, so'm qoldig'i tegilmaydi; qarz `paidMinor` tiklanadi |
+  | 8 | `CashDesk.currency = 'USD'` bo'lgan smenada Внесение | **400**, xato matnida «Kassa valyutasi USD» |
+  🔴 Migratsiya YOZILMADI va QO'LLANMADI — kerak emas edi (`DebtPayment.currency`,
+  `amountOriginalMinor`, `exchangeRate` ustunlari 2026-07-13 dan beri bor).
+
+- **Gate natijasi (to'liq, qisqartirilmagan):**
+  - `pnpm --filter @moysklad/money build` — OK
+  - `pnpm --filter @moysklad/api typecheck` — **0 xato**
+  - `pnpm --filter @moysklad/web typecheck` — **0 xato**
+  - `pnpm biome check <tegilgan yo'llar>` — **0 xato**
+  - `pnpm --filter @moysklad/api test` — **557 fayl · 7822 test · 0 yiqilish** (1 skip)
+  - `pnpm --filter @moysklad/web test` — **240 fayl · 3329 test · 0 yiqilish** (26 skip)
+  - `pnpm i18n:gate` — **9 test yashil** (12 971 kalit tekshirildi)
+  - Timeout/soxta-qizil hodisa **bo'lmadi** (yakka yugurtirish talab qilinmadi).
+  - ⚠️ Ikki mavjud test F6 tufayli **yangilandi** (yashirilmadi):
+    `pos-debt-payment-wiring.test.ts` dagi ikki manba-qulfi (`formatAmountInput(outstanding,
+    currency)` → `payAllInput`; `parseAmountToMinor(amountInput, currency)` → valyutali variant)
+    va `sales-screen-shift.test.tsx` payload'iga `currency: 'UZS'` qo'shildi. Ikkalasi ham
+    ataylab qilingan shartnoma o'zgarishi, niyat (float yo'q, umumiy parse) qulfda qoldi.
+
 - **Commit(lar):**
+  - `cd32636d` — `feat(kassa): f6 server — usd qarz to'lovi + smena valyuta ajratmasi`
+  - `66fb4035` — `feat(kassa): f6 ekran — qarz to'lovi oynasida dollar + pko chek qatori`
+  - *(har ikkisiga `docs/progress.json` ning avto-yangilangan 1 qatori ilashdi — hook
+    generatsiyasi, begona sessiya ishi emas; bu worktree izolyatsiyalangan.)*
+
 - **Kelgusi fazalarga qoldirilgan:**
-- **Yorliq:**
+  1. **🟠 Kurs manbai qarori** (yuqorida) — foydalanuvchi javobidan keyin **bitta** joyda
+     o'zgaradi. F6 hech narsani jim o'zgartirmadi.
+  2. **Dollar `CashDesk.balanceMinor` ga tushmaydi** — F5 dan meros ochiq qarz.
+     Endi dollar qarz to'lovi ham `MoneyOperation` ga `currency: 'USD'` bilan yozadi, ya'ni
+     pul-daftar va bank-balans hisobotlari kassadagi dollarni hamon **so'm bilan aralashtirmaydi**,
+     lekin uni **ko'rsatmaydi** ham. Alohida faza talab qiladi.
+  3. **Aralash (so'm + dollar) qarz to'lovi** — hozir bitta to'lov = bitta valyuta.
+     Mijoz $50 + 100 000 so'm bermoqchi bo'lsa kassir ikki marta qabul qiladi (ikki PKO cheki).
+  4. **Dollar bilan qarzni TIYIN-BA-TIYIN yopib bo'lmaydi** (1 sent ≈ 120 tiyin). «Hammasi»
+     pastga yaxlitlaydi va qoldiq ochiq ko'rsatiladi; to'liq yopish uchun qoldiqni so'mda
+     olish kerak. Avans (F10) kelganda bu tabiiy yechiladi.
+  5. **USD-kassa (`CashDesk.currency ≠ UZS`)** endi ochiq bloklangan — to'liq qo'llab-quvvatlash
+     (dollar opening/expected/variance) alohida ish.
+  6. `escalateOverdue`/`markStale` hamon chaqirilmaydi (F13 da).
+
+- **Yorliq:** **Phase-1: strukturaviy, runtime-tasdiqlanmagan** — brauzer-smoke **YO'Q**,
+  real DB bilan uchidan-uchiga to'lov **YO'Q**, fizik PKO chop etish **YO'Q**.
 
 ### F7 hisoboti
 
-- **Holat:** ⬜ bajarilmagan
-- **Sana:**
+- **Holat:** ✅ Phase-1 bajarildi (runtime-tasdiqlanmagan)
+- **Sana:** 2026-08-11 · worktree `sherset-kassa-f7`, branch `kassa-f7`
 - **O'zgargan fayllar:**
-- **Qilingan ish:**
-- **Allowlist'ga qo'shilgan aniq yo'llar:**
-- **Ruxsat qanday berildi (prod qadami):**
-- **Rezerv qanday o'lchandi:**
-- **Brauzer o'lchovi:**
-- **Gate natijasi:**
+  - `apps/api/src/modules/auth/kiosk-policy.ts` — qoida modeli (`:param`, `exact`) + 3 yangi qator
+  - `apps/api/src/modules/auth/kiosk-policy.test.ts` — pozitiv 4 + negativ 22 + `:id` shakli izohi
+  - `apps/api/src/modules/permissions/role-templates.ts` — kassirga `customerorder {view, approve}`
+  - `apps/api/src/modules/permissions/role-templates.test.ts` — `entity.action` route-override, F7 qulfi
+  - `apps/api/src/modules/permissions/__snapshots__/role-templates.test.ts.snap` — 1 qator
+  - `apps/api/src/modules/permissions/template-topup.{ts,test.ts}` — `TOPUP_ENTITIES += customerorder`
+  - `apps/web/src/app/(app)/sotuv/page.tsx` — «Zakazlar» yorlig'i + `ZakazDetailPanel`
+  - `apps/web/src/app/(app)/sotuv/__tests__/sales-screen-orders.test.tsx` — YANGI, 12 test
+  - `apps/web/src/app/(app)/sotuv/__tests__/harness.tsx` — `/permissions/me` marshruti
+  - `apps/web/src/hooks/use-permissions.ts` — `can(entity, action)`
+  - `apps/web/src/messages/{ru,uz}.json` — 11 kalit × 2 til
+- **Qilingan ish:** POS'da «Zakazlar» yorlig'i — holat filtri (Yangi / Tasdiqlangan /
+  To'lov kutilmoqda) SERVER `state=` parametri bilan + `storeId` cheklovi; zakaz detali
+  (pozitsiyalar, miqdor, narx, **rezerv miqdori**); `draft` zakaz uchun «Tasdiqlash»
+  tugmasi. **Yangi qabul-FSM QO'SHILMADI** — mavjud `state` o'qiladi va mavjud
+  `POST /customer-orders/:id/transitions/:target` chaqiriladi. Rezervni FE qo'ymaydi:
+  server `confirmed` da o'zi qo'yadi (dalil: `customer-order.service.ts:1138-1165` —
+  `applicable = true` → `applyReservationInvariant(…, 'hold-remaining')`).
+- **Allowlist'ga qo'shilgan aniq yo'llar** (har biri — nega):
+  | yo'l | metod | nega |
+  |---|---|---|
+  | `/customer-orders` | GET (`exact`) | zakazlar ro'yxati — yorliqning o'zi |
+  | `/customer-orders/:id` | GET (`exact`) | detal: pozitsiyalar, summa, mijoz, rezerv |
+  | `/customer-orders/:id/transitions/confirmed` | POST (`exact`) | `draft → confirmed`; rezerv AYNAN shu o'tishda tushadi |
+
+  Buning uchun qoida modeli kengaytirildi: `:param` bitta segmentga mos keladi,
+  `exact: true` ichki yo'llarni OCHMAYDI. Oddiy prefiks-qoida bo'lganda bitta
+  `/customer-orders` GET qatori `:id/related`, `:id/supply-shortfall` va kelajakdagi
+  har qanday sub-resursni ham jimgina ochib yuborardi.
+
+  **Negativ test nimani bloklab turibdi** (`kiosk-policy.test.ts`, 22 yo'l):
+  `POST /customer-orders` (yaratish) · `PATCH`/`DELETE`/`:id/clone` ·
+  `bulk-delete`, `bulk-transition`, `bulk-set-status`, `bulk-reserve`,
+  `bulk-clear-reserve`, `bulk-mark-printed`, `bulk-print`, `merge`, `mass-edit` ·
+  `transitions/cancelled` (rezervni bo'shatadi), `transitions/paid` (F8 ishi),
+  `transitions/closed` · `:id/related`, `:id/supply-shortfall`, `:id/position` ·
+  segment-chegarasi `/customer-orders-archive`.
+  ⚠️ **Ochiq qolgani ochiq yozilgan:** `/customer-orders/kanban` va `/print-forms`
+  shaklan `:id` ga tushadi. Ataylab qoldirildi (ikkalasi ham ro'yxat bilan bir xil
+  `customerorder.view` ruxsatiga bog'langan, yozadigan hech narsa yo'q) va bu holat
+  alohida test bilan hujjatlangan — «jimgina ochilib qolgan» emas.
+- **Ruxsat qanday berildi (prod qadami):** rol-shabloni orqali (MK29 naqshi, qo'lda DB
+  tahriri EMAS) — `cashier` shabloniga `customerorder {view: ALL, approve: ALL}`;
+  `create`/`update`/`delete`/`print` ataylab `NO`. `PermissionEntity` unioniga TEGILMADI
+  (`customerorder` allaqachon bor) — ya'ni «izohda nuqtali vergul» tuzog'i bu fazada
+  qo'zg'almadi. Seed-sync holati: `role-templates.test.ts` (62), `permissions-seed-sync`,
+  `hr-role-seed-sync`, `template-topup.test.ts` (18) — hammasi yashil; kassir↔kiosk
+  moslik testi `entity.action` override bilan `approve` uchun aynan
+  `…/transitions/confirmed` yo'lini tekshiradi.
+  🔴 **Prod qadami (hali BAJARILMAGAN):** `TOPUP_ENTITIES` ga `customerorder` qo'shildi →
+  jonli serverda `npx tsx src/scripts/topup-role-permissions.ts --apply` (apps/api ichidan),
+  keyin api jarayonini restart (ruxsat cache 5 daqiqa TTL). Yugurtirilib tasdiqlangach
+  `customerorder` ro'yxatdan **OLIB TASHLANADI** — u yangi entity emas, va boshqa
+  shablonlarda (owner/admin/sales_manager/seller) ham musbat bo'lgani uchun ro'yxatda
+  qolsa «admin butunlay olib tashlagan» rolni keyingi run tiriltirib qo'yishi mumkin.
+  Sabab kodda ham yozilgan (`template-topup.ts`).
+- **Rezerv qanday o'lchandi:** 🔴 **O'LCHANMAGAN.** Bu to'lqinda dev-stack ko'tarilmadi
+  (portlar 3 parallel agent bilan band — sessiya promptining §4 chegarasi). O'lchangani —
+  faqat KOD dalili: `customer-order.service.ts:1138-1165`. Kutayotgan o'lchov quyidagi
+  «Brauzer o'lchovi» ro'yxatining 3-bandi.
+- **Brauzer o'lchovi:** 🔴 **BAJARILMAGAN.** O'lchanishi kerak bo'lgan stsenariylar:
+  1. **Kiosk-kassir yorliqni ko'radi** — kiosk rolli xodim `/sotuv` → «Zakazlar»;
+     kutilgan: ro'yxat 200 bilan keladi (403 EMAS — allowlist qatorining haqiqiy sinovi).
+  2. **Do'kon cheklovi** — boshqa do'konning `draft` zakazi ro'yxatda KO'RINMAYDI.
+  3. **Rezerv DB'da** (asosiy o'lchov) — `draft` zakaz, 2 pozitsiya, ombor qoldig'i yetarli:
+     tasdiqlashdan OLDIN `SELECT reserved_qty FROM customer_order_position` = 0 va
+     `Stock.reserved` = X; «Tasdiqlash» dan KEYIN `reserved_qty` = buyurtma miqdori,
+     `Stock.reserved` = X + miqdor, `CustomerOrder.state='confirmed'`, `applicable=true`.
+     Ekranda: detalda «Rezerv: N» raqami ko'tariladi.
+  4. **Qoldiq yetmaganda** — rezerv qisman/0 bo'lsa ekran nima ko'rsatadi (server
+     `hold-remaining` ni qanday hal qiladi — o'lchanmagan).
+  5. **Ruxsatsiz kassir** — `customerorder.approve` olib tashlangan rol: tugma yo'q VA
+     `curl -X POST …/transitions/confirmed` 403 qaytaradi.
+  6. **Yopiq yo'l** — `curl -X DELETE …/customer-orders/:id` kiosk tokeni bilan → 403.
+  7. **Xato yo'li** — `cancelled` zakazni tasdiqlashga urinish → toast'da server matni.
+- **Gate natijasi (ketma-ket yugurtirildi, parallel EMAS):**
+  `pnpm --filter @moysklad/money build` OK ·
+  `api typecheck` 0 · `web typecheck` 0 ·
+  `biome check <tegilgan yo'llar>` exit 0 ·
+  `api test` **554 fayl / 7818 test yashil** (0 yiqilish, 1 fayl + 2 test skip) ·
+  `web test` **239 fayl / 3323 test yashil** (0 yiqilish, 26 skip) ·
+  `pnpm i18n:gate` OK (9 test). Yuk timeouti kuzatilmadi.
+  Testlar: +26 API (kiosk-policy +5 blok, role-templates +1, template-topup +3) va
+  +12 web. Har biri avval QIZIL ko'rildi; ikki ruxsat testi mutatsiya bilan
+  tasdiqlandi (guard olib tashlansa qizaradi — vakuum emas).
 - **Commit(lar):**
+  - `215964f8` — `feat(kassa): kiosk zakaz yo'llari + kassirga customerorder.approve (f7 server)`
+  - `44ca0cb3` — `feat(kassa): pos «zakazlar» yorlig'i — ro'yxat, detal, tasdiqlash (f7 web)`
+  (ikkalasida ham hook `docs/progress.json` ni avtomat qo'shdi — repo konvensiyasi.)
 - **Kelgusi fazalarga qoldirilgan:**
-- **Yorliq:**
+  - **F8 (to'lash):** `RetailSale.customerOrderId` ga TEGILMADI; to'lov oqimi
+    o'zgartirilmadi. F8 ga kerak bo'ladi: (a) `transitions/awaiting_payment` va/yoki
+    `transitions/paid` uchun allowlist qatori — hozir ATAYLAB yopiq va negativ test bilan
+    qulflangan, ya'ni F8 o'sha testni ongli ravishda yangilashi kerak; (b) zakaz
+    detalidan «To'lash» yo'li; (c) ikki kassir bitta zakazni bir vaqtda to'lashi
+    (reja §5 «Zakaz (F7–F8)» bandi).
+  - **F9 (mijoz kartasi):** «jarayondagi zakazlari» ro'yxati shu yerdagi
+    `/customer-orders?state=…&storeId=…` so'rovini mijoz bo'yicha filtrlab qayta ishlatadi
+    — `agentId` filtri allowlist'ga qo'shimcha yo'l TALAB QILMAYDI (o'sha GET).
+  - **Prod:** `topup-role-permissions.ts --apply` + api restart, keyin `TOPUP_ENTITIES`
+    dan `customerorder` ni olib tashlash (yuqorida).
+  - **Kuzatilgan, tegilmagan:** `apps/web/src/app/(app)/sotuv/page.tsx` da eski
+    class-sort ogohlantirishlari (biome `warning`, `error` emas) — MK33 bo'linishida
+    ko'riladi. Worktree'da `lint-staged automatic backup` stash'i qoldi (o'z commitimdan,
+    tarkib commitga tushgan) — **o'chirilmadi** (CLAUDE.md §6.7 A qoidasi).
+- **Yorliq:** **Phase-1: strukturaviy, runtime-tasdiqlanmagan** · brauzer-smoke YO'Q ·
+  rezerv DB'da o'lchanmagan.
 
 ### F8 hisoboti
 
@@ -1717,3 +2296,119 @@ Tuzatish 4 parallel agent + o'zim (auth), har biri TDD (RED ko'rilgan → fix �
 - **Topilgan buglar (tuzatilgan / qoldirilgan):**
 - **Yorliq o'zgarishi (qaysi fazalar «Phase-2 verified» bo'ldi):**
 - **Commit(lar):**
+
+### F13 hisoboti — smena-qabul avtomatikasi tirik emas
+
+- **Holat:** ✅ bajarilgan · **Sana:** 2026-08-11 · **Worktree:** `kassa-f13` (baza `b5e10c85`)
+- **Yorliq:** **Phase-1: strukturaviy, runtime-tasdiqlanmagan** (brauzer-QA YO'Q, real cron
+  yurishi kutilmadi, DB/migratsiyaga tegilmadi).
+
+**1. Nega ulanmagan edi — javob (tekshirildi, ko'r-ko'rona ulanmadi)**
+
+Bu **o'zaro kechiktirish** edi, tamoyilli qaror EMAS. Dalil (`NEXT.md`):
+- MK08 hisoboti: «Ochiq qarz: … `escalateOverdue` **cron'ga ulanmagan (MK06 bilan birga
+  mantiqiy)** · `markStale` chaqiruvchisi yo'q (hujjat-o'zgarish kuzatuvchisi hali yo'q)»;
+- MK06 hisoboti: «`sync` **cron'ga ulanmagan (MK08 `escalateOverdue` bilan birga)**».
+
+Ya'ni ikki faza bir-biriga ishora qildi va hech biri qilmadi. Kod (`8bb11ef5`) yoki reja
+ichida «eskalatsiya YURMASLIGI kerak» degan dizayn sababi **hech qayerda yo'q** — shu sababli
+ulash to'g'ri qaror deb topildi.
+
+🔴 **`markStale` ATAYLAB ULANMADI** — bu esa haqiqiy, sababi yozilgan kechiktirish. U vaqt
+emas, **hodisa** bo'yicha ishlaydi («qabul qilingan smenaning hujjati keyin o'zgardi»;
+`shift-acceptance.ts` FSM: `mark_stale` faqat `accepted`/`force_accepted` dan). Cron'dan
+davriy chaqirilsa yopilgan smenalarni sababsiz «eskirdi» deb belgilab, menejer navbatini
+yolg'on signal bilan to'ldirardi. Chaqiruvchisi — chek tahriri/qaytarish oqimi, u hali yo'q.
+
+**2. O'zgargan fayllar**
+
+| Fayl | Nima |
+| --- | --- |
+| `apps/api/src/modules/cashier-session/shift-acceptance.cron.ts` | **YANGI** — `ShiftAcceptanceCron`, `@Cron('20 1 * * *', Asia/Tashkent)`; `employee-daily-kpi.cron.ts` naqshi (jadval + hisoblarni aylanish + ustma-ust qulfi; qoida servisda). 01:20 ataylab — KPI cron'i 00:40 da barcha hisoblarni aylanadi. |
+| `apps/api/src/modules/cashier-session/cashier-session.module.ts` | cron provayder sifatida; `PrismaModule` OSHKORA import (@Global tasodifiga tayanmaydi). `ScheduleModule` QAYTA ro'yxatdan o'tkazilmadi — `AppModule` da global. |
+| `apps/api/src/modules/cashier-session/shift-acceptance-cron.test.ts` | **YANGI** — 12 test (qo'riqchi, quyida). |
+| `docs/progress.json` | hook yozgan branch-metadata (begona ish emas — F11 hisobotidagi bilan bir xil hodisa). |
+
+**3. Wiring qo'riqchisi + mutatsiya sinovi**
+
+Ikki qatlam, chunki bittasi yetmaydi:
+1. **XULQ** — cron har hisob uchun `escalateOverdue` ni HAQIQATAN chaqiradi; bitta hisob
+   xatosi qolganini to'xtatmaydi; ustma-ust yurish qulfi ishlaydi.
+2. **MANBA-SKAN** — `@Cron` dekoratori bor · `ShiftAcceptanceCron` modul provayderi ·
+   `ScheduleModule.forRoot()` ilovada · `CashierSessionModule` `AppModule` da · vakuum-qarshi
+   tekshiruv. Faqat xulq testi bo'lsa, provayderni ro'yxatdan olib tashlaganda test YASHIL
+   qolardi va funksiya yana o'lardi.
+
+Qo'shimcha: soxta soat bilan eskalatsiya oynasi — kesim `now − SHIFT_ESCALATE_AFTER_DAYS`,
+`acceptanceChangedAt` bo'yicha (`updatedAt` EMAS), jurnalga `system` / `no_response`.
+
+**Mutatsiya sinovi (uchtasi ham o'z ko'zim bilan qizardi, keyin tiklandi):**
+
+| Mutatsiya | Natija |
+| --- | --- |
+| `escalateOverdue` chaqiruvi cron'dan olib tashlandi | **4 test qizil** (3 xulq + 1 manba-skan) |
+| `ShiftAcceptanceCron` modul provayderlaridan olib tashlandi | **1 test qizil** |
+| `@Cron(...)` dekoratori olib tashlandi | **1 test qizil** |
+
+**4. Eskalatsiya xabari kimga ketadi — O'LCHANGAN JAVOB: HECH KIMGA** ⚠️
+
+`escalateOverdue` → `transition()` (`shift-acceptance.service.ts:266-291`, `183-256`) faqat
+IKKI narsa yozadi: `cashierSession.updateMany` + `cashierSessionAcceptanceEvent.create`.
+**Telegram/SMS/`NotificationService` — YO'Q.** Ya'ni eskalatsiya JIM.
+
+Kim ko'radi:
+- `escalated` — `SHIFT_QUEUE_STATES` ichida (`shift-acceptance.ts:274-279`) ⇒ smena menejer
+  navbatida qoladi va `/menejer/smenalar` ekranida ko'rinadi;
+- `force_accept` ni FAQAT `owner` qila oladi (`shift-acceptance.ts:167-174`), `owner` =
+  `admin` roli (`cashier-session.controller.ts:212-224`). Ya'ni ega ekranni **o'zi ochsagina**
+  biladi;
+- MK19 kunlik brifing bloki `shift_acceptance` (`day-briefing.service.ts:261-276`) Telegram'ga
+  chiqishi mumkin, LEKIN u `closedAt` ni **bugungi kunga** filtrlaydi ⇒ 3 kun oldin yopilgan
+  eskalatsiya unga **umuman tushmaydi**. Chat ham shaxsiy emas: `telegramConfig.defaultChatId`.
+
+⇒ **Bildirishnoma yo'li YO'Q — kelgusi fazaga qarz.** Spam xavfi ham yo'q (hech narsa
+yuborilmaydi); teskarisi — signal yetib bormasligi xavfi bor.
+
+**5. O'lchanmagan ssenariylar (kelgusi runtime/QA sessiyaga)**
+
+1. Real cron 01:20 da yurishi — API ko'tarilmadi, `pnpm dev` yugurtirilmadi.
+2. Real DB'dagi so'rov: MK08 migratsiyasi (`20260810070000_shift_acceptance`) lokal bazaga
+   **hech qachon qo'llanmagan** (MK08 hisoboti). Ustunsiz cron har kecha `logger.error` beradi.
+3. 🔴 **Birinchi yurish hajmi:** MK08 backfill'i barcha tarixiy yopilgan smenalarni `pending`
+   qilgan ⇒ DDL+backfill'dan keyingi BIRINCHI cron 3 kundan eski BARCHA smenani bir yurishda
+   eskalatsiya qiladi (har biri alohida tranzaksiya). Soni o'lchanmagan — prodda oldindan
+   `SELECT count(*)` bilan o'lchansin.
+4. Ko'p instansiyali deploy (PM2 cluster): `running` bayrog'i **process-lokal** — har instansiya
+   o'z cron'ini yuritadi. Har smena optimistik da'vo bilan himoyalangan (faqat bittasi o'tadi),
+   lekin yuk ko'payadi. O'lchanmagan.
+5. `/menejer/smenalar` ekranida `escalated` smena `admin` uchun haqiqatan `force_accept`
+   tugmasini ko'rsatadimi — brauzerda tekshirilmagan.
+
+**6. Gate**
+
+`money build` ✓ · `api typecheck` 0 · `web typecheck` 0 · `biome check` (tegilgan 3 fayl) 0 ·
+`i18n:gate` 9 ✓ · **api vitest 7860 ✓** · **web vitest 3381 ✓**.
+
+Yiqilishlar — **hammasi yuk artefakti** (`Test timed out in 5000ms`; 5 agent parallel):
+- web 1-yurish 13 yiqilish → 2-yurishda **1** (butunlay BOSHQA fayl), yolg'iz yugurtirilganda
+  ikkala to'plam ham yashil ⇒ to'plamlar kesishmaydi, defekt emas;
+- api: `pos-pin` / `pos-device` yolg'iz yashil. `mutation-guard-coverage.test.ts` ning
+  `await import('debt.controller.js')` testi barqaror 5s da yiqiladi — **F13 dan mustaqil**:
+  skript bilan o'lchandi, `DebtController` ning tranzitiv import grafi **92 fayl** va unda
+  `cashier-session` **YO'Q**. `testTimeout` OSHIRILMADI.
+
+**7. Commitlar**
+
+- `fb297d2c` — `feat(kassa): f13 — smena eskalatsiyasi cron'ga ulandi (o'lik metod tirildi)`
+  (4 fayl; 4-chisi — hook yozgan `docs/progress.json`)
+- shu hisobot — alohida `docs(kassa): f13 hisoboti` commit'i.
+
+**Kelgusi fazalarga qoldirilgan**
+
+1. **`markStale` hamon chaqiruvchisiz** — ataylab (yuqorida, §1). Chaqiruvchi = chek
+   tahriri/qaytarish oqimi (hodisaviy).
+2. **MK06 `ManagerQueueService.sync` hamon cron'da emas** — F13 doirasidan tashqarida
+   (`manager/queue` hududi), lekin NEXT.md unga «F13 bilan birga» deb ishora qilgan edi.
+3. **Eskalatsiya bildirishnomasi yo'q** (§4) — ega uchun push kanali kerak.
+4. **MK19 brifing smena bloki `closedAt` ni bugunga filtrlaydi** — eski eskalatsiyalar
+   brifingda ko'rinmaydi (dizayn savoli, F13 da tegilmadi).
