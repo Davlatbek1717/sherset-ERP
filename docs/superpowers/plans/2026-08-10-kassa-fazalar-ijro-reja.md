@@ -1432,16 +1432,112 @@ Tuzatish 4 parallel agent + o'zim (auth), har biri TDD (RED ko'rilgan → fix �
 
 ### F3 hisoboti
 
-- **Holat:** ⬜ bajarilmagan
-- **Sana:**
+- **Holat:** ✅ bajarildi (kod + qo'riqchi darajasida; Electron ishga TUSHIRILMAGAN, printer sinalmagan)
+- **Sana:** 2026-08-11 · worktree `D:/projects/sherset-kassa-f3`, branch `kassa-f3` (baza `b5e10c85`)
 - **O'zgargan fayllar:**
+  - `desktop/main.js` — chop etish (`print:list`/`print:sheet`) va mijoz-ekran (`cfd:push`/`cfd:toggle`/`cfd:status`)
+    ishlovchilari F2 ning ochiq-xato zaglushkalari o'rniga haqiqiy implementatsiya (+272 qator)
+  - yangi `desktop/preload-customer.js` — mijoz-ekran oynasining ALOHIDA ko'prigi → `window.customerDisplay.onCart(cb)`
+  - `desktop/README.md` — chop etish/mijoz-ekran bo'limlari, «Chop etishni o'lchash» qadamlari, pul-yashigi qarzi
+  - `apps/web/src/__tests__/electron-bridge-contract.test.ts` — 26 → **61 test**
+  - `docs/progress.json` — hook qayta generatsiya qildi (`branch: kassa-f3`), merge'da `climart-adoption` versiyasi olinsin
 - **Qilingan ish:**
-- **Chop etish qanday o'lchandi:**
+  - **Chop etish (spec §6.4).** `listPrinters()` → `webContents.getPrintersAsync()` — 🔴 sinxron `getPrinters()`
+    Electron 25+ da OLIB TASHLANGAN, uni ishlatgan qobiq ishga tushganda yiqilardi. `printSheet(printerName,
+    html, pageSizeMicrons?)` → HTML **vaqtinchalik faylga** (`%TEMP%`, UTF-8; `data:` URL EMAS — uzun chek
+    URL chegarasiga urilardi, kirill kodlash ishonchsiz edi) → yashirin `BrowserWindow` → `webContents.print(
+    { silent:true, deviceName, printBackground:true, margins:none, pageSize })`. Qog'ozga **Windows drayveri**
+    bosadi ⇒ ESC/POS kodpage muammosi yo'q.
+  - **Qog'oz o'lchami.** Web `pageSizeMicrons` bersa (senik/label) — o'sha; bermasa chek rejimi: eni 80mm
+    (legacy), bo'yi esa **mazmun bo'yicha** (`scrollHeight` × 264.58 mkm + 4mm quyruq). Aks holda drayver
+    har chekni A4 gacha cho'zib qog'oz sarflardi. Yashirin oynaning ENI qog'oz eniga tenglashtiriladi —
+    odatiy 800px viewport'da `width:100%` li shakl kalta o'lchanib, chek oxiri kesilardi.
+  - **Osilib qolish yo'q.** Render 15s / chop 60s chegarasi; har yo'lda `{ ok, error? }` qaytadi. Sabab
+    (F2 dan meros): `print-agent.ts:105-118` qobiq mavjud bo'lganda HTTP-agentga **qaytmaydi**, ya'ni bu
+    yerdagi javob oxirgi so'z — jim `ok` yoki tugamaydigan va'da chekni yo'qotardi.
+  - **Mijoz-ekran (spec §6.5).** `toggleCustomerDisplay()` → `screen.getAllDisplays()` ikkinchi displey bounds'ida
+    ramkasiz fullscreen oyna `<server>/customer-display`; ekran yo'q bo'lsa `{ open:false, error }` (shartnoma).
+    Savat yo'li: `pushCart` → `cfd:push` → main → `cfd:cart` → `preload-customer.js` → sahifadagi `onCart`.
+    Main **oxirgi savatni saqlaydi** va oyna yuklangach darhol yuboradi (aks holda ekran keyingi o'zgarishgacha
+    bo'sh turardi). 🔴 Alohida `partition` **berilmaydi** — sahifa `refresh()` bilan kassir bilan umumiy cookie
+    sessiyasidan token oladi. Yuklanish xato bo'lsa oyna yopiladi (mijoz oldida Chrome xato sahifasi qolmasin);
+    kassir oynasi yopilsa mijoz-ekran ham yopiladi (aks holda `window-all-closed` otilmay ilova ko'rinmas
+    holda tirik qolardi).
+  - **`tools/print-agent` (PowerShell) — TEGILMADI.** 🔴 Kuzatuv: u repo'da UMUMAN YO'Q (`git ls-files` va
+    ikkala checkout'da ham) — HTTP zaxira qatlamining faqat MIJOZ tomoni (`print-agent.ts`) versiyalangan,
+    agentning o'zi kassa PC'siga alohida o'rnatiladi. Shuning uchun «olib tashlanmadi» bandi shu qatlamning
+    web tomonini buzmaslik bilan bajarildi (qo'riqchi test bilan qulflandi).
+- **Shartnoma-testi qamrovi qanday kengaydi (26 → 61):**
+  - **Mijoz-ekran ko'prigi** (F2 da umuman qamralmagan edi): metod nomi `customer-display/page.tsx` dagi
+    `interface CustomerBridge` dan **manbadan** o'qiladi; `preload-customer.js` uni `contextBridge` orqali
+    berishi, yo'nalish PUSH (`ipcRenderer.on`) ekani, `require` faqat `electron` dan ekani tekshiriladi.
+  - **IPC kanal-yo'nalish qulfi (yangi bug-klass qo'riqchisi):** ikkala preload'dagi HAR `ipcRenderer.*('kanal')`
+    uchun `main.js` da mos registratsiya bo'lishi shart — `invoke`↔`ipcMain.handle`, `send`/`sendSync`↔`ipcMain.on`,
+    renderer `on`↔main `.send(...)`. Ya'ni «kanal bor-u ishlovchi yo'q» yoki «`invoke` ga `ipcMain.on` javob
+    beradi» (va'da hech qachon tugamaydi) holati endi statik tutiladi.
+  - **Chop etish qo'riqlari:** zaglushka matni qolmagani, `getPrintersAsync` (va sinxron `getPrinters()` YO'Qligi),
+    `silent:true` + `deviceName`, preload payload maydonlari (`printerName`/`html`/`pageSizeMicrons`) main'da
+    o'qilishi, `pageSize` uzatilishi, `ok:true`/`ok:false` ikkala yo'l borligi.
+  - **Mijoz-ekran qo'riqlari:** `getAllDisplays`, `/customer-display` yuklanishi, `preload-customer.js` ULANGANI,
+    ekransiz holatda `{open:false, error}`, `frame:false`, **`partition` yo'qligi**.
+  - **Uch qatlamli fallback qulfi:** `print-agent.ts` da `127.0.0.1:17777` va `agentPrint` qolgani + Electron'siz
+    shox (`await agentPrint(`) uchtala chaqiruvchida (chek, yacheyka varaqasi, Z-hisobot) saqlanib qolgani.
+  - **Mutatsiya sinovi (o'lchangan, keyin tiklandi) — 5/5 tutildi:** (1) `preload-customer.js` dan `onCart`
+    nomini o'zgartirish → «onCart berilgan» qizil; (2) `ipcMain.handle('cfd:toggle')` → `ipcMain.on` → kanal-yo'nalish
+    testi qizil; (3) cfd oynasiga `partition:'cfd'` qo'shish → partition testi qizil; (4) cfd oynasidan `preload`
+    ni olib tashlash → «preload-customer.js ULANGAN» qizil; (5) `getPrintersAsync()` → `getPrinters()` → asinxron-API
+    testi qizil. Implementatsiyadan OLDIN 13 yangi test qizil edi (TDD: red → yashil).
+- **Chop etish qanday o'lchandi:** 🔴 **HECH QANDAY — BAJARILMADI.** Sessiya promptida Electron'ni o'rnatish
+  (`cd desktop && pnpm install` ≈ 200 MB) va ishga tushirish TAQIQLANGAN edi (foydalanuvchi roziligi yo'q,
+  parallel faza). Ya'ni hech bir printerga (real ham, virtual PDF ham) bitta chek ham yuborilmagan; kirill
+  matn, 80mm eni va chek uzunligi **o'lchanmagan**. Ishonch darajasi — statik: `node --check` sintaksis +
+  shartnoma-testi + kod o'qish. O'lchash qadamlari `desktop/README.md` → «Chop etishni o'lchash» bo'limida
+  (virtual «Microsoft Print to PDF» stsenariysi bilan): printer ro'yxati → chek → PDF'da kirill/eni/uzunlik →
+  yacheyka varaqasi va Z-hisobot → **noto'g'ri printer nomi bilan xato ko'rinishi** → 2-monitorda mijoz-ekran.
 - **Mijoz-ekran / pul yashigi holati:**
-- **Gate natijasi:**
-- **Commit(lar):**
+  - Mijoz-ekran: kod yozildi va shartnoma bilan qulflandi, lekin **2-monitor ulanmagan holatda ham,
+    ulangan holatda ham sinalmagan** (Electron ishga tushirilmadi).
+  - **Pul yashigi impulsi (cash drawer kick) — QILINMADI, QARZ sifatida qayd etilmoqda.** Sabab o'lchangan:
+    `webContents.print` faqat drayverga HUJJAT beradi, ESC/POS `ESC p` impulsi esa printerga **xom bayt**
+    yuborishni talab qiladi — Electron API'sida bunday yo'l yo'q va qo'shimcha native modul o'rnatish bu
+    fazada taqiqlangan edi. Ixtiro qilinmadi. Ikki mumkin yechim (F3 dan tashqarida): (a) yashik impulsi bilan
+    boshlanadigan drayver profiliga bosish, (b) xom baytni HTTP print-agent orqali yuborish (u repo'da yo'q).
+- **F2 ning uchta tasdiqlanmagan taxmini — holati:**
+  - 🔴 **Uchalasi ham HAMON TASDIQLANMAGAN.** Sabab o'lchangan: bu daraxtda Electron paketi umuman o'rnatilmagan
+    (`node_modules/.pnpm` da faqat `electron-to-chromium`, `electron.d.ts` yo'q), ya'ni `sandbox: true` preload'da
+    `ipcRenderer.sendSync` ishlashini, `did-fail-load` xato kodlarini va `dialog.showErrorBox` kiosk ustida
+    ko'rinishini **kod bilan tekshirib bo'lmadi** (faqat hujjat bilan).
+  - Yumshatuvchi holat: F3 qo'shgan ko'priklar `sendSync` ga BOG'LIQ EMAS — chop etish `invoke`, mijoz-ekran
+    `send`/`on` ustida. `sendSync` riski faqat qurilma kaliti metodlarida (F1/F2 hududi) qoladi.
+  - `did-fail-load` bo'yicha yagona yangi qaram joy — mijoz-oynaning xato-yopilishi; u ham F2 dagi `-3`
+    (`ERR_ABORTED`) konvensiyasini takrorlaydi, ya'ni taxmin noto'g'ri bo'lsa ikkala joy birga tuzatiladi.
+- **Gate natijasi (ketma-ket yugurtirildi):**
+  - `money build` OK · `api typecheck` 0 · `web typecheck` 0 · `biome check` (4 tegilgan yo'l) 0 · `i18n:gate` OK (9 test)
+  - `web test`: **243 fayldan 237 yashil, 6 fayl / 15 test qizil — hammasi yuk artefakti.** Oltalasi ham
+    YOLG'IZ yugurtirilganda yashil (`cell-count-modal`, `cell-scan-bind-modal`, `debt-payment-usd`,
+    `sales-screen-shift`, `audit-fixlar`, `sales-screen-cart`) — ya'ni 243/243 yashil. Yiqilishlar 5000ms
+    atrofida, mashinada 38 ta node jarayoni ishlayotgan edi (foydalanuvchining `pnpm dev` steki + parallel faza).
+  - `api test`: **558 fayldan 557 yashil**, 1 qizil — `permissions/mutation-guard-coverage.test.ts` →
+    «POS qarz to'lovi kassa to'lovi bilan BIR XIL ruxsatda». 🔴 Bu **MENIKI EMAS va yolg'iz yugurtirilganda ham
+    qizil** (3 marta takrorlandi): test tanasida `import('../debt/debt.controller.js')` butun qarz-servis grafini
+    tortadi va 5000ms testtimeout'ga sig'maydi. `apps/api` da **bitta ham fayl o'zgartirmadim** (`git status`
+    bilan tasdiqlangan), `testTimeout` ni oshirish esa taqiqlangan — shuning uchun oldindan-qizil sifatida
+    qoldirildi va bu yerda ochiq yozildi.
+- **Commit(lar):** `31d905fe` — `feat(kassa): exe'da chop etish va mijoz-ekran ulandi (f3)` (+ shu hisobot commit'i).
+  `docs/progress.json` commit'ga lint-staged orqali qo'shildi (hook qayta generatsiya qilgan) — merge'da
+  `climart-adoption` versiyasi olinsin.
 - **Kelgusi fazalarga qoldirilgan:**
-- **Yorliq:**
+  - **F12 (real kassada QA) — asosiy qarz:** yuqoridagi «Chop etishni o'lchash» ro'yxati; unsiz «chop etish
+    ishlaydi» deb aytish mumkin EMAS.
+  - **Pul yashigi impulsi** (yuqoridagi ikki yo'ldan biri tanlansin).
+  - **F4:** `build/icon.ico`, `electron-builder` NSIS konfiguratsiyasi (unda `preload-customer.js` ham `files`
+    ro'yxatiga tushishi shart), `electron-updater`, `latest.yml` uchun nginx. `desktop/package.json` versiyasi
+    ataylab `1.1.0-dev` da qoldirildi — hech qanday build/relaz bo'lmagani uchun ko'tarishga asos yo'q
+    (web hech qayerda `version` ni solishtirmaydi — tekshirildi).
+  - **HTTP print-agent manbasi repo'da yo'q** — zaxira qatlamning serveri versiyalanmagan; kimdir uni
+    yo'qotsa/yangilasa iz qolmaydi (kuzatuv, F3 hududidan tashqarida).
+- **Yorliq:** **Phase-1 — strukturaviy, runtime-tasdiqlanmagan · printer-tasdiqlanmagan.** Electron o'rami
+  hech qachon ishga tushirilmagan; chop etish va mijoz-ekran hech bir qurilmada sinalmagan.
 
 ### F4 hisoboti
 

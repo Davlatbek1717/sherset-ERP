@@ -147,6 +147,52 @@ function topLevelMembers(src: string, header: RegExp): string[] {
 const bridgeMembers = topLevelMembers(printAgentSrc, /interface ElectronBridge\b/);
 const deviceMembers = topLevelMembers(posDeviceSrc, /interface ShellBridge\b/);
 
+// ─── F3: mijoz-ekran IKKINCHI ko'prigi ──────────────────────────────────────
+// `window.electronAPI` kassir oynasining ko'prigi; mijoz-ekran oynasi esa
+// BOSHQA sahifa (`/customer-display`) va BOSHQA preload — u
+// `window.customerDisplay.onCart(cb)` ni kutadi. F2 qo'riqchisi buni
+// qamramagan edi, ya'ni ko'prik butunlay yo'q bo'lsa ham hech narsa
+// shikoyat qilmasdi (ekran jimgina bo'sh turardi).
+const customerPagePath = join(WEB, 'src/app/customer-display/page.tsx');
+const customerPageSrc = readFileSync(customerPagePath, 'utf8');
+const customerMembers = topLevelMembers(customerPageSrc, /interface CustomerBridge\b/);
+const preloadCustomerPath = join(REPO, 'desktop/preload-customer.js');
+
+/** Izohlarsiz kod (satr-literallar saqlanadi) — regex izohga tushmasin. */
+function codeOf(src: string): string {
+  return scanLines(src)
+    .map((l) => l.text)
+    .join('\n');
+}
+
+type IpcKind = 'invoke' | 'send' | 'sendSync' | 'on';
+interface IpcUse {
+  channel: string;
+  kind: IpcKind;
+  file: string;
+}
+
+/** preload'dagi har bir `ipcRenderer.<kind>('<kanal>'` chaqiruvi. */
+function ipcUses(src: string, file: string): IpcUse[] {
+  const re = /ipcRenderer\.(invoke|send|sendSync|on)\(\s*'([^']+)'/g;
+  const out: IpcUse[] = [];
+  for (const m of codeOf(src).matchAll(re)) {
+    out.push({ kind: m[1] as IpcKind, channel: m[2] as string, file });
+  }
+  return out;
+}
+
+/** main.js tomonidagi registratsiyalar (`handle`/`on`) va renderer'ga yuborishlar. */
+function mainChannels(src: string): { handle: Set<string>; on: Set<string>; send: Set<string> } {
+  const code = codeOf(src);
+  const grab = (re: RegExp) => new Set([...code.matchAll(re)].map((m) => m[1] as string));
+  return {
+    handle: grab(/ipcMain\.handle\(\s*'([^']+)'/g),
+    on: grab(/ipcMain\.on\(\s*'([^']+)'/g),
+    send: grab(/\.send\(\s*'([^']+)'/g),
+  };
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 describe('shartnoma manbasi o`qildi (vacuity qo`riqchisi)', () => {
   // Parser buzilsa quyidagi testlar BO'SH ro'yxat ustida «o'tib» ketardi.
@@ -255,5 +301,162 @@ describe('desktop/main.js — kiosk oyna qattiqligi (spec §6.2)', () => {
     const hardcoded = mainSrc.match(/https?:\/\/[a-z0-9.-]+/gi) ?? [];
     const allowed = /localhost|127\.0\.0\.1/;
     expect(hardcoded.filter((u) => !allowed.test(u))).toEqual([]);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+describe('desktop/preload-customer.js — window.customerDisplay (F3)', () => {
+  const src = readOrEmpty(preloadCustomerPath);
+  const exposed = topLevelMembers(src, /exposeInMainWorld\(\s*'customerDisplay'/);
+
+  it('shartnoma manbasi o`qildi (vacuity)', () => {
+    // `customer-display/page.tsx:40-47` dagi `interface CustomerBridge`.
+    expect(customerMembers).toEqual(expect.arrayContaining(['onCart']));
+  });
+
+  it('fayl mavjud', () => {
+    expect(existsSync(preloadCustomerPath), `topilmadi: ${preloadCustomerPath}`).toBe(true);
+  });
+
+  it('contextBridge orqali ochiladi', () => {
+    expect(src).toContain('contextBridge.exposeInMainWorld');
+    expect(exposed.length).toBeGreaterThanOrEqual(1);
+  });
+
+  for (const name of customerMembers) {
+    it(`«${name}» berilgan`, () => {
+      expect(exposed).toContain(name);
+    });
+  }
+
+  it('onCart PUSH yo`nalishida (main → oyna, `ipcRenderer.on`)', () => {
+    // `onCart` — obuna, so'rov emas: savat kassirdan kelganda main uni
+    // oynaga YUBORADI. `invoke`/`sendSync` bo'lsa savat hech qachon kelmaydi.
+    const uses = ipcUses(src, 'preload-customer.js');
+    expect(uses.length).toBeGreaterThanOrEqual(1);
+    expect(uses.every((u) => u.kind === 'on')).toBe(true);
+  });
+
+  it('nodeIntegration talab qilmaydi (`require` faqat electron uchun)', () => {
+    const requires = [...codeOf(src).matchAll(/require\(\s*'([^']+)'/g)].map((m) => m[1]);
+    expect(requires).toEqual(['electron']);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+describe('IPC kanallari: preload ↔ main.js (yo`nalish bilan)', () => {
+  const mainSrc = readOrEmpty(mainPath);
+  const uses = [
+    ...ipcUses(readOrEmpty(preloadPath), 'preload.js'),
+    ...ipcUses(readOrEmpty(preloadCustomerPath), 'preload-customer.js'),
+  ];
+  const reg = mainChannels(mainSrc);
+
+  it('preload`larda kanallar topildi (vacuity)', () => {
+    expect(uses.length).toBeGreaterThanOrEqual(12);
+  });
+
+  for (const u of uses) {
+    it(`«${u.channel}» (${u.kind}, ${u.file}) main.js da ulangan`, () => {
+      if (u.kind === 'invoke') {
+        // invoke ↔ handle. `ipcMain.on` bo'lsa Promise HECH QACHON tugamaydi.
+        expect(reg.handle.has(u.channel), `ipcMain.handle('${u.channel}') yo'q`).toBe(true);
+      } else if (u.kind === 'on') {
+        // Renderer obunasi — main SHU kanalga yuborishi shart.
+        expect(reg.send.has(u.channel), `main hech qachon '${u.channel}' yubormaydi`).toBe(true);
+      } else {
+        // send/sendSync ↔ ipcMain.on
+        expect(reg.on.has(u.channel), `ipcMain.on('${u.channel}') yo'q`).toBe(true);
+      }
+    });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+describe('desktop/main.js — chop etish (F3, spec §6.4)', () => {
+  const mainSrc = readOrEmpty(mainPath);
+  const code = codeOf(mainSrc);
+
+  it('F2 ning «hali ulanmagan» zaglushkasi olib tashlangan', () => {
+    expect(mainSrc).not.toMatch(/hali ulanmagan/);
+  });
+
+  it('printerlar ro`yxati ASINXRON API bilan olinadi', () => {
+    // Sinxron `webContents.getPrinters()` Electron 25+ da OLIB TASHLANGAN —
+    // uni ishlatgan qobiq ishga tushganda yiqiladi.
+    expect(code).toContain('getPrintersAsync');
+    expect(code).not.toMatch(/getPrinters\s*\(\s*\)/);
+  });
+
+  it('drayver orqali JIM bosiladi (dialogsiz, tanlangan printerga)', () => {
+    expect(code).toMatch(/webContents\.print\(/);
+    expect(code).toMatch(/silent\s*:\s*true/);
+    expect(code).toMatch(/deviceName/);
+  });
+
+  it('preload uzatgan payload maydonlari main.js da o`qiladi', () => {
+    // preload: invoke('print:sheet', { printerName, html, pageSizeMicrons })
+    for (const field of ['printerName', 'html', 'pageSizeMicrons']) {
+      expect(code, `payload maydoni «${field}» main.js da yo'q`).toContain(field);
+    }
+  });
+
+  it('pageSize drayverga uzatiladi (label/senik o`lchami yo`qolmasin)', () => {
+    expect(code).toMatch(/pageSize/);
+  });
+
+  it('xatoda ham {ok:false, error} qaytadi (jim muvaffaqiyatsizlik TAQIQ)', () => {
+    expect(code).toMatch(/ok\s*:\s*false/);
+    expect(code).toMatch(/ok\s*:\s*true/);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+describe('desktop/main.js — mijoz-ekran (F3, spec §6.5)', () => {
+  const mainSrc = readOrEmpty(mainPath);
+  const code = codeOf(mainSrc);
+
+  it('ikkinchi ekran displeylar ro`yxatidan aniqlanadi', () => {
+    expect(code).toContain('getAllDisplays');
+  });
+
+  it('mijoz-oyna `/customer-display` sahifasini ochadi', () => {
+    expect(code).toContain('/customer-display');
+  });
+
+  it('mijoz-oynaga preload-customer.js ULANGAN', () => {
+    // Ulanmasa `window.customerDisplay` paydo bo'lmaydi va sahifa
+    // BroadcastChannel zaxirasiga tushadi (Electron'da u kassir oynasi
+    // bilan bog'lanmaydi) — ekran jimgina bo'sh qoladi.
+    expect(code).toMatch(/preload\s*:\s*[^\n]*preload-customer\.js/);
+  });
+
+  it('tashqi ekran yo`q bo`lsa {open:false, error} (shartnoma)', () => {
+    expect(code).toMatch(/open\s*:\s*false\s*,\s*\n?\s*error/);
+  });
+
+  it('mijoz-oyna ramkasiz', () => {
+    expect(code).toMatch(/frame\s*:\s*false/);
+  });
+
+  it('alohida `partition` BERILMAYDI (umumiy cookie sessiyasi kerak)', () => {
+    // `customer-display/page.tsx` `refresh()` bilan umumiy sessiya
+    // cookie'sidan token oladi — alohida partition uni uzib qo'yadi.
+    expect(code).not.toMatch(/partition\s*:/);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+describe('uch qatlamli chop-etish fallback buzilmagan (F3 shart)', () => {
+  it('HTTP print-agent qatlami print-agent.ts da qoldi', () => {
+    expect(printAgentSrc).toContain('127.0.0.1:17777');
+    expect(printAgentSrc).toMatch(/export async function agentPrint\b/);
+  });
+
+  it('Electron yo`q bo`lsa HTTP agentga tushiladi (ikkala tarmoq)', () => {
+    // `el ? el.printSheet(...) : agentPrint(...)` — shox yo'qolsa brauzerda
+    // chop etish o'ladi.
+    const branches = printAgentSrc.match(/await agentPrint\(/g) ?? [];
+    expect(branches.length).toBeGreaterThanOrEqual(3);
   });
 });
