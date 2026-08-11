@@ -55,6 +55,26 @@ async function addFirstProduct(user: ReturnType<typeof userEvent.setup>) {
   return await screen.findByTestId('sotuv-cart-line');
 }
 
+/**
+ * Qator narxini o'zgartiradi. 2026-08-11 dan beri yagona yo'l — tahrir oynasi
+ * (qatordagi input olib tashlandi, narxni bosish oynani ochadi). K-3
+ * shartnomasi o'zgarmadi: parse bo'lmagan kiritma → `0n`, eski narx EMAS.
+ */
+async function setPrice(
+  user: ReturnType<typeof userEvent.setup>,
+  line: HTMLElement,
+  value: string,
+) {
+  await user.click(within(line).getByTestId('sotuv-cart-price-edit'));
+  const modal = await screen.findByTestId('pos-line-edit');
+  await user.click(within(modal).getByTestId('pos-line-edit-price'));
+  const input = within(modal).getByTestId('pos-line-edit-input');
+  await user.clear(input);
+  if (value !== '') await user.type(input, value);
+  await user.click(within(modal).getByTestId('pos-line-edit-save'));
+  await waitFor(() => expect(screen.queryByTestId('pos-line-edit')).not.toBeInTheDocument());
+}
+
 // ── K-3: parse bo'lmagan narx = 0, ESKI narx EMAS ───────────────────────────
 
 describe('K-3 — narx maydoni parse bo‘lmasa qator narxi 0 bo‘ladi', () => {
@@ -63,10 +83,10 @@ describe('K-3 — narx maydoni parse bo‘lmasa qator narxi 0 bo‘ladi', () => 
     renderWithProviders(<SotuvPage />);
 
     const line = await addFirstProduct(user);
-    await user.clear(within(line).getByRole('textbox'));
+    await setPrice(user, line, '');
 
     const after = screen.getByTestId('sotuv-cart-line');
-    expect(within(after).getByRole('textbox')).toHaveValue('');
+    expect(norm(within(after).getByTestId('sotuv-cart-price-edit').textContent)).toBe('0,00 сум');
     // Qator summasi 0 — ekranda ko'ringan bo'sh narx aynan 0 deb hisoblanadi;
     // «tushirildi» yorlig'i kartochka narxidan TO'LIQ 10 000 pasayishni ko'rsatadi.
     expect(norm(after.textContent)).toContain('Narx:0,00 сум');
@@ -86,7 +106,7 @@ describe('K-3 — narx maydoni parse bo‘lmasa qator narxi 0 bo‘ladi', () => 
     renderWithProviders(<SotuvPage />);
 
     const line = await addFirstProduct(user);
-    await user.clear(within(line).getByRole('textbox'));
+    await setPrice(user, line, '');
     await user.click(screen.getByTestId('sotuv-pay'));
 
     await waitFor(() => expect(api.post).toHaveBeenCalled());
@@ -101,16 +121,14 @@ describe('K-3 — narx maydoni parse bo‘lmasa qator narxi 0 bo‘ladi', () => 
     renderWithProviders(<SotuvPage />);
 
     const line = await addFirstProduct(user);
-    const input = within(line).getByRole('textbox');
-    await user.clear(input);
-    await user.type(input, 'abc');
+    await setPrice(user, line, 'abc');
 
     const after = screen.getByTestId('sotuv-cart-line');
-    expect(within(after).getByRole('textbox')).toHaveValue('abc');
-    expect(norm(after.textContent)).toContain('Narx:0,00 сум');
-    expect(norm(within(after).getByTestId('sotuv-cart-profit').textContent)).toContain(
-      'Foyda: -6 000,00 сум',
-    );
+    expect(norm(within(after).getByTestId('sotuv-cart-price-edit').textContent)).toBe('0,00 сум');
+    // Foyda RAQAMI endi ekranda ko'rsatilmaydi (egasining qarori) — buzuq
+    // kiritmani ZARAR tasmasi ochib beradi.
+    expect(within(after).getByTestId('sotuv-cart-loss')).toBeInTheDocument();
+    expect(within(after).queryByTestId('sotuv-cart-profit')).not.toBeInTheDocument();
   });
 });
 

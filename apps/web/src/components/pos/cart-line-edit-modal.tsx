@@ -22,6 +22,7 @@ import {
   normalizeQtyDecimal,
 } from '@/lib/pos/cart-math';
 import { parseAmountToMinor } from '@/lib/pos/parse-amount';
+import { SHOW_MARGIN_ON_SCREEN } from '@/lib/pos/ui-flags';
 import { classifyPrice } from '@moysklad/money';
 import type { CurrencyCode } from '@moysklad/money/currencies';
 import { formatMoney } from '@moysklad/ui';
@@ -299,12 +300,17 @@ export function CartLineEditModal({
                 </span>
               </div>
               <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
-                <span className="text-[var(--ms-text-muted)]">
-                  {t('cart_cost')}:{' '}
-                  <span className="tabular-nums">
-                    {line.costMinor != null ? formatMoney(line.costMinor) : '—'}
+                {/* Tan narx — ekranda KO'RSATILMAYDI (`lib/pos/ui-flags.ts`).
+                    Oyna savat qatori bilan BIR XIL siyosatga bo'ysunadi: aks
+                    holda raqam savatdan yashirilib, oynada ochiq qolardi. */}
+                {SHOW_MARGIN_ON_SCREEN && (
+                  <span data-test-id="pos-line-edit-cost" className="text-[var(--ms-text-muted)]">
+                    {t('cart_cost')}:{' '}
+                    <span className="tabular-nums">
+                      {line.costMinor != null ? formatMoney(line.costMinor) : '—'}
+                    </span>
                   </span>
-                </span>
+                )}
                 {line.wholesaleMinor != null && (
                   <span className="text-[var(--ms-text-muted)]">
                     {t('cart_min')}:{' '}

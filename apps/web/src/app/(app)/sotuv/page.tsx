@@ -33,6 +33,8 @@ import {
 } from '@/lib/pos/cart-math';
 // Smena yopish sanog'i uchun xavfsiz pul-parse (buzuq kiritma → 0n, crash emas).
 import { parseAmountToMinor } from '@/lib/pos/parse-amount';
+// Ekranga nima chiqishi (hisob-kitobga tegmaydi) — izohi shu faylda.
+import { SHOW_MARGIN_ON_SCREEN } from '@/lib/pos/ui-flags';
 import {
   printPickingViaAgent,
   printReceiptViaAgent,
@@ -1196,33 +1198,22 @@ function SalesScreen({
   }, []);
 
   /**
-   * Savat qatorining narxi.
+   * Savat qatorining narxi — endi FAQAT tahrir oynasi orqali o'zgaradi.
    *
-   * K-3: parse muvaffaqiyatsiz (bo'sh satr, harf) → `0n`, ESKI narx EMAS.
-   * Ko'ringan narsa = yuboriladigan narsa: maydon bo'sh ko'rinib turib
-   * rasmiylashtirishga eski narx ketishi kassirni aldardi. 0 narxli qatorni
-   * esa ZARAR tasmasi darhol ko'rsatadi va server ham ushlaydi.
+   * 2026-08-11 (egasining jonli sinovi): kassir monoblokda narx maydoniga
+   * tegdi va katta oyna ochilishini kutdi — ochilmadi, chunki oyna faqat
+   * QATOR NOMIga ulangan edi. Qatordagi 96px input barmoq uchun baribir
+   * yaramas edi (F2 muammosining o'zi), ya'ni ikki xil tahrir yo'lini
+   * saqlashning ma'nosi yo'q: narx bosilganda ham o'sha oyna ochiladi.
    *
-   * F2 — parse YAGONA (`parseAmountToMinor`). Ilgari bu yerda o'z nusxasi
-   * turardi (`Number.parseFloat(...) × 100`) va u to'lov oynasidan uch joyda
-   * ayrilardi (o'lchangan): `«12abc»` → 1 200 tiyin (ekranda «12abc», chekka
-   * 12 so'm), `«.5»` → 50, `«15,000.50»` → 1 500. Bundan tashqari `× 100`
-   * QATTIQ scale edi — 0 kasrli kassa valyutasida (JPY uslubi) narx 100
-   * barobar shishardi. Endi ikkala maydon bir xil qoidaga bo'ysunadi.
+   * Parse shu bilan BITTA joyda qoldi (`parseAmountToMinor`, oynaning ichida).
+   * Ilgari bu yerda o'z nusxasi turardi (`Number.parseFloat(...) × 100`) va u
+   * to'lov oynasidan uch joyda ayrilardi (o'lchangan): `«12abc»` → 1 200 tiyin,
+   * `«.5»` → 50, `«15,000.50»` → 1 500; `× 100` esa QATTIQ scale edi.
+   *
+   * K-3 shartnomasi o'zgarmadi (oyna qo'llaydi): parse muvaffaqiyatsiz
+   * (bo'sh satr, harf) → `0n`, ESKI narx EMAS.
    */
-  const updatePrice = useCallback(
-    (productId: string, input: string) => {
-      setCart((prev) =>
-        prev.map((l) =>
-          l.productId === productId
-            ? { ...l, priceStr: input, priceMinor: parseAmountToMinor(input, tillCurrency) }
-            : l,
-        ),
-      );
-    },
-    [tillCurrency],
-  );
-
   // ── F2 — savat qatori tahrir oynasi (sensorli monoblok) ───────────────────
   // Oyna savatning O'ZIDA saqlanmaydi: `editingProductId` bo'yicha JONLI
   // topiladi, ya'ni oyna ochiq turganda savat qatori o'zgarsa (masalan
@@ -2577,12 +2568,18 @@ function SalesScreen({
                                 </span>
                               </span>
                             )}
-                            <span data-test-id="sotuv-cart-cost">
-                              · {t('cart_cost')}:{' '}
-                              <span className="tabular-nums">
-                                {line.costMinor != null ? formatMoney(line.costMinor) : '—'}
+                            {/* Tan narx — ekranda KO'RSATILMAYDI (egasining
+                                qarori): mijoz kassir yoniga kelganda marja
+                                ochiq turardi. Hisob-kitob joyida
+                                (`lib/pos/ui-flags.ts` izohiga qara). */}
+                            {SHOW_MARGIN_ON_SCREEN && (
+                              <span data-test-id="sotuv-cart-cost">
+                                · {t('cart_cost')}:{' '}
+                                <span className="tabular-nums">
+                                  {line.costMinor != null ? formatMoney(line.costMinor) : '—'}
+                                </span>
                               </span>
-                            </span>
+                            )}
                             {line.wholesaleMinor != null && (
                               <span data-test-id="sotuv-cart-min">
                                 · {t('cart_min')}:{' '}
@@ -2598,20 +2595,24 @@ function SalesScreen({
                               <span className="text-xs text-[var(--ms-text-muted)]">
                                 {t('cart_price')}:
                               </span>
-                              {cartLocked ? (
-                                <span className="w-24 text-right text-sm tabular-nums">
-                                  {formatMoney(line.priceMinor)}
-                                </span>
-                              ) : (
-                                <input
-                                  type="text"
-                                  inputMode="decimal"
-                                  value={line.priceStr}
-                                  onChange={(e) => updatePrice(line.productId, e.target.value)}
-                                  onFocus={(e) => e.target.select()}
-                                  className="w-24 rounded border border-[var(--ms-border)] bg-[var(--ms-bg-input)] px-1.5 py-0.5 text-right text-sm tabular-nums focus:border-[var(--ms-border-focus)] focus:outline-none"
-                                />
-                              )}
+                              {/* Narxni bosish — TAHRIR OYNASI (nom bilan bir xil).
+                                  Ilgari bu yerda 96px input turardi: barmoq bilan
+                                  aniq tegib bo'lmasdi va kassir narxga bosganda
+                                  oyna ochilishini kutardi (jonli sinov, 2026-08-11).
+                                  Qulflangan savatda oyna FAQAT KO'RISH rejimida. */}
+                              <button
+                                type="button"
+                                data-test-id="sotuv-cart-price-edit"
+                                onClick={() => setEditingProductId(line.productId)}
+                                title={t('line_edit_open')}
+                                className={`w-24 rounded border px-1.5 py-1 text-right text-sm tabular-nums ${
+                                  cartLocked
+                                    ? 'border-transparent'
+                                    : 'border-[var(--ms-border)] bg-[var(--ms-bg-input)] hover:bg-[var(--ms-bg-hover)]'
+                                }`}
+                              >
+                                {formatMoney(line.priceMinor)}
+                              </button>
                             </div>
                             {/* Summa */}
                             <div className="w-28 text-right text-sm font-semibold tabular-nums text-[var(--ms-text-primary)]">
@@ -2643,28 +2644,33 @@ function SalesScreen({
                               −{formatMoney(markdown)} {t('cart_markdown')}
                             </span>
                           )}
-                          <span
-                            data-test-id="sotuv-cart-profit"
-                            className={`ml-auto tabular-nums ${
-                              lineProfit == null
-                                ? 'text-[var(--ms-text-muted)]'
-                                : lineProfit < 0n
-                                  ? 'font-semibold text-red-600'
-                                  : 'font-medium text-emerald-600'
-                            }`}
-                          >
-                            {t('cart_profit')}:{' '}
-                            {lineProfit == null ? (
-                              // Tan narx kartochkada yo'q — «0 foyda» EMAS, «noma'lum».
-                              <span title={t('cart_cost_missing')}>—</span>
-                            ) : (
-                              <>
-                                {lineProfit > 0n ? '+' : ''}
-                                {formatMoney(lineProfit)}
-                                {linePct != null && ` (${formatPercent(linePct)})`}
-                              </>
-                            )}
-                          </span>
+                          {/* Qator foydasi — ekranda KO'RSATILMAYDI (yuqoridagi
+                              tan narx bilan bir qaror). ZARAR va «optomdan past»
+                              tasmalari qoladi: ular raqam emas, NAZORAT. */}
+                          {SHOW_MARGIN_ON_SCREEN && (
+                            <span
+                              data-test-id="sotuv-cart-profit"
+                              className={`ml-auto tabular-nums ${
+                                lineProfit == null
+                                  ? 'text-[var(--ms-text-muted)]'
+                                  : lineProfit < 0n
+                                    ? 'font-semibold text-red-600'
+                                    : 'font-medium text-emerald-600'
+                              }`}
+                            >
+                              {t('cart_profit')}:{' '}
+                              {lineProfit == null ? (
+                                // Tan narx kartochkada yo'q — «0 foyda» EMAS, «noma'lum».
+                                <span title={t('cart_cost_missing')}>—</span>
+                              ) : (
+                                <>
+                                  {lineProfit > 0n ? '+' : ''}
+                                  {formatMoney(lineProfit)}
+                                  {linePct != null && ` (${formatPercent(linePct)})`}
+                                </>
+                              )}
+                            </span>
+                          )}
                         </div>
                       </div>
                     );
@@ -2710,9 +2716,11 @@ function SalesScreen({
                   </p>
                 )}
 
-                {/* Chek bo'yicha foyda — kassir bir tovarda yon berib boshqasida
-                    qoplayotganini ko'radi (kassa TZ §5.2). */}
-                {cartCount > 0 && (
+                {/* Chek bo'yicha foyda — ekranda KO'RSATILMAYDI (egasining
+                    qarori, `lib/pos/ui-flags.ts`). Bu eng ko'zga tashlanadigan
+                    raqam edi: mijoz to'lov paytida ekranga qarasa marjani
+                    o'qib olardi. */}
+                {SHOW_MARGIN_ON_SCREEN && cartCount > 0 && (
                   <p
                     data-test-id="sotuv-cart-total-profit"
                     className={`mt-1 text-xs tabular-nums ${

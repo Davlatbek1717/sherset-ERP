@@ -50,15 +50,32 @@ async function addFirstProduct(user: ReturnType<typeof userEvent.setup>) {
   return await screen.findByTestId('sotuv-cart-line');
 }
 
-/** Savat qatoridagi narx maydoniga yangi qiymat yozadi (major birlik). */
+/**
+ * Savat qatorining narxini o'zgartiradi (major birlik).
+ *
+ * 2026-08-11 dan boshlab bu YAGONA yo'l: qatordagi 96px input olib tashlandi va
+ * narxni bosish tahrir oynasini ochadi (egasining jonli sinovi — kassir aynan
+ * narxga bosib oyna kutgan edi). Shuning uchun yordamchi ham oyna orqali
+ * ishlaydi: shartnomalar (K-3, parse) o'zgarmadi, faqat kirish nuqtasi.
+ */
 async function setPrice(
   user: ReturnType<typeof userEvent.setup>,
   line: HTMLElement,
   value: string,
 ) {
-  const input = within(line).getByRole('textbox');
+  await user.click(within(line).getByTestId('sotuv-cart-price-edit'));
+  const modal = await screen.findByTestId('pos-line-edit');
+  await user.click(within(modal).getByTestId('pos-line-edit-price'));
+  const input = within(modal).getByTestId('pos-line-edit-input');
   await user.clear(input);
-  await user.type(input, value);
+  if (value !== '') await user.type(input, value);
+  await user.click(within(modal).getByTestId('pos-line-edit-save'));
+  await waitFor(() => expect(screen.queryByTestId('pos-line-edit')).not.toBeInTheDocument());
+}
+
+/** Qatordagi narx (endi bosiladigan tugma, input emas). */
+function priceText(line: HTMLElement): string {
+  return norm(within(line).getByTestId('sotuv-cart-price-edit').textContent);
 }
 
 describe('SalesScreen — tovar setkasi', () => {
@@ -108,7 +125,7 @@ describe('SalesScreen — savat qatorlari', () => {
     renderWithProviders(<SotuvPage />);
 
     const line = await addFirstProduct(user);
-    expect(within(line).getByRole('textbox')).toHaveValue('10000');
+    expect(priceText(line)).toBe('10 000,00 сум');
     expect(norm(line.textContent)).toContain('10 000,00 сум');
     // Jami + dona soni footerda.
     expect(norm(screen.getByText(/ta mahsulot/).textContent)).toBe('1 ta mahsulot');
@@ -170,29 +187,28 @@ describe('SalesScreen — savat qatorlari', () => {
   // K-3 TUZATILDI (audit-fixlar): ilgari bo'shatilgan maydon ekranda bo'sh
   // ko'rinib, hisob-kitobga va rasmiylashtirishga ESKI narx ketardi. Endi
   // parse bo'lmagan kiritma = 0 (ko'ringan narsa = yuboriladigan narsa).
-  it('narx maydoni BO‘SHATILSA — ekranda bo‘sh va hisobda 0 (eski narx KETMAYDI)', async () => {
+  it('narx BO‘SHATILSA — qatorda 0 va hisobda 0 (eski narx KETMAYDI)', async () => {
     const user = userEvent.setup();
     renderWithProviders(<SotuvPage />);
 
     const line = await addFirstProduct(user);
-    await user.clear(within(line).getByRole('textbox'));
+    await setPrice(user, line, '');
 
     const after = screen.getByTestId('sotuv-cart-line');
-    // Maydon bo'sh ko'rinadi va qator summasi ham aynan 0 dan hisoblanadi
-    // («tushirildi» yorlig'i kartochka narxidan to'liq pasayishni ko'rsatadi).
-    expect(within(after).getByRole('textbox')).toHaveValue('');
-    expect(norm(after.textContent)).toContain('Narx:0,00 сум');
+    // Qatorda 0 ko'rinadi va summa ham aynan 0 dan hisoblanadi («tushirildi»
+    // yorlig'i kartochka narxidan to'liq pasayishni ko'rsatadi).
+    expect(priceText(after)).toBe('0,00 сум');
     expect(norm(within(after).getByTestId('sotuv-cart-markdown').textContent)).toBe(
       '−10 000,00 сум tushirildi',
     );
-    // 0 narx tan narxdan past — foyda manfiy, kassir buni darhol ko'radi.
-    expect(norm(within(after).getByTestId('sotuv-cart-profit').textContent)).toContain(
-      'Foyda: -6 000,00 сум',
-    );
+    // 0 narx tan narxdan past — foyda RAQAMI ko'rsatilmaydi (egasining qarori),
+    // lekin ZARAR tasmasi kassirni darhol ogohlantiradi.
+    expect(after).toHaveAttribute('data-price-band', 'loss');
+    expect(within(after).getByTestId('sotuv-cart-loss')).toHaveTextContent('ZARAR');
   });
 
   // K-3 TUZATILDI: buzuq kiritma ham endi eski narxni yashirmaydi — 0 bo'ladi.
-  it('narx maydoniga HARF yozilsa — narx 0 (eski narx yashirincha qolmaydi)', async () => {
+  it('narxga HARF yozilsa — narx 0 (eski narx yashirincha qolmaydi)', async () => {
     const user = userEvent.setup();
     renderWithProviders(<SotuvPage />);
 
@@ -200,11 +216,8 @@ describe('SalesScreen — savat qatorlari', () => {
     await setPrice(user, line, 'abc');
 
     const after = screen.getByTestId('sotuv-cart-line');
-    expect(within(after).getByRole('textbox')).toHaveValue('abc');
-    expect(norm(after.textContent)).toContain('Narx:0,00 сум');
-    expect(norm(within(after).getByTestId('sotuv-cart-profit').textContent)).toContain(
-      'Foyda: -6 000,00 сум',
-    );
+    expect(priceText(after)).toBe('0,00 сум');
+    expect(after).toHaveAttribute('data-price-band', 'loss');
   });
 
   // F2 — narx parse'i YAGONA (`parseAmountToMinor`). Ilgari sahifa o'z
@@ -212,34 +225,55 @@ describe('SalesScreen — savat qatorlari', () => {
   // 12 ni sug'urib olardi: ekranda «12abc», chekka 1 200 tiyin. To'lov oynasi
   // esa allaqachon qat'iy parse ishlatardi — ikki maydon bir xil matnni ikki
   // xil tushunardi. Endi bittasi: buzuq kiritma = 0.
-  it('🔴 narx maydoniga «12abc» — narx 0 (jimgina 12 EMAS)', async () => {
+  it('🔴 narxga «12abc» — narx 0 (jimgina 12 EMAS)', async () => {
     const user = userEvent.setup();
     renderWithProviders(<SotuvPage />);
 
     const line = await addFirstProduct(user);
     await setPrice(user, line, '12abc');
 
+    // Ko'ringan narsa = yuboriladigan narsa: qatorda ham, oyna qayta
+    // ochilganda ham 0 turadi (jimgina 12 so'm chekka ketmaydi).
     const after = screen.getByTestId('sotuv-cart-line');
-    expect(within(after).getByRole('textbox')).toHaveValue('12abc');
-    expect(norm(after.textContent)).toContain('Narx:0,00 сум');
+    expect(priceText(after)).toBe('0,00 сум');
+    await user.click(within(after).getByTestId('sotuv-cart-price-edit'));
+    const modal = await screen.findByTestId('pos-line-edit');
+    expect(norm(within(modal).getByTestId('pos-line-edit-price').textContent)).toContain('0,00');
   });
 
-  it('narxni tahrirlash qator summasi va foydasini darhol siljitadi', async () => {
+  it('narxni tahrirlash qator summasini darhol siljitadi', async () => {
     const user = userEvent.setup();
     renderWithProviders(<SotuvPage />);
 
     const line = await addFirstProduct(user);
-    // Boshlang'ich: 10 000 narx, 6 000 tan ⇒ +4 000 (40%).
-    expect(norm(within(line).getByTestId('sotuv-cart-profit').textContent)).toBe(
-      'Foyda: +4 000,00 сум (40%)',
-    );
-
     await setPrice(user, line, '9000');
+
     const after = screen.getByTestId('sotuv-cart-line');
+    expect(priceText(after)).toBe('9 000,00 сум');
     expect(norm(after.textContent)).toContain('9 000,00 сум');
-    expect(norm(within(after).getByTestId('sotuv-cart-profit').textContent)).toBe(
-      'Foyda: +3 000,00 сум (33,3%)',
-    );
+    // 9 000 > 8 000 (optom chegara) ⇒ tasma hamon `ok`.
+    expect(after).toHaveAttribute('data-price-band', 'ok');
+  });
+
+  /**
+   * Narx bosilganda TAHRIR OYNASI ochiladi (2026-08-11, egasining jonli
+   * sinovi). Ilgari bu yerda 96px input turardi va sensorli monoblokda unga
+   * aniq tegib bo'lmasdi; kassir narxga bosib oyna kutgan edi — kutgani
+   * chiqmagan. Ikkinchi tahrir yo'li ATAYLAB olib tashlandi: bitta ekranda
+   * bitta narx-tahrir yo'li.
+   */
+  it('narxni bosish tahrir oynasini ochadi (qatorda input QOLMADI)', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<SotuvPage />);
+
+    const line = await addFirstProduct(user);
+    expect(within(line).queryByRole('textbox')).not.toBeInTheDocument();
+
+    await user.click(within(line).getByTestId('sotuv-cart-price-edit'));
+    const modal = await screen.findByTestId('pos-line-edit');
+    // Oyna aynan NARX maydonida ochilmaydi — kassir qaysi maydonni
+    // tanlashini o'zi bosadi; muhimi oynaning ochilishi.
+    expect(modal).toHaveTextContent('Kabel 2×2.5');
   });
 });
 
@@ -273,7 +307,7 @@ describe('SalesScreen — narx tasmalari (kassa TZ §5.2)', () => {
     );
   });
 
-  it('tan narxdan past narx — ZARAR tasmasi va MANFIY foyda', async () => {
+  it('tan narxdan past narx — ZARAR tasmasi (foyda RAQAMI yo‘q)', async () => {
     const user = userEvent.setup();
     renderWithProviders(<SotuvPage />);
 
@@ -283,12 +317,12 @@ describe('SalesScreen — narx tasmalari (kassa TZ §5.2)', () => {
     const after = screen.getByTestId('sotuv-cart-line');
     expect(after).toHaveAttribute('data-price-band', 'loss');
     expect(within(after).getByTestId('sotuv-cart-loss')).toHaveTextContent('ZARAR');
-    expect(norm(within(after).getByTestId('sotuv-cart-profit').textContent)).toBe(
-      'Foyda: -1 000,00 сум (-20%)',
-    );
+    // Nazorat qoldi, raqam ketdi: kassir «zarar» ekanini biladi, marja
+    // miqdorini esa ekranga qaragan mijoz ham, kassir ham ko'rmaydi.
+    expect(within(after).queryByTestId('sotuv-cart-profit')).not.toBeInTheDocument();
   });
 
-  it('tan narx kartochkada YO‘Q — «—» chiziladi, «0 foyda» EMAS', async () => {
+  it('tan narx kartochkada YO‘Q — tasma `ok` qoladi (ogohlantirish EMAS)', async () => {
     vi.mocked(api.get).mockImplementation(
       router(
         salesRoutes([
@@ -300,17 +334,25 @@ describe('SalesScreen — narx tasmalari (kassa TZ §5.2)', () => {
     renderWithProviders(<SotuvPage />);
 
     const line = await addFirstProduct(user);
-    expect(norm(within(line).getByTestId('sotuv-cart-cost').textContent)).toBe('· Tan: —');
-    expect(norm(within(line).getByTestId('sotuv-cart-profit').textContent)).toBe('Foyda: —');
-    // Chek foydasi ham raqam bermaydi — sabab yoziladi.
-    expect(norm(screen.getByTestId('sotuv-cart-total-profit').textContent)).toMatch(
-      /Chek foydasi: tan narx yig.ilmagan/,
-    );
-    // Tan narx yo'qligi ogohlantirish EMAS: tasma `ok` qoladi.
+    // Tan narx yo'qligi ogohlantirish EMAS — u shunchaki noma'lum
+    // (NULL ≠ 0; hisob-kitob shartnomasi `pos-cart-profit.test.ts` da).
     expect(line).toHaveAttribute('data-price-band', 'ok');
+    expect(within(line).queryByTestId('sotuv-cart-loss')).not.toBeInTheDocument();
   });
+});
 
-  it('chek foydasi = savat daromadi − tan narx (ikki qator ustidan)', async () => {
+/**
+ * MARJA EKRANDA KO'RSATILMAYDI — egasining qarori (2026-08-11, monoblok
+ * jonli ishga tushgandan keyin): kassir yoniga kelgan mijoz «Tan: 14 375» va
+ * «Foyda: +5 525 (27,8%)» yozuvlarini o'qiy olardi.
+ *
+ * Bu test NIYATNI qulflaydi, implementatsiyani emas: raqamlar qayerda
+ * hisoblanishi muhim emas, EKRANDA bo'lmasligi muhim. Hisob-kitobning o'zi
+ * ataylab saqlanib qoldi (`lib/pos/ui-flags.ts` izohi) — ZARAR tasmasi va
+ * `pos-cart-profit.test.ts` qo'riqchisi o'shanga tayanadi.
+ */
+describe('SalesScreen — marja ekranda ko‘rsatilmaydi', () => {
+  it('qatorda ham, footerda ham tan narx va foyda YO‘Q', async () => {
     const user = userEvent.setup();
     renderWithProviders(<SotuvPage />);
 
@@ -318,9 +360,24 @@ describe('SalesScreen — narx tasmalari (kassa TZ §5.2)', () => {
     await user.click(at(tiles, 0)); // 10 000 narx / 6 000 tan
     await user.click(at(tiles, 1)); // 5 000 narx / 3 000 tan
 
-    expect(norm(screen.getByTestId('sotuv-cart-total-profit').textContent)).toBe(
-      'Chek foydasi: +6 000,00 сум (40%)',
-    );
+    const line = at(screen.getAllByTestId('sotuv-cart-line'), 0);
+    expect(within(line).queryByTestId('sotuv-cart-cost')).not.toBeInTheDocument();
+    expect(within(line).queryByTestId('sotuv-cart-profit')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('sotuv-cart-total-profit')).not.toBeInTheDocument();
+    // Matn darajasida ham: «Foyda» so'zi savat ekranida umuman chiqmaydi.
+    expect(screen.queryByText(/Foyda/)).not.toBeInTheDocument();
+  });
+
+  it('tahrir oynasida ham tan narx ko‘rsatilmaydi (savat bilan bir siyosat)', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<SotuvPage />);
+
+    const line = await addFirstProduct(user);
+    await user.click(within(line).getByTestId('sotuv-cart-price-edit'));
+    const modal = await screen.findByTestId('pos-line-edit');
+
+    expect(within(modal).queryByTestId('pos-line-edit-cost')).not.toBeInTheDocument();
+    expect(norm(modal.textContent)).not.toContain('Tan:');
   });
 });
 
@@ -357,15 +414,11 @@ describe('SalesScreen — chek chegirmasi', () => {
     await user.dblClick(screen.getByTitle('Chegirma uchun ikki marta bosing'));
     await user.type(screen.getByPlaceholderText('0'), '10');
 
-    // Qator hamon 10 000 (chegirma pozitsiyaga so'rovda yoziladi, ekranda emas),
-    // qator foydasi ham kassir yozgan narxdan olinadi.
+    // Qator hamon 10 000 (chegirma pozitsiyaga so'rovda yoziladi, ekranda emas).
     expect(norm(line.textContent)).toContain('10 000,00 сум');
-    expect(norm(within(line).getByTestId('sotuv-cart-profit').textContent)).toBe(
-      'Foyda: +4 000,00 сум (40%)',
-    );
-    // Chek foydasi esa CHEGIRMALI daromaddan: 9 000 − 6 000 = 3 000.
-    expect(norm(screen.getByTestId('sotuv-cart-total-profit').textContent)).toBe(
-      'Chek foydasi: +3 000,00 сум (33,3%)',
+    // Chegirmali jami esa footerda: 9 000.
+    expect(norm(screen.getByTitle('Chegirma uchun ikki marta bosing').textContent)).toContain(
+      '9 000,00 сум',
     );
   });
 
@@ -423,9 +476,9 @@ describe('SalesScreen — savat va tovar ro‘yxati bog‘lanishi', () => {
     expect(norm(within(line).getByTestId('sotuv-cart-min').textContent)).toBe(
       '· Min: 8 000,00 сум',
     );
-    expect(norm(within(line).getByTestId('sotuv-cart-cost').textContent)).toBe(
-      '· Tan: 6 000,00 сум',
-    );
+    // Tan narx ATAYLAB yo'q (marja ekranda ko'rsatilmaydi); optom chegara —
+    // sotuv narxi, ya'ni maxfiy raqam emas va kassirga kerak.
+    expect(within(line).queryByTestId('sotuv-cart-cost')).not.toBeInTheDocument();
     // Qoldiq kartochkadan olinadi.
     expect(norm(line.textContent)).toContain('Qolgan: 12');
   });
@@ -451,10 +504,10 @@ describe('SalesScreen — savat va tovar ro‘yxati bog‘lanishi', () => {
  * da qulflangan; bu yerda qulflanadigan narsa — SAHIFA bilan ulanishi: qator
  * qanday ochadi va oynaning natijasi savatga qanday qo'llanadi.
  *
- * Mavjud −/+ va ichki narx maydoni ATAYLAB QOLDIRILDI (yuqoridagi testlar
- * ularni hamon tekshiradi): sichqonchali ish o'rni ham shu ekranni ishlatadi,
- * va ularni olib tashlash MK32 ataylab qulflagan xarakteristikani buzardi.
- * Oyna — qo'shimcha yo'l, almashtiruvchi emas.
+ * Mavjud −/+ tugmalari QOLDI (sichqonchali ish o'rni ham shu ekranni
+ * ishlatadi), qatordagi narx INPUTi esa 2026-08-11 da olib tashlandi: egasining
+ * jonli sinovida kassir narxga bosib oyna kutgan edi. Ya'ni soni uchun ikki
+ * yo'l bor, narx uchun — bitta.
  */
 describe('SalesScreen — savat qatori tahrir oynasi (F2)', () => {
   /** Qator nomini bosib oynani ochadi. */
@@ -521,11 +574,9 @@ describe('SalesScreen — savat qatori tahrir oynasi (F2)', () => {
     await user.click(screen.getByTestId('pos-line-edit-save'));
 
     const line = await screen.findByTestId('sotuv-cart-line');
-    expect(within(line).getByRole('textbox')).toHaveValue('5000');
+    expect(priceText(line)).toBe('5 000,00 сум');
     expect(line).toHaveAttribute('data-price-band', 'loss');
-    expect(norm(within(line).getByTestId('sotuv-cart-profit').textContent)).toBe(
-      'Foyda: -1 000,00 сум (-20%)',
-    );
+    expect(within(line).getByTestId('sotuv-cart-loss')).toHaveTextContent('ZARAR');
   });
 
   it('oynadagi «O‘chirish» qatorni savatdan olib tashlaydi', async () => {
