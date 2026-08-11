@@ -175,6 +175,7 @@ rezerv bo'shaydi (`page 997–1014`) · smena farqi → farq akti → menejer na
 | **P12** | Katalog va narx zanjiri (chakana·optom·tan, 0-narx himoyasi) | api/web product + POS | ✅ | ☐ |
 | **P13** | Go-live tozalash: test ma'lumotlardan realga | prod-op + kichik fix | kerak bo'lsa | ☐ |
 | **P14** | Daftar-simmetriya: qaytarish→balans · xarajat→P&L · money backfill | api + backfill | ✅ | ☐ |
+| **P15** | Kunlik kassa hisoboti: har kassa 100% + jamlama, admin panelda | api `report` + web | ✅ | ☐ |
 
 Tartib sababi: P1–P2 — egasi ko'rgan jonli xatolar (eng ustuvor). P3 — realda savdo shu yerda
 qotadi. P4–P5 — pul hisobi. P6–P7 — qurilma. P8 — sifat. P9 — KPI (egasining qoidasi).
@@ -642,6 +643,83 @@ o'qi — qarz shartnomasi ustiga qurasan. Gate → deploy → jonli verify. Faza
 
 ---
 
+## FAZA P15 — Kunlik kassa hisoboti: har kassa 100% + jamlama (admin panelda)
+
+**Egasining talabi (2026-08-11, so'zma-so'z mazmuni):** «Kun bo'yi to'liq sotuv shu kassada
+bo'ladi. Har bir kassadan 100% — ipidan ignasigacha — hisobot olishim, oxirida esa jami to'liq
+hisobotni ko'rishim kerak. Bu hisobotlar admin paneliga tushishi kerak.»
+
+**O'lchangan holat:** per-smena Z-hisobot **bor** (`GET /cashier-sessions/:id/z-report` — ekran
+`/retail/sessions/[id]` + 72mm chop) va `report` modulida 20+ hisobot bor (dashboard · pnl ·
+cash-flow · sales-by-hour · sales-by-channel …). Lekin **«KUN» darajasidagi kassa jamlamasi
+YO'Q**: bitta sahifada tanlangan kun uchun har kassa/smena kesimi + hamma kassalar yig'indisi.
+Egasi buni hozir faqat smenalarni bittalab ochib, qo'lda qo'shib olishi mumkin — bu «100%»
+emas, «esdan chiqqanini sanamaslik» rejimi.
+
+**Arxitektura qoidasi (majburiy):** kunlik hisobot **z-report bilan BIR MANBADAN** quriladi —
+`cashier-session.service` dagi mavjud hisob mantig'i qayta ishlatiladi/ajratiladi, sahifa o'z
+formulasini yozmaydi. Aks holda smena-hisobot va kun-hisobot ikki xil raqam aytadi
+(`ombor-chek-uch-renderer` bug-klassi). Valyuta: Faza 17 shartnomasi — kursi yo'q valyuta
+jamiga QO'SHILMAYDI, alohida qator. NULL ≠ 0 (`data-quality-flag-layer`).
+
+### «Ipidan ignasigacha» — hisobot tarkibi (har kassa/smena uchun, keyin jami)
+
+1. **Smena pasporti:** kassir · kassa · ochilish/yopilish vaqti · holat.
+   🔴 **Ochiq smena = hisobot CHALA:** kun jamlamasi «yakuniy» deb ko'rsatilmaydi, sababi
+   yozib turiladi («2 smena hali ochiq»). Jim qisman-jami TAQIQ.
+2. **Savdo:** cheklar soni/summasi · bekor qilinganlar (soni+summa) · qaytarishlar ·
+   `picking`da qotganlar ro'yxati (100%-lik shartining bir qismi — «yo'qolgan» chek bo'lmasin).
+3. **To'lov turlari kesimi:** naqd · karta · QR · aralash · valyuta bo'yicha (method × currency),
+   z-report bilan aynan bir xil raqamlar.
+4. **Chegirma va nazorat:** berilgan chegirma jami · ZARAR'ga sotuvlar (soni/summasi) ·
+   narx o'zgartirishlar (audit-hodisalardan).
+5. **Qarz oqimi:** shu kunda berilgan qarz (kam to'lovlar) · qabul qilingan qarz to'lovlari
+   (P1 shartnomasi bo'yicha) — ikkalasi kassa kesimida.
+6. **Kassa harakati:** boshlang'ich naqd · drawer-in/out · xarajatlar (modda kesimida) ·
+   inkassatsiya · kutilgan naqd vs sanalgan · **farq + akt holati + menejer qabul holati (FSM)**.
+7. **USD yashiq** alohida blok (so'mga aralashtirilmaydi — MK31).
+8. **Jamlama (kun bo'yicha):** yuqoridagilarning hammasi kassalar kesimida jadval + yig'indi
+   qator; to'liqlik indikatori (yopiq/ochiq smenalar soni).
+
+### Vazifalar
+
+1. **O'lcha:** mavjud manbalar yetarliligini tekshir (z-report payload · `cashOutSummary` ·
+   `variances` · `RetailSalePayment` groupBy · qarz-to'lovlar) — yetishmagan maydon ro'yxati.
+2. **API:** `report` moduliga kunlik kassa-jamlama endpoint (sana + ixtiyoriy kassa filtri).
+   Hisob mantig'i z-report bilan umumiy modulga ajratiladi (nusxa EMAS). Ruxsat:
+   `cashiersession.view` (kassir EMAS — admin/menejer ko'radi; kassirning o'z smenasi unga
+   z-report orqali allaqachon ochiq).
+3. **Admin panel sahifasi:** sana tanlagich (arxiv — o'tgan kunlar ham) · kassalar kesimi ·
+   jamlama · chala-lik banneri · har smenaga o'tish havolasi (`/retail/sessions/[id]`) ·
+   chop etish ko'rinishi (A4 — egasi printerdan olishi uchun). Joylashuv: `/retail` guruhida
+   (menyu: «Kunlik hisobot»); `/menejer` smenalar sahifasidan havola.
+4. **To'liqlik shartnomasi testlari:** ochiq smena bor kunda «yakuniy emas» · kursi yo'q valyuta
+   jamidan tashqarida · bekor qilingan chek jami tushumga KIRMAYDI lekin ro'yxatda BOR ·
+   qaytarish manfiy tomonda · smena z-reporti bilan kun-hisobot raqami AYNAN teng (parity test).
+5. Gate → deploy → **jonli verify:** kamida bitta real yopilgan smenali kunda: sahifadagi har
+   blok o'sha smena z-reporti bilan solishtiriladi (raqam-ba-raqam, dalil hisobotga).
+6. i18n (ru+uz), hisobot → **TO'XTA**.
+
+### Tugash mezoni
+Egasi admin panelda istalgan kunni ochib: har kassaning to'liq kartinasini (yuqoridagi 8 blok)
+va kun jamlamasini ko'radi; ochiq smena bo'lsa hisobot buni yashirmaydi; raqamlar z-report
+bilan aynan mos (parity test yashil).
+
+### Sessiya prompti (nusxa ol)
+
+```
+docs/REJA-KASSA-PROD-2026-08.md faylini o'qi va FAQAT «FAZA P15 — Kunlik kassa hisoboti» ni
+bajar. Rejaning §0 majburiy. P1/P4/P5/P14 hisobotlarini ham o'qi (qarz/smena/to'lov/daftar
+shartnomalari ustiga qurasan).
+
+Qoida: hisob mantig'i z-report bilan BIR MANBADAN (nusxa yozma); NULL ≠ 0; kursi yo'q valyuta
+jamiga kirmaydi; ochiq smena = «yakuniy emas» banneri. TDD: parity-test (smena z-reporti ==
+kun-hisobot qatori) avval yoziladi. Gate → deploy → jonli verify (raqam-ba-raqam solishtiruv).
+Faza tugagach «HISOBOTLAR» ga P15 hisobotini yoz va ISHNI TO'XTAT.
+```
+
+---
+
 ## HISOBOTLAR
 
 > Har faza agenti o'z bo'limini shu yerda to'ldiradi. Shablon o'zgartirilmaydi, bo'limlar
@@ -815,3 +893,4 @@ bilan tekshirildi — begona fayl yo'q.
 ### P12 — ☐ hali bajarilmagan
 ### P13 — ☐ hali bajarilmagan
 ### P14 — ☐ hali bajarilmagan
+### P15 — ☐ hali bajarilmagan
