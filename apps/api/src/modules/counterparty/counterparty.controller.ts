@@ -77,6 +77,28 @@ export class CounterpartyController {
     return this.service.update(user.accountId, user.sub, id, body);
   }
 
+  /**
+   * F9 — POS mijoz kartasidan telefon/izohni tuzatish.
+   *
+   * 🔴 NEGA ALOHIDA YO'L: kiosk chegarasi YO'L darajasida ishlaydi
+   * (`KIOSK_ALLOWED`, TZ §3.1 — «bevosita URL bilan kirish bloklanishi
+   * shart»). Yuqoridagi umumiy `PATCH :id` ni kioskga ochish kassirga
+   * nom/narx turi/egasi/teglar/rekvizitlarni ham ochib yuborardi. Shu tor
+   * yo'l esa `PosContactSchema` (`.strict()`) bilan ikki maydonga qulflangan.
+   *
+   * Ruxsat — o'sha `counterparty.update`: bu ikkinchi qatlam, birinchisi
+   * (kiosk allowlist) yo'lni cheklaydi.
+   */
+  @Patch(':id/pos-contact')
+  @RequirePermission({ entity: 'counterparty', action: 'update' })
+  updatePosContact(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ) {
+    return this.service.updatePosContact(user.accountId, user.sub, id, body);
+  }
+
   @Post(':id/archive')
   @RequirePermission({ entity: 'counterparty', action: 'update' })
   archive(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {

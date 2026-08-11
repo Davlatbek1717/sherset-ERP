@@ -187,6 +187,10 @@ const KIOSK_ROUTE_BY_ENTITY: Partial<Record<PermissionEntity, string>> = {
 const KIOSK_ROUTE_OVERRIDE: Record<string, string> = {
   'customerorder.approve':
     '/customer-orders/8f7d1c22-0000-4000-8000-000000000001/transitions/confirmed',
+  // F9 sababi: kassirning `counterparty.update` ruxsati kiosk'da FAQAT
+  // `PATCH /counterparties/:id/pos-contact` (telefon + izoh) orqali yashaydi.
+  // Umumiy `PATCH /counterparties/:id` — to'liq karta — ataylab yopiq.
+  'counterparty.update': '/counterparties/8f7d1c22-0000-4000-8000-000000000002/pos-contact',
 };
 
 const METHOD_BY_ACTION: Record<PermissionAction, string> = {
@@ -196,6 +200,15 @@ const METHOD_BY_ACTION: Record<PermissionAction, string> = {
   delete: 'DELETE',
   approve: 'POST',
   print: 'POST',
+};
+
+/**
+ * `entity.action` uchun ANIQ metod — `METHOD_BY_ACTION` soddalashtirishi
+ * yetmaganda. (`update` odatda `PUT` deb modellangan, POS tor yo'li esa
+ * `PATCH`.)
+ */
+const KIOSK_METHOD_OVERRIDE: Record<string, string> = {
+  'counterparty.update': 'PATCH',
 };
 
 describe('MK29 — kassir shabloni kiosk cheklovi bilan mos (TZ §3.1)', () => {
@@ -217,10 +230,9 @@ describe('MK29 — kassir shabloni kiosk cheklovi bilan mos (TZ §3.1)', () => {
         violations.push(`${entity}.${action} — kiosk marshruti xaritada yo'q`);
         continue;
       }
-      if (!isKioskAllowed(METHOD_BY_ACTION[action], route)) {
-        violations.push(
-          `${entity}.${action} → ${METHOD_BY_ACTION[action]} ${route} kiosk'da yopiq`,
-        );
+      const method = KIOSK_METHOD_OVERRIDE[`${entity}.${action}`] ?? METHOD_BY_ACTION[action];
+      if (!isKioskAllowed(method, route)) {
+        violations.push(`${entity}.${action} → ${method} ${route} kiosk'da yopiq`);
       }
     }
     expect(violations).toEqual([]);

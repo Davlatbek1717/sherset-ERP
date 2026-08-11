@@ -352,8 +352,13 @@ export class DebtController {
   posSummary(
     @CurrentUser() user: AuthenticatedUser,
     @Param('counterpartyId') counterpartyId: string,
+    // F9 — `CounterpartyBalance` valyuta kesimida yuriladi, ya'ni «qaysi
+    // qoldiq asosiy?» degan savolga kassa yashig'i javob beradi. Berilmasa
+    // so'm (bu bazadagi yagona `BASE_CURRENCY`); noto'g'ri kod kelsa qoldiq
+    // `null` bo'lib qaytadi — «0» deb chizilmaydi.
+    @Query('currency') currency?: string,
   ) {
-    return this.pos.summary(user.accountId, counterpartyId);
+    return this.pos.summary(user.accountId, counterpartyId, currency || 'UZS');
   }
 
   /**

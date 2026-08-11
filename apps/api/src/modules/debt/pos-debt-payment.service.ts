@@ -12,6 +12,7 @@ import {
   PosDebtPaymentSchema,
   usdCentsToSomTiyin,
 } from './debt.schema.js';
+import { splitDebtSources } from './pos-customer-debt.js';
 
 /** FIFO/chek uchun kerakli maydonlar — qulfli va qulfsiz o'qish bir xil shaklda. */
 const DEBT_FIFO_SELECT = {
@@ -57,21 +58,46 @@ export class PosDebtPaymentService {
    * qoldiq, **eng eski qarz sanasi** va ochiq qarzlar ro'yxati. Faqat
    * summa maydonini ko'rsatish uni ko'r-ko'rona kiritishga majbur qilardi.
    */
-  async summary(accountId: string, counterpartyId: string) {
+  async summary(accountId: string, counterpartyId: string, tillCurrency = 'UZS') {
     const cp = await this.prisma.client.counterparty.findFirst({
       where: { id: counterpartyId, accountId },
-      select: { id: true, name: true, phone: true },
+      select: { id: true, name: true, phone: true, description: true },
     });
     if (!cp) throw new NotFoundException('Mijoz topilmadi');
 
-    const rows = await this.loadOpenDebts(accountId, counterpartyId);
+    const [rows, balanceRows] = await Promise.all([
+      this.loadOpenDebts(accountId, counterpartyId),
+      // F9 — IKKINCHI daftar. POS qarz-sotuvi `Debt` reyestriga EMAS, aynan
+      // shu balansga yozadi (`retail-sale.service.ts#post`), ya'ni pastdagi
+      // FIFO qoldig'i mijozning haqiqiy qarzidan KAM bo'lishi mumkin.
+      this.prisma.client.counterpartyBalance.findMany({
+        where: { accountId, counterpartyId },
+        select: { currency: true, balanceMinor: true },
+      }),
+    ]);
     const s = summarize(rows.map(toFifo));
+    const split = splitDebtSources(balanceRows, s.outstandingMinor, tillCurrency);
 
     return {
       counterparty: cp,
+      /** `Debt` reyestri — `pos/pay` FIFO'si AYNAN shuni yopadi. */
       outstandingMinor: s.outstandingMinor.toString(),
       openCount: s.openCount,
       oldestAt: s.oldestAt,
+      /**
+       * F9 — `CounterpartyBalance` dagi umumiy qarz.
+       * 🔴 `null` = O'LCHANMAGAN (balans qatori yo'q), «0» EMAS.
+       */
+      balanceMinor: split.balanceMinor?.toString() ?? null,
+      /** Balansda bor, reyestrda yo'q — POS bu qarzni QABUL QILA OLMAYDI. */
+      unregisteredMinor: split.unregisteredMinor?.toString() ?? null,
+      /** Teskari nomuvofiqlik: reyestr balansdan katta (ikkala son shubhali). */
+      registryExceedsBalance: split.registryExceedsBalance,
+      /** Kassa valyutasidan boshqa, noldan farqli qoldiqlar. */
+      otherCurrencyBalances: split.otherCurrencies.map((b) => ({
+        currency: b.currency,
+        balanceMinor: b.balanceMinor.toString(),
+      })),
       debts: rows.map((d) => ({
         id: d.id,
         name: d.name,
@@ -79,7 +105,11 @@ export class PosDebtPaymentService {
         paidMinor: d.paidMinor.toString(),
         outstandingMinor: (d.totalMinor - d.paidMinor).toString(),
         currency: d.currency,
-        orderAt: d.nextContactAt ?? d.createdAt,
+        // 🔴 F9/AUDIT: qarz OCHILGAN sana. Ilgari `nextContactAt ?? createdAt`
+        // turardi — ya'ni ekranda KELAJAKDAGI qo'ng'iroq sanasi «qarz sanasi»
+        // bo'lib ko'rinardi va ro'yxat tartibi server yopadigan FIFO
+        // tartibidan (`toFifo` → `createdAt`) farq qilardi.
+        orderAt: d.createdAt,
       })),
     };
   }

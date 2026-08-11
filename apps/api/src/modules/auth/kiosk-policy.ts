@@ -92,8 +92,18 @@ export const KIOSK_ALLOWED: readonly Rule[] = [
   // (foyda/marja paneli) — hammasi kioskka yetib borardi va ularni faqat
   // IKKINCHI qatlam (ruxsat matritsasi) to'xtatardi. Kiosk ro'yxati esa
   // aynan «URL bilan kirish bloklansin» uchun bor (TZ §3.1).
-  { prefix: '/counterparties', methods: ['GET', 'POST'], exact: true, why: 'mijoz qidirish (telefon/ism) va kassada yangi mijoz ochish' },
-  { prefix: '/counterparties/:id', methods: ['GET'], exact: true, why: 'mijoz kartasi — nom, telefon, izoh' },
+  {
+    prefix: '/counterparties',
+    methods: ['GET', 'POST'],
+    exact: true,
+    why: 'mijoz qidirish (telefon/ism) va kassada yangi mijoz ochish',
+  },
+  {
+    prefix: '/counterparties/:id',
+    methods: ['GET'],
+    exact: true,
+    why: 'mijoz kartasi — nom, telefon, izoh',
+  },
   // Tahrir AYNAN shu tor yo'ldan: faqat `phone` va `description`. To'liq
   // `PATCH /counterparties/:id` (nom, narx turi, egasi, teglar) YOPIQ qoladi.
   {

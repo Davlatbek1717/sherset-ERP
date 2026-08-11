@@ -90,7 +90,9 @@ export function splitDebtSources(
     // Faqat mijoz QARZDOR bo'lgan holatda mazmunli: balans musbat bo'lib
     // reyestrdan kichik bo'lsa, ikki daftar rostdan ham qarama-qarshi.
     registryExceedsBalance:
-      balanceMinor !== null && registryOutstandingMinor > 0n && balanceMinor < registryOutstandingMinor,
+      balanceMinor !== null &&
+      registryOutstandingMinor > 0n &&
+      balanceMinor < registryOutstandingMinor,
     otherCurrencies: balances.filter((b) => b.currency !== tillCurrency && b.balanceMinor !== 0n),
   };
 }

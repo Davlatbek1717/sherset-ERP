@@ -17,11 +17,7 @@ import { splitDebtSources } from './pos-customer-debt.js';
  */
 describe('F9 — qarz manbalari ajratmasi', () => {
   it("balans reyestrdan katta bo'lsa — farq «reyestrsiz qarz» sifatida chiqadi", () => {
-    const s = splitDebtSources(
-      [{ currency: 'UZS', balanceMinor: 100_000n }],
-      40_000n,
-      'UZS',
-    );
+    const s = splitDebtSources([{ currency: 'UZS', balanceMinor: 100_000n }], 40_000n, 'UZS');
     expect(s.balanceMinor).toBe(100_000n);
     expect(s.registryOutstandingMinor).toBe(40_000n);
     expect(s.unregisteredMinor).toBe(60_000n);

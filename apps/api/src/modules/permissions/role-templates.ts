@@ -309,7 +309,11 @@ export const ROLE_TEMPLATES: Record<RoleTemplateSlug, RoleTemplate> = {
       grant(['retailsale'], { view: 'ALL', create: 'ALL', update: 'ALL', print: 'ALL' }),
       grant(['cashiersession'], { view: 'ALL', create: 'ALL', update: 'ALL', print: 'ALL' }),
       grant(['product', 'productfolder', 'pricetype'], { view: 'ALL' }),
-      grant(['counterparty'], { view: 'ALL', create: 'ALL' }),
+      // F9 — mijoz kartasi. `update` kiosk'da FAQAT bitta tor yo'lda yashaydi:
+      // `PATCH /counterparties/:id/pos-contact` (telefon + izoh). Umumiy
+      // `PATCH /counterparties/:id` `KIOSK_ALLOWED` da YO'Q, ya'ni bu ruxsat
+      // nom/narx turi/egasi/teglarni o'zgartirishga yetmaydi.
+      grant(['counterparty'], { view: 'ALL', create: 'ALL', update: 'ALL' }),
       grant(['debt', 'debtpayment'], { view: 'ALL', create: 'ALL' }),
       // F7 — zakazlar POS'da. `view` (ro'yxat + detal) va `approve`
       // (`draft → confirmed`, rezerv avtomatik tushadi) — boshqa hech nima.

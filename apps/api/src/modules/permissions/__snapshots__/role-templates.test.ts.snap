@@ -188,7 +188,7 @@ exports[`MK29 — shablon matritsasi snapshot (10/10) > cashier matritsasi 1`] =
 {
   "cashiersession": "view:ALL create:ALL update:ALL print:ALL",
   "cashout": "view:ALL create:ALL print:ALL",
-  "counterparty": "view:ALL create:ALL",
+  "counterparty": "view:ALL create:ALL update:ALL",
   "currency": "view:ALL",
   "customerorder": "view:ALL approve:ALL",
   "debt": "view:ALL create:ALL",

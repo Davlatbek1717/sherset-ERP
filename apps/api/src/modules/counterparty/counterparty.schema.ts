@@ -142,6 +142,30 @@ export const UpdateCounterpartySchema = CreateCounterpartySchema.partial().exten
   version: z.number().int().nonnegative(),
 });
 
+/**
+ * F9 — POS mijoz kartasidan tahrirlanadigan YAGONA maydonlar.
+ *
+ * 🔴 `.strict()` ATAYLAB: Zod'ning odatiy `strip` xulqi begona kalitni
+ * JIMGINA tashlab yuborardi va «nima o'tdi?» degan savolga javob bermasdi.
+ * Bu yerda oq ro'yxat xavfsizlik chegarasi — kassir `PATCH /counterparties/:id`
+ * ga umuman yetib bormaydi (`KIOSK_ALLOWED`), shu tor yo'l esa nom/narx
+ * turi/egasi/teglarni O'ZGARTIRA OLMASLIGI kerak, hatto so'rov qo'lda
+ * yasalgan bo'lsa ham.
+ *
+ * `version` — mavjud optimistik qulf shartnomasi (`update()` bilan bir xil):
+ * panel mijozni oldin o'qiydi, ya'ni versiyasi bor.
+ */
+export const PosContactSchema = z
+  .object({
+    version: z.number().int().nonnegative(),
+    // `Counterparty.phone` — `VarChar(20)`; chegarani shu yerda ushlaymiz,
+    // aks holda DB xatosi 500 bo'lib chiqardi.
+    phone: z.string().max(20).nullish(),
+    description: z.string().max(2000).nullish(),
+  })
+  .strict();
+export type PosContactInput = z.infer<typeof PosContactSchema>;
+
 const boolFromString = z
   .union([z.boolean(), z.enum(['true', 'false'])])
   .transform((v) => (typeof v === 'boolean' ? v : v === 'true'));
