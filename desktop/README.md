@@ -69,5 +69,136 @@ Manzil **kodga qotirilmagan** (spec §3.2): avval konfiguratsiya fayli, keyin
   Mijoz-ekran oynasi uchun alohida `preload-customer.js` kerak bo'ladi —
   `apps/web/src/app/customer-display/page.tsx` `window.customerDisplay.onCart(...)`
   ni kutadi.
-- **F4:** `build/icon.ico`, `electron-builder` (NSIS) konfiguratsiyasi,
-  `electron-updater` simlari, SmartScreen bo'yicha yo'riqnoma.
+- **F4 (bajarildi, pastga qarang):** `electron-builder` (NSIS) konfiguratsiyasi,
+  `electron-updater` simlari, nginx kanali va operator yo'riqnomasi tayyor.
+  🔴 Qolgan yagona narsa — `build/icon.ico` (binar fayl, repo'da YO'Q).
+
+---
+
+## Installer yig'ish (`.exe`)
+
+> 🔴 **Bu yerdagi qadamlar HECH QACHON yugurtirilmagan.** F4 sessiyasida
+> `electron` va `electron-builder` ataylab o'rnatilmadi (~200 MB, foydalanuvchi
+> rozilik bermagan). Ya'ni konfiguratsiya **strukturaviy** — «.exe yig'iladi»
+> degan da'vo hozircha tasdiqlanmagan.
+
+Konfiguratsiya `package.json` ning `build` blokida turadi (alohida
+`electron-builder.yml` EMAS). Sabab: `build` blokini qo'riqchi test
+(`apps/web/src/__tests__/kassa-installer-config.test.ts`) `JSON.parse` bilan
+o'qiy oladi — monorepoda YAML parseri yo'q (`yaml`/`js-yaml` na ildizda, na
+`apps/web`, na `apps/api` da resolve bo'lmaydi), shuning uchun YAML variantida
+qo'riqchi qo'lda yozilgan soxta parserga suyanardi.
+
+### 0. Ikonka — operator qo'shadi
+
+```
+desktop/build/icon.ico     ← .gitignore'da emas, shunchaki repo'da YO'Q (binar)
+```
+
+Talab: ko'p o'lchamli `.ico`, kamida **256×256** (electron-builder shuni
+talab qiladi). U bo'lmasa `pnpm run dist` **birinchi qadamda to'xtaydi**:
+
+```
+[dist] Yig`ish TO`XTATILDI — kerakli fayllar yo`q:
+  desktop/build/icon.ico
+      Windows installer va yorliq ikonkasi. Kamida 256×256, ko`p o`lchamli .ico.
+```
+
+Bu to'siq (`check-build-assets.js`) ataylab qo'yilgan: usiz electron-builder
+ning o'z xulqi ikki xil bo'lishi mumkin — yo tushunarsiz xato, yoki eng
+yomoni **default Electron ikonkasi bilan jim davom etish** (kassa PC'sida
+Electron logotipli «Sherset Kassa» paydo bo'lardi). Qaysi biri ekani
+**o'lchanmagan** — shuning uchun qo'riqchi javobni deterministik qiladi.
+
+### 1. Yig'ish
+
+```bash
+cd desktop
+pnpm install            # bir marta (electron + electron-builder ≈ 200 MB)
+pnpm run dist           # = node check-build-assets.js && electron-builder --win nsis
+```
+
+Natija (hozirgi `version: 1.1.0-dev` uchun):
+
+```
+desktop/dist/Sherset-Kassa-Setup-1.1.0-dev.exe
+desktop/dist/latest.yml
+```
+
+Fayl nomi `build.win.artifactName` dan keladi va `${version}` ni
+`package.json` dagi versiyadan oladi — nom hech qachon qo'lda yozilmaydi.
+Relizdan oldin `version` ni `-dev` siz qiymatga ko'taring (masalan `1.1.0`).
+
+### 2. Imzo — 1-versiya IMZOSIZ (spec §8.2, ongli qaror)
+
+Kod imzolash sertifikati hozircha yo'q. Sertifikat olingach `build.win` ga
+`certificateFile` / `certificatePassword` **muhit o'zgaruvchisi orqali**
+qo'shiladi — kod o'zgarmaydi. 🔴 Sertifikat va parol repo'ga **hech qachon**
+yozilmaydi (qo'riqchi test `package.json` da bu kalitlar yo'qligini tekshiradi).
+
+---
+
+## Operator: o'rnatish va SmartScreen ogohlantirishi
+
+Installer imzosiz bo'lgani uchun Windows uni **birinchi marta** to'sadi.
+Bu normal, viruz emas — bir marta ruxsat berilgach qaytarilmaydi.
+
+1. `Sherset-Kassa-Setup-<versiya>.exe` ni ishga tushiring.
+2. **«Windows защитил ваш компьютер»** (SmartScreen) ko'k oynasi chiqadi.
+3. **«Подробнее»** (Дополнительно / More info) ni bosing — yashirin tugma ochiladi.
+4. **«Выполнить в любом случае»** (Все равно запустить / Run anyway) ni bosing.
+5. UAC («Разрешить приложению вносить изменения?») → **«Да»**.
+   Ilova **hamma foydalanuvchilar uchun** o'rnatiladi (`perMachine: true`),
+   shuning uchun administrator huquqi kerak.
+6. O'rnatish yo'lini o'zgartirish mumkin (`oneClick: false`), default yetarli.
+7. Tugagach ish stoli va «Пуск» da **Sherset Kassa** yorlig'i paydo bo'ladi.
+
+> Agar SmartScreen oynasida «Подробнее» ko'rinmasa — antivirus faylni
+> karantinga olgan. Faylni oq ro'yxatga qo'shing yoki qaytadan yuklab oling.
+
+---
+
+## Avtoyangilanish
+
+| Savol | Javob |
+|---|---|
+| Qayerdan oladi? | Qurilma **juftlangan serverdan**: `<server>` + `/downloads/desktop/` |
+| Nimani so'raydi? | avval `latest.yml`, keyin undagi `.exe` |
+| Qachon tekshiradi? | ishga tushganda va **har 4 soatda** |
+| Qachon yuklaydi? | topilishi bilan, **fonda** (kassir sezmaydi) |
+| 🔴 Qachon o'rnatadi? | **faqat kassir «Chiqish» (`Ctrl+Alt+Shift+Q`) bosganda** |
+| Xato bo'lsa? | jim — logga yoziladi, savdo to'xtamaydi |
+
+Yangilanish **savdo o'rtasida hech qachon o'rnatilmaydi**: `electron-updater`
+ning o'z `autoInstallOnAppQuit` xulqi ataylab **o'chirilgan**
+(`desktop/updater.js`), o'rnatish faqat `main.js` → `quitShell()` yo'lida
+boshlanadi. Shu shartnoma qo'riqchi test bilan qulflangan.
+
+O'rnatish paytida Windows yana bir marta **UAC** so'raydi (`perMachine: true`
+o'rnatishni «jim» qilib bo'lmaydi) — kassani yopayotgan xodim «Да» bosishi
+kerak, aks holda yangilanish keyingi «Chiqish» ga qoladi.
+
+### Server tomoni (bir marta, admin)
+
+Kanal — oddiy statik katalog. Nginx `location` uchala konfiguratsiyada bor
+(`deploy/nginx-*.conf`), yuklash tartibi va tuzoqlar
+`deploy/DEPLOY-sherset.md` → «7. Kassa (Electron) installer + update channel».
+
+```
+https://<server>/downloads/desktop/latest.yml
+https://<server>/downloads/desktop/Sherset-Kassa-Setup-<versiya>.exe
+```
+
+`package.json` → `build.publish[0].url` dagi domen — faqat **build vaqtidagi
+default**. Ish paytida manzil qurilma juftlangan serverdan olinadi
+(spec §3.2), shuning uchun bitta `.exe` istalgan tenant domenida ishlaydi.
+
+### Ma'lum cheklovlar (o'lchanmagan / qarz)
+
+- Butun oqim (yig'ish → yuklash → topilishi → o'rnatish) **hech qachon
+  yugurtirilmagan**. Phase-2 (F12, real kassa PC) da o'lchanadi.
+- `1.1.0-dev` — prerelease semver. `electron-updater` prerelease'dan
+  relizga o'tishni qo'llab-quvvatlaydi, lekin bu **tekshirilmagan**;
+  birinchi reliz `-dev` siz chiqarilsin.
+- Yangilanish o'rnatilgach ilova **qaytadan ochilmaydi** (`isForceRunAfter: false`) —
+  kassir «Chiqish» bosgan edi, demak ish tugagan.
