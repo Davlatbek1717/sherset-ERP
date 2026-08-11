@@ -22,8 +22,14 @@ import { beforeEach, describe, expect, it } from 'vitest';
  *   K4. Raqamli maydonda QWERTY emas, NUMPAD chiqadi.
  *   K5. Harf layoutida kirill mavjud va til tanlovi navigatsiyadan keyin tiklanadi.
  *
- * Yorliq: bu **jsdom/happy-dom** o'lchovi. Real Electron'da (sandbox: true,
- * izolyatsiyalangan dunyo) sinov qilinmagan — F4 qurilma sinoviga qoladi.
+ * Yorliq: bu **jsdom/happy-dom** o'lchovi — «qaysi kalit `kbd:key` ga ketdi»
+ * degan savolgacha. «O'sha belgi Chromium'ga yetdimi» degan savol boshqa
+ * qatlamda va u **P6 da HAQIQIY Electron'da o'lchandi** (33.4.11 / Chromium 130,
+ * prod bilan bir xil `sandbox: true` + izolyatsiyalangan dunyo):
+ * kirill (`ф Ф я ў қ ғ ҳ`) ham, lotin ham, `⌫` ham yetadi va boshqariladigan
+ * (React naqshidagi) maydonda qoladi; til tanlovi `localStorage` da saqlanib,
+ * navigatsiyadan keyin tiklanadi. Qayta yugurtirish: `desktop/tools/kbd-probe/`.
+ * O'lchanmagani — QURILMANING O'ZI (monoblok, barmoq): F4/P6 hisobotlariga qara.
  */
 
 const WEB = process.cwd(); // apps/web
@@ -367,5 +373,34 @@ describe('ko`rinish/yashirish xulqi', () => {
     document.body.appendChild(ta);
     ta.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
     expect(keyLabels().filter((l) => LATIN_LETTERS.test(l)).length).toBeGreaterThanOrEqual(26);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+/**
+ * K6 — `readOnly` klaviaturani YASHIRMAYDI (P6 o'lchovi).
+ *
+ * 🔴 Nima uchun qulflanadi: P6 rejasi PIN ekranidagi «ikki numpad» ni maydonni
+ * `readOnly` qilib yechishni taklif qilgan edi. Haqiqiy Electron'da o'lchandi
+ * (`desktop/tools/kbd-probe/probe.js`): `readOnly` maydonda qobiq klaviaturasi
+ * BARIBIR chiqadi, lekin `sendInputEvent` kaliti maydonga tushmaydi
+ * (`readOnlyTyped: ""`). Ya'ni `readOnly` — «panelni yashirish» vositasi EMAS,
+ * u faqat «panel bor, lekin hech nima yozilmaydi» holatini yasaydi.
+ *
+ * Agar kelajakda preload `readOnly` maydonni ATAYLAB filtrlasa, bu test
+ * qizaradi — o'shanda `pin-entry-single-numpad.test.tsx` dagi «kiritish yo'li
+ * aynan bitta» invarianti qayta ko'rib chiqilsin (ikkisi bog'liq).
+ */
+describe('K6 — `readOnly` maydon (P6 o`lchovi)', () => {
+  it('readOnly raqamli maydonda klaviatura BARIBIR chiqadi', () => {
+    focusField({ type: 'password', inputmode: 'numeric', readonly: 'readonly' });
+    expect(visible()).toBe(true);
+    expect(keyLabels()).toContain('7');
+  });
+
+  it('tahrirlanadigan PIN maydoni ham xuddi shu numpadni ochadi', () => {
+    focusField({ type: 'password', inputmode: 'numeric' });
+    expect(keyLabels().filter((l) => LATIN_LETTERS.test(l))).toHaveLength(0);
+    expect(keyLabels()).toContain('0');
   });
 });

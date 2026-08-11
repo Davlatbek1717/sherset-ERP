@@ -176,3 +176,7 @@ docs/moysklad-reference/
 # which is why it got committed). Regenerated on deploy; never track.
 packages/db/src/generated/
 .deploy-last-success
+
+# Klaviatura o'lchov skriptining chiqishi (desktop/tools/kbd-probe) — har yugurishda qayta yoziladi.
+# Ildizda turibdi: biome `useIgnoreFile` faqat ILDIZ .gitignore ni o'qiydi.
+desktop/tools/kbd-probe/result.json

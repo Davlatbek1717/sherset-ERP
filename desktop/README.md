@@ -28,6 +28,7 @@ Yupqa kiosk o'ram (spec §3.1): savdo mantiqi web ilovasida qoladi, bu jarayon f
 | `device-store.js` | `%APPDATA%/<app>/kassa-config.json` — server manzili (ochiq) + qurilma kaliti (DPAPI) |
 | `setup.html` | birinchi ishga tushish: server manzili so'raladi |
 | `offline.html` | aloqa yo'q ekrani + qayta urinish |
+| `tools/kbd-probe/` | ekran klaviaturasini HAQIQIY Electron'da o'lchaydigan skript (P6) |
 
 ## Ishga tushirish (dasturchi)
 
@@ -128,6 +129,38 @@ Manzil **kodga qotirilmagan** (spec §3.2): avval konfiguratsiya fayli, keyin
   kassir bilan umumiy cookie sessiyasidan token oladi.
 - Kassir oynasi yopilsa mijoz-ekran ham yopiladi (aks holda `window-all-closed`
   otilmay, ilova ko'rinmas holda tirik qolardi).
+
+## Ekran klaviaturasi — O'LCHANGAN holat (P6, 2026-08-11)
+
+F3/F4 hisobotlari «kirill harfi Chromium'ga yetadimi?» degan savolni 🔴 ENG KATTA
+ochiq xavf deb qoldirgan edi. Savol **haqiqiy Electron'da o'lchandi va yopildi**
+(Electron 33.4.11 / Chromium 130 — 1.3.0 da ketgan aynan shu versiya; oyna prod
+bilan bir xil `sandbox: true` + `contextIsolation: true` bilan):
+
+| Savol | Javob (o'lchangan) |
+|---|---|
+| `sendInputEvent({type:'char'})` kirillni yetkazadimi | **HA** — `ф Ф я ў қ ғ ҳ` 12/12 belgi maydonga tushdi |
+| React (boshqariladigan) maydonda qoladimi | **HA** — `input` hodisasi otiladi, qiymat holatda saqlanadi |
+| `⌫` (`keyDown`/`keyUp` Backspace) | **HA** — belgi o'chdi |
+| Pul maydoni (`inputMode="decimal"`) → numpad | **HA** — 68px tugmalar, 520px panel |
+| Til tanlovi navigatsiyadan keyin tiklanadimi | **HA** — `sandbox: true` da ham `localStorage` ishlaydi (`sherset.kbd.lang: cyr`) |
+| `readOnly` maydonda nima bo'ladi | 🔴 klaviatura **CHIQADI**, lekin kalit **TUSHMAYDI** — `readOnly` panelni yashirish vositasi EMAS |
+
+Ya'ni **`webContents.insertText` zaxira yo'liga o'tish KERAK EMAS** (u ham
+ishlaydi, lekin `sendInputEvent` React uchun kuchliroq — `main.js` izohiga qara).
+
+Qayta yugurtirish (Electron versiyasi ko'tarilsa javob qayta ochiladi):
+
+```bash
+# Electron binari kerak: desktop/node_modules/electron/dist bo'sh bo'lsa
+#   cd desktop && pnpm approve-builds   (yoki keshdagi zip'ni ochish)
+env -u ELECTRON_RUN_AS_NODE <electron.exe> desktop/tools/kbd-probe/probe.js
+# natija: desktop/tools/kbd-probe/result.json   (stdout Windows GUI ilovada BO'SH)
+```
+
+**Hamon o'lchanmagan:** qurilmaning O'ZI — monoblokda barmoq bilan bosish,
+tugma o'lchamlari, panel balandligi (harf ~262px / numpad ~350px — hisoblangan,
+ekranda ko'rilmagan).
 
 ## Chop etishni o'lchash (HALI BAJARILMAGAN)
 

@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="uz">
+  <head>
+    <meta charset="utf-8" />
+    <title>kbd probe</title>
+  </head>
+  <body>
+    <!-- Maydon turlari `preload.js` ning layout tanlovini qoplaydi. -->
+    <input id="text" type="text" />
+    <input id="money" type="text" inputmode="decimal" />
+    <input id="pin" type="password" inputmode="numeric" />
+    <input id="pinro" type="password" inputmode="numeric" readonly />
+    <div id="host"></div>
+    <script>
+      // React-ga o'xshash BOSHQARILADIGAN maydon: qiymat faqat `input`
+      // hodisasidan keyin holatdan qayta yoziladi. Agar qobiq kaliti `input`
+      // hodisasini tug'dirmasa, matn shu yerda yo'qoladi — aynan `main.js`
+      // dagi «sendInputEvent ATAYLAB» izohi himoya qilayotgan xulq.
+      const controlled = document.createElement('input');
+      controlled.id = 'controlled';
+      controlled.type = 'text';
+      let state = '';
+      controlled.addEventListener('input', (e) => {
+        state = e.target.value;
+        e.target.value = state;
+      });
+      document.getElementById('host').appendChild(controlled);
+      window.__state = () => state;
+    </script>
+  </body>
+</html>
