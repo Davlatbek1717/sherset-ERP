@@ -72,11 +72,21 @@ Manzil **kodga qotirilmagan** (spec §3.2): avval konfiguratsiya fayli, keyin
   va juftlash parolini kiritish mumkin. Juftlangan zahoti ilova **o'zi qayta
   ishga tushadi** va kiosk rejimida qulflanadi. Sozlash oynasini oddiy «X»
   bilan yopsa bo'ladi (hali kassir yo'q, qulflaydigan narsa ham yo'q).
-- **Qurilmani juftlash:** ilova ichida `/kassa-kirish` → «Juftlash» → admin login →
-  do'kon/kassa/tashkilot tanlanadi. Kalit shu kompyuterda DPAPI bilan shifrlanadi.
-- **Qurilmani bekor qilish (unpair):** hozircha UI'da tugma **YO'Q** (F1 dan qolgan
-  qarz). Vaqtinchalik yo'l — `%APPDATA%/<app>/kassa-config.json` faylidagi `device`
-  maydonini o'chirish yoki faylni butunlay o'chirish.
+- **Qurilma juftlash — OLIB TASHLANDI (2026-08-11, egasining talabi).** Kassir
+  ilovani ochadi va **faqat PIN** kiritadi; do'kon/kassa ham tanlanmaydi (server
+  hisob sukutlaridan oladi). `/kassa-kirish/juftlash` sahifasi o'chirildi,
+  `POST /auth/pos-login` da `deviceId`/`deviceSecret` ixtiyoriy bo'ldi.
+  🔴 Bu ikkinchi omilni yo'qotadi: kirish 4–6 raqamga qoladi — egasi shu
+  almashuvdan xabardor holda qaror qildi.
+- **Eski, juftlangan o'rnatmalar buzilmaydi:** kalit saqlangan bo'lsa u hamon
+  yuboriladi va server tekshiradi (`device-store.js` va IPC o'z joyida).
+  Kalitni tozalash kerak bo'lsa — `%APPDATA%/@moysklad/desktop/kassa-config.json`
+  faylidagi `device` maydonini o'chiring.
+- **Ekran klaviaturasi — qobiqning O'ZINIKI** (`preload.js` → `installTouchKeyboard`).
+  Matn maydoni fokus olganda pastdan chiqadi. Windows'niki EMAS: sensorli
+  monoblokda u Electron oynasi uchun umuman chiqmadi (o'lchangan). Kalit
+  `sendInputEvent` bilan yuboriladi — `input.value = …` React holatini
+  yangilamay, matn keyingi render'da yo'qolardi.
 - **Shifrlash mavjud bo'lmasa** (`safeStorage` ishlamaydigan tizim) qurilma kaliti
   **saqlanmaydi** va ekranda xato chiqadi — kalit hech qachon ochiq yozilmaydi.
 
@@ -192,11 +202,11 @@ pnpm install            # bir marta (electron + electron-builder ≈ 200 MB)
 pnpm run dist           # = node check-build-assets.js && electron-builder --win nsis
 ```
 
-Natija (hozirgi `version: 1.1.1` uchun):
+Natija (hozirgi `version: 1.2.0` uchun):
 
 ```
-desktop/dist/Sherset-Kassa-Setup-1.1.1.exe
-desktop/dist/Sherset-Kassa-Setup-1.1.1.exe.blockmap
+desktop/dist/Sherset-Kassa-Setup-1.2.0.exe
+desktop/dist/Sherset-Kassa-Setup-1.2.0.exe.blockmap
 desktop/dist/latest.yml
 ```
 
