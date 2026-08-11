@@ -18,6 +18,8 @@
 // Brauzerda sinash (Electron'siz):  /customer-display?demo=1
 
 import { getAccessToken, refresh } from '@/lib/auth-store';
+import { normalizeQtyDecimal } from '@/lib/pos/cart-math';
+import { scaleMinorByQty } from '@moysklad/money';
 import { ShersetLogo, formatMoney } from '@moysklad/ui';
 import { useEffect, useRef, useState } from 'react';
 
@@ -28,7 +30,15 @@ const API = '/api/v1';
 interface CartLineDTO {
   productId: string;
   name: string;
-  quantity: number;
+  /**
+   * Miqdor — `Decimal(20,6)` SATRi (kassir oynasi shunday uzatadi).
+   *
+   * Ilgari `number` edi va bu yerda `BigInt(l.quantity)` hisoblanardi:
+   * og'irlik bilan sotilgan tovarda (`1.5`) **RangeError** otilib mijoz-ekran
+   * oq bo'lib qolardi — POS savati bilan AYNI bug-klass (F8 audit).
+   * Eski `number` payload ham qabul qilinadi (`number | string`).
+   */
+  quantity: number | string;
   priceMinor: string; // bigint IPC'da string sifatida uzatiladi
 }
 interface CartPayload {
@@ -161,13 +171,21 @@ export default function CustomerDisplayPage() {
   );
 }
 
+/** Miqdorni server sxemasi shakliga keltiradi (`BigInt(1.5)` otilishini yopadi). */
+function qtyStr(q: number | string): string {
+  return normalizeQtyDecimal(String(q));
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // CHAP YARIM — jonli savat
 // ─────────────────────────────────────────────────────────────────────────────
 function CartPanel({ lines, discountPct }: { lines: CartLineDTO[]; discountPct: number }) {
-  const subtotal = lines.reduce((sum, l) => sum + BigInt(l.priceMinor) * BigInt(l.quantity), 0n);
+  const subtotal = lines.reduce(
+    (sum, l) => sum + scaleMinorByQty(BigInt(l.priceMinor), qtyStr(l.quantity)),
+    0n,
+  );
   const total = discountPct > 0 ? subtotal - (subtotal * BigInt(discountPct)) / 100n : subtotal;
-  const count = lines.reduce((n, l) => n + l.quantity, 0);
+  const count = lines.reduce((n, l) => n + (Number(l.quantity) || 0), 0);
 
   return (
     <div className="flex h-full w-1/2 flex-col border-slate-200 border-r bg-slate-50">
@@ -190,11 +208,11 @@ function CartPanel({ lines, discountPct }: { lines: CartLineDTO[]; discountPct: 
               className="flex items-baseline gap-4 border-slate-200 border-b py-4"
             >
               <span className="min-w-[3rem] font-semibold text-2xl text-slate-500 tabular-nums">
-                {l.quantity}×
+                {qtyStr(l.quantity)}×
               </span>
               <span className="flex-1 truncate font-medium text-3xl text-slate-800">{l.name}</span>
               <span className="font-semibold text-3xl text-slate-900 tabular-nums">
-                {formatMoney(BigInt(l.priceMinor) * BigInt(l.quantity))}
+                {formatMoney(scaleMinorByQty(BigInt(l.priceMinor), qtyStr(l.quantity)))}
               </span>
             </div>
           ))}

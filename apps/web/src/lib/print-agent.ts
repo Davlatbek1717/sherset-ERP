@@ -47,7 +47,15 @@ interface ElectronBridge {
   // v1.0.4+: kassir savati → mijoz-ekran (orqadagi 2-monitor). Savat har
   // o'zgarganda chaqiriladi; eski exe'lar bu funksiyani bilmaydi (optional).
   pushCart?: (payload: {
-    lines: Array<{ productId: string; name: string; quantity: number; priceMinor: string }>;
+    // `quantity` — `Decimal(20,6)` SATRi (F8 audit): og'irlik tovarida u
+    // `'1.5'` bo'ladi va mijoz-ekran uni `BigInt()` ga bermaydi. Eski exe
+    // versiyalari raqamni ham yuborishi mumkin, shu sababdan union.
+    lines: Array<{
+      productId: string;
+      name: string;
+      quantity: number | string;
+      priceMinor: string;
+    }>;
     discountPct: number;
   }) => void;
   // v1.0.5+: mijoz ekranini och/yop (Sotuv panelidagi tugma; F9 ham shu ish).

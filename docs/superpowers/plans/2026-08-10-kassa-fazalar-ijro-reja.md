@@ -2137,19 +2137,192 @@ Tuzatish 4 parallel agent + o'zim (auth), har biri TDD (RED ko'rilgan → fix �
 
 ### F8 hisoboti
 
-- **Holat:** ⬜ bajarilmagan
-- **Sana:**
+- **Holat:** ✅ bajarildi (Phase-1)
+- **Sana:** 2026-08-11 · worktree `D:/projects/sherset-kassa-f8`, branch `kassa-f8` (baza `b5e10c85`)
 - **O'zgargan fayllar:**
-- **Qilingan ish:**
-- **`customerOrderId` qayerda yoziladi:**
+  - **Server (yadro):** `apps/api/src/modules/retail-sale/retail-sale.schema.ts` ·
+    `retail-sale.service.ts` · `retail-sale.module.ts`
+  - **Server (yangi test):** `retail-sale-customer-order.test.ts` (11) ·
+    `retail-sale-customer-order-concurrency.test.ts` (3)
+  - **Server (qulf):** `apps/api/src/modules/auth/kiosk-policy.test.ts` (+4 test)
+  - **Server (mexanik):** 14 fayl — `new RetailSaleService(...)` ga 7-argument
+    (deterministik codemod, anchor topilmasa to'xtaydigan skript bilan)
+  - **FE:** `apps/web/src/app/(app)/sotuv/page.tsx` · `lib/pos/cart-math.ts` +
+    `cart-math.test.ts` · `app/customer-display/page.tsx` · `lib/print-agent.ts` ·
+    `__tests__/pos-cart-profit.test.ts` · `messages/{ru,uz}.json`
+  - **FE (yangi test):** `app/(app)/sotuv/__tests__/sales-screen-order-payment.test.tsx` (8)
+- **Qilingan ish:** POS «Zakazlar» → zakaz detali → **«To'lash»** → chek
+  `customerOrderId` bilan yaratiladi → **mavjud** rasmiylashtirish oynasi →
+  `POST /retail-sales/:id/post`. Chek post bo'lganda zakaz `paid` ga o'zi o'tadi.
+  Yo'l-yo'lakay ikki audit topilmasi (kasr miqdor krashi, chegirma farqi) yopildi.
+- **`customerOrderId` qayerda yoziladi:** `retail-sale.service.ts` → `create()`,
+  `retailSale.create({ data: { …, customerOrderId: parsed.customerOrderId ?? null } })`.
+  Sxemada `CreateRetailSaleSchema.customerOrderId` (ixtiyoriy uuid). `create()` uch
+  tekshiruv qiladi: **tenant** (FK faqat mavjudlikni tekshiradi — begona akkauntning
+  zakazi jimgina yozilib ketardi), **do'kon** (rezervni yutish smena do'koni ustida
+  qulflangan qatorlarga tegadi) va **holat** (`ORDER_PAYABLE_STATES`).
 - **Ikki marta to'lash himoyasi (qanday + qanday sinaldi):**
-- **Rezerv qarori + sababi:**
-- **Qisman to'lov qarori + sababi:**
-- **Brauzer o'lchovi:**
-- **Gate natijasi:**
+  - **Qanday:** `post()` **tranzaksiyasi ichida**, pul/ombor kaskadidan OLDIN —
+    holat-shartli `tx.customerOrder.updateMany({ where: { id, accountId,
+    deletedAt: null, state: { in: ORDER_PAYABLE_STATES } }, data: { version: { increment: 1 } } })`.
+    `count === 0` ⇒ `ConflictException` ⇒ butun chek rollback. Ikki parallel
+    tranzaksiya bir qatorga yozganda Postgres ularni qator-qulfi bilan
+    ketma-ketlashtiradi, ikkinchisi qulf bo'shagach predikatni QAYTA baholaydi
+    (EvalPlanQual) va zakaz endi `paid` bo'lgani uchun tushmaydi. `data` ataylab
+    `version` inkrementi: **bo'sh `data` bilan `updateMany` qulf olmasdi**.
+  - **Nega UI yetarli emas:** ekran qulfi ham qo'yildi (`paid` da tugma yo'q), lekin
+    ikki kassir ikki kassada zakazni bir vaqtda `confirmed` deb KO'RADI.
+  - **Qanday sinaldi:** `retail-sale-customer-order-concurrency.test.ts` — `count` ni
+    men bermayman: ikki `post()` `Promise.allSettled` bilan haqiqatan parallel yuradi,
+    bitta xotiradagi zakaz qatorini bo'lishadi, qulf navbatli mutex bilan
+    modellangan (tx oxirigacha ushlanadi), `applyPayment` stub'i to'lovni qo'shib
+    `paid` qiladi. Isbotlanadigan narsa: **aniq bittasi** fulfilled, ikkinchisi
+    `ConflictException`; `applyPayment` **1 marta**; kassaga pul **1 marta**
+    (`cashDeltas === [100000n]`); ombor **1 marta**; rezerv **1 marta** yutilgan.
+  - **Vakuum emasligi DALIL bilan:** implementatsiya testdan oldin yozilgani uchun bu
+    fayl birinchi yugurishda YASHIL chiqdi — buni yashirmasdan **mutatsiya** bilan
+    tekshirdim: `ORDER_PAYABLE_STATES` ga `'paid'` qo'shilganda **3/3 test qizardi**
+    (jumladan «uchinchi urinish ham rad etiladi» — post `resolve` bo'lib ketdi),
+    mutatsiya qaytarilgach yana yashil. Qo'shni fayldagi `create()`/`post()` testlari
+    esa odatdagi TDD bilan: 11/11 QIZIL → implementatsiya → 11/11 yashil.
+- **Rezerv qarori + sababi:** **chek zakaz rezervini YUTADI** (`release_consume`),
+  yig'ish zanjiri bilan BIRLASHMAYDI.
+  - *Kod bilan aniqlangan:* `send-to-picking` ombor qoldig'iga **umuman tegmaydi** —
+    `retail-sale.service.sendToPicking` faqat `draft → picking` flipi va
+    `RestockTask` (yig'ish varaqasi) yaratadi. Ya'ni «yig'ish zanjiri» rezervni
+    boshqarmaydi va u bilan birlashtirish uchun hech narsa yo'q. Zakaz esa
+    `confirmed` da ALLAQACHON rezerv qo'ygan (`applyReservationInvariant('hold-remaining')`).
+    Tovar chiqimi hujjati — chekning o'zi.
+  - *Nega yutish shart:* chek `applyDeltas` bilan qoldiqni kamaytiradi; hold qolsa
+    `reservedQty > qty` bo'lib do'konning «Dostupno» si abadiy manfiy bo'lardi.
+    Demand ham AYNAN shunday qiladi (`adjustReservationForShipment(…, 'ship')`).
+  - *Tartib:* bo'shatish `assertAvailable` dan **OLDIN** — aks holda zakazning O'Z
+    rezervi o'z sotuvini bloklardi (Demand'da bu snapshot yamog'i bilan yopilgan;
+    bu yerda qulflangan qatorlar QAYTA o'qiladi, chunki `releaseReservationByDoc`
+    nechta bo'shatganini qaytarmaydi va yamoqni qo'lda hisoblash uchinchi nusxa
+    formula bo'lardi). Mirrorlar ham nolga tushadi
+    (`CustomerOrderPosition.reservedQty`, `CustomerOrder.reservedSumMinor`) —
+    `customer-order.service.delete()` bilan bir retsept.
+- **Qisman to'lov qarori + sababi:** zakaz **`paid` GA O'TMAYDI**, `confirmed`/
+  `awaiting_payment` da qoladi va qoldig'i keyingi chek bilan to'lanishi mumkin.
+  - *Sabab:* qaror MAVJUD primitivdan **bepul** keladi — `applyPayment`
+    `payedSumMinor` ni oshiradi va holatni faqat `fullyPaid` bo'lganda ko'chiradi.
+    Yangi shart yozilmadi. Qulf predikati (`confirmed|awaiting_payment`) aynan shu
+    ikkinchi to'lovga ruxsat beradi, `paid` ga esa bermaydi.
+  - *Rezerv bilan bog'liqligi:* qisman to'lovda hold **joyida qoladi** — aks holda
+    to'lanmagan qoldiq uchun band qilingan tovar bo'shab, boshqa mijozga sotilib
+    ketardi. Shart: `order.payedSumMinor + chek jamisi >= order.sumMinor`.
+  - *Amalda POS'dan qisman to'lov CHIQMAYDI:* chek butun zakazdan quriladi va savat
+    qulflangan; bu shox server-tomon robastligi uchun (integratsiya/qo'lda chek).
+- **Boshqa qarorlar:**
+  - **Kassir narx/miqdorni tahrirlay olmaydi** (zakazga bog'langan savat). Sabab:
+    chek summasi zakazga to'lov bo'lib tushadi — narx tushirilsa zakaz JIMGINA
+    «to'liq to'lanmagan» bo'lib qolardi (pul olingan, tovar ketgan, zakaz `confirmed`).
+    Kelishilgan narxni o'zgartirish — zakaz hujjatining ishi.
+  - **Kiosk allowlist'ga yangi qator QO'SHILMADI.** To'lov `/retail-sales`
+    (`methods: ['*']`, allaqachon ochiq) orqali ketadi, zakaz holatini esa SERVER
+    o'zgartiradi. `POST /customer-orders/:id/transitions/paid` **yopiq qoldi** va
+    4 ta negativ test bilan qulflandi (`kiosk-policy.test.ts`) — o'sha yo'l ochilsa
+    kassir chek yozmasdan, pul olmasdan zakazni «to'langan» qila olardi.
+  - **Zakaz pozitsiyasi tan narxni olib kelmaydi** (`/customer-orders/:id` faqat
+    id/nom/kod/uom qaytaradi) ⇒ savat `costMinor: null` (0 EMAS) — «—» ko'rsatiladi,
+    foyda hisoblanmaydi. NULL ≠ 0 shartnomasi buzilmadi.
+- **AUDIT-1 · `CartLine.quantity` krashi — qanday ko'rsatildi, qanday tuzatildi:**
+  - *Reja qatorlari siljigan edi* (`:764`/`:1794`/`:901`); haqiqiy joylar o'qib
+    aniqlandi: `page.tsx:97` (tip), `:1038` (tan narx), `:2196` + `:2310` (qator
+    render), `:1185` (yuklovchi), `cart-math.ts:31`.
+  - *Avval RED:* `cart-math.test.ts` ga 4 ta test qo'shildi — `cartTotalMinor([{quantity:'1.5'}])`
+    va `cartCount([{quantity:'1.5'}])` **qizil** (`BigInt(1.5)` → RangeError /
+    `Cannot convert`), so'ng FE testida `sales-screen-order-payment.test.tsx` →
+    «kasr miqdor savatni YIQITMAYDI» — kasr zakaz savatga yuklanib qator
+    chizilishini talab qiladi (React render ichidagi xato butun sahifani yiqitadi).
+  - *Tuzatish:* `CartLine.quantity: string` (`Decimal(20,6)`, server sxemasi bilan
+    bir xil), hisob `scaleMinorByQty` (server fixed-point, half-up) orqali. Yangi
+    sof funksiyalar: `addQtyDecimal` (± tugmalari, float artefaktisiz),
+    `cartCostMinor`, `cartLine{Revenue,Profit,Markdown}Minor`.
+  - *Ikkinchi renderer ham tuzatildi:* `customer-display/page.tsx` da AYNAN shu
+    `BigInt(l.quantity)` bor edi — POS satr yubora boshlagach u yiqilardi.
+- **AUDIT-2 · chegirma farqi — O'LCHANGAN qiymat:** eski (sahifa) formulasi
+  `applyDiscountMinor(cartTotal, 10)` va server formulasi `discountedCartTotalMinor`
+  3 × 115 tiyin, −10% da **311 vs 312 tiyin** (farq **1 tiyin**) beradi. Farqni
+  ko'rsatadigan test avval yozildi (`cart-math.test.ts` → «jamiga bir marta ≠
+  qator-ba-qator»), keyin footer serverning o'z formulasiga o'tkazildi.
+- **Brauzer o'lchovi:** **YO'Q** — bu to'lqinda ataylab (portlar band, lokal DB
+  umumiy). O'lchanishi kerak bo'lgan stsenariylar quyida.
+- **O'LCHANMAGAN stsenariylar (kutilgan raqamlari bilan):**
+  1. **Rezerv, to'lovdan oldin/keyin.** Zakaz: 5 dona P, `confirmed`. Kutilgan
+     OLDIN: `Stock.reserved = 5`, `customer_order_position.reserved_qty = 5`,
+     `customer_orders.reserved_sum_minor = zakaz jamisi`. Chek to'langandan KEYIN:
+     `Stock.reserved = 0`, `reserved_qty = 0`, `reserved_sum_minor = 0`,
+     `stock_reservations` da `reason='release_consume'`, `qty_delta = -5` qatori.
+  2. **Qoldiq.** `Stock.qty` to'lovdan keyin −5 (rezerv bo'shagani qoldiqni
+     KO'TARMAYDI — bular ikki alohida ustun).
+  3. **Chek ↔ zakaz.** `retail_sales.customer_order_id = <zakaz id>`;
+     `customer_orders.state = 'paid'`, `payed_sum_minor = sum_minor`;
+     `audit_logs` da `action='transition:paid'`, `trigger='payment'`.
+  4. **Takroriy to'lov.** O'sha zakazdan ikkinchi chek → `create()` **400**
+     («`paid` holatida — POS'dan to'lanmaydi»); qo'lda yaratilgan chekni post
+     qilishga urinish → **409**.
+  5. **Kasr miqdor.** Zakaz 1.5 kg × 10 000 → savat «15 000,00», chek
+     `sum_minor = 1500000`, POS oq ekranga aylanmaydi, mijoz-ekranda «1.5×».
+  6. **Chegirmali savat.** 3 × 115 tiyin, −10% → footer **312** va chek
+     `sum_minor = 312` (ilgari footer 311 ko'rsatib 409 berardi).
+  7. **Ikki kassir.** Ikki kassada bir zakaz → biri chek chiqaradi, ikkinchisiga
+     «Zakaz to'lanadigan holatda emas» xatosi; kassa balansi BIR marta o'sadi.
+- **Gate natijasi (to'liq, qisqartirilmagan):**
+  - `pnpm --filter @moysklad/money build` — OK
+  - `pnpm --filter @moysklad/api typecheck` — **0**
+  - `pnpm --filter @moysklad/web typecheck` — **0**
+  - `pnpm biome check <tegilgan yo'llar>` — **0 error** (37 warning: `useSortedClasses`
+    nursery, unsafe-fix, oldindan mavjud)
+  - `pnpm --filter @moysklad/api test` — **7864 passed / 7871**; 5 yiqilish
+    (`mutation-guard-coverage`, `publication`) — hammasi `Test timed out in 5000ms`,
+    ya'ni §0.4 da nomma-nom sanalgan yuk artefakti. **Yolg'iz qayta yugurtirildi:
+    51/51 va 21/21 yashil.**
+  - `pnpm --filter @moysklad/web test` — **3407 passed / 3434**; 1 yiqilish
+    (`menejer/comment-template-settings`) — timeout artefakti, **yolg'iz 4/4 yashil**
+    (F8 ga aloqasiz modul).
+  - `pnpm i18n:gate` — **9/9** (12 983 kalit, ru+uz)
+  - 🔴 **Mening o'z regressiyam gate tomonidan TUTILDI:** `__tests__/pos-cart-profit.test.ts`
+    («formulalar umumiy paketdan keladi») — chegirma tuzatishida men qator formulasini
+    sahifaga INLINE yozib qo'ygan edim. Qo'riqchi qizardi; formulalar `cart-math.ts` ga
+    (sof + 6 yangi test bilan) ko'chirildi va qo'riqchi yangi nomlar bilan tiklandi —
+    o'chirilmadi/yumshatilmadi.
 - **Commit(lar):**
+  - `84824c4e` — `feat(kassa): f8 server — chek zakazga bog'lanadi, ikki marta to'lash yopildi` (20 fayl)
+  - `a6a19586` — `feat(kassa): f8 POS — zakazni to'lash + kasr miqdor va chegirma audit tuzatishlari` (9 fayl)
+  - `docs(kassa): f8 hisoboti` — shu hisobot (keyingi commit)
+  - Har commitdan keyin `git show --stat HEAD` tekshirildi; hook'lar bir martaga
+    chetlab o'tildi (`core.hooksPath=/dev/null`) va gate'lar QO'LDA to'liq yugurtirildi
+    (CLAUDE.md §6.7 B) — lint-staged begona fayl qo'shmasin.
 - **Kelgusi fazalarga qoldirilgan:**
-- **Yorliq:**
+  1. 🔴 **IKKI KARRA JO'NATISH XAVFI (o'lchanmagan, tuzatilmagan).** F8 zakazga
+     to'lovni yozadi, lekin **jo'natishni EMAS** (`applyShipment` chaqirilmaydi) —
+     bu ataylab, chunki qabul mezoni zakaz `paid` bo'lishini talab qiladi, `closed`
+     emas (`applyPayment` to'liq jo'natilgan zakazni `closed` qiladi). Oqibati:
+     POS'dan to'langan zakazning `shipped_qty` si 0 qoladi va
+     `POST /demands/from-customer-order/:id` uni QAYTA jo'nata oladi ⇒ ombor ikki
+     marta kamayadi. Taklif: `demand.createFromCustomerOrder` da zakazni yopgan
+     posted chek borligini tekshirish, yoki chek post'ida per-qator
+     `customerOrderPositionId` bog'lanishi bilan `applyShipment`. Bu
+     `demand` moduliga tegadi — F8 doirasidan tashqarida.
+  2. `RetailSalePosition` da `customerOrderPositionId` YO'Q — shu sababdan rezerv
+     per-qator emas, HUJJAT darajasida yutiladi (barchasi yoki hech nima).
+  3. Zakaz pozitsiyasining tan narxi POS'ga kelmaydi ⇒ zakaz to'lovida savat foydasi
+     ko'rsatilmaydi. `/customer-orders/:id` javobiga `product.buyPrice/salePrices`
+     qo'shilsa yopiladi.
+  4. **«Tayyor» chek savati hamon tahrirlanadi** — tahrir hech qayerga bormaydi
+     (`payReadySaleMut` serverning `sumMinor` ini yuboradi), ya'ni latent yolg'on.
+     F8 qulfi ATAYLAB faqat zakazga bog'langan savatga qo'yildi (mavjud xulqni
+     o'zgartirmaslik uchun). MK33/keyingi POS fazasiga.
+  5. `usePermissions` mavjud bo'lmagan entity uchun **fail-open** ishlaydi, shuning
+     uchun `can('retailsale','create')` qulfi testda tasdiqlanmagan (server
+     `@RequirePermission` bilan majburlaydi).
+  6. `sotuv/page.tsx` da eski `useSortedClasses` ogohlantirishlari (biome warning) —
+     tegilmadi.
+- **Yorliq:** **Phase-1: strukturaviy, runtime-tasdiqlanmagan** · brauzer-smoke **YO'Q** ·
+  rezerv/qoldiq/`customer_order_id` DB'da **o'lchanmagan** · ikki karra jo'natish xavfi
+  **ochiq**.
 
 ### F9 hisoboti
 

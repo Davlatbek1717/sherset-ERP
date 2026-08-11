@@ -136,6 +136,8 @@ function makeHarness(opts: {
     undefined as never,
     undefined as never,
     { applyDelta: vi.fn().mockResolvedValue(undefined) } as never,
+    // F8: CustomerOrderService — zakazsiz chekda chaqirilmaydi.
+    { applyPayment: async () => {} } as never,
   );
   return { svc, tx, client, positionUpdateMany, productFindMany };
 }

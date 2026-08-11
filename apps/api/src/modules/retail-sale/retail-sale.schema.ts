@@ -34,6 +34,24 @@ export const RetailSaleStateSchema = z.enum([
 ]);
 export type RetailSaleState = z.infer<typeof RetailSaleStateSchema>;
 
+/**
+ * F8 — POS'dan to'lash mumkin bo'lgan CustomerOrder holatlari.
+ *
+ * `draft` ATAYLAB yo'q: rezerv aynan `draft → confirmed` o'tishida tushadi
+ * (`customer-order.service.applyReservationInvariant('hold-remaining')`), ya'ni
+ * tasdiqlanmagan zakazni to'lash tovar hech qachon band qilinmagan holda uni
+ * sotardi. POS'da tasdiqlash tugmasi bor (F7) — kassir avval tasdiqlaydi.
+ *
+ * `partially_shipped` ham yo'q: `applyPayment` uni qabul qiladi-yu, POS
+ * qisman jo'natilgan zakazni butunlay sotmaydi — bu yuzani tor tutamiz.
+ *
+ * 🔴 Bu ro'yxat AYNI paytda ikki marta to'lash himoyasining predikati:
+ * `post()` ichidagi `updateMany WHERE state IN (…)` shu qiymatlardan quriladi,
+ * ya'ni `paid` zakaz predikatga tushmaydi va ikkinchi to'lov `count = 0` oladi.
+ */
+export const ORDER_PAYABLE_STATES = ['confirmed', 'awaiting_payment'] as const;
+export type OrderPayableState = (typeof ORDER_PAYABLE_STATES)[number];
+
 // --- Position ---
 
 export const RetailSalePositionInputSchema = z.object({
@@ -55,6 +73,13 @@ export const CreateRetailSaleSchema = z.object({
   // RetailSale model already carries the column; this exposes it on the
   // create/update API used by POS/e-commerce integrations).
   externalCode: z.string().max(50).nullish(),
+  /**
+   * F8 — chek qaysi zakazni yopayotgani. Ustun/relation/indeks sxemada
+   * ALLAQACHON bor edi (`schema.prisma` → `RetailSale.customerOrderId`), lekin
+   * hech bir kod unga yozmasdi: ulanish nuqtasi tayyor, sim tortilmagan edi.
+   * Ixtiyoriy — oddiy kassa cheki (zakazsiz) hech narsa yubormaydi.
+   */
+  customerOrderId: z.string().uuid().nullish(),
   positions: z.array(RetailSalePositionInputSchema).min(1, 'at least one position required'),
 });
 export type CreateRetailSaleInput = z.infer<typeof CreateRetailSaleSchema>;

@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
+  addQtyDecimal,
   applyDiscountMinor,
+  cartCostMinor,
   cartCount,
+  cartLineMarkdownMinor,
+  cartLineProfitMinor,
+  cartLineRevenueMinor,
   cartTotalMinor,
   clampReturnQty,
   discountedCartTotalMinor,
@@ -421,5 +426,144 @@ describe('saleDebtMinor', () => {
   it('to`lov qatorlari yo`q eski chekda 0 (naqd deb qaraladi)', () => {
     expect(saleDebtMinor(undefined)).toBe(0n);
     expect(saleDebtMinor([])).toBe(0n);
+  });
+});
+
+// ── F8 (AUDIT) — kasr miqdor: `BigInt(1.5)` RangeError bug-klassi ───────────
+//
+// Server sxemasi `quantity` ni `Decimal(20,6)` sifatida qabul qiladi
+// (`retail-sale.schema.ts` → `/^\d+(\.\d{1,6})?$/`), ya'ni og'irlik bilan
+// sotiladigan tovar savatga 1.5 kg bo'lib tushishi MUMKIN. Savat matematikasi
+// esa `BigInt(l.quantity)` yozardi — `BigInt(1.5)` **RangeError** otadi va
+// React render'i ichida otilgan xato butun POS ni oq ekranga aylantiradi
+// (chek yo'q, pul yo'q, kassir nima bo'lganini bilmaydi).
+//
+// Zakaz pozitsiyalari ham kasr bo'lishi mumkin — F8 aynan shu yuklovchini
+// qo'shadi, shuning uchun tuzatish shu fazada.
+
+describe('F8 — kasr miqdor savat matematikasini yiqitmaydi', () => {
+  it('cartTotalMinor kasr miqdorda ham hisoblaydi (ilgari RangeError)', () => {
+    expect(cartTotalMinor([{ quantity: '1.5', priceMinor: 100_000n }])).toBe(150_000n);
+  });
+
+  it('cartTotalMinor kasr `number` da ham yiqilmaydi', () => {
+    expect(cartTotalMinor([{ quantity: 1.5, priceMinor: 100_000n }])).toBe(150_000n);
+  });
+
+  it('cartCount kasr miqdorni SATRdan ham o`qiydi', () => {
+    expect(cartCount([{ quantity: '1.5' }, { quantity: '2' }])).toBe(3.5);
+  });
+
+  it('cartTotalMinor yaxlitlashi server bilan bir xil (half-up)', () => {
+    // 0.333 × 115 tiyin = 38.295 → 38
+    expect(cartTotalMinor([{ quantity: '0.333', priceMinor: 115n }])).toBe(38n);
+    // 0.5 × 115 = 57.5 → 58 (half-up, pastga EMAS)
+    expect(cartTotalMinor([{ quantity: '0.5', priceMinor: 115n }])).toBe(58n);
+  });
+});
+
+describe('F8 — addQtyDecimal (± tugmalari kasr miqdorni buzmaydi)', () => {
+  it('butun sonlarga oddiy qo`shadi', () => {
+    expect(addQtyDecimal('2', 1)).toBe('3');
+    expect(addQtyDecimal('2', -1)).toBe('1');
+  });
+
+  it('kasr miqdorni SAQLAYDI (1.5 + 1 = 2.5, float artefaktisiz)', () => {
+    expect(addQtyDecimal('1.5', 1)).toBe('2.5');
+  });
+
+  it('0.1 + 0.2 float artefakti YO`Q', () => {
+    expect(addQtyDecimal('0.1', 0.2)).toBe('0.3');
+  });
+
+  it('manfiyga tushmaydi — 0 qaytadi (chaqiruvchi qatorni o`chiradi)', () => {
+    expect(addQtyDecimal('0.5', -1)).toBe('0');
+  });
+
+  it('buzuq kiritma 0 (crash emas)', () => {
+    expect(addQtyDecimal('abc', 1)).toBe('1');
+  });
+});
+
+describe('F8 — cartCostMinor (tan narx × kasr miqdor, NULL≠0)', () => {
+  it('kasr miqdorda tan narxni yaxlitlaydi', () => {
+    expect(cartCostMinor([{ costMinor: 100_000n, quantity: '1.5' }])).toEqual({
+      costMinor: 150_000n,
+      complete: true,
+    });
+  });
+
+  it('bitta qator tan narxsiz bo`lsa `complete` false va u QO`SHILMAYDI', () => {
+    expect(
+      cartCostMinor([
+        { costMinor: 100_000n, quantity: '1' },
+        { costMinor: null, quantity: '2' },
+      ]),
+    ).toEqual({ costMinor: 100_000n, complete: false });
+  });
+});
+
+// ── F8 (AUDIT) — savat footeri ↔ server chegirmasi ──────────────────────────
+//
+// Sahifa JAMIga bir marta floor-chegirma qo'llardi, server esa HAR QATORNI
+// alohida half-up yaxlitlaydi. Natija: ekranda bir raqam, chekda boshqasi.
+// Bu test farqni O'LCHAYDI va `discountedCartTotalMinor` server bilan
+// mos ekanini qulflaydi.
+describe('F8 — chegirma: jamiga bir marta ≠ qator-ba-qator', () => {
+  const lines = [
+    { quantity: 1, priceMinor: 115n, discount: 10 },
+    { quantity: 1, priceMinor: 115n, discount: 10 },
+    { quantity: 1, priceMinor: 115n, discount: 10 },
+  ];
+
+  it('eski (sahifa) formulasi va server formulasi 1 tiyin farq qiladi', () => {
+    const legacy = applyDiscountMinor(cartTotalMinor(lines), 10);
+    const serverLike = discountedCartTotalMinor(lines);
+    expect(legacy).toBe(311n); // 345 − floor(34.5) = 345 − 34
+    expect(serverLike).toBe(312n); // 3 × round_half_up(103.5) = 3 × 104
+    expect(serverLike - legacy).toBe(1n);
+  });
+});
+
+// ── F8 — qator formulalari kasr miqdorni qo'llaydi ──────────────────────────
+//
+// `@moysklad/money` dagi `lineProfitMinor` / `markdownMinor` miqdorni `bigint`
+// oladi, ya'ni 1.5 kg ni umuman ifodalay olmaydi. Sahifada `(narx − tan) × soni`
+// ni QAYTA YOZISH taqiqlangan (`__tests__/pos-cart-profit.test.ts` qo'riqchisi:
+// «formulalar umumiy paketdan keladi») — shuning uchun ular shu yerda, sof va
+// sinalgan holda turadi.
+describe('F8 — savat qatori formulalari (kasr miqdor)', () => {
+  it('cartLineRevenueMinor: narx × miqdor, half-up', () => {
+    expect(cartLineRevenueMinor({ priceMinor: 100_000n, quantity: '1.5' })).toBe(150_000n);
+    expect(cartLineRevenueMinor({ priceMinor: 115n, quantity: '0.5' })).toBe(58n);
+  });
+
+  it('cartLineProfitMinor: (narx − tan) × miqdor', () => {
+    expect(cartLineProfitMinor({ priceMinor: 100_000n, costMinor: 60_000n, quantity: '1.5' })).toBe(
+      60_000n,
+    );
+  });
+
+  it('cartLineProfitMinor: tan narx NULL bo`lsa NULL (0 EMAS)', () => {
+    // `?? 0n` bo'lsa qator 100% foyda ko'rsatardi — kassa TZ §5.3.
+    expect(
+      cartLineProfitMinor({ priceMinor: 100_000n, costMinor: null, quantity: '1' }),
+    ).toBeNull();
+  });
+
+  it('cartLineProfitMinor: zararda MANFIY (yaxlitlash nolga qarab emas)', () => {
+    expect(cartLineProfitMinor({ priceMinor: 100n, costMinor: 115n, quantity: '0.5' })).toBe(-8n);
+  });
+
+  it('cartLineMarkdownMinor: (kartochka narxi − sotilgan narx) × miqdor', () => {
+    expect(
+      cartLineMarkdownMinor({ basePriceMinor: 100_000n, priceMinor: 90_000n, quantity: '2.5' }),
+    ).toBe(25_000n);
+  });
+
+  it('cartLineMarkdownMinor: kartochka narxi NULL bo`lsa NULL', () => {
+    expect(
+      cartLineMarkdownMinor({ basePriceMinor: null, priceMinor: 90_000n, quantity: '1' }),
+    ).toBeNull();
   });
 });

@@ -12,9 +12,14 @@ import { useAuth } from '@/lib/auth-store';
 // faylda edi va ularni sinash uchun butun POS ekranini render qilish
 // kerak bo'lardi, shuning uchun ular umuman sinalmagan edi.
 import {
-  applyDiscountMinor,
+  addQtyDecimal,
+  cartCostMinor,
+  cartLineMarkdownMinor,
+  cartLineProfitMinor,
+  cartLineRevenueMinor,
   cartTotalMinor,
   clampReturnQty,
+  discountedCartTotalMinor,
   normalizeQtyDecimal,
   refundCashShareMinor,
   refundPayoutMinor,
@@ -42,15 +47,7 @@ import type {
   ListEnvelope as ListResponse,
   PosProductRow as ProductRow,
 } from '@moysklad/contracts';
-import {
-  Money,
-  classifyPrice,
-  formatPercent,
-  lineProfitMinor,
-  marginPercent,
-  markdownMinor,
-  sumCostMinor,
-} from '@moysklad/money';
+import { Money, classifyPrice, formatPercent, marginPercent } from '@moysklad/money';
 import { isCurrencyCode } from '@moysklad/money/currencies';
 import { Badge, Button, Input, formatMoney, useConfirm, useToast } from '@moysklad/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -94,7 +91,18 @@ function formatUsd(minor: bigint): string {
 interface CartLine {
   productId: string;
   productName: string;
-  quantity: number;
+  /**
+   * Miqdor — **DECIMAL SATR** (`Decimal(20,6)`), `number` EMAS (F8 audit).
+   *
+   * Server sxemasi `/^\d+(\.\d{1,6})?$/` qabul qiladi, ya'ni og'irlik bilan
+   * sotiladigan tovar (yoki zakaz pozitsiyasi) savatga `1.5` bo'lib tushishi
+   * MUMKIN. Ilgari bu `number` edi va savat jamisi `BigInt(l.quantity)` bilan
+   * hisoblanardi — `BigInt(1.5)` **RangeError** otadi. React render'i ichida
+   * otilgan xato butun POS ni OQ EKRANGA aylantiradi: chek ham, pul ham
+   * yo'qoladi. Hisob endi `scaleMinorByQty` / `cart-math` orqali — serverning
+   * fixed-point yo'li bilan bir xil.
+   */
+  quantity: string;
   priceMinor: bigint;
   priceStr: string; // user-editable price string (major units)
   availableStock?: number;
@@ -658,7 +666,18 @@ interface OrderDetail extends OrderRow {
  * (`customer-order.service.ts` → `applyReservationInvariant('hold-remaining')`),
  * shuning uchun bu yerda `bulk-reserve` kabi ikkinchi chaqiruv YO'Q.
  */
-function ZakazDetailPanel({ orderId, onBack }: { orderId: string; onBack: () => void }) {
+function ZakazDetailPanel({
+  orderId,
+  onBack,
+  onPay,
+  paying,
+}: {
+  orderId: string;
+  onBack: () => void;
+  /** F8 — zakazni savatga yuklab chek yaratadi (`SalesScreen` bajaradi). */
+  onPay: (order: OrderDetail) => void;
+  paying: boolean;
+}) {
   const t = useTranslations('pages.sotuv');
   const qc = useQueryClient();
   const { toast } = useToast();
@@ -692,6 +711,18 @@ function ZakazDetailPanel({ orderId, onBack }: { orderId: string; onBack: () => 
   // Tugma FAQAT `draft` da: qolgan holatlarda server ham rad etadi
   // (`validateTransition`), ya'ni ko'rsatish yolg'on va'da bo'lardi.
   const canConfirm = data.state === 'draft' && can('customerorder', 'approve');
+  /**
+   * F8 — «To'lash» FAQAT to'lanadigan holatda.
+   *
+   * Ro'yxat serverdagi `ORDER_PAYABLE_STATES` bilan AYNI: `draft` da rezerv
+   * hali tushmagan (avval «Tasdiqlash»), `paid`/`cancelled`/jo'natilganlarda
+   * esa server 409/400 beradi. Tugmani ko'rsatib keyin rad etish — yolg'on
+   * va'da; lekin bu FAQAT ekran qulfi, haqiqiy himoya serverda va tranzaksiya
+   * ichida (`retail-sale.service.post()` → holat-shartli `updateMany`).
+   */
+  const canPay =
+    (data.state === 'confirmed' || data.state === 'awaiting_payment') &&
+    can('retailsale', 'create');
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
@@ -745,15 +776,27 @@ function ZakazDetailPanel({ orderId, onBack }: { orderId: string; onBack: () => 
         </div>
       </div>
 
-      {canConfirm && (
+      {(canConfirm || canPay) && (
         <div className="shrink-0 border-t border-[var(--ms-border)] p-3">
-          <Button
-            className="h-12 w-full text-base"
-            disabled={confirmMut.isPending}
-            onClick={() => confirmMut.mutate()}
-          >
-            {t('orders_confirm')}
-          </Button>
+          {canConfirm && (
+            <Button
+              className="h-12 w-full text-base"
+              disabled={confirmMut.isPending}
+              onClick={() => confirmMut.mutate()}
+            >
+              {t('orders_confirm')}
+            </Button>
+          )}
+          {canPay && (
+            <Button
+              className="h-12 w-full text-base"
+              data-test-id="sotuv-order-pay"
+              disabled={paying}
+              onClick={() => onPay(data)}
+            >
+              {t('orders_pay')}
+            </Button>
+          )}
         </div>
       )}
     </div>
@@ -848,7 +891,10 @@ function SalesScreen({
       lines: cart.map((l) => ({
         productId: l.productId,
         name: l.productName,
-        quantity: l.quantity,
+        // Miqdor SATR bo'lib ketadi (`Decimal(20,6)`) — mijoz-ekran uni
+        // `BigInt()` ga bermasligi kerak edi; `customer-display/page.tsx`
+        // shu bilan birga tuzatildi (kasr miqdor u yerda ham RangeError otardi).
+        quantity: normalizeQtyDecimal(l.quantity),
         priceMinor: String(l.priceMinor),
       })),
       discountPct,
@@ -1026,18 +1072,46 @@ function SalesScreen({
 
   // Ready sale selected for payment
   const [payingSale, setPayingSale] = useState<{ id: string; sumMinor: bigint } | null>(null);
+  /**
+   * F8 — savat AYNAN shu zakazni yopmoqda.
+   *
+   * Bu bo'sh bo'lmasa savat QULFLANADI (narx/miqdor tahriri va qator o'chirish
+   * yo'q). Sabab: chek serverda zakazga bog'lanadi va CHEK SUMMASI zakazga
+   * to'lov sifatida tushadi (`CustomerOrderService.applyPayment`). Kassir
+   * narxni tushirsa yoki qator o'chirsa, zakaz JIMGINA «to'liq to'lanmagan»
+   * bo'lib qolardi: pul olingan, tovar ketgan, zakaz esa hamon `confirmed`.
+   * Kelishilgan narxni o'zgartirish — zakaz hujjatining ishi, kassaning emas.
+   */
+  const [payingOrderId, setPayingOrderId] = useState<string | null>(null);
+  const cartLocked = payingOrderId != null;
 
   const cartCount = sumCartCount(cart);
   const cartTotal = cartTotalMinor(cart);
-  const discountedTotal = applyDiscountMinor(cartTotal, discountPct);
+  /**
+   * Chegirmali jami — **server formulasi** (AUDIT tuzatishi).
+   *
+   * Ilgari bu yerda `applyDiscountMinor(cartTotal, discountPct)` turardi:
+   * chegirma JAMIga bir marta va pastga yaxlitlab qo'llanardi. Server esa
+   * har qatorni ALOHIDA half-up yaxlitlaydi (`computePositionTotal`) va
+   * `post()` da `expectedSumMinor` ni QAT'IY tenglik bilan tekshiradi.
+   * Ikkalasi tiyinda ayriladi — o'lchangan misol: 3 × 115 tiyin, −10% →
+   * ekran 311, server 312 (`cart-math.test.ts` da qulflangan). Ya'ni kassir
+   * ko'rgan raqam chekdagi raqam emas edi, va chekka o'sha farq bilan
+   * yuborilgan `expectedSumMinor` 409 bilan qaytardi.
+   */
+  const discountedTotal = discountedCartTotalMinor(
+    cart.map((l) => ({ quantity: l.quantity, priceMinor: l.priceMinor, discount: discountPct })),
+  );
 
   // Chek bo'yicha foyda (kassa TZ §5.2) — profit is taken off the DISCOUNTED
   // total, since that is the money the till actually receives. `complete` goes
   // false as soon as one line has no cost on its card; the footer then says so
   // instead of showing a total that silently counts that line as pure profit.
-  const cartCost = sumCostMinor(
-    cart.map((l) => ({ costMinor: l.costMinor, quantity: BigInt(l.quantity) })),
-  );
+  // `cartCostMinor` — `@moysklad/money` dagi `sumCostMinor` ning kasr-miqdorli
+  // varianti (u `bigint` miqdor talab qiladi, ya'ni 1.5 kg ni ifodalay olmaydi).
+  // `complete` shartnomasi o'zgarmagan: NULL tan narx qo'shilmaydi va jami
+  // «to'liq emas» deb belgilanadi (NULL ≠ 0).
+  const cartCost = cartCostMinor(cart);
   // Foyda asosi = kassa HAQIQATAN oladigan pul. Mavjud chekni to'layotgan
   // bo'lsak (omborchidan qaytgan «Tayyor» chek) — bu serverning o'z `sumMinor`i,
   // qayta hisoblangan raqam emas: server qator-ba-qator yaxlitlagan, biz esa
@@ -1066,7 +1140,7 @@ function SalesScreen({
         const existing = prev.find((l) => l.productId === product.id);
         if (existing) {
           return prev.map((l) =>
-            l.productId === product.id ? { ...l, quantity: l.quantity + 1 } : l,
+            l.productId === product.id ? { ...l, quantity: addQtyDecimal(l.quantity, 1) } : l,
           );
         }
         const minor = BigInt(resolveDefaultSalePriceOrZero(product.salePrices, defaultPriceTypeId));
@@ -1075,7 +1149,7 @@ function SalesScreen({
           {
             productId: product.id,
             productName: product.name,
-            quantity: 1,
+            quantity: '1',
             priceMinor: minor,
             priceStr: (Number(minor) / 100).toString(),
             availableStock: product.stock != null ? Number(product.stock.available) : undefined,
@@ -1098,8 +1172,12 @@ function SalesScreen({
   const updateQty = useCallback((productId: string, delta: number) => {
     setCart((prev) =>
       prev
-        .map((l) => (l.productId === productId ? { ...l, quantity: l.quantity + delta } : l))
-        .filter((l) => l.quantity > 0),
+        .map((l) =>
+          l.productId === productId ? { ...l, quantity: addQtyDecimal(l.quantity, delta) } : l,
+        )
+        // `addQtyDecimal` manfiy natijani `'0'` ga qisadi — 0 li qator olib
+        // tashlanadi (avvalgi `quantity > 0` filtri bilan bir xil xulq).
+        .filter((l) => l.quantity !== '0'),
     );
   }, []);
 
@@ -1128,13 +1206,20 @@ function SalesScreen({
   const positions = () =>
     cart.map((l) => ({
       productId: l.productId,
-      quantity: String(l.quantity),
+      quantity: normalizeQtyDecimal(l.quantity),
       priceMinor: l.priceMinor.toString(),
       discount: discountPct > 0 ? String(discountPct) : '0',
     }));
 
   const onSold = (saleId: string) => {
     setPayingSale(null);
+    // F8 — zakaz bog'lanishi ham uziladi, aks holda keyingi savat qulflangan
+    // qolardi va zakaz ro'yxati eski holatni ko'rsatardi.
+    if (payingOrderId) {
+      qc.invalidateQueries({ queryKey: ['pos-customer-orders'] });
+      qc.invalidateQueries({ queryKey: ['pos-customer-order', payingOrderId] });
+    }
+    setPayingOrderId(null);
     setCheckoutOpen(false);
     // «Tayyor» chek to'langach savat va chegirma TOZALANADI — aks holda
     // `loadReadyToCart` yuklagan pozitsiyalar savatda qolib, keyingi
@@ -1183,7 +1268,9 @@ function SalesScreen({
             return {
               productId: p.product.id,
               productName: p.product.name,
-              quantity: Number(p.quantity),
+              // Miqdor SATR bo'lib qoladi — `Number(...)` qilib qaytib
+              // `BigInt(...)` ga berish aynan RangeError yo'li edi.
+              quantity: normalizeQtyDecimal(String(p.quantity)),
               priceMinor: BigInt(p.priceMinor),
               priceStr: (Number(p.priceMinor) / 100).toString(),
               availableStock: undefined,
@@ -1218,6 +1305,77 @@ function SalesScreen({
     },
     [toast, cardPrices, t],
   );
+
+  /**
+   * F8 — ZAKAZNI TO'LASH: zakaz → savat → chek (`customerOrderId` bilan) →
+   * mavjud to'lov oynasi.
+   *
+   * Nega chek DARHOL yaratiladi (`send-to-picking` orqali EMAS):
+   * `send-to-picking` omborga yig'ish varaqasini chiqaradi va ombor
+   * qoldig'iga UMUMAN tegmaydi (`retail-sale.service.sendToPicking` —
+   * faqat holat flipi + `RestockTask`). Zakaz esa allaqachon tasdiqlangan va
+   * REZERV QILINGAN — tovar band. Ya'ni yig'ish zanjiri bu yerda ikkinchi
+   * marta bajariladigan ish bo'lardi. Chek — tovar chiqimi hujjati, va
+   * `post()` rezervni o'sha tranzaksiyada yutadi.
+   *
+   * Chek `draft` holatida yaratiladi va darhol to'lanadi: `post()` FSM'i
+   * `draft` dan to'lovni ALLAQACHON qabul qiladi (`allowedFrom('post')`).
+   */
+  const payOrderMut = useMutation({
+    mutationFn: async (order: OrderDetail) => {
+      const lines = order.positions.filter((p) => p.product != null);
+      if (lines.length === 0) throw new Error(t('orders_pay_no_positions'));
+      const sale = await api.post<{ id: string; sumMinor?: string }>('/retail-sales', {
+        sessionId: session.id,
+        // Mijoz chekka tushadi — qarz/loyalty aynan shu maydondan o'qiydi.
+        ...(order.agent ? { agentId: order.agent.id } : {}),
+        customerOrderId: order.id,
+        positions: lines.map((p) => ({
+          // biome-ignore lint/style/noNonNullAssertion: filtered above
+          productId: p.product!.id,
+          quantity: normalizeQtyDecimal(p.quantity),
+          priceMinor: String(p.priceMinor),
+          discount: String(p.discount ?? '0'),
+        })),
+      });
+      // Summa SERVERNIKI, zakazniki emas: `post()` `expectedSumMinor` ni
+      // chek `sumMinor`i bilan QAT'IY solishtiradi va farq bo'lsa 409 beradi.
+      // Server qator-ba-qator yaxlitlaydi — zakaz jamisi bir tiyinga
+      // ayrilishi mumkin (aynan shu faza tuzatgan chegirma farqi klassi).
+      return { saleId: sale.id, sumMinor: sale.sumMinor ?? order.sumMinor, order, lines };
+    },
+    onSuccess: ({ saleId, sumMinor, order, lines }) => {
+      setCart(
+        lines.map((p) => ({
+          // biome-ignore lint/style/noNonNullAssertion: filtered above
+          productId: p.product!.id,
+          // biome-ignore lint/style/noNonNullAssertion: filtered above
+          productName: p.product!.name,
+          quantity: normalizeQtyDecimal(p.quantity),
+          priceMinor: BigInt(p.priceMinor),
+          priceStr: (Number(p.priceMinor) / 100).toString(),
+          availableStock: undefined,
+          // Zakaz pozitsiyasi tovar kartochkasining narx qatlamlarini OLIB
+          // KELMAYDI (`/customer-orders/:id` faqat id/nom/kod/uom qaytaradi).
+          // NULL — «yig'ilmagan», 0 EMAS: savat «—» ko'rsatadi va foyda
+          // hisoblanmaydi. Nolni tan narx deb sanash 100% marja yolg'oni
+          // bo'lardi (kassa TZ §5.3).
+          costMinor: null,
+          wholesaleMinor: null,
+          basePriceMinor: null,
+        })),
+      );
+      // Chegirma qator darajasida allaqachon zakazdan ketdi — savat
+      // darajasidagi foizni QAYTA qo'llash uni ikki marta hisoblardi.
+      setDiscountPct(0);
+      setPayingOrderId(order.id);
+      setPayingSale({ id: saleId, sumMinor: BigInt(sumMinor) });
+      setSelectedOrderId(null);
+      setTab('savat');
+      setCheckoutOpen(true);
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
 
   // Step 1: "Rasmilashtirish" → create draft → send to picking → print picking sheet
   const sendToPickingMut = useMutation({
@@ -1823,7 +1981,12 @@ function SalesScreen({
 
         {/* ── ZAKAZ DETALI ── */}
         {tab === 'zakazlar' && selectedOrderId && (
-          <ZakazDetailPanel orderId={selectedOrderId} onBack={() => setSelectedOrderId(null)} />
+          <ZakazDetailPanel
+            orderId={selectedOrderId}
+            onBack={() => setSelectedOrderId(null)}
+            onPay={(order) => payOrderMut.mutate(order)}
+            paying={payOrderMut.isPending}
+          />
         )}
 
         {/* ── CHEKLAR TAB ── */}
@@ -2211,7 +2374,14 @@ function SalesScreen({
                 <Button
                   variant="link"
                   className="ml-auto text-xs"
-                  onClick={() => setCart([])}
+                  onClick={() => {
+                    setCart([]);
+                    // F8 — savatni tozalash zakaz/chek bog'lanishini ham uzadi:
+                    // aks holda bo'sh-u QULFLANGAN savat qolib, kassir undan
+                    // chiqolmasdi.
+                    setPayingOrderId(null);
+                    setPayingSale(null);
+                  }}
                   data-test-id="sotuv-cart-clear"
                 >
                   {t('clear')}
@@ -2238,22 +2408,20 @@ function SalesScreen({
                       costMinor: line.costMinor,
                       wholesaleMinor: line.wholesaleMinor,
                     });
-                    const qty = BigInt(line.quantity);
-                    const lineRevenue = line.priceMinor * qty;
-                    const lineProfit = lineProfitMinor({
-                      priceMinor: line.priceMinor,
-                      costMinor: line.costMinor,
-                      quantity: qty,
-                    });
+                    // 🔴 Ilgari `BigInt(line.quantity)` edi — kasr miqdorda
+                    // RangeError otib butun sahifani oq ekranga aylantirardi.
+                    // Formulalar sahifada QAYTA YOZILMAYDI: ular
+                    // `lib/pos/cart-math.ts` da, sof va sinalgan holda
+                    // (`@moysklad/money` variantlari `bigint` miqdor talab
+                    // qiladi, ya'ni 1.5 kg ni ifodalay olmaydi).
+                    const qty = normalizeQtyDecimal(line.quantity);
+                    const lineRevenue = cartLineRevenueMinor(line);
+                    const lineProfit = cartLineProfitMinor(line);
                     const linePct = marginPercent(lineProfit, lineRevenue);
                     // «Kassir qancha tushirib berdi» (kassa TZ §5.3) — shown only
                     // when the cashier actually went below the card price; a sale
                     // at or above it needs no annotation.
-                    const markdown = markdownMinor({
-                      basePriceMinor: line.basePriceMinor,
-                      priceMinor: line.priceMinor,
-                      quantity: qty,
-                    });
+                    const markdown = cartLineMarkdownMinor(line);
                     return (
                       <div
                         key={line.productId}
@@ -2272,34 +2440,48 @@ function SalesScreen({
                           <div className="min-w-0 flex-1 truncate text-sm font-medium text-[var(--ms-text-primary)]">
                             {line.productName}
                           </div>
-                          {/* Soni */}
-                          <div className="flex shrink-0 items-center gap-0.5">
-                            <button
-                              type="button"
-                              onClick={() => updateQty(line.productId, -1)}
-                              className="flex h-6 w-6 items-center justify-center rounded border border-[var(--ms-border)] bg-[var(--ms-bg-input)] text-sm leading-none hover:bg-[var(--ms-bg-hover)]"
+                          {/* Soni — zakazga bog'langan savatda QULFLANGAN */}
+                          {cartLocked ? (
+                            <span
+                              data-test-id="sotuv-cart-qty"
+                              className="shrink-0 px-1 text-center text-sm tabular-nums"
                             >
-                              −
-                            </button>
-                            <span className="w-8 text-center text-sm tabular-nums">
-                              {line.quantity}
+                              {qty}
                             </span>
+                          ) : (
+                            <div className="flex shrink-0 items-center gap-0.5">
+                              <button
+                                type="button"
+                                onClick={() => updateQty(line.productId, -1)}
+                                className="flex h-6 w-6 items-center justify-center rounded border border-[var(--ms-border)] bg-[var(--ms-bg-input)] text-sm leading-none hover:bg-[var(--ms-bg-hover)]"
+                              >
+                                −
+                              </button>
+                              <span
+                                data-test-id="sotuv-cart-qty"
+                                className="w-8 text-center text-sm tabular-nums"
+                              >
+                                {qty}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => updateQty(line.productId, 1)}
+                                className="flex h-6 w-6 items-center justify-center rounded border border-[var(--ms-border)] bg-[var(--ms-bg-input)] text-sm leading-none hover:bg-[var(--ms-bg-hover)]"
+                              >
+                                +
+                              </button>
+                            </div>
+                          )}
+                          {/* O'chirish */}
+                          {!cartLocked && (
                             <button
                               type="button"
-                              onClick={() => updateQty(line.productId, 1)}
-                              className="flex h-6 w-6 items-center justify-center rounded border border-[var(--ms-border)] bg-[var(--ms-bg-input)] text-sm leading-none hover:bg-[var(--ms-bg-hover)]"
+                              onClick={() => removeFromCart(line.productId)}
+                              className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-[var(--ms-text-muted)] text-xs hover:bg-red-50 hover:text-red-500"
                             >
-                              +
+                              ✕
                             </button>
-                          </div>
-                          {/* O'chirish */}
-                          <button
-                            type="button"
-                            onClick={() => removeFromCart(line.productId)}
-                            className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-[var(--ms-text-muted)] text-xs hover:bg-red-50 hover:text-red-500"
-                          >
-                            ✕
-                          </button>
+                          )}
                         </div>
 
                         {/* Qator 2: Qolgan · Tan · Min + narx input + summa */}
@@ -2341,18 +2523,24 @@ function SalesScreen({
                               <span className="text-xs text-[var(--ms-text-muted)]">
                                 {t('cart_price')}:
                               </span>
-                              <input
-                                type="text"
-                                inputMode="decimal"
-                                value={line.priceStr}
-                                onChange={(e) => updatePrice(line.productId, e.target.value)}
-                                onFocus={(e) => e.target.select()}
-                                className="w-24 rounded border border-[var(--ms-border)] bg-[var(--ms-bg-input)] px-1.5 py-0.5 text-right text-sm tabular-nums focus:border-[var(--ms-border-focus)] focus:outline-none"
-                              />
+                              {cartLocked ? (
+                                <span className="w-24 text-right text-sm tabular-nums">
+                                  {formatMoney(line.priceMinor)}
+                                </span>
+                              ) : (
+                                <input
+                                  type="text"
+                                  inputMode="decimal"
+                                  value={line.priceStr}
+                                  onChange={(e) => updatePrice(line.productId, e.target.value)}
+                                  onFocus={(e) => e.target.select()}
+                                  className="w-24 rounded border border-[var(--ms-border)] bg-[var(--ms-bg-input)] px-1.5 py-0.5 text-right text-sm tabular-nums focus:border-[var(--ms-border-focus)] focus:outline-none"
+                                />
+                              )}
                             </div>
                             {/* Summa */}
                             <div className="w-28 text-right text-sm font-semibold tabular-nums text-[var(--ms-text-primary)]">
-                              {formatMoney(line.priceMinor * BigInt(line.quantity))}
+                              {formatMoney(lineRevenue)}
                             </div>
                           </div>
                         </div>
@@ -2605,7 +2793,10 @@ function SalesScreen({
         open={checkoutOpen}
         onOpenChange={(o) => {
           setCheckoutOpen(o);
-          if (!o) setPayingSale(null);
+          if (!o) {
+            setPayingSale(null);
+            setPayingOrderId(null);
+          }
         }}
         sumMinor={payingSale ? payingSale.sumMinor : discountedTotal}
         currency={tillCurrency}

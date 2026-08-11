@@ -7965,6 +7965,8 @@
       "orders_filter_confirmed": "Подтверждённые",
       "orders_filter_draft": "Новые",
       "orders_no_agent": "Клиент не указан",
+      "orders_pay": "Оплатить",
+      "orders_pay_no_positions": "В заказе нет позиций к оплате",
       "orders_positions": "Позиции",
       "orders_reserved": "Резерв",
       "organization": "Организация",

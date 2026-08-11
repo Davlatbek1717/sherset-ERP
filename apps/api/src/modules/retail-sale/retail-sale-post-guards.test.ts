@@ -144,6 +144,8 @@ function makeHarness(opts: Opts = {}) {
     loyalty as never,
     {} as never,
     balance as never,
+    // F8: CustomerOrderService — zakazsiz chekda chaqirilmaydi.
+    { applyPayment: async () => {} } as never,
   );
   return { svc, sessionRow, saleRow, money, balance, cashierSession, tx };
 }
