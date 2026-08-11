@@ -6,7 +6,8 @@
   "main": "main.js",
   "scripts": {
     "dev": "electron .",
-    "start": "electron ."
+    "start": "electron .",
+    "dist": "node check-build-assets.js && electron-builder --win nsis"
   },
   "dependencies": {
     "electron-updater": "^6.3.9"
@@ -14,5 +15,42 @@
   "devDependencies": {
     "electron": "^33.4.11",
     "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "uz.sherset.kassa",
+    "productName": "Sherset Kassa",
+    "copyright": "Sherset",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": ["**/*.js", "**/*.html", "package.json", "!check-build-assets.js"],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        }
+      ],
+      "icon": "build/icon.ico",
+      "artifactName": "Sherset-Kassa-Setup-${version}.exe"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": true,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Sherset Kassa",
+      "installerLanguages": ["ru_RU"],
+      "runAfterFinish": true
+    },
+    "publish": [
+      {
+        "provider": "generic",
+        "url": "https://sherset.biznesjon.uz/downloads/desktop/",
+        "channel": "latest"
+      }
+    ]
   }
 }

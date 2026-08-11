@@ -100,6 +100,48 @@ Certbot auto-renew is installed as a systemd timer; verify with
 
 Open `https://sherset.biznesjon.uz` → login page → **admin / admin123** (if seeded).
 
+## 7. Kassa (Electron) installer + update channel — F4
+
+> **Status: NOT deployed yet.** The nginx `location` below exists in
+> `deploy/nginx-*.conf` in the repo, but it has never been applied to the VPS.
+> The `.exe` itself has never been built either (see `desktop/README.md`).
+
+The Electron kiosk shell (`desktop/`) updates itself from a plain static
+directory served by nginx. `electron-updater`'s `generic` provider asks for
+`latest.yml` first, then downloads the `.exe` named in it.
+
+```bash
+# 1. Create the channel directory — OUTSIDE the git checkout on purpose,
+#    so `git pull` / deploy-smart.sh never touch it.
+sudo mkdir -p /var/www/kassa-downloads/desktop
+sudo chown -R $USER /var/www/kassa-downloads
+
+# 2. Re-copy the nginx config (it now carries `location /downloads/desktop/`)
+sudo cp deploy/nginx-sherset.biznesjon.uz.conf /etc/nginx/sites-available/sherset.biznesjon.uz
+sudo nginx -t && sudo systemctl reload nginx
+
+# 3. Upload the two artifacts produced by `desktop/` → `pnpm run dist`
+#    (from the build machine; electron-builder writes them to desktop/dist/)
+scp desktop/dist/latest.yml            <vps>:/var/www/kassa-downloads/desktop/
+scp "desktop/dist/Sherset-Kassa-Setup-<version>.exe" <vps>:/var/www/kassa-downloads/desktop/
+
+# 4. Verify from the outside — BOTH must be 200
+curl -I https://sherset.biznesjon.uz/downloads/desktop/latest.yml
+curl -I "https://sherset.biznesjon.uz/downloads/desktop/Sherset-Kassa-Setup-<version>.exe"
+```
+
+Rules that are easy to get wrong:
+
+- **Upload the `.exe` first, `latest.yml` last.** The manifest is the trigger;
+  if it lands first, every till tries to download an `.exe` that isn't there yet.
+- **Never edit `latest.yml` by hand** — it carries the SHA-512 of the `.exe`.
+  A mismatch makes every till reject the update silently.
+- **Keep the old `.exe`** for at least one release; a till that was offline
+  during the switch may still be resolving the previous manifest.
+- The till derives the channel URL from **the server it is paired with**
+  (`desktop/updater.js`), so each tenant domain must serve its own
+  `/downloads/desktop/`. All three nginx configs in `deploy/` already do.
+
 ## Updates (redeploy) — use the SMART script (2026-07-23 slow-deploy fix)
 
 The old "always `git pull` + `pnpm install` + `next build` + `migrate`" sequence ran the ~10-min-plus (much more

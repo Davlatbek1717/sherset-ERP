@@ -1541,16 +1541,143 @@ Tuzatish 4 parallel agent + o'zim (auth), har biri TDD (RED ko'rilgan → fix �
 
 ### F4 hisoboti
 
-- **Holat:** ⬜ bajarilmagan
-- **Sana:**
-- **O'zgargan fayllar:**
+- **Holat:** ✅ bajarildi (worktree `D:/projects/sherset-kassa-f4`, branch `kassa-f4`, baza `b5e10c85`, merge kutilmoqda)
+- **Sana:** 2026-08-11
+
+- **O'zgargan fayllar (10):**
+  - *desktop (yangi):* `desktop/updater.js` · `desktop/check-build-assets.js`
+  - *desktop (tahrir):* `desktop/package.json` (`build` bloki + `dist` scripti) ·
+    `desktop/main.js` (🔴 3 qator — F3 bilan konflikt kutiladi) · `desktop/README.md` (QO'SHILDI, mavjud bo'limlar buzilmadi)
+  - *qo'riqchi test (yangi):* `apps/web/src/__tests__/kassa-installer-config.test.ts` (30 test)
+  - *deploy:* `deploy/nginx-sherset.biznesjon.uz.conf` · `deploy/nginx-climart.biznesjon.uz.conf` ·
+    `deploy/nginx-climartgroup.uz.conf` · `deploy/DEPLOY-sherset.md` (yangi §7)
+  - *avtomatik:* `docs/progress.json` (pre-commit hook o'zi qo'shadi — `pnpm -s progress`)
+
 - **Qilingan ish:**
+  1. **NSIS konfiguratsiyasi** — `desktop/package.json` → `build`: `appId: uz.sherset.kassa`,
+     `productName: Sherset Kassa`, `win.target: nsis (x64)`,
+     `artifactName: Sherset-Kassa-Setup-${version}.exe`, `nsis.oneClick: false`,
+     `nsis.perMachine: true`, `allowToChangeInstallationDirectory`, `installerLanguages: [ru_RU]`.
+     **Qaror: alohida `electron-builder.yml` EMAS, `package.json` ichidagi `build` bloki.**
+     Sabab (o'lchangan): monorepoda YAML parseri YO'Q — `yaml` va `js-yaml` na ildizdan,
+     na `apps/web`, na `apps/api` dan `require.resolve` bo'lmaydi. YAML variantida
+     «konfiguratsiya parse bo'ladi» qo'riqchisi qo'lda yozilgan soxta parserga
+     suyanardi; `build` bloki esa `JSON.parse` bilan haqiqatan tekshiriladi.
+  2. **Imzo — 1-versiya IMZOSIZ** (spec §8.2, ongli qaror). Sertifikat kalitlari repo'ga
+     yozilmadi; qo'riqchi test `certificateFile`/`certificatePassword`/`certificateSubjectName`
+     `package.json` da YO'Qligini tekshiradi (mutatsiya bilan tasdiqlandi).
+  3. **Avtoyangilanish** — `desktop/updater.js`, `electron-updater` `generic` provider.
+     🔴 Manzil kodga qotirilmagan (spec §3.2): `setFeedURL` qurilma **juftlangan serverdan**
+     yasaydi — `<server>` + `/downloads/desktop/`. Ishga tushganda + **har 4 soatda**
+     tekshiradi, fonda yuklaydi. Birinchi ishga tushishda server manzili hali yo'q bo'lsa
+     `updater.js` o'zi 60 soniyada qayta uradi (aks holda avtoyangilanish faqat keyingi
+     ishga tushishda tirilardi). Har qanday nosozlik — **jim** (kassirga dialog yo'q).
+  4. **O'rnatish vaqti (spec §8.3)** — `autoInstallOnAppQuit = false` (Electron o'zi hech
+     qachon o'rnatmaydi), `update-downloaded` faqat bayroq qo'yadi; o'rnatish **faqat**
+     `main.js` → `quitShell()` → `updater.installOnQuit()` yo'lida
+     (`quitAndInstall(isSilent=true, isForceRunAfter=false)`).
+  5. **`build/icon.ico` — binar, repo'da YO'Q.** Konfiguratsiyada yo'l ko'rsatilgan;
+     `check-build-assets.js` yig'ishni birinchi qadamda ANIQ xabar bilan to'xtatadi.
+  6. **nginx + deploy hujjati** — pastda.
+
+- **Qo'yilgan qo'riqchi testlar + mutatsiya natijasi:**
+  `apps/web/src/__tests__/kassa-installer-config.test.ts` — **30 test**, TDD (avval qizil:
+  21 yiqilgan / 8 o'tgan, keyin yashil). **18 mutatsiya sinaldi, HAMMASI qizardi:**
+  nginx yo'li · `autoInstallOnAppQuit=true` · 4 soat→1 soat · `update-downloaded` ichida
+  o'rnatish · versiya 1.2.0 · `perMachine=false` · artifactName qotirildi · `quitShell`
+  o'rnatishni chaqirmaydi · `dist` qo'riqchisiz · README dan `latest.yml` olib tashlandi ·
+  README dan kanal yo'li olib tashlandi · DEPLOY doc yo'li · `autoDownload=false` ·
+  `UPDATE_PATH` · `publish.url` · `app.isPackaged` qo'riqchisi · sertifikat paroli
+  qo'shildi · `win.icon` olib tashlandi.
+  🔴 **Bitta haqiqiy vacuity TOPILDI va tuzatildi:** `autoInstallOnAppQuit = false`
+  matni fayl boshidagi JSDoc'da ham aynan shunday yozilgan edi — kodni `true` ga
+  o'zgartirganda test YASHIL qolardi (regex izohga tushardi). Yechim: xulq testlari
+  endi `stripComments()` dan o'tgan **kod** ustida ishlaydi + `= true` YO'Qligi ham
+  tekshiriladi. (Bug-klass: «qo'riqchi o'z hujjatini o'qib turibdi».)
+
 - **Installer yig'ildimi (buyruq + natija):**
-- **Deploy uchun kerakli qadamlar:**
-- **Gate natijasi:**
+  🔴 **YO'Q — `.exe` HECH QACHON yig'ilmagan.** `desktop/` monorepo workspace'ida emas va
+  `electron` + `electron-builder` (~200 MB) ataylab o'rnatilmadi (foydalanuvchi rozilik
+  bermagan). Ya'ni «`.exe` yig'iladi» — **tasdiqlanmagan da'vo**.
+  Yig'ish qadamlari (operator/dasturchi qo'lda bajaradi):
+  1. `desktop/build/icon.ico` ni qo'sh (ko'p o'lchamli `.ico`, kamida 256×256).
+  2. `cd desktop && pnpm install` (bir marta).
+  3. `pnpm run dist` (= `node check-build-assets.js && electron-builder --win nsis`).
+  4. Natija: `desktop/dist/Sherset-Kassa-Setup-1.1.0-dev.exe` + `desktop/dist/latest.yml`.
+     Relizdan oldin `package.json` → `version` ni `-dev` siz qiymatga ko'tarish.
+  **Ikonka yo'qligida nima bo'ladi (o'lchangan):** `node desktop/check-build-assets.js`
+  → `exit 1` + «Yig`ish TO`XTATILDI — kerakli fayllar yo`q: desktop/build/icon.ico».
+  electron-builder ning O'Z xulqi (xato beradimi yoki default Electron ikonkasi bilan
+  jim davom etadimi) — **o'lchanmagan**; qo'riqchi aynan shu noaniqlikni yopish uchun
+  qo'yildi.
+
+- **`latest.yml` / kanal yo'li qaysi joylarda yozilgan (drift-lock, 5 joy):**
+  1. `desktop/updater.js` → `const UPDATE_PATH = '/downloads/desktop/'` (runtime feed)
+  2. `desktop/package.json` → `build.publish[0].url` (build vaqtidagi default)
+  3. `deploy/nginx-*.conf` ×3 → `location /downloads/desktop/`
+  4. `desktop/README.md` → operator yo'riqnomasi (`latest.yml` + kanal URL)
+  5. `deploy/DEPLOY-sherset.md` §7 → deploy qadamlari
+  Beshalasi ham qo'riqchi testda **bitta konstantaga** bog'langan.
+
+- **Deploy uchun kerakli qadamlar (🔴 VPS'ga QO'LLANMAGAN — kutmoqda):**
+  1. `sudo mkdir -p /var/www/kassa-downloads/desktop` (git checkout'idan TASHQARIDA —
+     `git pull`/`deploy-smart.sh` tegmaydi).
+  2. Yangilangan nginx конфini ko'chir + `sudo nginx -t && sudo systemctl reload nginx`.
+  3. Artefaktlarni yukla — **avval `.exe`, OXIRIDA `latest.yml`** (manifest — trigger;
+     u birinchi tushsa har bir kassa hali yo'q `.exe` ni so'raydi).
+  4. `curl -I https://<server>/downloads/desktop/latest.yml` → 200 va `.exe` → 200.
+  5. `latest.yml` ni QO'LDA tahrirlama (ichida `.exe` ning SHA-512 si; mos kelmasa har
+     bir kassa yangilanishni **jim** rad etadi). Eski `.exe` ni kamida bir reliz saqla.
+  Tafsilot: `deploy/DEPLOY-sherset.md` → «7. Kassa (Electron) installer + update channel».
+
+- **F3 bilan kutilayotgan konflikt:** `desktop/main.js` da **3 qator** (F3 ayni paytda shu
+  faylda `print:*`/`cfd:*` ishlovchilarini yozyapti): (a) `require('./updater')` — import
+  bloki; (b) `app.whenReady()` ichida `updater.start(serverBase);`;
+  (c) `quitShell()` ichida `if (updater.installOnQuit()) return;`. Uchalasi ham F3 ning
+  hududidan (`registerIpc` dagi `print:*`/`cfd:*`, `preload*.js`) **tashqarida** —
+  merge'da matn-konflikt bo'lsa **ikkala tomonni ham saqlash** kerak, birini tanlash EMAS.
+  `desktop/package.json` da faqat `build` bloki va `scripts.dist` qo'shildi;
+  `main`/`dependencies` TEGILMADI.
+
+- **Gate natijasi (to'liq, qisqartirilmagan):**
+  - `pnpm --filter @moysklad/money build` ✅
+  - `pnpm --filter @moysklad/api typecheck` ✅ 0 xato
+  - `pnpm --filter @moysklad/web typecheck` ✅ 0 xato
+  - `pnpm biome check <tegilgan 5 yo'l>` ✅ 0 xato (dastlab 5 `useOptionalChain` +
+    1 keraksiz suppression — tuzatildi)
+  - `pnpm --filter @moysklad/api test` — 7840 ✅ / **11 timeout** (`pos-device`,
+    `pos-pin`, `publication`, `mutation-guard-coverage`). Har biri **YOLG'IZ qayta
+    yugurtirildi → 4/4 YASHIL** ⇒ yuk artefakti (5 agent parallel, 56 node jarayoni),
+    defekt EMAS. `testTimeout` oshirilmadi.
+  - `pnpm --filter @moysklad/web test` — 3411 ✅ / **1 timeout**
+    (`menejer/_components/comment-template-settings.test.tsx`) → yolg'iz **YASHIL**
+    (5044ms, chegara ustida) ⇒ yuk artefakti. Bu fayl F4 tegmagan hududda.
+  - `pnpm i18n:gate` ✅ (UI matni tegilmadi)
+  - Qo'shimcha: `node --check` desktop `.js` fayllari ✅, `JSON.parse(package.json)` ✅
+
 - **Commit(lar):**
+  - `1ea00968` — `feat(kassa): nsis installer + avtoyangilanish (f4)` (7 fayl)
+  - `0c0bea3` — `chore(deploy): kassa yangilanish kanali uchun nginx location (f4)` (5 fayl)
+  - *(bu hisobot — uchinchi commit)*
+  Ikkalasida ham `docs/progress.json` bor: uni **repo'ning o'z pre-commit hooki** qo'shadi
+  (`pnpm -s progress && git add docs/progress.json`) — parallel sessiya ishi EMAS.
+
 - **Kelgusi fazalarga qoldirilgan:**
-- **Yorliq:**
+  - **F12 (Phase-2 QA):** butun oqim — yig'ish → yuklash → topilishi → «Chiqish» da
+    o'rnatilishi — **hech qachon yugurtirilmagan**. Shu jumladan: `perMachine: true`
+    bo'lgani uchun `isSilent=true` da ham Windows **UAC** so'raydi; kassani yopayotgan
+    xodim «Да» bosmasa yangilanish keyingi «Chiqish» ga qoladi (README da yozilgan,
+    o'lchanmagan).
+  - `1.1.0-dev` prerelease'dan relizga o'tish `electron-updater` da **tekshirilmagan** —
+    birinchi reliz `-dev` siz chiqarilsin.
+  - `build.publish[0].url` da build vaqtidagi default domen (`sherset.biznesjon.uz`)
+    qotirilgan — runtime uni baribir bosib o'tadi, lekin uch domen (`climart.biznesjon.uz`,
+    `climartgroup.uz`, xotiradagi `erp.sherset.uz`) noaniqligi hamon hal qilinmagan.
+  - Qurilmani **unpair** qilish UI'si hamon yo'q (F1 qarzi, README da qayd etilgan).
+  - Kod imzolash sertifikati olingach `build.win` ga env orqali qo'shiladi — kod o'zgarmaydi.
+
+- **Yorliq:** **Phase-1: strukturaviy, runtime-tasdiqlanmagan · `.exe` yig'ilmagan ·
+  VPS'ga deploy qilinmagan.** «done»/«production-ready»/«verified» — F12 dan oldin TAQIQ.
 
 ### F5 hisoboti
 

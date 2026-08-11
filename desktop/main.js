@@ -20,6 +20,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { BrowserWindow, Menu, app, dialog, ipcMain, screen, shell } = require('electron');
 const store = require('./device-store');
+const updater = require('./updater'); // F4 — avtoyangilanish (spec §8.3)
 
 // Build vaqtida beriladigan default (elektron-builder `extraMetadata`/env orqali).
 const DEFAULT_SERVER_URL = store.normalizeServerUrl(process.env.SHERSET_SERVER_URL || '');
@@ -188,7 +189,13 @@ function createWindow() {
 function quitShell() {
   allowQuit = true;
   stopHealthPolling();
+  // Mijoz-ekran HAR IKKI yo'lda ham yopiladi — yangilanish o'rnatilsa ham,
+  // oddiy chiqishda ham. Aks holda o'rnatuvchi jarayonni yopganda ikkinchi
+  // monitorda osilgan oyna qolardi.
   closeCustomerDisplay();
+  // 🔴 Yangilanish AYNAN shu yerda o'rnatiladi (spec §8.3) — savdo o'rtasida
+  // emas. `true` qaytsa o'rnatuvchi jarayonni o'zi yopadi.
+  if (updater.installOnQuit()) return;
   app.quit();
 }
 
@@ -518,6 +525,7 @@ if (!app.requestSingleInstanceLock()) {
     Menu.setApplicationMenu(null);
     registerIpc();
     createWindow();
+    updater.start(serverBase); // manzil hali yo'q bo'lsa o'zi kutadi (updater.js)
   });
 
   app.on('window-all-closed', () => app.quit());
