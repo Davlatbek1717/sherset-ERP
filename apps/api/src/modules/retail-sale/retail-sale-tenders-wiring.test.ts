@@ -103,6 +103,8 @@ function makeHarness(
     { computeEarnedPoints: vi.fn(), createOperation: vi.fn() } as never,
     { emit: vi.fn().mockResolvedValue(undefined) } as never,
     balanceService as never,
+    // F8: CustomerOrderService — zakazsiz chekda chaqirilmaydi.
+    { applyPayment: async () => {} } as never,
   );
   return { svc, tx, money, balanceService, retailSalePayment, cashierAuditEvent };
 }

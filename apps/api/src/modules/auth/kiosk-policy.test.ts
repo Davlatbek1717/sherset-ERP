@@ -257,3 +257,41 @@ describe('PIN-kirish yo`llari kiosk allowlist bilan mos', () => {
     expect(isKioskAllowed('GET', '/reports/profitability')).toBe(false);
   });
 });
+
+/**
+ * F8 — zakazni POS'dan to'lash yo'li allowlist bilan mos.
+ *
+ * 🔴 F8 kiosk allowlist'ga YANGI QATOR QO'SHMADI va bu ataylab: to'lov
+ * `/retail-sales` orqali ketadi (chek yaratiladi → `post`), zakaz holati esa
+ * SERVER TOMONDA, chek tranzaksiyasi ichida o'zgaradi
+ * (`CustomerOrderService.applyPayment`). Ya'ni kassirga zakaz holatini
+ * TO'G'RIDAN-TO'G'RI o'zgartirish huquqi berilmadi.
+ *
+ * Bu testlar aynan shu qarorni qulflaydi — kelajakda kimdir «POS zakazni
+ * to'lay olsin» deb `/customer-orders/:id/transitions/paid` ni ochib
+ * yuborsa DARHOL qizaradi. O'sha yo'l ochilsa kassir chek YOZMASDAN,
+ * pul OLMASDAN zakazni «to'langan» qilib qo'ya olardi.
+ */
+describe('F8 — zakaz to`lovi yo`llari', () => {
+  const ORDER = '/customer-orders/8f7d1c22-0000-4000-8000-000000000001';
+
+  it('chek yaratish va rasmiylashtirish kiosk uchun ochiq (to`lov shu yerdan ketadi)', () => {
+    expect(isKioskAllowed('POST', '/retail-sales')).toBe(true);
+    expect(isKioskAllowed('POST', '/retail-sales/8f7d1c22-0000-4000-8000-000000000002/post')).toBe(
+      true,
+    );
+  });
+
+  it('zakaz detali o`qiladi (savatga yuklash uchun)', () => {
+    expect(isKioskAllowed('GET', ORDER)).toBe(true);
+  });
+
+  it('🔴 `transitions/paid` HAMON YOPIQ — holatni faqat server chek orqali qo`yadi', () => {
+    expect(isKioskAllowed('POST', `${ORDER}/transitions/paid`)).toBe(false);
+  });
+
+  it('🔴 rezervni bo`shatish/o`chirish ham yopiq qoladi', () => {
+    expect(isKioskAllowed('POST', '/customer-orders/bulk-clear-reserve')).toBe(false);
+    expect(isKioskAllowed('DELETE', ORDER)).toBe(false);
+  });
+});

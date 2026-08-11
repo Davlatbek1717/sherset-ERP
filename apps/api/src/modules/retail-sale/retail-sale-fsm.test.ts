@@ -102,6 +102,8 @@ function makeService(
     { computeEarnedPoints: vi.fn(), createOperation: vi.fn() } as never,
     { emit: vi.fn().mockResolvedValue(undefined) } as never,
     { applyDelta: vi.fn().mockResolvedValue(undefined) } as never,
+    // F8: CustomerOrderService — zakazsiz chekda chaqirilmaydi.
+    { applyPayment: async () => {} } as never,
   );
 }
 

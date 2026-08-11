@@ -28,6 +28,8 @@ function makeService() {
     {} as never,
     {} as never,
     {} as never,
+    // F8: CustomerOrderService — zakazsiz chekda chaqirilmaydi.
+    { applyPayment: async () => {} } as never,
   );
   return { svc, findFirst };
 }

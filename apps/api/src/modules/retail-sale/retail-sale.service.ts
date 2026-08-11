@@ -13,6 +13,10 @@ import { PrismaService } from '../../prisma/prisma.service.js';
 // Kassa TZ §7.1 — qarzga sotish mijoz balansiga yoziladi (moysklad «Баланс»
 // ishora konventsiyasi: musbat = mijoz bizga qarzdor).
 import { CounterpartyBalanceService } from '../counterparty-balance/counterparty-balance.service.js';
+// F8 — zakazni POS'dan to'lash. Zakaz holatini O'ZIMIZ o'zgartirmaymiz:
+// `applyPayment` MAVJUD primitiv (cash-in / invoice-out ham shuni chaqiradi)
+// va o'z ichida `confirmed|awaiting_payment → paid` o'tishini bajaradi.
+import { CustomerOrderService } from '../customer-order/customer-order.service.js';
 // §109: loyalty accrual/reversal on POS sale/refund. Only loyalty's
 // existing public API is called (computeEarnedPoints + createOperation);
 // the loyalty module itself is NOT edited (DO NOT respected).
@@ -65,6 +69,7 @@ import {
 import { allowedFrom, canTransition, transitionRejection } from './retail-sale-fsm.js';
 import {
   CreateRetailSaleSchema,
+  ORDER_PAYABLE_STATES,
   PostRetailSaleSchema,
   RefundRetailSaleSchema,
   RetailSaleFilterSchema,
@@ -133,6 +138,11 @@ export class RetailSaleService {
     // Kassa TZ §7.1 — qarzga sotilgan qism mijozning umumiy balansiga tushadi.
     @Inject(CounterpartyBalanceService)
     private readonly counterpartyBalance: CounterpartyBalanceService,
+    // F8 — chek zakazni yopadi. Modul `RetailSaleModule.imports` ga OSHKORA
+    // qo'shildi (xotira: «@Global in'yeksiya qo'riqsiz» — hech bir test DI
+    // grafini qurmaydi, `app-boot.test.ts` dan boshqa).
+    @Inject(CustomerOrderService)
+    private readonly customerOrders: CustomerOrderService,
   ) {}
 
   /**
@@ -472,6 +482,36 @@ export class RetailSaleService {
       session.cashierId,
     );
 
+    // F8 — zakaz bog'lanishi. Uch tekshiruv, uchtasi ham ATAYLAB shu yerda:
+    //  (1) TENANT — FK faqat MAVJUDLIKNI tekshiradi, ya'ni begona akkauntning
+    //      zakaz id'si chekka jimgina yozilib ketardi (`post()` dagi `agentId`
+    //      tekshiruvi bilan bir klass);
+    //  (2) DO'KON — rezervni chekka yutish `post()` da smena do'koni ustida
+    //      qulflangan qatorlarga tegadi; boshqa do'kondagi hold qulfsiz
+    //      o'zgarardi (deadlock/lost-update);
+    //  (3) HOLAT — «allaqachon to'langan» zakazni savatga yuklab, kassirni
+    //      to'lov oynasigacha olib borib, oxirida rad etish yomon UX.
+    //      Yakuniy (poyga-chidamli) tekshiruv baribir `post()` ichida.
+    if (parsed.customerOrderId) {
+      const order = await this.prisma.client.customerOrder.findFirst({
+        where: { id: parsed.customerOrderId, accountId, deletedAt: null },
+        select: { id: true, state: true, storeId: true },
+      });
+      if (!order) {
+        throw new NotFoundException(`CustomerOrder ${parsed.customerOrderId} not found`);
+      }
+      if (order.storeId !== session.storeId) {
+        throw new BadRequestException(
+          `Zakaz boshqa do'konga tegishli (zakaz: ${order.storeId}, smena: ${session.storeId})`,
+        );
+      }
+      if (!(ORDER_PAYABLE_STATES as readonly string[]).includes(order.state)) {
+        throw new BadRequestException(
+          `Zakaz «${order.state}» holatida — POS'dan to'lanmaydi (kutilgan: ${ORDER_PAYABLE_STATES.join(', ')})`,
+        );
+      }
+    }
+
     const name = await this.nextRetailSaleName(accountId);
     const positions = this.computePositions(parsed.positions);
 
@@ -484,6 +524,7 @@ export class RetailSaleService {
           sessionId: parsed.sessionId,
           name,
           agentId: parsed.agentId ?? null,
+          customerOrderId: parsed.customerOrderId ?? null,
           moment: parsed.moment ? new Date(parsed.moment) : new Date(),
           description: parsed.description ?? null,
           externalCode: parsed.externalCode ?? null,
@@ -838,6 +879,58 @@ export class RetailSaleService {
         );
       }
 
+      // ── F8: zakaz to'lovi — IKKI MARTA TO'LASH HIMOYASI ──────────────────
+      //
+      // 🔴 Tekshiruv SERVERDA va TRANZAKSIYA ICHIDA. UI tugmasini yashirish
+      // yetarli emas: ikki kassir (ikki kassa) bir zakazni bir vaqtda ochib
+      // «To'lash» bosishi mumkin, va ikkalasi ham zakaz `confirmed` ekanini
+      // KO'RADI.
+      //
+      // Qulf = holat-SHARTLI `updateMany`. Ikki parallel tranzaksiya bir
+      // qatorga yozmoqchi bo'lganda Postgres ularni qator-qulfi bilan
+      // ketma-ketlashtiradi; birinchisi commit bo'lgach ikkinchisi predikatni
+      // QAYTA baholaydi (EvalPlanQual) va zakaz endi `paid` bo'lgani uchun
+      // `count = 0` oladi ⇒ ConflictException ⇒ butun chek rollback (pul
+      // olinmaydi, ombor yechilmaydi). Bu `retailSale`/`cashierSession`
+      // claim'lari bilan AYNI naqsh.
+      //
+      // `data` ATAYLAB `version` inkrementi: bo'sh `data` bilan `updateMany`
+      // qatorni umuman yozmaydi va qulf olmasdi. `version` esa moysklad
+      // optimistik qulfi — zakazni parallel tahrirlayotgan nusxa 409 oladi,
+      // ya'ni yozuv o'zi ham ma'noli.
+      let releaseOrderReserve = false;
+      if (sale.customerOrderId) {
+        const claim = await tx.customerOrder.updateMany({
+          where: {
+            id: sale.customerOrderId,
+            accountId,
+            deletedAt: null,
+            state: { in: [...ORDER_PAYABLE_STATES] },
+          },
+          data: { version: { increment: 1 } },
+        });
+        if (claim.count === 0) {
+          throw new ConflictException(
+            `Zakaz ${sale.customerOrderId} to'lanadigan holatda emas (allaqachon to'langan?) — chek rasmiylashtirilmadi.`,
+          );
+        }
+        const order = await tx.customerOrder.findFirstOrThrow({
+          where: { id: sale.customerOrderId, accountId },
+          select: { sumMinor: true, payedSumMinor: true, storeId: true },
+        });
+        if (order.storeId !== storeId) {
+          // `create()` da ham tekshirilgan; bu — hujjat yaratilgandan keyin
+          // zakaz do'koni ko'chirilgan holat uchun.
+          throw new BadRequestException(
+            `Zakaz boshqa do'konga tegishli (zakaz: ${order.storeId}, smena: ${storeId})`,
+          );
+        }
+        // Rezerv FAQAT zakaz TO'LIQ yopilganda yutiladi. Qisman to'lovda hold
+        // joyida qoladi — aks holda to'lanmagan qoldiq uchun band qilingan
+        // tovar bo'shab, boshqa mijozga sotilib ketardi.
+        releaseOrderReserve = order.sumMinor > 0n && order.payedSumMinor + total >= order.sumMinor;
+      }
+
       // Kassa TZ §5.3 — pin cost + base price onto the lines, inside the same
       // transaction as the state flip. If the stock or money cascade below
       // rolls back, the snapshot rolls back with it: a receipt is never left
@@ -879,7 +972,47 @@ export class RetailSaleService {
           kind: 'product' as const,
           id: p.productId,
         }));
-        const balances = await this.stock.lockBalances(tx, accountId, storeId, assortments);
+        let balances = await this.stock.lockBalances(tx, accountId, storeId, assortments);
+
+        // F8 — ZAKAZ REZERVI CHEKKA YUTILADI (`release_consume`).
+        //
+        // Tovar kassadan CHIQDI. Hold qolsa `reservedQty` qoldiqdan oshib
+        // ketardi va do'konning «Dostupno» si abadiy manfiy bo'lib, o'sha
+        // tovarni boshqa hech kimga sotib bo'lmasdi. Demand ham aynan shuni
+        // qiladi (`adjustReservationForShipment(..., 'ship')` → `release_consume`).
+        //
+        // Tartib MUHIM: bo'shatish `assertAvailable` dan OLDIN. Aks holda
+        // zakazning O'Z rezervi o'z sotuvini bloklardi — Demand'da bu snapshot
+        // yamog'i bilan yopilgan (`demand.service.ts`: order's own hold
+        // subtracted); bu yerda qulflangan qatorlarni QAYTA o'qiymiz, chunki
+        // `releaseReservationByDoc` nechta bo'shatganini qaytarmaydi va
+        // yamoqni qo'lda hisoblash uchinchi nusxa formula bo'lardi.
+        //
+        // `releaseReservationByDoc` shartnomasi: chaqiruvchi shu tx da
+        // `lockBalances` qilgan bo'lishi SHART — yuqorida qilingan, va zakaz
+        // do'koni smena do'koniga teng ekani tekshirilgan.
+        if (releaseOrderReserve && sale.customerOrderId) {
+          await this.stock.releaseReservationByDoc(
+            tx,
+            accountId,
+            userId,
+            'customerorder',
+            sale.customerOrderId,
+            'release_consume',
+          );
+          // Mirrorlar (`customer-order.service.delete()` bilan bir retsept) —
+          // aks holda zakaz kartasi «rezervda 5» deb turaverardi.
+          await tx.customerOrderPosition.updateMany({
+            where: { customerOrderId: sale.customerOrderId, accountId },
+            data: { reservedQty: 0 },
+          });
+          await tx.customerOrder.update({
+            where: { id: sale.customerOrderId, accountId },
+            data: { reservedSumMinor: 0n },
+          });
+          balances = await this.stock.lockBalances(tx, accountId, storeId, assortments);
+        }
+
         this.stock.assertAvailable(
           allowNegative,
           stockPositions.map((p) => ({
@@ -1025,6 +1158,31 @@ export class RetailSaleService {
 
       // Smena agregatlari (salesCount / salesSumMinor) yuqoridagi CLAIM bilan
       // BIRGA yozildi — qulf va hisob ajralmasin (Faza Q1).
+
+      // ── F8: zakaz holati MAVJUD primitiv orqali o'zgaradi ────────────────
+      //
+      // 🔴 Bu yerda YANGI holat-o'qi ham, qo'lda yozilgan `state: 'paid'` ham
+      // YO'Q. `CustomerOrderService.applyPayment` — cash-in va invoice-out
+      // ham chaqiradigan mavjud yo'l: `payedSumMinor` ni oshiradi va
+      // `confirmed|awaiting_payment|partially_shipped → paid` (to'liq
+      // jo'natilgan bo'lsa → `closed`) o'tishini O'ZI qaror qiladi, audit
+      // yozuvi bilan birga.
+      //
+      // QISMAN TO'LOV shu tanlovdan BEPUL keladi: chek zakaz jamini
+      // qoplamasa, `fullyPaid` false bo'ladi va holat O'ZGARMAYDI —
+      // zakaz `confirmed`/`awaiting_payment` da qolib, qoldig'i keyingi chek
+      // bilan to'lanishi mumkin (yuqoridagi qulf predikati aynan shuni
+      // ruxsat beradi).
+      if (sale.customerOrderId) {
+        await this.customerOrders.applyPayment(
+          tx,
+          accountId,
+          userId,
+          sale.customerOrderId,
+          total,
+          'apply',
+        );
+      }
 
       return tx.retailSale.findUniqueOrThrow({ where: { id, accountId } });
     });

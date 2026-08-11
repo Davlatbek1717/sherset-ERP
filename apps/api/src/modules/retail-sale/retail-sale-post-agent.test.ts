@@ -122,6 +122,8 @@ function makeHarness(opts: { saleAgentId?: string | null } = {}) {
     loyalty as never,
     {} as never,
     balance as never,
+    // F8: CustomerOrderService — zakazsiz chekda chaqirilmaydi.
+    { applyPayment: async () => {} } as never,
   );
   return { svc, saleRow, money, balance, counterpartyFindFirst, tx };
 }
