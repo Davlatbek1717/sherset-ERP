@@ -2296,3 +2296,119 @@ Tuzatish 4 parallel agent + o'zim (auth), har biri TDD (RED ko'rilgan → fix �
 - **Topilgan buglar (tuzatilgan / qoldirilgan):**
 - **Yorliq o'zgarishi (qaysi fazalar «Phase-2 verified» bo'ldi):**
 - **Commit(lar):**
+
+### F13 hisoboti — smena-qabul avtomatikasi tirik emas
+
+- **Holat:** ✅ bajarilgan · **Sana:** 2026-08-11 · **Worktree:** `kassa-f13` (baza `b5e10c85`)
+- **Yorliq:** **Phase-1: strukturaviy, runtime-tasdiqlanmagan** (brauzer-QA YO'Q, real cron
+  yurishi kutilmadi, DB/migratsiyaga tegilmadi).
+
+**1. Nega ulanmagan edi — javob (tekshirildi, ko'r-ko'rona ulanmadi)**
+
+Bu **o'zaro kechiktirish** edi, tamoyilli qaror EMAS. Dalil (`NEXT.md`):
+- MK08 hisoboti: «Ochiq qarz: … `escalateOverdue` **cron'ga ulanmagan (MK06 bilan birga
+  mantiqiy)** · `markStale` chaqiruvchisi yo'q (hujjat-o'zgarish kuzatuvchisi hali yo'q)»;
+- MK06 hisoboti: «`sync` **cron'ga ulanmagan (MK08 `escalateOverdue` bilan birga)**».
+
+Ya'ni ikki faza bir-biriga ishora qildi va hech biri qilmadi. Kod (`8bb11ef5`) yoki reja
+ichida «eskalatsiya YURMASLIGI kerak» degan dizayn sababi **hech qayerda yo'q** — shu sababli
+ulash to'g'ri qaror deb topildi.
+
+🔴 **`markStale` ATAYLAB ULANMADI** — bu esa haqiqiy, sababi yozilgan kechiktirish. U vaqt
+emas, **hodisa** bo'yicha ishlaydi («qabul qilingan smenaning hujjati keyin o'zgardi»;
+`shift-acceptance.ts` FSM: `mark_stale` faqat `accepted`/`force_accepted` dan). Cron'dan
+davriy chaqirilsa yopilgan smenalarni sababsiz «eskirdi» deb belgilab, menejer navbatini
+yolg'on signal bilan to'ldirardi. Chaqiruvchisi — chek tahriri/qaytarish oqimi, u hali yo'q.
+
+**2. O'zgargan fayllar**
+
+| Fayl | Nima |
+| --- | --- |
+| `apps/api/src/modules/cashier-session/shift-acceptance.cron.ts` | **YANGI** — `ShiftAcceptanceCron`, `@Cron('20 1 * * *', Asia/Tashkent)`; `employee-daily-kpi.cron.ts` naqshi (jadval + hisoblarni aylanish + ustma-ust qulfi; qoida servisda). 01:20 ataylab — KPI cron'i 00:40 da barcha hisoblarni aylanadi. |
+| `apps/api/src/modules/cashier-session/cashier-session.module.ts` | cron provayder sifatida; `PrismaModule` OSHKORA import (@Global tasodifiga tayanmaydi). `ScheduleModule` QAYTA ro'yxatdan o'tkazilmadi — `AppModule` da global. |
+| `apps/api/src/modules/cashier-session/shift-acceptance-cron.test.ts` | **YANGI** — 12 test (qo'riqchi, quyida). |
+| `docs/progress.json` | hook yozgan branch-metadata (begona ish emas — F11 hisobotidagi bilan bir xil hodisa). |
+
+**3. Wiring qo'riqchisi + mutatsiya sinovi**
+
+Ikki qatlam, chunki bittasi yetmaydi:
+1. **XULQ** — cron har hisob uchun `escalateOverdue` ni HAQIQATAN chaqiradi; bitta hisob
+   xatosi qolganini to'xtatmaydi; ustma-ust yurish qulfi ishlaydi.
+2. **MANBA-SKAN** — `@Cron` dekoratori bor · `ShiftAcceptanceCron` modul provayderi ·
+   `ScheduleModule.forRoot()` ilovada · `CashierSessionModule` `AppModule` da · vakuum-qarshi
+   tekshiruv. Faqat xulq testi bo'lsa, provayderni ro'yxatdan olib tashlaganda test YASHIL
+   qolardi va funksiya yana o'lardi.
+
+Qo'shimcha: soxta soat bilan eskalatsiya oynasi — kesim `now − SHIFT_ESCALATE_AFTER_DAYS`,
+`acceptanceChangedAt` bo'yicha (`updatedAt` EMAS), jurnalga `system` / `no_response`.
+
+**Mutatsiya sinovi (uchtasi ham o'z ko'zim bilan qizardi, keyin tiklandi):**
+
+| Mutatsiya | Natija |
+| --- | --- |
+| `escalateOverdue` chaqiruvi cron'dan olib tashlandi | **4 test qizil** (3 xulq + 1 manba-skan) |
+| `ShiftAcceptanceCron` modul provayderlaridan olib tashlandi | **1 test qizil** |
+| `@Cron(...)` dekoratori olib tashlandi | **1 test qizil** |
+
+**4. Eskalatsiya xabari kimga ketadi — O'LCHANGAN JAVOB: HECH KIMGA** ⚠️
+
+`escalateOverdue` → `transition()` (`shift-acceptance.service.ts:266-291`, `183-256`) faqat
+IKKI narsa yozadi: `cashierSession.updateMany` + `cashierSessionAcceptanceEvent.create`.
+**Telegram/SMS/`NotificationService` — YO'Q.** Ya'ni eskalatsiya JIM.
+
+Kim ko'radi:
+- `escalated` — `SHIFT_QUEUE_STATES` ichida (`shift-acceptance.ts:274-279`) ⇒ smena menejer
+  navbatida qoladi va `/menejer/smenalar` ekranida ko'rinadi;
+- `force_accept` ni FAQAT `owner` qila oladi (`shift-acceptance.ts:167-174`), `owner` =
+  `admin` roli (`cashier-session.controller.ts:212-224`). Ya'ni ega ekranni **o'zi ochsagina**
+  biladi;
+- MK19 kunlik brifing bloki `shift_acceptance` (`day-briefing.service.ts:261-276`) Telegram'ga
+  chiqishi mumkin, LEKIN u `closedAt` ni **bugungi kunga** filtrlaydi ⇒ 3 kun oldin yopilgan
+  eskalatsiya unga **umuman tushmaydi**. Chat ham shaxsiy emas: `telegramConfig.defaultChatId`.
+
+⇒ **Bildirishnoma yo'li YO'Q — kelgusi fazaga qarz.** Spam xavfi ham yo'q (hech narsa
+yuborilmaydi); teskarisi — signal yetib bormasligi xavfi bor.
+
+**5. O'lchanmagan ssenariylar (kelgusi runtime/QA sessiyaga)**
+
+1. Real cron 01:20 da yurishi — API ko'tarilmadi, `pnpm dev` yugurtirilmadi.
+2. Real DB'dagi so'rov: MK08 migratsiyasi (`20260810070000_shift_acceptance`) lokal bazaga
+   **hech qachon qo'llanmagan** (MK08 hisoboti). Ustunsiz cron har kecha `logger.error` beradi.
+3. 🔴 **Birinchi yurish hajmi:** MK08 backfill'i barcha tarixiy yopilgan smenalarni `pending`
+   qilgan ⇒ DDL+backfill'dan keyingi BIRINCHI cron 3 kundan eski BARCHA smenani bir yurishda
+   eskalatsiya qiladi (har biri alohida tranzaksiya). Soni o'lchanmagan — prodda oldindan
+   `SELECT count(*)` bilan o'lchansin.
+4. Ko'p instansiyali deploy (PM2 cluster): `running` bayrog'i **process-lokal** — har instansiya
+   o'z cron'ini yuritadi. Har smena optimistik da'vo bilan himoyalangan (faqat bittasi o'tadi),
+   lekin yuk ko'payadi. O'lchanmagan.
+5. `/menejer/smenalar` ekranida `escalated` smena `admin` uchun haqiqatan `force_accept`
+   tugmasini ko'rsatadimi — brauzerda tekshirilmagan.
+
+**6. Gate**
+
+`money build` ✓ · `api typecheck` 0 · `web typecheck` 0 · `biome check` (tegilgan 3 fayl) 0 ·
+`i18n:gate` 9 ✓ · **api vitest 7860 ✓** · **web vitest 3381 ✓**.
+
+Yiqilishlar — **hammasi yuk artefakti** (`Test timed out in 5000ms`; 5 agent parallel):
+- web 1-yurish 13 yiqilish → 2-yurishda **1** (butunlay BOSHQA fayl), yolg'iz yugurtirilganda
+  ikkala to'plam ham yashil ⇒ to'plamlar kesishmaydi, defekt emas;
+- api: `pos-pin` / `pos-device` yolg'iz yashil. `mutation-guard-coverage.test.ts` ning
+  `await import('debt.controller.js')` testi barqaror 5s da yiqiladi — **F13 dan mustaqil**:
+  skript bilan o'lchandi, `DebtController` ning tranzitiv import grafi **92 fayl** va unda
+  `cashier-session` **YO'Q**. `testTimeout` OSHIRILMADI.
+
+**7. Commitlar**
+
+- `fb297d2c` — `feat(kassa): f13 — smena eskalatsiyasi cron'ga ulandi (o'lik metod tirildi)`
+  (4 fayl; 4-chisi — hook yozgan `docs/progress.json`)
+- shu hisobot — alohida `docs(kassa): f13 hisoboti` commit'i.
+
+**Kelgusi fazalarga qoldirilgan**
+
+1. **`markStale` hamon chaqiruvchisiz** — ataylab (yuqorida, §1). Chaqiruvchi = chek
+   tahriri/qaytarish oqimi (hodisaviy).
+2. **MK06 `ManagerQueueService.sync` hamon cron'da emas** — F13 doirasidan tashqarida
+   (`manager/queue` hududi), lekin NEXT.md unga «F13 bilan birga» deb ishora qilgan edi.
+3. **Eskalatsiya bildirishnomasi yo'q** (§4) — ega uchun push kanali kerak.
+4. **MK19 brifing smena bloki `closedAt` ni bugunga filtrlaydi** — eski eskalatsiyalar
+   brifingda ko'rinmaydi (dizayn savoli, F13 da tegilmadi).
