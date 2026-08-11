@@ -151,11 +151,10 @@ export function RasmiyashtirishModal({
    * e'lon qilmaydi, carry-forward server tomonda). Qayta urinish faqat
    * bloklangan holatni kechiktirardi.
    */
-  const {
-    data: usdRate,
-    isError: usdRateError,
-    isLoading: usdRateLoading,
-  } = useQuery<UsdRateRow>({
+  // `isError` ATAYLAB olinmaydi: «kurs yo'q» va «so'rov yiqildi» kassir uchun
+  // bir xil natija beradi — dollar maydoni yopiladi. Ikkinchi bayroq faqat
+  // ishlatilmay qolardi (lint:product `noUnusedVariables` bilan tutdi).
+  const { data: usdRate, isLoading: usdRateLoading } = useQuery<UsdRateRow>({
     queryKey: ['pos-usd-rate'],
     queryFn: () => api.get<UsdRateRow>('/exchange-rates/rate?currency=USD'),
     enabled: open,
