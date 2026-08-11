@@ -1,15 +1,10 @@
 import { Prisma } from '@moysklad/db';
-import {
-  BadRequestException,
-  ConflictException,
-  Inject,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import type { z } from 'zod';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { EnterService } from '../enter/enter.service.js';
 import { LossService } from '../loss/loss.service.js';
+import { assertCellStockEmpty } from '../shared/cell-stock-guard.js';
 import { CellRangeError, type CellRangeSpec, expandCellRange } from './cell-range.util.js';
 import {
   AssignProductsSchema,
@@ -629,14 +624,15 @@ export class StoreAddressService {
    * qo'shardi. Egasining qarori: hujjatsiz stok o'zgarmaydi ⇒ avto-«Списание»
    * YOZILMAYDI, amal RAD ETILADI (409) va foydalanuvchiga yo'l ko'rsatiladi.
    *
-   * Qulf shu yerda — YAGONA haqiqat manbai: `DELETE :id/cells/:cellId/
-   * products/:productId` ning har bir chaqiruvchisi (Scan oynasining
-   * «chiqarib qo'shish»i, «Ko'chirish» oynasi, kelajakdagi skriptlar) unga
-   * bo'ysunadi.
+   * Qoida `shared/cell-stock-guard.ts` da yashaydi — bu yo'l YAGONA emas:
+   * `ProductCellMoveService.rebind` (`POST /products/:id/cell-rebind`) ham
+   * `ProductCellLink` ni o'chiradi va u ham shu qulfdan o'tadi (review
+   * 2026-08-11 Critical). Qulf + o'chirish BITTA serializable tranzaksiyada:
+   * aks holda tekshiruv bilan o'chirish orasida boshqa sessiya sanoq yozib
+   * ulgurardi.
    *
-   * Filtr `assortmentKind: 'product'` — ATAYLAB tor: davo yo'li («Sanash»)
-   * aynan shu turga yozadi, ya'ni boshqa turdagi qatorga qulf qo'yilsa
-   * foydalanuvchi chiqa olmaydigan tuzoqqa tushardi.
+   * Qamrov chegarasi (VARIANT qoldig'i tekshirilmaydi) — sabab va oqibati
+   * `cell-stock-guard.ts` docblock'ida oshkora yozilgan.
    */
   async unassignProduct(accountId: string, storeId: string, cellId: string, productId: string) {
     await this.assertStore(accountId, storeId);
@@ -646,46 +642,36 @@ export class StoreAddressService {
       select: { id: true, attributes: true },
     });
     if (!product) throw new NotFoundException(`Product ${productId} not found`);
-    const stocked = await this.prisma.client.stockByCell.findFirst({
-      where: {
-        accountId,
-        storeId,
-        cellId,
-        assortmentKind: 'product',
-        assortmentId: productId,
-        qty: { gt: 0 },
-      },
-      select: { qty: true },
-    });
-    if (stocked) {
-      const qty = String(stocked.qty);
-      throw new ConflictException({
-        // Mashina o'qiydigan sabab — FE bu kod bo'yicha aniq bannerni chizadi
-        // (xom `message` matniga tayanmasdan).
-        code: 'CELL_STOCK_NOT_EMPTY',
-        qty,
-        cell: cell.name,
-        productId,
-        message: `«${cell.name}» yacheykasida bu mahsulotdan ${qty} dona qoldiq bor — avval «Sanash» bilan 0 ga tushiring yoki boshqa yacheykaga ko'chiring, keyin chiqaring`,
-      });
-    }
     const base =
       product.attributes &&
       typeof product.attributes === 'object' &&
       !Array.isArray(product.attributes)
         ? (product.attributes as Record<string, unknown>)
         : {};
-    const { count: linksRemoved } = await this.prisma.client.productCellLink.deleteMany({
-      where: { accountId, productId, cellId },
-    });
     const isHome = base.__yacheyka === cell.name;
-    if (isHome) {
-      const { __yacheyka: _y, __polka: _p, ...rest } = base;
-      await this.prisma.client.product.update({
-        where: { id: product.id },
-        data: { attributes: rest as Prisma.InputJsonValue },
-      });
-    }
+    const linksRemoved = await this.prisma.client.$transaction(
+      async (tx) => {
+        await assertCellStockEmpty(tx, {
+          accountId,
+          storeId,
+          cellId,
+          cellName: cell.name,
+          productId,
+        });
+        const { count } = await tx.productCellLink.deleteMany({
+          where: { accountId, productId, cellId },
+        });
+        if (isHome) {
+          const { __yacheyka: _y, __polka: _p, ...rest } = base;
+          await tx.product.update({
+            where: { id: product.id },
+            data: { attributes: rest as Prisma.InputJsonValue },
+          });
+        }
+        return count;
+      },
+      { isolationLevel: 'Serializable', timeout: 20000 },
+    );
     if (!isHome && linksRemoved === 0) return { unassigned: false };
     return { unassigned: true };
   }

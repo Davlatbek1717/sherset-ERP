@@ -54,6 +54,15 @@ interface ProductHit {
   packBarcodes: string[] | null;
 }
 
+/**
+ * Q1 qulfi (server 409 `CELL_STOCK_NOT_EMPTY`) uchun sentinel. Xabari
+ * ALLAQACHON to'liq i18n jumlasi, shuning uchun tashqi `catch` uni
+ * `scan_save_failed` ichiga QAYTA O'RAMAYDI — ikki qavat o'ram («Saqlashda
+ * xato: „«Olma» … chiqarilmadi" — saqlanmaganlar…») kichik ekranda o'qib
+ * bo'lmas matn berardi.
+ */
+class EvictBlockedError extends Error {}
+
 /** One STAGED binding (owner 2026-07-21: scans collect into a list and are
  *  written only when «Saqlash» is pressed; «Bekor qilish» discards them all). */
 interface PendingRow {
@@ -294,7 +303,7 @@ export function CellScanBindModal({
               // xato o'z holicha yuqoriga o'tadi (yashirilmaydi).
               const err = e as { status?: number; body?: { code?: string; qty?: string } };
               if (err.status === 409 && err.body?.code === 'CELL_STOCK_NOT_EMPTY') {
-                throw new Error(
+                throw new EvictBlockedError(
                   t('scan_evict_blocked', {
                     product: victim.name,
                     cell: cellName,
@@ -341,8 +350,14 @@ export function CellScanBindModal({
       const msg = e instanceof Error ? e.message : String(e);
       setMessage({
         kind: 'err',
+        // Q1 qulfi — matn TAYYOR (nima, qayerda, qancha, nima qilish kerak va
+        // qolgan qatorlar taqdiri), qayta o'ralmaydi.
         text:
-          evicted > 0 ? t('scan_save_partial', { msg, evicted }) : t('scan_save_failed', { msg }),
+          e instanceof EvictBlockedError
+            ? msg
+            : evicted > 0
+              ? t('scan_save_partial', { msg, evicted })
+              : t('scan_save_failed', { msg }),
       });
     }
     if (done > 0) onBound();

@@ -153,13 +153,44 @@ export function CellMoveTargetModal({
       onMoved(t('move_success', { product: product.name, cell: target.name }));
       onOpenChange(false);
     } catch (e) {
+      // Q1 qulfi (server 409 `CELL_STOCK_NOT_EMPTY`) — bu yerda XOM server
+      // matni CHALG'ITADI: u «boshqa yacheykaga ko'chiring» deydi, holbuki
+      // foydalanuvchi aynan shuni qilyapti. Sabab: `qty` oyna ochilgandagi
+      // suratdan keladi, ya'ni eskirgan bo'lishi mumkin — `Number(qty) > 0`
+      // sharti nol suratda ko'chirish qadamini butunlay o'tkazib yuboradi
+      // (yoki qisman ko'chiradi), keyin DELETE 409 oladi. Xabar shu holatni
+      // ATAB aytadi, «qayta urinib ko'ring» deyishdan farqli ravishda.
+      const err = e as { status?: number; body?: { code?: string; qty?: string; cell?: string } };
+      if (err.status === 409 && err.body?.code === 'CELL_STOCK_NOT_EMPTY') {
+        setMessage({
+          kind: 'err',
+          text: t('move_stock_changed', {
+            cell: err.body.cell ?? fromCell.name,
+            qty: err.body.qty ?? '?',
+          }),
+        });
+        setMoving(false);
+        return;
+      }
       setMessage({
         kind: 'err',
         text: t('move_failed', { msg: e instanceof Error ? e.message : String(e) }),
       });
       setMoving(false);
     }
-  }, [moving, candidates, targetId, qty, product, fromCell.id, storeId, onMoved, onOpenChange, t]);
+  }, [
+    moving,
+    candidates,
+    targetId,
+    qty,
+    product,
+    fromCell.id,
+    fromCell.name,
+    storeId,
+    onMoved,
+    onOpenChange,
+    t,
+  ]);
 
   return (
     <Modal

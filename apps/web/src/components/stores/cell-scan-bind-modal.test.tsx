@@ -586,6 +586,9 @@ describe('CellScanBindModal — TZ v3 §1', () => {
     expect(status).toHaveTextContent('01-01-01-01');
     expect(status).toHaveTextContent('26');
     expect(beep).toHaveBeenCalled();
+    // Matn IKKI QAVAT o'ralmaydi — «Saqlashda xato: …» prefiksi yo'q, chunki
+    // Q1 jumlasi o'zi to'liq (nima, qayerda, qancha, nima qilish kerak).
+    expect(status).not.toHaveTextContent('Saqlashda xato');
     // Bog'lash YOZILMADI (chiqarish o'tmagan holda POST ketsa, band yacheykaga
     // ikkinchi tovar jimgina qo'shilib qolardi).
     expect(api.post).not.toHaveBeenCalled();
@@ -594,6 +597,36 @@ describe('CellScanBindModal — TZ v3 §1', () => {
     expect(onOpenChange).not.toHaveBeenCalled();
     // Qaror HAMON `replace`: chiqarish bajarilmagani uchun belgi YOLG'ON emas.
     expect(screen.getByTestId(/^cell-scan-row-replaces-/)).toBeInTheDocument();
+  });
+
+  /**
+   * Shox AYNAN `body.code` bo'yicha ushlanadi, «har qanday 409» bo'yicha emas:
+   * boshqa 409 (masalan noyob-cheklov to'qnashuvi) Q1 matnini OLMASLIGI kerak,
+   * aks holda foydalanuvchiga «sanab 0 ga tushiring» deb yolg'on yo'l
+   * ko'rsatilardi. Bu test `body.code` shartini olib tashlagan mutantni tutadi.
+   */
+  it('Q1 KODSIZ 409 — umumiy xato yo`lidan boradi, «qoldiq» matni CHIQMAYDI', async () => {
+    mockApi({ occupants: [{ id: 'prod-old', name: 'Olma' }] });
+    open();
+    await scan('CELLA');
+    await scan('X1');
+    await waitFor(() => expect(screen.getByTestId('cell-scan-conflict-msg')).toBeInTheDocument());
+    await userEvent.click(screen.getByTestId('cell-scan-replace'));
+
+    const otherConflict = Object.assign(new Error('boshqa konflikt'), {
+      status: 409,
+      body: { code: 'SOMETHING_ELSE', message: 'boshqa konflikt' },
+    });
+    vi.mocked(api.delete).mockRejectedValueOnce(otherConflict);
+
+    await userEvent.click(screen.getByTestId('cell-scan-save'));
+
+    const status = await screen.findByTestId('cell-scan-status');
+    await waitFor(() => expect(status).toHaveTextContent('boshqa konflikt'));
+    // Umumiy yo'l = `scan_save_failed` o'rami; Q1 matnining birorta bo'lagi yo'q.
+    expect(status).toHaveTextContent('Saqlashda xato');
+    expect(status).not.toHaveTextContent('qoldiq');
+    expect(status).not.toHaveTextContent('Olma');
   });
 
   /** 409 dan BOSHQA xato maxsus matnga aylanmaydi — sabab yashirilmaydi. */

@@ -112,7 +112,13 @@ function makeService() {
     // haqida — hech qayerda sanoq yo'q, shuning uchun qulf hech qachon
     // yonmaydi va multi-bin xulqi o'zgarishsiz qoladi.
     stockByCell: { findFirst: vi.fn(async () => null) },
+    // Qulf + o'chirish bitta tranzaksiyada — fake bir xil client ustida
+    // ishlaydi, ya'ni yuqoridagi holat-o'tishlari o'zgarishsiz kuzatiladi.
+    $transaction: undefined as unknown as (
+      fn: (t: unknown) => Promise<unknown>,
+    ) => Promise<unknown>,
   };
+  client.$transaction = async (fn: (t: unknown) => Promise<unknown>) => fn(client);
   const svc = new StoreAddressService({ client } as never, {} as never, {} as never);
   return { svc, products, links };
 }
