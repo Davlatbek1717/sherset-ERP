@@ -388,6 +388,18 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 >    o'sha siyosatga tayanib qolardi, o'lchanmagan; preload CSP'ga bo'ysunmaydi). Tinglovchilar
 >    passiv (`.preventDefault(` yo'q) — burchakdagi haqiqiy tugmalar to'silmaydi.
 >
+> **Keyingi to'lqin (o'sha kunning o'zida, egasi monoblokda sinab turib):** (a) juftlash/admin-kirish/
+> ombor-tanlash BUTUNLAY olib tashlandi — `pos-login` da qurilma ixtiyoriy, PIN global qidiriladi
+> (ikki moslikda RAD), do'kon/kassa hisob sukutlaridan; ikkinchi omil yo'qolgani commit'da ochiq
+> yozilgan. (b) qobiqning O'Z ekran klaviaturasi (Windows'niki Electron oynasi uchun umuman
+> chiqmadi) — kalit `sendInputEvent` bilan, chunki `input.value=` React holatini yangilamaydi.
+> (c) o'z saytimiz popup'i ichki oynada — chek chop etish `/print/...` ni tashqi brauzerda ochib
+> LOGIN so'rardi. (d) **avtoyangilanish kanali yoqildi**: `erp.sherset.uz` uchun nginx konfiguratsiyasi
+> repo'da UMUMAN yo'q edi (README «uchala konfiguratsiyada bor» degani faol prod'ga tegishli emasdi)
+> — endi `deploy/nginx-erp.sherset.uz.conf`, fayllar `/var/www/kassa-downloads/`. (e) «Jarayonda»
+> tabiga **«Tasdiqlash»** (`mark-ready`) — bu o'tishni faqat omborchi qilardi, u belgilamasa chek
+> abadiy osilib qolardi (to'lov faqat `ready` dan).
+>
 > Qo'riqchi `electron-bridge-contract.test.ts` dagi `kiosk: true` LITERAL sharti yangi niyat bilan
 > qayta yozildi (o'chirilmadi): endi bog'liqlik (`kiosk: paired`) + relaunch yo'li + imo joylashuvi
 > qulflanadi. **97/97 yashil.** Nozik joy: «preventDefault yo'q» tekshiruvi izohdagi so'zdan
