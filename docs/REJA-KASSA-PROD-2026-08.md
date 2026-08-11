@@ -72,12 +72,17 @@ Natija — egasining to'rttala shikoyati bitta sabab bilan:
 Qo'shimcha: balanslarda ikkala ishora ham bor (+461 705 000 va −183 250 000) — **ishora
 konvensiyasi hujjatlashtirilmagan**, P1 birinchi bo'lib shuni o'lchaydi.
 
-### 🔴 B. CHEK HAYOT SIKLI — kassir cheklari qotib qoladi
+### ✅ B. CHEK HAYOT SIKLI — kassir cheklari qotib qoladi *(P3 da YOPILDI, 2026-08-12)*
 
 `RetailSale` prodda: **posted=1 · picking=4 · cancelled=10**. Kassir1/2 ning barcha cheklari
 `picking`da (omborchiga yuborilgan, hech kim tayyorlamagan) ⇒ smenada `salesCount=0`,
 Z-hisobot bo'sh, KPI'ga hech nima tushmaydi. Omborchi hisobi prodda yo'q. Yana bir o'lchangan
 g'alatilik: posted chekda `payments=[CASH_UZS:8460000]` bor, lekin `payedSumMinor=0`.
+
+> **🔴 Bu tashxis CHALA edi — P3 o'lchovi asl sababni topdi.** Gap omborchida emas:
+> kassirda `retailsale.approve` YO'Q edi, ya'ni u chekni na TO'LAY, na BEKOR QILA
+> olardi (jonli probe: `POST …/post` → 403). Omborchi yo'qligi ikkinchi darajali sabab.
+> Batafsil — `## HISOBOTLAR` → P3.
 
 ### 🔴 C. SMENA — hech qachon yopilmagan
 
@@ -141,14 +146,14 @@ kod/proddan dalillangan; **[XOTIRA]** — avvalgi sessiyalarda o'lchangan (xotir
 | H2 | **POS smena ↔ davomat/soatlik KPI.** `worked_minutes` FAQAT `HrAttendance` (GPS check-in) dan; kassirda davomat yozuvi 0 → «soatiga tushum» KPI hech qachon o'lchanmaydi; POS smena vaqti davomatga oqmaydi | [O'LCHANGAN] `employee-daily-kpi.service.ts:446` (faqat hrAttendance) + prod `HrAttendance=0` (kassirlar) | **P9** (siyosat: POS smena vaqti davomat bo'lib yozilsinmi — egasi qaror qiladi) |
 | H3 | **POS xarajat (RKO) → P&L ko'rmaydi** — kassadan chiqqan xarajat foyda-zarar hisobotiga tushmaydi (MK41 qarzi) | [XOTIRA] `expense-budget-fact-sources` | **P14** |
 | H4 | **Pul daftari backfill yo'q** — `/money` va bank-balans faqat 2026-08-08 dan keyingi hujjatlarni ko'radi | [XOTIRA] `money-ledger-writers-faza11` | **P14** |
-| H5 | **Picking rezerv qilmaydimi?** — chek `picking`da turganda stock ushlab turilishi ko'rinmadi: ikkinchi kassir oxirgi donani sotib yuborishi mumkin | [SHUBHA] `sendToPicking` atrofida reserve/hold chaqiruvi topilmadi | **P3** (o'lchab, kerak bo'lsa tuzatadi) |
+| H5 | ✅ **YOPILDI (P3, 2026-08-12).** Tasdiqlandi: `sendToPicking` rezerv qilmasdi (`stock_reservations` prodda 0 qator). Endi `reserve` → `release_cancel`/`release_consume` zanjiri bor; yetishmovchilik savat bosilganda chiqadi | [O'LCHANGAN + jonli verify: reservedQty 0→1→0] | **P3 ✅** |
 | H6 | **Qaytarish ↔ qarz:** kam to'lov bilan sotilgan (qarz yozilgan) chek qaytarilsa qarz nima bo'ladi — o'lchanmagan (`retail-sale.service.ts:1319` atrofida ishlov bor, jonli sinalmagan) | [SHUBHA] | **P5** |
 | H7 | **Smena farqi → Telegram egaga:** wiring BOR (`cashier-session.service.ts:731` variance → `hrTelegramOutbox`, `toSelf`) — lekin jonli yetkazish sinalmagan va prod webhook-secret muammosi ma'lum | [O'LCHANGAN wiring + XOTIRA `telegram-webhook-fail-closed-deploy-blocker`] | **P4** |
 | H8 | **Payme/Click to'lovi → PaymentIn DRAFT** — gateway to'lovi hujjat yaratadi lekin post qilmaydi, balans o'zgarmaydi; POS QR shu gateway'ga ulansa qarz «to'langan-u to'lanmagan» bo'lib qoladi | [XOTIRA] `gateway-capture-payment-in-draft` | **P5** (QR yo'lini aniqlashda tekshiriladi) |
 | H9 | **SalesPlan: 2 plan-turida fakt manbai yo'q** — kassa tushumi rejaga oqmasligi mumkin | [XOTIRA] `sales-plan-fact-single-source` | **P9** (KPI bilan birga o'lchanadi) |
 | H10 | **KPI kunlik sana bir kun orqada** (`hr-kpi.service.ts:55` yorliq bug'i, ataylab qoldirilgan qarz) — kassir «kecha»gi balli noto'g'ri kunga tushishi mumkin | [XOTIRA] `hr-kpi-daily-date-off-by-one` | **P9** |
 | H11 | **InvoiceIn → yetkazuvchi balansi Supply-only** — kirim faktura balansdan uzilgan (kassa doirasidan tashqari, lekin balans-daftar ishonchiga tegadi) | [XOTIRA] `supplier-debt-supply-only` | ro'yxatda (alohida qaror) |
-| H12 | `payedSumMinor=0` posted chekda ham (payments bor bo'lsa ham) — o'lik maydonmi, bug'mi | [O'LCHANGAN prod] | **P3** |
+| H12 | ✅ **YOPILDI (P3, 2026-08-12).** O'lik maydon edi — RetailSale yo'lida hech kim YOZMAGAN (17/17 chekda 0). Endi `post()` `jami − qarz` yozadi. Backfill QILINMADI (eski 2 sinov cheki `payed=0` qoladi → P13) | [O'LCHANGAN prod] | **P3 ✅** |
 
 Yaxshi yangilik — tekshirilgan va **BUZILMAGAN** bog'lanishlar (qayta qurish shart emas):
 posted chek → stock kamayishi (`StockService` kaskadi) · POS naqd → `MoneyService` daftari ·
@@ -163,7 +168,7 @@ rezerv bo'shaydi (`page 997–1014`) · smena farqi → farq akti → menejer na
 |---|---|---|---|---|
 | **P1** | Qarz: POS to'lovi BALANS bo'yicha ishlaydi | api `debt`/`retail-sale` + web POS | ✅ | ✅ `bf1483da` (jonli tasdiq; brauzer-QA yo'q) |
 | **P2** | Qarz: mijoz kartasi bitta halol raqam + tarix | api + web + backfill | ✅ | ✅ `160cdcbc` (backfill 203; brauzer-QA prodda bajarildi) |
-| **P3** | Chek hayot sikli: picking-qotish + to'g'ri yo'l | api + web POS | ✅ | ☐ |
+| **P3** | Chek hayot sikli: picking-qotish + to'g'ri yo'l | api + web POS | ✅ | ✅ `3680d104` (jonli 18/18; brauzer-QA yo'q) |
 | **P4** | Smena: unutilgan smena himoyasi + jonli yopish sinovi | api + prod-op | ✅ | ☐ |
 | **P5** | To'lov turlari jonli sinovi (naqd·karta·QR·aralash·valyuta) | o'lchov + fix | kerak bo'lsa | ☐ |
 | **P6** | exe: 1.3.0 jonli o'tish · kirill · ikki-numpad | desktop + qurilma | kanal | ⚠️ kod-tomon yopildi, **qurilma sinovi yo'q** |
@@ -1083,7 +1088,130 @@ Konsolda **mening kodimdan xato yo'q**; yagona xato — aloqasiz, oldindan mavju
    uzilyapti ⇒ bildirishnomalar oqimi ishlamayotgan bo'lishi mumkin. **P10 da tekshirilsin.**
 5. `ops-p2-live-verify.ts` **READ-ONLY** — P3/P14 dan keyin regressiya tekshiruvi sifatida
    qayta yugurtiring (P1 ning `ops-p1-live-verify.ts` bilan birga).
-### P3 — ☐ hali bajarilmagan
+### P3 — Chek hayot sikli: picking-qotish + to'g'ri yo'l · 2026-08-12 · `2a1a2fb6` + `3680d104` + `51de6e5c`
+
+**Holat:** ✅ tugadi — **prodda jonli tasdiqlangan** (18/18 tekshiruv, 200 so'mlik sinov
+tovari bilan to'liq zanjir; sinov cheklari qaytarildi, ombor va kassa boshlang'ich holatda).
+Brauzer-QA (real Chrome, sensorli ekran) **bajarilmadi** — P10 ga qoladi.
+
+**🔴 Rejaning taxmini NOTO'G'RI edi — o'lchov boshqa sababni ko'rsatdi.**
+Reja «cheklar omborchi yo'qligidan qotadi» degan edi. Jonli probe (mavjud bo'lmagan
+UUID bilan, yozuvsiz) boshqasini ko'rsatdi:
+
+```
+Kassir 1 → POST /retail-sales/<id>/post   → 403 «retailsale.approve uchun kamida OWN kerak (sizda: NO)»
+Kassir 1 → POST /retail-sales/<id>/cancel → 403 (aynan shu)
+Kassir 1 → POST /retail-sales/<id>/mark-ready → 404 (ruxsat BOR)
+```
+
+Ya'ni kassir chekni yaratardi, yig'ishga yuborardi va hatto o'zi «Tayyor» qila olardi —
+lekin uni **na TO'LAY, na BEKOR QILA** olardi. Zanjir oxirida devor turardi. Prod raqamlari
+aynan shuni tasdiqlaydi: Kassir 1/2 da 4 ta `picking` chek, **0 ta posted**, `salesCount = 0`;
+ikkita posted chek — faqat Admin User'niki. Omborchi yo'qligi IKKINCHI sabab edi.
+
+**Nima o'zgardi:**
+1. **Kassir chekni to'lay va bekor qila oladi** — `cashier` shabloniga `retailsale.approve`.
+   Qaytarish esa AYNI ruxsatda o'tirardi, ya'ni bu o'zgarish kassadan pul chiqarishni ham
+   jimgina ochib yuborardi ⇒ `refund` `salesreturn.create` ga ko'chirildi (egasi qarori).
+2. **Omborchi zanjirni yopa oladi** — `storekeeper` shabloniga `retailsale` view/update/print
+   (unda `retailsale` ruxsati UMUMAN yo'q edi, `mark-ready` 403 berardi).
+3. **POS'da «Sotish» tugmasi** — picking'siz, darhol to'lov oynasi. Ilgari savatning
+   YAGONA tugmasi «Omborchiga yuborish» edi.
+4. **Yig'ishdagi chek tovarni ushlab turadi (H5)** — `send-to-picking` → `reserve`,
+   `cancel` → `release_cancel`, `post` → `release_consume` (`assertAvailable` dan OLDIN).
+   Yetishmovchilik endi savat bosilgan lahzada chiqadi, mijoz oldidagi to'lov lahzasida emas.
+5. **`payedSumMinor` yoziladi (H12)** — `jami − qarz`. Prodda 17/17 chekda 0 edi.
+6. **Smena yopish xabari** endi chek NOMI + bosqichi + summasi bilan (ilgari inglizcha son).
+
+**Egasi qarorlari (2026-08-12, savol fazada berildi):**
+| Savol | Qaror |
+|---|---|
+| Omborchi rolini kim bajaradi | **Ikkalasi** — omborchi hisobi + POS'da to'g'ridan-to'g'ri sotish |
+| Kassirga qaytarish huquqi | **Yo'q** — refund menejer/admin ishi |
+| Qotgan cheklar siyosati | **Ogohlantirish + kassir o'zi hal qiladi** (avto-bekor YO'Q) |
+| Picking'da rezerv | **Ha** — tovar band qilinsin |
+
+**Fayllar:**
+- `apps/api/src/modules/permissions/role-templates.ts` → kassir `approve`, omborchi `retailsale`
+- `apps/api/src/modules/retail-sale/retail-sale.controller.ts` → `refund` → `salesreturn.create`
+- `apps/api/src/modules/retail-sale/retail-sale.service.ts` → `sendToPicking` rezerv qiladi ·
+  `cancel` bo'shatadi · `post` yutadi + `payedSumMinor` yozadi · yig'ish topshirig'i `storeId`
+  zaxirasi smenadan (chek `storeId`i prodda 17/17 hollarda NULL)
+- `apps/api/src/modules/stock/stock.service.ts` → `releaseReservationByDoc` endi
+  «bo'shatildimi» qaytaradi (qoldiq faqat kerak bo'lganda qayta o'qiladi)
+- `apps/api/src/modules/cashier-session/unresolved-sales.ts` (yangi) + `cashier-session.service.ts`
+- `apps/web/src/app/(app)/sotuv/page.tsx` → «Sotish» tugmasi · kioskda qaytarish yashirin
+- `apps/web/src/messages/{ru,uz}.json` → `sell_direct`, `sell_direct_hint`
+- `apps/api/src/scripts/ops-p3-{role-topup,live-verify,cancel-stuck-sales}.ts` (yangi, DRY sukut)
+
+**Testlar (yangi, 48 ta):**
+- `retail-sale-lifecycle-permissions.test.ts` (15) — HAQIQIY guard + HAQIQIY matritsa.
+  **Bo'sh emasligi tekshirildi:** shablondan `approve` vaqtincha olib tashlanganda test
+  aynan prod bug'ini ko'rsatib QIZIL bo'ldi («post», «cancel» yopiq bo'g'in sifatida).
+- `retail-sale-picking-reserve.test.ts` (11) — rezerv/bo'shatish/yutish + TARTIB
+  (`release_consume` `assertAvailable` dan oldin — aks holda chek o'z rezervi bilan o'zini bloklardi)
+- `retail-sale-payed-sum.test.ts` (4) · `unresolved-sales.test.ts` (9) ·
+  `sales-screen-direct-sell.test.tsx` (6) · `chek-detail-panel.test.tsx` +3 (kiosk refund)
+
+**Gate:** typecheck 10/10 ✅ · lint:product 0 error ✅ · i18n:gate ru+uz ✅ ·
+`vitest run` api **8095 passed** ✅ · web **3640 passed** ✅
+
+**Deploy:** ✅ `3680d104` → box HEAD = lokal HEAD · sayt 200 · api health 200 ·
+chunk-grep `sotuv-sell-direct` yangi bundle'da topildi (`page-8e1a50524ac0c7d1.js`).
+
+**Prod-op qadamlar (hammasi DRY dan keyin):**
+1. `ops-p3-role-topup.ts --apply` → «Kassir» roliga `retailsale.approve = ALL` (1 qator).
+   *(Umumiy `template-topup` YARAMAYDI: uning qoidasi «entity bo'yicha qator bo'lsa
+   chetlab o't», kassirda esa `retailsale` qatorlari allaqachon bor edi.)*
+   `storekeeper` shablonli rol prodda **YO'Q** — omborchi hali yollanmagan.
+2. `ops-p3-live-verify.ts --live` → **18/18 ✅**:
+   `picking` rezerv qildi (reservedQty 0→1) · mark-ready · **kassir to'ladi (201)** ·
+   `payedSum 200 = sum 200` · rezerv yutildi (1→0) · qoldiq 1000→999 ·
+   **smenaga tushdi (salesCount 0→1)** · to'g'ridan-to'g'ri sotuv rezervsiz ·
+   **kassir bekor qildi (201)** + rezerv bo'shadi · **kassir refund 403** ·
+   sinov cheklari admin bilan qaytarildi, ombor 1000 ga qaytdi.
+3. `ops-p3-cancel-stuck-sales.ts --apply` → 6 qotgan chek bekor qilindi
+   (ТРН-2026-00010/11/12/13/17 + verifyning birinchi urinishidan qolgan 00020).
+
+**Prod holati (P3 dan keyin, o'lchangan):** `picking = 0 · ready = 0 · draft = 0` ·
+rezerv jurnali net `0` · `reserved_qty <> 0` qatorlar `0` · Kassir 1 smenasi
+`salesCount 2 / 400 so'm`, `returns 2 / 400 so'm` (sof ta'sir **0**).
+
+**Nima QILINMADI (ataylab):**
+- **Brauzer-QA yo'q.** Butun verify HTTP + DB darajasida. Real Chrome/sensorli monoblokda
+  «Sotish» tugmasi, to'lov oynasi va kioskda yashirilgan qaytarish **ko'z bilan
+  ko'rilmagan** → **P10**.
+- **`payedSumMinor` BACKFILL qilinmadi.** Tuzatish faqat OLDINGA ishlaydi: eski ikki posted
+  chek (ТРН-2026-00007 = 84 600 so'm, ТРН-2026-00016 = 32 000 so'm) hamon `payed = 0`.
+  Ular go-live oldidan tozalanadigan sinov cheklari (**P13**) — backfill yozmadim.
+- **Omborchi hisobi YARATILMADI.** Shablon tayyor (`storekeeper` endi `retailsale` ni
+  ko'radi va «Tayyor» qila oladi), lekin prodda bunday rol ham, xodim ham yo'q va
+  `sklad_keepers` = **0 qator** ⇒ yig'ish topshirig'i hamon YARATILMAYDI (servis warn
+  yozib chiqib ketadi). Bu **bloker emas**: kassir «Sotish» bilan sotadi va kerak bo'lsa
+  «Jarayonda» dagi chekni o'zi «Tayyor» qiladi. Omborchi yollanganda:
+  rol shablondan → xodim → `Settings → Sklad-keepers` da biriktirish.
+- **Ikki kassa bilan poyga sinovi qilinmadi** — rezerv unit testlarda qulflangan
+  (`assertAvailable` locked balanslar ustida), lekin ikki jonli kassa bilan bir vaqtda
+  oxirgi donani olish sinalmagan → **P10**.
+- **Qarzli/valyutali chekda `payedSumMinor`** unit testlarda qulflangan, prodda faqat
+  to'liq naqd yo'l o'lchandi → **P5**.
+
+**Ochiq xavf / keyingi fazaga eslatma:**
+1. 🔴 **VPS zaxirasi 2026-08-09 dan beri HAR KUNI o'tkazib yuborilmoqda** (P3 doirasidan
+   tashqari, lekin jiddiy). `/var/log/sherset-backup.log`: «diskda 10 GB dan kam joy —
+   zaxira o'tkazib yuborildi» (09, 10, 11-avgust). Disk 90% (11G bo'sh), `/var/backups/sherset`
+   26G va 1–7-avgust dumplari yotibdi; skriptning `-mtime +5` tozalashi dumpdan KEYIN
+   turgani uchun o'zini-o'zi qulflaydigan halqa hosil bo'lgan. **Zaxira fayllarini
+   o'chirmadim — bu egasining qarori.** Bir marta ~21G bo'shatilsa halqa uziladi.
+2. `orders_filter_paid` i18n kaliti YO'Q (`pages.sotuv`) — zakaz holati `paid` bo'lganda
+   ekranda `MISSING_MESSAGE`. Dinamik kalit bo'lgani uchun i18n gate ko'rmaydi → **P8**.
+3. `CashDesk` prodda hamon **2 ta va ikkalasi «Asosiy kassa»** (§1.G) — P3 tegmadi.
+4. `ops-p3-live-verify.ts` **DRY rejimida read-only** — P4/P5/P14 dan keyin regressiya
+   tekshiruvi sifatida qayta yugurtirilsin (`--live` esa yana 3 ta sinov cheki yaratadi).
+5. Omborchi zanjiri kod tomondan endi TO'LIQ, lekin **hech qachon uchdan-uchgacha
+   yugurtirilmagan** (omborchi hisobi yo'q): `sklad_keepers` to'ldirilgan holatda
+   topshiriq yaratish → omborchi paneli → «Tayyor» yo'li **sinalmagan** → **P10**.
+
 ### P4 — ☐ hali bajarilmagan
 ### P5 — ☐ hali bajarilmagan
 ### P6 — exe: 1.3.0 jonli o'tish · kirill · ikki-numpad · 2026-08-11 · `33730b2f`
