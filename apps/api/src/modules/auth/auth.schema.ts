@@ -121,6 +121,22 @@ export const SetPosPinSchema = z.object({
 export type SetPosPinInput = z.infer<typeof SetPosPinSchema>;
 
 /**
+ * Admin boshqa xodimga PIN qo'yishi / O'CHIRISHI.
+ *
+ * `null` ATAYLAB ruxsat etilgan: xodim ketganda PIN olib tashlanishi kerak,
+ * aks holda uning kassaga kirish yo'li ochiq qolardi. Bo'sh satr (`''`) esa
+ * rad etiladi — u «o'chirish» degan NIYATNI bildirmaydi, ko'pincha tozalanmagan
+ * forma maydoni bo'ladi.
+ */
+export const SetEmployeePosPinSchema = z.object({
+  pin: z
+    .string()
+    .regex(/^\d{4,6}$/, 'PIN 4-6 raqamdan iborat bo`lishi kerak')
+    .nullable(),
+});
+export type SetEmployeePosPinInput = z.infer<typeof SetEmployeePosPinSchema>;
+
+/**
  * Kassa qurilmasidan PIN bilan KIRISH (tokensiz endpoint).
  *
  * `deviceSecret` majburiy: PIN'da foydalanuvchi nomi yo'q, shuning uchun

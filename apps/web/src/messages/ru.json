@@ -7530,7 +7530,16 @@
       "telegram_no_bot": "Сначала подключите бота в Настройки → Telegram",
       "telegram_unlink": "Отвязать Telegram",
       "telegram_unlinked": "Telegram отвязан",
-      "unarchive": "Извлечь из архива"
+      "unarchive": "Извлечь из архива",
+      "pos_pin_title": "PIN-код кассы",
+      "pos_pin_hint": "Кассир входит в кассу по этому PIN. 4–6 цифр.",
+      "pos_pin_status": "Статус",
+      "pos_pin_status_set": "задан",
+      "pos_pin_status_none": "не задан",
+      "pos_pin_invalid": "PIN должен состоять из 4–6 цифр",
+      "pos_pin_saved": "PIN сохранён",
+      "pos_pin_cleared": "PIN удалён",
+      "pos_pin_clear": "Удалить PIN"
     },
     "company_settings": {
       "country_section": "Страна для базовых настроек",

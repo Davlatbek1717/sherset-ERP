@@ -38,6 +38,7 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 import { AccessSettingsModal } from './access-settings-modal';
 import { EmployeeHistoryLink } from './employee-history-link';
+import { PosPinModal } from './pos-pin-modal';
 import { ResetPasswordModal } from './reset-password-modal';
 import { RoleAccessInline } from './role-access-inline';
 
@@ -336,6 +337,7 @@ export function EmployeeCard({ id }: { id?: string }) {
   const [newUsername, setNewUsername] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [passwordOpen, setPasswordOpen] = useState(false);
+  const [posPinOpen, setPosPinOpen] = useState(false);
   const [rightsOpen, setRightsOpen] = useState(false);
   // Faza D1 — «Telegram ulash» bosilganda ko'rsatiladigan deep-link.
   const [tgLink, setTgLink] = useState<string | null>(null);
@@ -923,13 +925,23 @@ export function EmployeeCard({ id }: { id?: string }) {
                   </div>
                 </FieldRow>
                 {!isNew && (
-                  <div className="pl-[132px]">
+                  <div className="flex gap-2 pl-[132px]">
                     <Button
                       variant="secondary"
                       onClick={() => setPasswordOpen(true)}
                       data-testid="employee-reset-password"
                     >
                       {t('reset_password')}
+                    </Button>
+                    {/* Kassa PIN — kassir kiosk rejimida sozlamalarga kira
+                        olmaydi, shuning uchun PIN'ni AYNAN shu yerdan admin
+                        qo'yadi (2026-08-11 gacha bunday joy umuman yo'q edi). */}
+                    <Button
+                      variant="secondary"
+                      onClick={() => setPosPinOpen(true)}
+                      data-testid="employee-pos-pin"
+                    >
+                      {t('pos_pin_title')}
                     </Button>
                   </div>
                 )}
@@ -1197,6 +1209,9 @@ export function EmployeeCard({ id }: { id?: string }) {
           currentUsername={employee?.username ?? ''}
           onDone={() => qc.invalidateQueries({ queryKey: ['employee-card'] })}
         />
+      )}
+      {!isNew && id && (
+        <PosPinModal open={posPinOpen} onOpenChange={setPosPinOpen} employeeId={id} />
       )}
       <AccessSettingsModal
         open={rightsOpen}

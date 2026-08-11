@@ -3,6 +3,7 @@ import {
   Controller,
   Get,
   Inject,
+  Param,
   Patch,
   Post,
   Req,
@@ -19,6 +20,7 @@ import {
   ChangePasswordSchema,
   PairPosDeviceSchema,
   PosLoginSchema,
+  SetEmployeePosPinSchema,
   SetPosPinSchema,
   UpdateMeSchema,
 } from './auth.schema.js';
@@ -199,6 +201,49 @@ export class AuthController {
   setPosPin(@CurrentUser() user: AuthenticatedUser, @Body() body: unknown) {
     const { pin } = SetPosPinSchema.parse(body);
     return this.posPin.setPin(user.accountId, user.sub, pin);
+  }
+
+  /**
+   * ADMIN boshqa xodimga PIN qo'yadi / o'chiradi (2026-08-11).
+   *
+   * 🔴 NEGA KERAK: yuqoridagi `POST pos-pin` FAQAT o'ziga ishlaydi (`user.sub`),
+   * kassir esa kiosk rejimida — u sozlamalarga umuman kira olmaydi. Natijada
+   * yangi kassir qo'shilganda PIN qo'yadigan joy HECH QAYERDA yo'q edi va PIN
+   * faqat ops-skript bilan yozilardi (egasi 2026-08-11 da aynan shunga urildi).
+   *
+   * `employee.update` — parol tiklash bilan bir xil daraja: PIN kassa hisobiga
+   * kirish yo'li, ya'ni xodim boshqaruvi amali.
+   *
+   * `pin: null` → PIN o'chiriladi (xodim ketganda kirish yo'li yopilsin).
+   */
+  // 🔴 Dekorator TARTIBI: marshrut (`@Post`) BIRINCHI. `pos-endpoint-guards`
+  // qo'riqchisi blokni `@Post(...)` qatoridan metod imzosigacha o'qiydi —
+  // undan yuqorida turgan `@UseGuards`/`@RequirePermission` ni KO'RMAYDI va
+  // himoyalangan endpoint «qo'riqchisiz» bo'lib ko'rinardi (aksincha emas,
+  // ya'ni test yolg'on qizarardi). `pos-device/pair` ham shu tartibda.
+  @Post('pos-pin/employee/:employeeId')
+  @UseGuards(JwtAuthGuard)
+  @RequirePermission({ entity: 'employee', action: 'update' })
+  setEmployeePosPin(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('employeeId') employeeId: string,
+    @Body() body: unknown,
+  ) {
+    const { pin } = SetEmployeePosPinSchema.parse(body);
+    return pin === null
+      ? this.posPin.clearPin(user.accountId, employeeId)
+      : this.posPin.setPin(user.accountId, employeeId, pin);
+  }
+
+  /** Xodimda PIN bormi (admin ko'rinishi) — qiymat hech qachon qaytmaydi. */
+  @Get('pos-pin/employee/:employeeId')
+  @UseGuards(JwtAuthGuard)
+  @RequirePermission({ entity: 'employee', action: 'view' })
+  hasEmployeePosPin(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('employeeId') employeeId: string,
+  ) {
+    return this.posPin.hasPin(user.accountId, employeeId);
   }
 
   /**
