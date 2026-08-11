@@ -389,7 +389,129 @@ uchalasi ham jonli.
 - Prod DB'da **test kassirlari va qoldiq 1000** turibdi (11b entry + xotira) — F2/F4 jonli sinovida
   bu ma'lumotlar sun'iy ekanini yodda tut.
 
-### F2 — ☐ hali bajarilmagan
+### F2 — Savat qatori tahrir oynasi (sensorli) · 2026-08-11 · `913e3c2a`
+
+**Holat:** ✅ tugadi — kod, gate, deploy va jonli verify bajarildi. **Phase-1: browser-smoke YO'Q.**
+
+**Nima o'zgardi:**
+- Savat qatorining **nomini bosish** endi katta numpadli oynani ochadi: soni · narx · «O'chirish» ·
+  «Saqlash». Monoblokda 24×24px −/+ tugmalarini 12 marta bosish o'rniga son to'g'ridan-to'g'ri kiritiladi.
+- Oyna narx tasmasini (ZARAR / optomdan past / «tushirildi») va qator jamisini **jonli** ko'rsatadi —
+  kassir narxni oynada tushirsa, ogohlantirish savatda qolib ketmaydi.
+- Savat narxining parse'i **yagona** bo'ldi: sahifa endi to'lov oynasi bilan bir xil
+  `parseAmountToMinor(input, tillCurrency)` ishlatadi.
+- Zakazga bog'langan (qulflangan) savatda oyna **faqat ko'rish** — qulf mantiqi o'zgarmadi.
+
+**Fayllar:**
+| Yo'l | Nima qilindi |
+|---|---|
+| `apps/web/src/components/pos/cart-line-edit-modal.tsx` | **YANGI** (412 satr) — oyna. `sotuv/page.tsx` ichiga yozilmadi (MK33 qarzi o'smasin) |
+| `apps/web/src/components/pos/__tests__/cart-line-edit-modal.test.tsx` | **YANGI** — 18 test (TDD, avval yozildi) |
+| `apps/web/src/app/(app)/sotuv/page.tsx` | trigger tugmasi + `editingProductId` holati + `applyLineEdit` + oynani ulash; `updatePrice` parse'i birlashtirildi |
+| `apps/web/src/app/(app)/sotuv/__tests__/sales-screen-cart.test.tsx` | +7 test (6 ta ulanish + 1 ta parse-birlashtirish) |
+| `apps/web/src/app/(app)/sotuv/__tests__/sales-screen-order-payment.test.tsx` | qulflangan-savat testi niyat darajasiga ko'tarildi (quyida) + 1 yangi test |
+| `apps/web/src/__tests__/raw-element-conventions.test.ts` | yangi fayl EXEMPT reyestriga sabab bilan qo'shildi |
+| `apps/web/src/messages/{ru,uz}.json` | 4 yangi kalit ×2 til (`line_edit_title/qty/locked/open`) |
+| `NEXT.md` · `docs/REJA-KASSIR-EXE-2026-08.md` | `2026-08-11d` entry + shu hisobot |
+
+**Qayta ishlatilgan (yangidan YOZILMAGAN):** `lib/pos/cart-math.ts` → `normalizeQtyDecimal`,
+`cartLineRevenueMinor`, `cartLineMarkdownMinor` · `lib/pos/parse-amount.ts` → `parseAmountToMinor` ·
+`@moysklad/money` → `classifyPrice` · numpad naqshi `rasmilashtirish-modal.tsx` dan. Ya'ni oynadagi
+raqam savat qatoridagi raqam bilan **bir manbadan** keladi.
+
+**Testlar:**
+- `vitest run src/components/pos/__tests__/cart-line-edit-modal.test.tsx` → **18 passed**
+  (RED avval o'lchangan: modul yo'qligidan yiqildi, keyin har qadam)
+- POS to'plami (`sotuv/__tests__` + `components/pos/__tests__` + `lib/pos` + `pos-cart-profit`) →
+  **305 passed** (20 fayl)
+- To'liq web suite → **3540 passed | 26 skipped (3566)**, 249 fayl, **0 failed**
+
+**Gate:** typecheck ✅ **10/10** · lint:product ✅ **0 error** (849 warning, siyosat bo'yicha ruxsat) ·
+i18n:gate ✅ **9/9** (475 fayl, 13004 kalit) · web vitest ✅ **3540**
+
+**Deploy:** ✅ qilindi — `git push sherset climart-adoption` (`3a3aadec..913e3c2a`) →
+`DS_TARGET=v2 deploy-smart.sh` → `Deploy done: 992fff98… → 913e3c2a…`.
+
+Jonli verify dalillari:
+| Tekshiruv | Natija |
+|---|---|
+| Box `git rev-parse HEAD` = lokal HEAD | `913e3c2a` = `913e3c2a` ✅ |
+| `.next/BUILD_ID` mtime | **2026-08-11 13:22:26 +0200** (deploy'dan keyin) |
+| `https://erp.sherset.uz/` · `/api/v1/health` | **200** · **200** |
+| Yangi kod **ochiq xizmatda** | `GET /_next/static/chunks/app/(app)/sotuv/page-9052463d….js` → **200, 117 406 b**, ichida `pos-line-edit` |
+| Yangi i18n kalitlari build ichida | `line_edit_title` + `line_edit_locked` → sotuv chunk'i + `server/chunks/{1099,5153}.js` + `server/app/(app)/sotuv/page.js` |
+| pm2 | `sherset-v2-web` online (restart bo'ldi, uptime 337s) · `sherset-v2-api` online (uptime 23 707s — **restart YO'Q va to'g'ri**: bu commitda backend o'zgarmagan) |
+| `api.err.log` / `web.err.log` | oxirgi qatorlar bo'sh — deploy'dan keyin yangi xato yo'q |
+| Migratsiya | `No pending migrations to apply` |
+| Disk | deploy oldidan **12G bo'sh (88%)** — F1 ogohlantirgan bloker parallel sessiya tomonidan yopilgan (`3a3aadec`) |
+
+**Qabul qilingan qarorlar (reja so'ragan asoslar):**
+
+1. **Mavjud −/+ va ichki narx maydoni QOLDIRILDI** (reja §3 tanlovi). Sabablari: (a) MK32 ularni
+   ataylab **xarakteristika** sifatida qulflagan — olib tashlash 8+ testni qayta yozishni talab qilardi
+   va MK33 bo'linishining qabul mezonini buzardi; (b) bu ekran sichqonchali ish o'rnida ham ishlatiladi;
+   (c) yo'qotish riski real, foyda esa kosmetik. Oyna — **qo'shimcha yo'l**, almashtiruvchi emas.
+2. **Trigger = qator NOMI, butun qator EMAS.** Butun qator bosiladigan bo'lsa, ichidagi narx maydoniga
+   yoki ± tugmasiga tegish ham oynani ochib yuborardi.
+3. **Numpadning birinchi bosishi maydonni ALMASHTIRADI** (kassa terminallarining odatiy xulqi).
+   Aks holda kassir avval ⌫ bilan tozalashi kerak bo'lardi — ya'ni oyna hal qilayotgan muammoning
+   o'zi qaytardi. `⌫` bu rejimni uzadi (u aynan mavjud qiymatni tahrirlash uchun).
+4. **Miqdor maydoni `type="text"`** (`number` EMAS): `number` oraliq «1.» holatini yeydi va kasr
+   miqdor kiritib bo'lmasdi (FE-02 sabog'i).
+
+**Parse birlashtirish — O'LCHANGAN farq (reja §4: «avval o'lchab, keyin o'zgartir»):**
+
+Eski: `BigInt(Math.round(Number.parseFloat(input…) * 100))` · Yangi: `parseAmountToMinor(input, tillCurrency)`
+
+| Kiritma | Eski | Yangi | |
+|---|---|---|---|
+| `10000` · `10.5` · `1 000` · `10,50` · `10.999` · `abc` · `''` · `-5` · `00012` | bir xil | bir xil | 9 holat mos |
+| `12abc` | **1 200** | **0** | ekranda «12abc», chekka 12 so'm ketardi |
+| `.5` | 50 | 0 | |
+| `15,000.50` | 1 500 | 0 | aralash guruh-ajratgich |
+| 0 kasrli valyuta (JPY) `10000` | **1 000 000** | **10 000** | `× 100` qattiq scale — narx 100× shishardi |
+
+Uch farqning hammasi **qat'iyroq** yo'nalishda va K-3 shartnomasining ruhiga mos («ko'ringan narsa =
+yuboriladigan narsa»). Scale farqi hozir uxlab yotgan bug: `tillCurrency` `session.cashDesk.currency`
+dan keladi va u istalgan `CurrencyCode` bo'lishi mumkin.
+
+**🔴 O'LCHANGAN FAKT — qulflangan savat erishilmas:** `payingOrderId` FAQAT `setCheckoutOpen(true)`
+bilan birga qo'yiladi (`page.tsx:1416/1420`) va rasmiylashtirish oynasi yopilganda darhol tozalanadi
+(`page.tsx:2889-2893`). Ya'ni **qulflangan savat har doim ochiq modal ortida turadi** — Radix fon
+ustiga `pointer-events: none` qo'yadi va qatorni bosib bo'lmaydi. Shuning uchun:
+- oynaning `readOnly` shartnomasi **komponent darajasida** qulflandi (2 test), sahifa darajasida esa
+  faqat trigger mavjudligi tekshiriladi — «bosib ochish» testi jismonan imkonsiz edi va uni majburlash
+  yolg'on-yashil test bo'lardi;
+- `readOnly={cartLocked}` ulanishi — **himoya qatlami** (hozir erishilmas yo'l), qulfning ikkinchi
+  eshigi ochilib qolmasligi uchun.
+
+**Nima QILINMADI:**
+1. **BROWSER-SMOKE / QURILMA SINOVI YO'Q.** Oyna real monoblokda (yoki umuman brauzerda) bosib
+   ko'rilmagan — hammasi jsdom testlari va prod chunk grep'i. «Marshrut javob beradi + kod build
+   ichida» tasdiqlangan; «kassir barmog'i bilan ishlaydi» **tasdiqlanmagan**. Egasi sinaydi.
+2. **Chegirma oynaga chiqarilmadi** — qator-darajasidagi chegirma hozir savatda ham yo'q (u chek
+   darajasida), ya'ni bu yangi funksiya bo'lardi. Reja so'ramagan.
+3. **Miqdor uchun «Aniq summa» ekvivalenti (qoldiq bo'yicha auto-to'ldirish) qo'shilmadi** — savat
+   qatori uchun ma'nosiz (qoldiq tushunchasi yo'q).
+4. **`sotuv/page.tsx` bo'linmadi (MK33)** — F2 doirasidan tashqarida; yangi kod ataylab tashqariga
+   chiqarildi, ya'ni qarz **o'smadi** (sahifa +102 satr: trigger, holat, ulanish, izohlar).
+5. **API testlari yugurtirilmadi** — bu commitda `apps/api` ga tegilmagan (0 fayl). Web-only gate
+   yetarli (`web-only-gate-misses-api-guards` xotirasi teskari yo'nalishda: bu yerda API diff YO'Q).
+6. **Sahifadagi eski inline narx maydoni saqlanib qoldi** — yuqoridagi 1-qaror bo'yicha ataylab.
+
+**Ochiq xavf / keyingi fazaga eslatma:**
+- ⚠️ **Rasmiylashtirish oynasi yopilganda savat pozitsiyalari QOLADI, zakaz bog'lanishi esa uziladi**
+  (`page.tsx:2889-2893`). Ya'ni zakazdan yuklangan tovarlar oddiy chek bo'lib sotilishi mumkin
+  (zakazga bog'lanmagan holda). Bu **qulf chetlab o'tilishi EMAS** (chek zakazga umuman ulanmaydi),
+  lekin xulq hujjatlashtirilmagan edi — F2 da o'lchandi, o'zgartirilmadi.
+- ⚠️ Oyna narx maydonida **12 belgi chegarasi** bor (`MAX_LEN`). 12 xonali narx = 10 mlrd so'm;
+  amalda yetarli, lekin bu jim chegara — kassir 13-raqamni bossa hech nima bo'lmaydi.
+- 🔴 **F3 (qobiq klaviaturasi) uchun to'g'ridan-to'g'ri bog'liqlik:** bu oynadagi maydon
+  `inputMode="decimal"` — F3 rejasining 1-bandi aynan shu atributga qarab **numpad layout** tanlaydi.
+  Ya'ni F3 dan keyin monoblokda bu maydonga fokus tushganda qobiqning QWERTY klaviaturasi emas,
+  numpad chiqishi kerak. F3 sinovida shu ekranni tekshirish arzon va aniq mezon.
+- Prod DB'da hamon **test kassirlari va qoldiq 1000** turibdi (11b/11c entry) — qurilma sinovida
+  bu ma'lumotlar sun'iy ekanini yodda tut.
 
 ### F3 — ☐ hali bajarilmagan
 

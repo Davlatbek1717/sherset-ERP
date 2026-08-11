@@ -331,6 +331,29 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-08-11d (F2 · REJA-KASSIR-EXE · savat qatori tahrir oynasi · ✅ DEPLOYED) —**
+> **`913e3c2a` prodda** (`Deploy done: 992fff98… → 913e3c2a…`, BUILD_ID 2026-08-11 13:22 +0200).
+> Monoblokda savat qatoridagi −/+ 24×24px va narx maydoni 96px edi — 12 dona tovar = 12 marta bosish.
+> Endi **qator nomini bosish katta numpadli oynani ochadi** (soni · narx · O'chirish · Saqlash):
+> `components/pos/cart-line-edit-modal.tsx` (yangi, `page.tsx` ichiga YOZILMADI — MK33 qarzi o'smasin).
+>
+> **Qulflangan shartnomalar** (18 komponent + 6 sahifa testi): miqdor DECIMAL SATR (`BigInt(1.5)`
+> RangeError klassi) · narx bo'sh/buzuq → `0n`, eski narx EMAS (K-3) · soni 0 → qator o'chadi ·
+> `cartLocked` (zakaz) → oyna faqat ko'rish · numpadning birinchi bosishi maydonni almashtiradi.
+>
+> **Parse birlashtirildi** (reja §4): `updatePrice` o'z nusxasini yozardi (`parseFloat × 100`).
+> O'lchangan farqlar: `«12abc»` → 1 200 tiyin (ekranda «12abc», chekka 12 so'm) · `«.5»` → 50 ·
+> `«15,000.50»` → 1 500; `× 100` qattiq scale 0 kasrli valyutada narxni 100× shishirardi.
+> Endi ikkalasi ham `parseAmountToMinor(input, tillCurrency)`.
+>
+> **Gate:** typecheck 10/10 · lint:product 0 error (849 warning) · i18n:gate 9/9 ·
+> web vitest **3540 passed / 26 skipped, 0 failed** (249 fayl).
+> **Jonli verify:** box HEAD = lokal HEAD `913e3c2a` · erp.sherset.uz 200 · `/api/v1/health` 200 ·
+> yangi kod ochiq xizmatda (`/_next/static/chunks/app/(app)/sotuv/page-9052463d….js` → 200,
+> ichida `pos-line-edit`) · pm2 ikkalasi `online` · api/web `err.log` da yangi xato yo'q.
+> 🔴 **BROWSER-SMOKE YO'Q** — oyna real qurilmada bosib ko'rilmagan (Phase-1).
+> Keyingisi: **F3** (qobiq klaviaturasi) — `docs/REJA-KASSIR-EXE-2026-08.md`.
+
 > **🕒 2026-08-11c (F1 · REJA-KASSIR-EXE · ✅ DEPLOYED tasdiqlandi · kod o'zgarmadi) —**
 > **`eb5dee41 → 992fff98` (11 commit: F8 zakazni to'lash · F9 mijoz kartasi · xodim PIN modali)
 > prodda.** 🔴 Muhim: bu deploy'ni **oldingi sessiya allaqachon qilgan edi** (box `/tmp/deploy.log`:
