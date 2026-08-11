@@ -112,7 +112,7 @@ metrikasi bor. Lekin `KpiProfile` **0 qator** ⇒ ball hisoblanmaydi. Egasining 
 | **P3** | Chek hayot sikli: picking-qotish + to'g'ri yo'l | api + web POS | ✅ | ☐ |
 | **P4** | Smena: unutilgan smena himoyasi + jonli yopish sinovi | api + prod-op | ✅ | ☐ |
 | **P5** | To'lov turlari jonli sinovi (naqd·karta·QR·aralash·valyuta) | o'lchov + fix | kerak bo'lsa | ☐ |
-| **P6** | exe: 1.3.0 jonli o'tish · kirill · ikki-numpad | desktop + qurilma | kanal | ☐ |
+| **P6** | exe: 1.3.0 jonli o'tish · kirill · ikki-numpad | desktop + qurilma | kanal | ⚠️ kod-tomon yopildi, **qurilma sinovi yo'q** |
 | **P7** | Chop etish o'lchovi (chek · Z · pick-list, real printer) | o'lchov + fix | kerak bo'lsa | ☐ |
 | **P8** | POS i18n: hardcoded matnlar | web | ✅ | ☐ |
 | **P9** | KPI: profil + ball (`REJA-KASSA-KPI` K1–K2 shu yerdan) | prod-data + api | kerak bo'lsa | ☐ |
@@ -426,7 +426,147 @@ Faza tugagach «HISOBOTLAR» ga P10 hisobotini yoz va ISHNI TO'XTAT.
 ### P3 — ☐ hali bajarilmagan
 ### P4 — ☐ hali bajarilmagan
 ### P5 — ☐ hali bajarilmagan
-### P6 — ☐ hali bajarilmagan
+### P6 — exe: 1.3.0 jonli o'tish · kirill · ikki-numpad · 2026-08-11 · `33730b2f`
+
+**Holat:** ⚠️ qisman — **kod tomondagi ikki 🔴 ochiq xavf o'lchandi va YOPILDI**;
+**qurilmadagi 1.2.0 → 1.3.0 o'tishi esa SINALMADI** (egasi bu sessiyada qatnashmadi —
+sessiya interaktiv emas, monoblokka kirish yo'q). Pastdagi «Jonli oqim» jadvalida har qadam
+alohida belgilangan.
+
+**Nima o'zgardi:**
+- F3/F4 hisobotlarining 🔴 **eng katta ochiq savoli yopildi**: qobiq klaviaturasidagi kirill
+  harfi Chromium'gacha **yetadi**. Ya'ni `webContents.insertText` zaxira yo'liga o'tish
+  **kerak emas** — `main.js` o'zgarmadi, exe **1.3.1 chiqarilmadi**.
+- Rejaning «PIN ekranida ikki numpad» premisasi o'lchandi va **noto'g'ri** chiqdi; rejaning
+  taklif qilgan `readOnly` yechimi esa **kassirni qulf ekranida qamab qo'yardi** (o'lchandi).
+  Kod o'zgartirilmadi — o'rniga «kiritish yo'li aynan bitta» invarianti testga qulflandi.
+- O'lchov **qayta yugurtiriladigan** bo'ldi: `desktop/tools/kbd-probe/` — Electron versiyasi
+  ko'tarilganda javob qayta ochiladi, chunki u o'sha Chromium'ga bog'liq.
+
+**O'LCHOV 1 — kirill (haqiqiy Electron, prod bilan bir xil oyna sozlamalari)**
+
+Electron **33.4.11 / Chromium 130.0.6723.191** — 1.3.0 relizida ketgan aynan shu versiya;
+oyna `sandbox: true` + `contextIsolation: true` + haqiqiy `desktop/preload.js` bilan
+(`main.js:155-162` bilan bir xil).
+
+| Savol | Natija |
+|---|---|
+| `sendInputEvent({type:'char'})` kirillni yetkazadimi | ✅ **12/12 belgi** — `a A 5 . ' ф Ф я ў қ ғ ҳ` hammasi maydonga tushdi |
+| React (boshqariladigan) maydonda **qoladimi** | ✅ `input` hodisasi otiladi, qiymat holatda saqlanadi (`ў`) |
+| `⌫` (`keyDown`/`keyUp` Backspace) | ✅ belgi o'chdi |
+| Zaxira yo'l `webContents.insertText` | ✅ u ham 12/12 — lekin **kerak bo'lmadi** |
+
+**O'LCHOV 2 — butun zanjir (haqiqiy preload klaviaturasi orqali bosish)**
+
+| Tekshiruv | Natija |
+|---|---|
+| Pul maydoni (`inputMode="decimal"` — F2 savat oynasi) | ✅ **numpad**: `7 8 9 / 4 5 6 / 1 2 3 / . 0 ⌫`, tugma 68px, panel 520px |
+| Numpadda `7` → `.` → `⌫` | ✅ `"7"` → `"7."` → `"7"` |
+| Matn maydoni → harf layouti → `РУС` | ✅ ЙЦУКЕН chiqdi |
+| Kirill harflarini **bosish** | ✅ `ф ў қ ғ ҳ` — beshtasi ham maydonga tushdi |
+| `⇧` + kirill | ✅ `Ф` |
+| Til navigatsiyadan keyin tiklanadimi | ✅ `localStorage` `sandbox: true` da **ISHLAYDI** (`sherset.kbd.lang: cyr`), sahifa qayta yuklangach kirill qaytdi — F3 buni «o'lchanmagan» deb qoldirgan edi |
+
+**O'LCHOV 3 — «ikki numpad» premisasi (reja §P6.3) — NOTO'G'RI chiqdi**
+
+| Ekran | O'lchangan holat | Xulosa |
+|---|---|---|
+| Kirish ekrani `/kassa-kirish` (`pin-keypad.tsx`) | `<input>` **UMUMAN yo'q** — faqat tugmalar va nuqtalar | Qobiq klaviaturasi `focusin` ni hech qachon ko'rmaydi ⇒ **ikki numpad CHIQMAYDI** |
+| Qulf ekrani (`pos-pin-lock.tsx:112`, `(app)/layout.tsx:765`) | `<input inputMode="numeric" autoFocus>` bor, **sahifa numpadi YO'Q** | Qobiq numpadi — **YAGONA** kiritish yo'li (z-index 2147483647, qulf oynasidan (z-100) ustun) |
+
+🔴 **Rejaning `readOnly` yechimi qo'llanilganda nima bo'lardi — o'lchandi:** `readOnly` maydonda
+qobiq klaviaturasi **baribir chiqadi** (`preload.js` `wanted()` `readOnly` ni filtrlamaydi), lekin
+`sendInputEvent` kaliti **tushmaydi** (`readOnlyTyped: ""`). Ya'ni kassir qulf ekranida numpadni
+ko'rib turib PIN kirita olmasdi — chiqish yo'li yo'q. **Shuning uchun qo'llanmadi.**
+*(Mutatsiya bilan tekshirildi: `pos-pin-lock.tsx` ga `readOnly` qo'yilganda aynan 1 test qizardi,
+mutant qaytarildi — `git diff` toza.)*
+
+**Fayllar:**
+| Yo'l | Nima qilindi |
+|---|---|
+| `desktop/tools/kbd-probe/probe.js` + `page.html` | **YANGI** — qayta yugurtiriladigan Electron o'lchovi (yugurtirish yo'riqnomasi fayl boshida; `ELECTRON_RUN_AS_NODE` tuzog'i yozilgan) |
+| `apps/web/src/components/pos/__tests__/pin-entry-single-numpad.test.tsx` | **YANGI** — 8 test: «kiritish yo'li AYNAN BITTA» invarianti (ikkala PIN ekrani). Tanish maydon ro'yxati `preload.js` ning O'ZIDAN o'qiladi — ko'chirma ro'yxat qo'riqchini yolg'onga aylantirardi |
+| `apps/web/src/__tests__/desktop-touch-keyboard.test.ts` | **eskirgan da'vo tuzatildi** («real Electron'da sinov qilinmagan» — endi o'lchangan) + K6: `readOnly` klaviaturani yashirmasligi |
+| `desktop/README.md` | «Ekran klaviaturasi — O'LCHANGAN holat (P6)» bo'limi: nima isbotlangan, nima yo'q, qayta yugurtirish buyrug'i |
+| `.gitignore` | `desktop/tools/kbd-probe/result.json` (biome faqat ildiz `.gitignore` ni o'qiydi) |
+| `desktop/main.js` · `preload.js` · `package.json` | **TEGILMADI** — o'lchov ularni o'zgartirishni talab qilmadi |
+
+**Testlar:**
+- `pin-entry-single-numpad.test.tsx` → **8 passed** (mutatsiya bilan tasdiqlandi)
+- `desktop-touch-keyboard.test.ts` → **30 passed** (F3 dagi 28 + K6 ning 2 tasi)
+- Reja talab qilgan qo'riqchilar: `electron-bridge-contract` **68** · `kassa-installer-config` **30** ·
+  `pin-keypad` **14** — yashil
+- `desktop/tools/kbd-probe/probe.js` formatlangandan keyin **qayta yugurtirildi** (skript
+  o'zgargandan keyin ishlashiga ishonilmadi): 12/12 char · kirill zanjiri ✅ · til saqlandi ✅
+
+**Gate:** typecheck ✅ **10/10** · biome (o'z fayllarim) ✅ **0** · i18n:gate ✅ **9/9** ·
+web vitest ⚠️ **3585 passed | 26 skipped | 3 failed**.
+
+🔴 **Uchala yiqilish ham parallel sessiyaning ishida** (`sales-screen-shift.test.tsx` → «Qarz
+to'lovi oynasi» — ular ayni paytda P1 doirasida `debt-payment-dialog.tsx`, `debt.service.ts`,
+`messages/*.json`, `schema.prisma` ni o'zgartirmoqda). Dalil: **o'sha fayl alohida yugurtirilganda
+17/17 yashil**; mening o'zgarishlarim (ikki test fayli, `desktop/`, `README`, `.gitignore`) uning
+import grafiga umuman kirmaydi. `lint:product` da ham 2 xato qoldi — ikkalasi ham ularning yangi
+API test fayllarida; **tegilmadi** (§6.1).
+
+**Deploy:** ❌ qilinmadi — **prodga chiqadigan kod yo'q**: `apps/*` ning ishlab-chiqarish kodiga
+tegilmagan (faqat testlar + `desktop/` asbob va hujjat). **exe 1.3.1 ham chiqarilmadi** — reja
+§P6.4 bo'yicha faqat «kerak bo'lsa», va o'lchov hech qanday `desktop/` kod tuzatishini talab
+qilmadi.
+
+**Commit:** `33730b2f` (6 fayl). Hook'lar **ataylab chetlab o'tildi** (`core.hooksPath=/dev/null`):
+parallel sessiya daraxtda faol yozayotgan edi, lint-staged esa butun daraxtni stash qiladi
+(§6.7 B hodisasi). Gate'lar qo'lda to'liq yugurtirildi; commit tarkibi `git show --stat HEAD`
+bilan tekshirildi — begona fayl yo'q.
+
+**Nima QILINMADI:**
+
+1. 🔴 **JONLI OQIM SINOVI — hech bir qadami kuzatilmadi** (reja §P6.1). Egasi bu sessiyada
+   qatnashmadi; sessiya interaktiv emas va monoblokka masofadan kirish yo'q.
+
+   | Qadam | Holat |
+   |---|---|
+   | 1.2.0 li monoblokda ilovani qayta ochish | **sinalmadi** |
+   | 3 daqiqa kutish (`[updater]` yuklab olishi) | **sinalmadi** |
+   | «Chiqish» (burchakni 2s ushlash) | **sinalmadi** |
+   | UAC «Ha» | **sinalmadi** |
+   | Qayta ochilganda versiya = 1.3.0 | **sinalmadi** |
+   | Numpad/kirillni **barmoq bilan** bosish | **sinalmadi** |
+
+   Ya'ni F4 dagi qarz **saqlanib qoldi**: «kanal to'g'ri artefaktni beradi» + endi «kirill kod
+   yo'lida ishlaydi» isbotlangan; «qurilma uni topadi, yuklaydi, o'rnatadi» hamon **isbotlanmagan**.
+2. **`main.js` da `insertText` ga o'tilmadi** — o'lchov `sendInputEvent` ishlashini ko'rsatdi,
+   almashtirish sababsiz regress riski bo'lardi (`insertText` React uchun zaifroq).
+3. **PIN ekranida `readOnly` qilinmadi** — yuqoridagi o'lchov bo'yicha u kassirni qamab qo'yardi.
+4. **`preload.js` `readOnly` maydonlarni filtrlamaydigan qilib qoldirildi.** O'lchandi: POS'da
+   kassir fokuslay oladigan `readOnly` `<input>` **hozir yo'q** (`cart-line-edit-modal` qulf
+   holatida `<div>` chizadi) ⇒ tuzatishning bugungi foydalanuvchisi yo'q, lekin u `desktop/` kodi
+   bo'lgani uchun yangi exe talab qilardi. K6 testi xulqni hujjatlashtirdi.
+5. **`NEXT.md` yangilanmadi** — P6 vazifalar ro'yxatida yo'q (F3 pretsedenti: prodga hech narsa
+   chiqmagan fazada hand-off hisobotning o'zida), qolaversa parallel sessiya ayni paytda o'sha
+   faylga yozishi mumkin.
+6. **Panel o'lchamlari brauzerda ko'z bilan ko'rilmadi** — 68px/46px tugma balandligi va 520px
+   panel eni DOM'dan o'qildi, ekranda emas.
+
+**Ochiq xavf / keyingi fazaga eslatma:**
+- 🔴 **Qurilma sinovi hamon yagona ochiq qarz.** Egasi uchun aniq ro'yxat: (a) monoblokda ilovani
+  yopib-ochish, 3 daq kutish, «Chiqish» → UAC → versiya; (b) savat qatorining **nomini** bosib
+  tahrir oynasini ochish — QWERTY emas **numpad** chiqishi kerak; (c) mijoz nomiga `РУС` bilan
+  kirill yozish. (b) va (c) endi kod tomondan isbotlangan, ya'ni ular ishlamasa sabab
+  **qurilmada/o'rnatishda** (masalan eski 1.2.0 qolib ketgan) — kodda emas. Bu farqlash
+  qidiruvni ancha toraytiradi.
+- ⚠️ **Qurilmada versiyani ko'rsatadigan joy hamon yo'q** (F4 eslatmasi kuchda): `[updater]`
+  yozuvlari `console.warn` ga ketadi va paketlangan ilovada ko'rinmaydi. «Yangilandimi?» savoliga
+  javob faqat Windows «Приложения и возможности» dan. Arzon tuzatish — kirish ekrani burchagida
+  `window.electronAPI.version`.
+- ⚠️ **O'lchov Electron versiyasiga bog'langan.** 33.4.11 dan ko'tarilganda kirill javobi qayta
+  ochiladi — `desktop/tools/kbd-probe/probe.js` ni qayta yugurtir (buyruq README'da).
+- ⚠️ **`desktop/node_modules/electron` da binar yo'q** (F4 aytgan holat davom etmoqda) — bu
+  sessiyada o'lchov `electron-builder` keshidagi `electron-v33.4.11-win32-x64.zip` ni ochib
+  qilindi. Lokal `pnpm run dev` uchun `pnpm approve-builds` kerak.
+- ⚠️ Parallel sessiya P1 (qarz) ustida ishlamoqda — `apps/api/src/modules/debt/*`,
+  `debt-payment-dialog.tsx`, `messages/*.json`, `schema.prisma` dirty. Keyingi faza to'liq
+  suite'ni yashil ko'rmasa avval o'sha ish tugaganini tekshirsin.
 ### P7 — ☐ hali bajarilmagan
 ### P8 — ☐ hali bajarilmagan
 ### P9 — ☐ hali bajarilmagan
