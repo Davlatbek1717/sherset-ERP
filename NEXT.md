@@ -331,6 +331,32 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-08-11f (kassa: narx→oyna · marja ekrandan olib tashlandi · ✅ DEPLOYED) —**
+> **`f1f90e88` prodda** (`Deploy done: 913e3c2a… → f1f90e88…`, BUILD_ID 2026-08-11 15:33 +0200).
+> Egasining **jonli monoblok sinovidan** chiqqan ikki talab:
+> 1. **Narxni bosish tahrir oynasini ochadi.** F2 da trigger faqat qator NOMIga ulangan edi —
+>    kassir aynan narxga bosib oyna kutgan (skrinshot bilan tasdiqlandi). Qatordagi 96px input
+>    OLIB TASHLANDI: soni uchun −/+ qoldi, narx uchun yagona yo'l. `updatePrice` o'chdi ⇒ parse
+>    bitta joyda (oyna ichida).
+> 2. **Marja ekranda KO'RSATILMAYDI** — qatordagi «Tan» va «Foyda», footerdagi «Chek foydasi»,
+>    oynadagi «Tan». Sabab: mijoz kassir yoniga kelganda marjani o'qib olardi.
+>    🔴 **ZARAR / «optomdan past» tasmalari QOLDI** (raqam emas, nazorat).
+>    Hisob-kitob ATAYLAB saqlandi, faqat render to'sildi: `apps/web/src/lib/pos/ui-flags.ts` →
+>    `SHOW_MARGIN_ON_SCREEN` (uch joy ham shu bayroqni o'qiydi; qaytarish = `true`). Sabab
+>    izohda: ZARAR tasmasi tan narxga tayanadi va `pos-cart-profit.test.ts` «100% marja yolg'oni»
+>    (`costMinor ?? 0n`) bug-klassini qo'riqlaydi — kod o'chsa qo'riqchi ham o'lardi.
+>
+> **Gate:** typecheck 10/10 · lint:product 0 error · i18n:gate 9/9 · web vitest **3570 passed,
+> 0 failed** (250 fayl). Niyat qulflandi: «marja ekranda ko'rsatilmaydi» (qator · footer · oyna).
+> **Jonli verify:** box HEAD = lokal `f1f90e88` · erp.sherset.uz 200 · `/api/v1/health` 200 ·
+> yangi chunk ochiq xizmatda (`…/sotuv/page-3873c474….js` → 200, 116 032 b, ichida
+> `sotuv-cart-price-edit`) · err.log'larda yangi xato yo'q.
+> 🔴 **BROWSER-SMOKE YO'Q.** Diqqat: bayroq `false` bo'lgani uchun **bundle ichida eski
+> matnlar qoladi** — «marja yashirilgani» ni chunk-grep bilan ISBOTLAB BO'LMAYDI, dalil faqat
+> jsdom testlari. Brauzerda ko'rish egasida.
+> Qurilma hamon **1.2.0** da (skrinshotdagi klaviatura eski: «ABC», «РУС» yo'q) — 1.3.0 ga
+> o'tish sinalmagan.
+
 > **🕒 2026-08-11e (F4 · REJA-KASSIR-EXE · exe **v1.3.0** kanalda · web deploy YO'Q) —**
 > Qobiq **1.2.0 → 1.3.0**; F3 ning klaviaturasi (numpad + kirill) endi yig'ilgan artefakt ichida —
 > `app.asar` da `sherset.kbd.lang` / `РУС` / `ЙЦУКЕН` **topildi** (yorliq emas, mazmun tekshirildi).
