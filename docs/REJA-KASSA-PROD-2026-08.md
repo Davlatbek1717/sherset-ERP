@@ -172,7 +172,7 @@ rezerv bo'shaydi (`page 997–1014`) · smena farqi → farq akti → menejer na
 | **P9** | KPI: profil + ball (`REJA-KASSA-KPI` K1–K2 shu yerdan) | prod-data + api | kerak bo'lsa | ☐ |
 | **P10** | Yakuniy adversarial browser-QA (butun kassa cohort'i) | Phase-2 QA | — | ☐ |
 | **P11** | Xodim/kassir hayot sikli — UI'dan, skriptsiz | web settings/hr + api | ✅ | ✅ `08604bec` (prodda jonli; brauzer-QA bajarildi) |
-| **P12** | Katalog/narx: POL (minimal=tan, qulf) · 0-narx himoyasi | api/web product + POS | ✅ | ☐ |
+| **P12** | Katalog/narx: POL (minimal=tan, qulf) · 0-narx himoyasi | api/web product + POS | ✅ | ⚠️ `a50563f3` (server prodda jonli tasdiqlandi; **brauzer-QA yo'q**) |
 | **P13** | Go-live tozalash: test ma'lumotlardan realga | prod-op + kichik fix | kerak bo'lsa | ☐ |
 | **P14** | Daftar-simmetriya: qaytarish→balans · xarajat→P&L · money backfill | api + backfill | ✅ | ☐ |
 | **P15** | Kunlik kassa hisoboti: har kassa 100% + jamlama, admin panelda | api `report` + web | ✅ | ☐ |
@@ -1478,7 +1478,135 @@ o'chirildi.
    `git show --stat HEAD` = 14 fayl, faqat meniki; i18n fayllari «HEAD + faqat o'z
    kalitlarim» blobi bilan staged (parallel sessiyaning `printer_not_set*` kalitlari
    commit ichida saqlanib qoldi — tekshirildi).
-### P12 — ☐ hali bajarilmagan
+### P12 — Katalog va narx zanjiri: narx POLI + 0-narx himoyasi · 2026-08-12 · `a50563f3`
+
+**Holat:** ⚠️ qisman — server tomoni **prodda jonli tasdiqlangan** (ikki urinish ham 400 bilan
+rad etildi, dalil quyida); **ekran qulfi brauzerda SINALMAGAN** (Playwright brauzeri parallel
+sessiya tomonidan band edi — §6.4 bo'yicha tortib olinmadi).
+
+**O'LCHOV (prod, read-only `ops-p12-price-audit.ts`, 2026-08-12):**
+
+| Ko'rsatkich | Son |
+|---|---|
+| Tovarlar (arxivlanmagan, `kind=product`) | **4905** |
+| Chakana narx YO'Q (null) | **488** |
+| Chakana narx = 0 | 1 |
+| **Optom narx YO'Q** | **3960** (81%) |
+| Tan narx NULL (⇒ pol YO'Q) | **996** |
+| Tan narx = 0 | 0 |
+| **Karta chakana narxi tan narxdan PAST** | **46** |
+| Variantlar | 0 |
+| Tarixiy `SOLD_BELOW_COST` hodisalari | 0 |
+
+Narx turlari prodda ikkita: «Розничная цена» (default) va «Оптовая цена».
+
+**EGASINING QARORLARI (2026-08-12, o'lchov raqamlari bilan so'ralgan):**
+1. **0-narx → TAQIQ.** Narxsiz qator bilan chek yopilmaydi (ogohlantirish bilan ruxsat EMAS).
+2. **46 tovar (karta narxi < tan narx) → pol = min(tan narx, karta chakana narxi).** Ya'ni
+   bunday tovar o'z karta narxida sotilaveradi, undan pastga esa yo'q. (Muqobil «pol istisnosiz»
+   varianti rad etildi — u 46 tovarni savdodan chiqarardi.)
+3. **Chek chegirmasi polni buzsa → chek RAD etiladi** (chegirma jimgina qisilmaydi).
+
+**Nima o'zgardi (xulq tilida):**
+- Tahrir oynasida qizil **«ZARAR»** belgisi va **«−X tushirildi»** summasi olib tashlandi;
+  o'rniga **«Minimal: X so'm»** turadi (X = pol). Poldan past narxda «Saqlash» ishlamaydi va
+  qizil sabab yoziladi. Tan narx NULL bo'lsa «Minimal» umuman ko'rsatilmaydi (pol yo'q).
+- **Server chekni rad etadi** (`retail-sale.post()`): poldan past (chegirmadan KEYINGI qator
+  jamisi bo'yicha) yoki 0 narxli qator ⇒ 400, tranzaksiya OCHILMASDAN — pul ham, ombor ham
+  qimirlamaydi.
+- Savatda narxsiz qator endi **ochiq qizil belgi** oladi va «Omborchiga yuborish» tugmasi
+  bloklanadi (sabab tugma tepasida). Chegirma polni buzsa ham shu.
+- Savat tasmasi endi POLga nisbatan: karta narxining o'zi tan narxdan past bo'lgan 46 tovar
+  qizil «ZARAR» deb belgilanmaydi (yolg'on signal edi). **«Optomdan past» sariq ogohlantirish
+  QOLDI** (optom ≥ tan — bu oraliqda sotish mumkin).
+- Marja siyosati o'zgarmadi: foyda RAQAMI hamon ekranda yo'q (`ui-flags.ts`), faqat pastki
+  chegara ko'rinadi — egasi buni bilib tanladi (tan narx oshkor bo'lishini qabul qildi).
+- **Yo'l-yo'lakay topilgan BUG (o'lchov sababini tushuntiradi):** MoySklad importi HAR narx
+  qavatini AYNI default tur id'si bilan muhrlardi ⇒ «Оптовая цена» hech qachon o'z turiga
+  tushmasdi. Aynan shundan **3960 tovar optomsiz**. Mapping endi bitta sof funksiyada
+  (`packages/db/src/sale-price-tiers.ts`), ikkala import yo'li ham shuni chaqiradi.
+- **Tovar kartasi → POS zanjiri:** POS tovar so'rovi kun bo'yi ochiq ekranda **hech qachon
+  qayta yugurmasdi** (global `staleTime: 30s` + `refetchOnWindowFocus: false`) — kartada
+  o'zgargan narx POS'ga faqat sahifa qayta yuklangach yetardi. Endi `refetchInterval: 60s` +
+  fokusda yangilanish.
+
+**Fayllar:**
+- `packages/money/src/price-floor.ts` (+test) → **yagona pol mantiq** (`priceFloorMinor`,
+  `lineFloorBreach`); FE ham, BE ham shundan o'qiydi · `index.ts` eksport.
+- `apps/api/src/modules/retail-sale/price-policy-guard.ts` (+test) → sof qo'riqchi (0-narx +
+  pol, chegirma bilan) · `retail-sale.service.ts` → `post()` da chaqiruv + pozitsiya
+  `discount` maydonini o'qish · `retail-sale-price-floor.test.ts` → `post()` haqiqatan
+  chaqiradimi va rad etilganda pul qimirlamaydimi.
+- `packages/db/src/sale-price-tiers.ts` → narx-qavat mapping (bug tuzatildi) ·
+  `apps/api/src/modules/product/sale-price-tiers.test.ts` → testi (nisbiy import: vitest
+  faqat apps/* da yuguradi) · `prisma/seed-real.ts` va `scripts/ops-import-products.ts`
+  ikkalasi shu funksiyaga o'tdi (import skripti repoga KIRITILDI — reja 5-bandi).
+- `apps/web/src/components/pos/cart-line-edit-modal.tsx` → «Minimal», qulf, ZARAR/«tushirildi»
+  olib tashlandi · `app/(app)/sotuv/page.tsx` → narxsiz belgi, yuborish qulfi, pol-tasma,
+  kesh yangilanishi · `messages/{ru,uz}.json` → `cart_floor`, `cart_floor_blocked`,
+  `cart_no_price`; `cart_min` yorlig'i uz'da «Min» → «Optom» (yangi «Minimal» bilan
+  chalkashmasin).
+- `apps/api/src/scripts/ops-p12-price-audit.ts` → o'lchov (read-only) ·
+  `ops-p12-live-verify.ts` → jonli qulf sinovi (DRY default, `--live` da draft yaratib post
+  urinadi va darhol bekor qiladi).
+
+**Testlar (TDD — har biri avval RED ko'rilgan):**
+- `money`: 13 yangi (pol qoidalari, NULL≠0, chegirma, kasr miqdor) → **110/110** yashil.
+- `api`: `price-policy-guard.test.ts` 14 · `retail-sale-price-floor.test.ts` 6 ·
+  `sale-price-tiers.test.ts` 8. RED bosqichida `post()` testlarining 3 tasi **o'tib ketgan
+  chekni** ko'rsatdi (poldan past · chegirma · 0-narx) — prodda ochiq teshik ekanining dalili.
+  To'liq suite: **8055/8055** (birinchi yugurishda 1 flaky — Chrome/PDF render 5s timeout;
+  qayta yugurishda yashil).
+- `web`: modal 25 · POS sahifa 8 yangi fayl. To'liq suite: **3631 passed / 26 skipped**.
+- Yangi xulqqa moslangan eski testlar (jimgina o'chirilmadi, qayta yozildi): K-3 uch testi
+  (endi 0 narx umuman qabul qilinmaydi — shartnoma kuchaydi), savat ZARAR testi (pol
+  to'sadi), `Min`→`Optom` yorlig'i, freeze/CAS dublyorlariga `priceMinor` qo'shildi (sxemada
+  NOT NULL — dublyor to'liqsiz edi).
+
+**Gate:** typecheck **0** · lint:product **0 error** · i18n:gate **9/9** · web vitest **3631** ·
+api vitest **8055** · money vitest **110**.
+
+**Deploy:** ✅ `a50563f3` push → `deploy-smart.sh` (money → web build, api restart). Box HEAD
+`c6dc0566` (parallel sessiya P2 hisobotini ustiga qo'shdi; mening commit'im **ancestor** deb
+tasdiqlandi). Health 200 · sayt 200 · `pos-line-edit-floor-blocked` yangi web chunk'ida
+(`sotuv/page-a0cbcb3d….js`) topildi.
+
+**JONLI VERIFY (prod, `ops-p12-live-verify.ts --live`, 2026-08-12):**
+Tovar «Karaba 16x25», pol 3 737 so'm, ochiq smena `fc9a42ae`:
+- poldan **1 tiyin past** narx → `POST /retail-sales/:id/post` → **400**:
+  «Karaba 16x25» minimal narxdan past: qator 3 737 so'm, minimal 3 737 so'm … Chek qabul qilinmadi.»
+- **0 narx** → **400**: «Karaba 16x25» narxsiz — 0 so'mlik qator bilan chek yopilmaydi…»
+- Ikkala sinov cheki bekor qilindi, prodda **0 draft** qoldi (tekshirildi).
+
+**Nima QILINMADI:**
+- 🔴 **Brauzer-QA yo'q** — «Minimal: X» va «Saqlash» qulfi real brauzerda ko'rilmadi (Playwright
+  MCP brauzeri parallel sessiya tomonidan band edi; §6.4 bo'yicha tortib olinmadi). Ekran
+  tomoni faqat testlar + chunk-grep bilan qoplangan.
+- **Import qayta yugurtirilmadi.** Narx-qavat mapping tuzatildi, lekin prod katalogi
+  o'zgarmadi: 3960 tovar hamon optomsiz. `ops-import-products.ts` mavjud tovarlarning
+  `salePrices/buyPrice` ustidan YOZADI — bu egasining qarori (P13 «go-live tozalash» doirasi).
+  Yugurtirilganda avval `--dry-run`.
+- **46 tovarning ro'yxati alohida chiqarilmadi** (skript 5 ta namuna beradi). Egasi «pol =
+  min» ni tanlagani uchun ular savdodan chiqmaydi — ro'yxat shoshilinch emas.
+- **Zakazga bog'langan (qulflangan) savatda ekran qulfi qo'llanmaydi** — u yerda narx zakaz
+  hujjatining ishi va kassir tuzata olmaydi, tugmani o'chirish uni chiqish yo'lisiz
+  qoldirardi. Bunday chekni **server** rad etadi (sabab kassirga ko'rinadi).
+- **Xizmat qatorlari** (`productId = null`) uchun pol yo'q, lekin 0-narx taqiqi ULARGA HAM
+  qo'llanadi — 0 so'mlik xizmat qatori endi o'tmaydi. Ataylab; egasi xizmatni tekin yozishni
+  xohlasa bu qayta ko'riladi.
+- **Variantlar** (`Variant.buyPrice/salePrices`) alohida sinalmadi — prodda 0 variant bor.
+
+**Ochiq xavf / keyingi fazaga eslatma:**
+- **Chegirma bilan ishlaydigan kassir endi «chek o'tmaydi» holatiga tushishi mumkin** —
+  ekranda sabab ko'rsatiladi, lekin bu yangi ish oqimi: P10 brauzer-QA'da aynan shu ssenariy
+  sinalsin (savatga qo'shish → 40%+ chegirma → tugma o'chishi).
+- **Optom ogohlantirishi hamon o'lik** (3960 tovar) — import qayta yugurtirilmaguncha sariq
+  tasma deyarli chiqmaydi. P13 rejasiga kirsin.
+- **996 tovarda pol YO'Q** (tan narx NULL) — ularda faqat 0-narx taqiqi ishlaydi, ya'ni 1 so'mga
+  sotish mumkin. Tan narxni to'ldirish — katalog ishi (P13).
+- `cancel` chaqiruvi Fastify'da **bo'sh tanali** `content-type: json` POST bilan 400 qaytaradi
+  (mahsulot bug'i emas, so'rov shakli) — skript tuzatildi, lekin boshqa klient shu tuzoqqa
+  tushishi mumkin.
 ### P13 — ☐ hali bajarilmagan
 ### P14 — ☐ hali bajarilmagan
 ### P15 — ☐ hali bajarilmagan
