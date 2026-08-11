@@ -2162,7 +2162,11 @@
       "title": "Настройки аналитики",
       "variance_hint": "Задайте, с какого процента отклонения счёт становится жёлтым или красным.",
       "variance_title": "Пороги отклонения",
-      "yellow_max": "Граница жёлтого (до %)"
+      "yellow_max": "Граница жёлтого (до %)",
+      "role_template": "Шаблон роли",
+      "role_template_none": "— без шаблона —",
+      "role_template_kiosk": "только касса (киоск)",
+      "role_template_overwrite": "Шаблон перезапишет матрицу прав ниже своими значениями."
     },
     "homepage": {
       "load_error_title": "Не удалось загрузить показатели",
@@ -7539,7 +7543,13 @@
       "pos_pin_invalid": "PIN должен состоять из 4–6 цифр",
       "pos_pin_saved": "PIN сохранён",
       "pos_pin_cleared": "PIN удалён",
-      "pos_pin_clear": "Удалить PIN"
+      "pos_pin_clear": "Удалить PIN",
+      "smena_section": "Смена кассы",
+      "smena_hint": "Кассир может открыть смену в кассе только в той смене, к которой он привязан.",
+      "smena_none": "Смен пока нет — создайте первую.",
+      "smena_save": "Сохранить смены",
+      "smena_saved": "Смены сохранены",
+      "smena_manage": "Смены и графики"
     },
     "company_settings": {
       "country_section": "Страна для базовых настроек",

@@ -7,6 +7,7 @@ import {
   Param,
   Patch,
   Post,
+  Put,
   UseGuards,
 } from '@nestjs/common';
 import type { AuthenticatedUser } from '../auth/auth.schema.js';
@@ -37,6 +38,29 @@ export class SmenaController {
   @Get('mine')
   mine(@CurrentUser() user: AuthenticatedUser) {
     return this.svc.mine(user.accountId, user.sub);
+  }
+
+  // ─── P11 — xodim kartasidan biriktirish ───────────────────────────────────
+  // Ikki segmentli yo'llar `@Get(':id')` dan OLDIN e'lon qilinadi, aks holda
+  // 'employee' smena id'si sifatida o'qilishi mumkin (roles.controller naqshi).
+  //
+  // Darvoza `employee:update` — bu yerda smena TA'RIFI emas, aynan SHU
+  // xodimning kassaga kira olishi o'zgaradi (rol biriktirish bilan bir daraja).
+
+  @Get('employee/:employeeId')
+  @RequirePermission({ entity: 'employee', action: 'update' })
+  employeeSmenas(@CurrentUser() user: AuthenticatedUser, @Param('employeeId') employeeId: string) {
+    return this.svc.employeeSmenas(user.accountId, employeeId);
+  }
+
+  @Put('employee/:employeeId')
+  @RequirePermission({ entity: 'employee', action: 'update' })
+  setEmployeeSmenas(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('employeeId') employeeId: string,
+    @Body() body: unknown,
+  ) {
+    return this.svc.setEmployeeSmenas(user.accountId, employeeId, body);
   }
 
   @Get(':id')

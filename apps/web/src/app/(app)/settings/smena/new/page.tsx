@@ -129,6 +129,18 @@ export default function NewSmenaPage() {
               </option>
             ))}
           </NativeSelect>
+          {/* Jadval sahifasi menyuda yo'q (P11 o'lchovi) — bo'sh ro'yxatda
+              zanjir shu yerda uzilardi: smena yaratib bo'lmaydi, jadval
+              yaratadigan joyni esa topib bo'lmaydi. */}
+          <a
+            href="/settings/shift-schedules"
+            className="mt-1 inline-block text-sm text-[var(--ms-text-brand)] hover:underline"
+            data-test-id="smena-schedules-link"
+          >
+            {schedules && schedules.length === 0
+              ? 'Avval ish vaqti jadvalini yarating →'
+              : 'Ish vaqti jadvallari →'}
+          </a>
         </div>
 
         <div>

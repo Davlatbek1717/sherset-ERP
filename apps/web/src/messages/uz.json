@@ -2162,7 +2162,11 @@
       "title": "Analitika sozlamalari",
       "variance_hint": "Sanashdagi farq foizi qaysi chegaradan boshlab sariq yoki qizil bo'lishini belgilang.",
       "variance_title": "Farq chegaralari",
-      "yellow_max": "Sariq chegarasi (% gacha)"
+      "yellow_max": "Sariq chegarasi (% gacha)",
+      "role_template": "Rol shabloni",
+      "role_template_none": "— shablonsiz —",
+      "role_template_kiosk": "faqat kassa (kiosk)",
+      "role_template_overwrite": "Shablon quyidagi huquqlar matritsasini oʻz qiymatlari bilan qayta yozadi."
     },
     "homepage": {
       "load_error_title": "Ko'rsatkichlarni yuklab bo'lmadi",
@@ -7539,7 +7543,13 @@
       "pos_pin_invalid": "PIN 4–6 raqamdan iborat boʻlishi kerak",
       "pos_pin_saved": "PIN saqlandi",
       "pos_pin_cleared": "PIN oʻchirildi",
-      "pos_pin_clear": "PIN ni oʻchirish"
+      "pos_pin_clear": "PIN ni oʻchirish",
+      "smena_section": "Kassa smenasi",
+      "smena_hint": "Kassir faqat oʻzi biriktirilgan smenada kassa smenasini ocha oladi.",
+      "smena_none": "Hali smena yoʻq — birinchisini yarating.",
+      "smena_save": "Smenalarni saqlash",
+      "smena_saved": "Smenalar saqlandi",
+      "smena_manage": "Smenalar va jadvallar"
     },
     "company_settings": {
       "country_section": "Asosiy sozlamalar uchun mamlakat",

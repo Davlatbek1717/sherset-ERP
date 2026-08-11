@@ -41,6 +41,7 @@ import { EmployeeHistoryLink } from './employee-history-link';
 import { PosPinModal } from './pos-pin-modal';
 import { ResetPasswordModal } from './reset-password-modal';
 import { RoleAccessInline } from './role-access-inline';
+import { SmenaAssignSection } from './smena-assign-section';
 
 // ── API shapes ──────────────────────────────────────────────────────────────
 
@@ -1101,6 +1102,11 @@ export function EmployeeCard({ id }: { id?: string }) {
               />
             </div>
           </section>
+
+          {/* Kassa smenasi (P11) — kiosk kassir uchun MAJBURIY bo'g'in:
+              biriktirilmagan xodim POS smenasini ocha olmaydi. Saqlangan
+              kartada ko'rinadi (yangi xodimda hali id yo'q). */}
+          {!isNew && id && <SmenaAssignSection employeeId={id} />}
 
           {/* Сеть */}
           <section className="flex flex-col gap-3">

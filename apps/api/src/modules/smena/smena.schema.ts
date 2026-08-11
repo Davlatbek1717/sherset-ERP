@@ -13,6 +13,18 @@ export type CreateSmenaInput = z.infer<typeof CreateSmenaSchema>;
 export const UpdateSmenaSchema = CreateSmenaSchema.partial();
 export type UpdateSmenaInput = z.infer<typeof UpdateSmenaSchema>;
 
+/**
+ * P11 — xodim kartasidan smenaga biriktirish (`PUT /admin/smenas/employee/:id`).
+ *
+ * Yo'nalish `PUT /roles/employee/:id {roleIds}` bilan bir xil: to'liq
+ * ALMASHTIRISH (qo'shish/olib tashlash emas), shunda karta ekranidagi
+ * belgilangan holat aynan DB holatiga aylanadi.
+ */
+export const SetEmployeeSmenasSchema = z.object({
+  smenaIds: z.array(uuid).max(50),
+});
+export type SetEmployeeSmenasInput = z.infer<typeof SetEmployeeSmenasSchema>;
+
 export const OpenSessionFromSmenaSchema = z.object({
   smenaId: uuid,
   outOfShiftReason: z.string().max(500).optional(),

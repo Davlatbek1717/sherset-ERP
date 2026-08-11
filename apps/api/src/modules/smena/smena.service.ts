@@ -15,6 +15,8 @@ import {
   CreateSmenaSchema,
   type OpenSessionFromSmenaInput,
   OpenSessionFromSmenaSchema,
+  type SetEmployeeSmenasInput,
+  SetEmployeeSmenasSchema,
   type UpdateSmenaInput,
   UpdateSmenaSchema,
 } from './smena.schema.js';
@@ -110,6 +112,82 @@ export class SmenaService {
     return { ok: true };
   }
 
+  /**
+   * P11 — xodim kartasi uchun: hisobning barcha smenalari + shu xodim
+   * biriktirilganlari. Ikkalasi BITTA javobda, chunki karta ekrani
+   * «belgilangan/belgilanmagan» ro'yxatini shu juftlikdan chizadi.
+   */
+  async employeeSmenas(accountId: string, employeeId: string) {
+    await this.assertEmployee(accountId, employeeId);
+    const items = await this.prisma.client.smena.findMany({
+      where: { accountId, archived: false },
+      select: {
+        id: true,
+        name: true,
+        schedule: { select: { name: true, startTime: true, endTime: true } },
+        organization: { select: { name: true } },
+      },
+      orderBy: { name: 'asc' },
+    });
+    const assigned = await this.prisma.client.smenaEmployee.findMany({
+      where: { employeeId, smena: { accountId, archived: false } },
+      select: { smenaId: true },
+    });
+    return { items, smenaIds: assigned.map((a) => a.smenaId) };
+  }
+
+  /**
+   * P11 — xodimning smena biriktirmalarini to'liq almashtirish.
+   *
+   * `deleteMany` ATAYLAB shu hisobning smenalari bilan cheklangan: aks holda
+   * bir hisobdagi admin boshqa ijarachining biriktirmasini o'chirib yuborardi
+   * (`smenaEmployee` da `accountId` yo'q — u faqat `smena` orqali keladi).
+   */
+  async setEmployeeSmenas(accountId: string, employeeId: string, raw: unknown) {
+    await this.assertEmployee(accountId, employeeId);
+    const { smenaIds } = SetEmployeeSmenasSchema.parse(raw) as SetEmployeeSmenasInput;
+    const unique = [...new Set(smenaIds)];
+
+    if (unique.length > 0) {
+      const found = await this.prisma.client.smena.findMany({
+        where: { id: { in: unique }, accountId, archived: false },
+        select: { id: true },
+      });
+      if (found.length !== unique.length) {
+        throw new BadRequestException('Smena topilmadi yoki arxivlangan');
+      }
+    }
+
+    const accountSmenas = await this.prisma.client.smena.findMany({
+      where: { accountId },
+      select: { id: true },
+    });
+    const accountSmenaIds = accountSmenas.map((s) => s.id);
+
+    await this.prisma.client.$transaction(async (tx) => {
+      await tx.smenaEmployee.deleteMany({
+        where: { employeeId, smenaId: { in: accountSmenaIds } },
+      });
+      if (unique.length > 0) {
+        await tx.smenaEmployee.createMany({
+          data: unique.map((smenaId) => ({ smenaId, employeeId })),
+          skipDuplicates: true,
+        });
+      }
+    });
+
+    return this.employeeSmenas(accountId, employeeId);
+  }
+
+  /** Ijara chegarasi: begona hisobning xodimiga tegib bo'lmaydi. */
+  private async assertEmployee(accountId: string, employeeId: string) {
+    const employee = await this.prisma.client.employee.findFirst({
+      where: { id: employeeId, accountId },
+      select: { id: true },
+    });
+    if (!employee) throw new NotFoundException('Xodim topilmadi');
+  }
+
   /** Joriy xodimning faol smenasin topadi va vaqt ichida ekanini tekshiradi */
   async mine(accountId: string, employeeId: string) {
     const assignments = await this.prisma.client.smenaEmployee.findMany({
@@ -122,12 +200,22 @@ export class SmenaService {
           },
         },
       },
+      // Tartib DETERMINISTIK bo'lishi shart: tartibsiz `findMany` bir xil
+      // ma'lumotda ham har chaqiruvda boshqa smenani birinchi qaytarishi
+      // mumkin edi (P11: endi xodim bir nechta smenada bo'lishi mumkin).
+      orderBy: { smena: { name: 'asc' } },
     });
 
     if (assignments.length === 0) return { smena: null, withinShift: false };
 
-    // Xodimning birinchi (yagona) smenasini olish
-    const smena = assignments[0]!.smena;
+    // Bir nechta smena bo'lsa — HOZIR vaqti kelgani ustun. Aks holda kassir
+    // «smena vaqtidan tashqari» sababini yozishga majbur bo'lardi, holbuki
+    // uning haqiqiy smenasi ayni damda ochiq (P11 dan oldin ro'yxatdagi
+    // birinchi element ko'r-ko'rona olinardi).
+    const active = assignments.find((a) =>
+      isWithinShift(a.smena.schedule.startTime, a.smena.schedule.endTime),
+    );
+    const smena = (active ?? assignments[0]!).smena;
     const withinShift = isWithinShift(smena.schedule.startTime, smena.schedule.endTime);
 
     return { smena, withinShift };

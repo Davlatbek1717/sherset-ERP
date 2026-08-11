@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException } from '@nestjs/common';
+import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
 import { OpenSessionFromSmenaSchema } from './smena.schema.js';
 import { SmenaService, isWithinShift } from './smena.service.js';
@@ -144,5 +144,148 @@ describe('openSessionFromSmena — parallel ochilish (P2002)', () => {
     const boom = new Error('db down');
     const { service } = makeService({ createRejects: boom });
     await expect(service.openSessionFromSmena(ACC, CASHIER, OPEN_INPUT)).rejects.toThrow('db down');
+  });
+});
+
+// ── P11 — xodim kartasidan biriktirish + `mine()` tanlovi ────────────────────
+
+const EMP = 'emp-1';
+const SM_A = '22222222-2222-4222-8222-222222222222';
+const SM_B = '33333333-3333-4333-8333-333333333333';
+
+/**
+ * `employeeSmenas` / `setEmployeeSmenas` uchun mock-klient.
+ *
+ * Qulflanadigan bug-klasslar:
+ *   1. 🔴 ijara: begona hisobning xodimiga biriktirish (xodim tekshiruvisiz
+ *      `smenaEmployee.deleteMany` boshqa ijarachining qatorlarini o'chirardi);
+ *   2. 🔴 `deleteMany` faqat SHU hisob smenalari bilan cheklangan bo'lishi —
+ *      `smenaEmployee` da `accountId` maydoni YO'Q, ya'ni filtrsiz o'chirish
+ *      xodimning boshqa hisobdagi biriktirmasini ham yo'q qilardi;
+ *   3. 🟠 arxivlangan/begona smenaga biriktirish jimgina o'tib ketmasin.
+ */
+function makeAssignService(opts: { employee?: boolean; smenaIds?: string[] } = {}) {
+  const known = opts.smenaIds ?? [SM_A, SM_B];
+  const deleteMany = vi.fn().mockResolvedValue({ count: 1 });
+  const createMany = vi.fn().mockResolvedValue({ count: 1 });
+  const tx = { smenaEmployee: { deleteMany, createMany } };
+  const client = {
+    employee: {
+      findFirst: vi.fn().mockResolvedValue(opts.employee === false ? null : { id: EMP }),
+    },
+    smena: {
+      findMany: vi.fn(async (args: { where?: { id?: { in?: string[] } } }) => {
+        const wanted = args?.where?.id?.in;
+        const rows = (wanted ?? known).filter((id) => known.includes(id));
+        return rows.map((id) => ({
+          id,
+          name: id,
+          schedule: { name: 'j', startTime: '00:00', endTime: '23:59' },
+          organization: { name: 'org' },
+        }));
+      }),
+    },
+    smenaEmployee: { findMany: vi.fn().mockResolvedValue([{ smenaId: SM_A }]) },
+    $transaction: vi.fn(async (fn: (t: typeof tx) => Promise<unknown>) => fn(tx)),
+  };
+  const service = new SmenaService({ client } as never);
+  return { service, client, deleteMany, createMany };
+}
+
+describe('setEmployeeSmenas — xodim kartasidan biriktirish (P11)', () => {
+  it('begona hisobning xodimi → 404 (hech nima o`chirilmaydi)', async () => {
+    const { service, deleteMany } = makeAssignService({ employee: false });
+    await expect(service.setEmployeeSmenas(ACC, EMP, { smenaIds: [SM_A] })).rejects.toThrow(
+      NotFoundException,
+    );
+    expect(deleteMany).not.toHaveBeenCalled();
+  });
+
+  it('noma`lum/arxivlangan smena → 400, yozuv yo`q', async () => {
+    const { service, deleteMany, createMany } = makeAssignService({ smenaIds: [SM_A] });
+    await expect(service.setEmployeeSmenas(ACC, EMP, { smenaIds: [SM_B] })).rejects.toThrow(
+      BadRequestException,
+    );
+    expect(deleteMany).not.toHaveBeenCalled();
+    expect(createMany).not.toHaveBeenCalled();
+  });
+
+  it('to`liq almashtiradi va o`chirishni SHU hisob smenalari bilan cheklaydi', async () => {
+    const { service, deleteMany, createMany } = makeAssignService();
+    await service.setEmployeeSmenas(ACC, EMP, { smenaIds: [SM_B, SM_B] });
+    expect(deleteMany).toHaveBeenCalledWith({
+      where: { employeeId: EMP, smenaId: { in: [SM_A, SM_B] } },
+    });
+    // Takroriy id bir marta yoziladi (kompozit PK'ni buzmaslik uchun).
+    expect(createMany).toHaveBeenCalledWith(
+      expect.objectContaining({ data: [{ smenaId: SM_B, employeeId: EMP }] }),
+    );
+  });
+
+  it('bo`sh ro`yxat = hamma biriktirmani olib tashlash (createMany chaqirilmaydi)', async () => {
+    const { service, deleteMany, createMany } = makeAssignService();
+    await service.setEmployeeSmenas(ACC, EMP, { smenaIds: [] });
+    expect(deleteMany).toHaveBeenCalledTimes(1);
+    expect(createMany).not.toHaveBeenCalled();
+  });
+});
+
+describe('mine — bir nechta smenada VAQTI KELGANI tanlanadi (P11)', () => {
+  /** `smenaEmployee.findMany` faqat biriktirmalarni qaytaradigan mock. */
+  function makeMineService(rows: Array<{ name: string; startTime: string; endTime: string }>) {
+    const client = {
+      smenaEmployee: {
+        findMany: vi.fn().mockResolvedValue(
+          rows.map((r) => ({
+            smena: {
+              id: r.name,
+              name: r.name,
+              schedule: { startTime: r.startTime, endTime: r.endTime },
+              organization: { id: 'org-1', name: 'org' },
+            },
+          })),
+        ),
+      },
+    };
+    return new SmenaService({ client } as never);
+  }
+
+  it('ro`yxatdagi birinchi smena vaqtdan tashqari bo`lsa ham, faol smena olinadi', async () => {
+    // Toshkent 14:00 (kun O'RTASI — chegara-nuqta emas): tungi smena YOPIQ,
+    // kunduzgi OCHIQ. Eski kod `assignments[0]` ni olib «vaqtdan tashqari»
+    // deb sabab so'rardi.
+    vi.setSystemTime(new Date('2026-08-10T09:00:00Z'));
+    const service = makeMineService([
+      { name: 'Tungi', startTime: '22:00', endTime: '06:00' },
+      { name: 'Kunduzgi', startTime: '09:00', endTime: '18:00' },
+    ]);
+    const res = (await service.mine(ACC, EMP)) as {
+      smena: { name: string } | null;
+      withinShift: boolean;
+    };
+    expect(res.smena?.name).toBe('Kunduzgi');
+    expect(res.withinShift).toBe(true);
+    vi.useRealTimers();
+  });
+
+  it('hech biri faol bo`lmasa — birinchisi, withinShift=false', async () => {
+    vi.setSystemTime(new Date('2026-08-10T09:00:00Z')); // Toshkent 14:00
+    const service = makeMineService([
+      { name: 'Tungi', startTime: '22:00', endTime: '06:00' },
+      { name: 'Erta', startTime: '05:00', endTime: '08:00' },
+    ]);
+    const res = (await service.mine(ACC, EMP)) as {
+      smena: { name: string } | null;
+      withinShift: boolean;
+    };
+    expect(res.smena?.name).toBe('Tungi');
+    expect(res.withinShift).toBe(false);
+    vi.useRealTimers();
+  });
+
+  it('biriktirma yo`q → smena null', async () => {
+    const service = makeMineService([]);
+    const res = (await service.mine(ACC, EMP)) as { smena: unknown };
+    expect(res.smena).toBeNull();
   });
 });

@@ -1,12 +1,23 @@
 'use client';
 
 import { api } from '@/lib/api-client';
-import { Button, Input } from '@moysklad/ui';
+import { Button, Input, NativeSelect } from '@moysklad/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { type MatrixCell, type MatrixMeta, PermissionMatrix } from './permission-matrix';
+
+/**
+ * MK29 shablonlari (`GET /roles/templates`). Ular server registridan keladi —
+ * ro'yxat bu yerda NUSXA qilinmaydi.
+ */
+interface RoleTemplate {
+  slug: string;
+  seedName: string;
+  description: string;
+  uiMode: 'full' | 'kiosk';
+}
 
 export function NewRoleView() {
   const t = useTranslations('pages.analitika_settings');
@@ -18,18 +29,38 @@ export function NewRoleView() {
     queryFn: () => api.get<MatrixMeta>('/roles/meta'),
     staleTime: 5 * 60 * 1000,
   });
+  const templatesQuery = useQuery<{ items: RoleTemplate[] }>({
+    queryKey: ['roles', 'templates'],
+    queryFn: () => api.get<{ items: RoleTemplate[] }>('/roles/templates'),
+    staleTime: 5 * 60 * 1000,
+  });
 
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [perms, setPerms] = useState<MatrixCell[]>([]);
+  // P11 — shablon tanlansa rol matritsasi VA `uiMode` server registridan
+  // qo'llanadi. Bu yagona yo'l `uiMode: 'kiosk'` olish uchun: `POST /roles`
+  // uni umuman qabul qilmaydi, ya'ni shablonsiz «Kassir» roli har doim
+  // butun ERP menyusi bilan chiqardi (kassa TZ §3.1 buzilishi).
+  const [templateSlug, setTemplateSlug] = useState('');
+  const templates = templatesQuery.data?.items ?? [];
+  const selectedTemplate = templates.find((x) => x.slug === templateSlug) ?? null;
 
   const create = useMutation({
-    mutationFn: () =>
-      api.post<{ id: string }>('/roles', {
+    mutationFn: async () => {
+      const created = await api.post<{ id: string; version: number }>('/roles', {
         name: name.trim(),
         description: description.trim() || undefined,
         permissions: perms,
-      }),
+      });
+      if (templateSlug && created?.id) {
+        await api.post(`/roles/${created.id}/apply-template`, {
+          slug: templateSlug,
+          version: created.version,
+        });
+      }
+      return created;
+    },
     onSuccess: (created) => {
       qc.invalidateQueries({ queryKey: ['roles'] });
       if (created?.id) router.push(`/analitika/sozlamalar/rollar/${created.id}`);
@@ -75,8 +106,49 @@ export function NewRoleView() {
               className="mt-1"
             />
           </label>
+          <label className="block text-sm">
+            <span className="block text-[var(--ms-text-muted)]">{t('role_template')}</span>
+            <NativeSelect
+              value={templateSlug}
+              onChange={(e) => {
+                const slug = e.target.value;
+                setTemplateSlug(slug);
+                // Nom bo'sh bo'lsa shablon nomidan boshlang'ich qiymat —
+                // «Kassir» rolini qidirayotgan egasi uni qo'lda yozmasin.
+                const tpl = templates.find((x) => x.slug === slug);
+                if (tpl && !name.trim()) setName(tpl.seedName);
+              }}
+              className="mt-1 w-full"
+              data-test-id="role-template-select"
+            >
+              <option value="">{t('role_template_none')}</option>
+              {templates.map((tpl) => (
+                <option key={tpl.slug} value={tpl.slug}>
+                  {tpl.seedName}
+                  {tpl.uiMode === 'kiosk' ? ' — kiosk' : ''}
+                </option>
+              ))}
+            </NativeSelect>
+            {selectedTemplate && (
+              <span
+                className="mt-1 block text-[var(--ms-text-muted)] text-xs"
+                data-test-id="role-template-hint"
+              >
+                {selectedTemplate.description}
+                {selectedTemplate.uiMode === 'kiosk' ? ` · ${t('role_template_kiosk')}` : ''}
+              </span>
+            )}
+          </label>
         </div>
       </section>
+
+      {/* Shablon tanlangan bo'lsa quyidagi matritsa QAYTA YOZILADI — buni
+          oldindan aytish shart, aks holda admin katakchalarni bexuda belgilaydi. */}
+      {selectedTemplate && (
+        <p className="text-[var(--ms-text-muted)] text-xs" data-test-id="role-template-overwrite">
+          {t('role_template_overwrite')}
+        </p>
+      )}
 
       <PermissionMatrix meta={metaQuery.data} value={perms} onChange={setPerms} />
 

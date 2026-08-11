@@ -626,9 +626,18 @@ export class RolesService {
 
   /**
    * moysklad «Доступ только к точкам продаж» — retail-only system role.
-   * Deliberately narrow: POS flows (retail sales, cashier sessions) plus the
-   * read access they need (products to sell, counterparties to sell to).
-   * Admins can widen it later in the matrix editor like any role.
+   *
+   * 🔴 P11 (2026-08-11): matritsa endi `cashier` SHABLONIDAN olinadi va rol
+   * `uiMode='kiosk'` bilan yaratiladi. Ilgari bu yerda 10 katakchali qo'lda
+   * yozilgan ro'yxat turardi va `uiMode` sukut bo'yicha `full` qolardi —
+   * ya'ni xodim kartasidagi «faqat savdo nuqtalari» radiosi (egasi uchun eng
+   * ko'rinadigan «kassir qilish» yo'li) aslida BUTUN ERP menyusiga ega,
+   * qarz to'lovi/xarajat/zakaz qabuli esa 403 beradigan yarim-kassir
+   * yaratardi. Endi ikkala yo'l — bu radio va shablon tanlash — bir xil
+   * (registr: `role-templates.ts#cashier`, `KIOSK_ALLOWED` bilan mos).
+   *
+   * MAVJUD rollar TEGILMAYDI (pastdagi erta qaytish): ishlab turgan hisobda
+   * kimningdir kirishi jimgina torayib/kengayib ketmasin.
    */
   async ensurePosRole(accountId: string): Promise<{ id: string; name: string }> {
     const existing = await this.prisma.client.role.findFirst({
@@ -636,18 +645,8 @@ export class RolesService {
       select: { id: true, name: true },
     });
     if (existing) return existing;
-    const cells: Array<{ entity: string; action: string; scope: string }> = [
-      { entity: 'retailsale', action: 'view', scope: 'ALL' },
-      { entity: 'retailsale', action: 'create', scope: 'ALL' },
-      { entity: 'retailsale', action: 'update', scope: 'ALL' },
-      { entity: 'retailsale', action: 'print', scope: 'ALL' },
-      { entity: 'cashiersession', action: 'view', scope: 'ALL' },
-      { entity: 'cashiersession', action: 'create', scope: 'ALL' },
-      { entity: 'cashiersession', action: 'update', scope: 'ALL' },
-      { entity: 'product', action: 'view', scope: 'ALL' },
-      { entity: 'counterparty', action: 'view', scope: 'ALL' },
-      { entity: 'counterparty', action: 'create', scope: 'ALL' },
-    ];
+    const tpl = ROLE_TEMPLATES.cashier;
+    const cells = resolveTemplateMatrix('cashier').filter((c) => c.scope !== 'NO');
     try {
       return await this.prisma.client.role.create({
         data: {
@@ -655,7 +654,14 @@ export class RolesService {
           name: POS_ROLE_NAME,
           description: 'Faqat savdo nuqtalari (kassa) uchun kirish',
           isSystem: true,
-          permissions: { createMany: { data: cells, skipDuplicates: true } },
+          templateSlug: 'cashier',
+          uiMode: tpl.uiMode,
+          permissions: {
+            createMany: {
+              data: cells.map((c) => ({ entity: c.entity, action: c.action, scope: c.scope })),
+              skipDuplicates: true,
+            },
+          },
         },
         select: { id: true, name: true },
       });
