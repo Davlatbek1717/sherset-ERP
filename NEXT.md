@@ -331,6 +331,53 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-08-12b (REJA-KASSA-PROD **FAZA P3** — chek hayot sikli · ✅ DEPLOYED + JONLI
+> VERIFY 18/18 + PROD ROL TOP-UP) — `3680d104` prodda** (`Deploy done: c6dc0566… →
+> 3680d104…`, BUILD_ID `DdCLPoRfW7DsCwvOiCxZM`). Commitlar: `2a1a2fb6` (kod+testlar) ·
+> `3680d104` (ops skript) · `51de6e5c` (verify/tozalash skriptlari) · `02fc79a` (hisobot).
+>
+> **🔴 REJANING TAXMINI NOTO'G'RI EDI.** Reja «cheklar omborchi yo'qligidan qotadi»
+> degan edi. Jonli probe (mavjud bo'lmagan UUID + kassir tokeni, YOZMAYDI):
+> `POST /retail-sales/<fake>/post` → **403 «retailsale.approve … (sizda: NO)»**,
+> `cancel` → 403, `mark-ready` → 404 (ruxsat bor). Ya'ni kassir chekni yaratardi,
+> yig'ishga yuborardi, hatto o'zi «Tayyor» qilardi — lekin **na to'lay, na bekor qila
+> olardi**. Prod: 4 `picking` chek, **0 posted**, `salesCount = 0`. Omborchi yo'qligi —
+> IKKINCHI darajali sabab. Xotira: `cashier-cannot-post-permission-wall`.
+>
+> **Egasi qarorlari (4 savol, fazada berildi):** omborchi **+** to'g'ridan-to'g'ri sotish
+> (ikkalasi) · qaytarish kassirda **EMAS** · qotgan chekda **ogohlantirish + ro'yxat**
+> (avto-bekor yo'q) · picking'da **rezerv qilinsin**.
+>
+> **Nima qilindi:** (1) kassirga `retailsale.approve`, `refund` esa `salesreturn.create`
+> ga ko'chirildi (aks holda to'lovni ochish pul chiqarishni ham jim ochardi); omborchi
+> shabloniga `retailsale` view/update/print. (2) POS'da **«Sotish»** tugmasi — picking'siz,
+> darhol to'lov; kioskda qaytarish tugmasi yashirin. (3) **H5** — `send-to-picking` rezerv
+> qiladi, `cancel` bo'shatadi, `post` yutadi (`assertAvailable` dan OLDIN). (4) **H12** —
+> `payedSumMinor = jami − qarz` (prodda 17/17 chekda 0 edi). (5) smena yopish xabari endi
+> chek nomi + bosqichi + summasi bilan.
+>
+> **Testlar:** 48 yangi. `retail-sale-lifecycle-permissions.test.ts` (15) — HAQIQIY guard +
+> shablon matritsasi; **bo'sh emasligi mutant bilan tekshirildi** (ruxsat olib tashlanganda
+> aynan prod bug'ini ko'rsatib qizardi). Gate: typecheck 10/10 · lint 0 · i18n ✅ ·
+> api **8095** · web **3640**.
+>
+> **Prod-op (DRY → APPLY):** `ops-p3-role-topup --apply` → «Kassir» roliga
+> `retailsale.approve` (1 qator; umumiy `template-topup` YARAMAYDI — u `retailsale` ni
+> chetlab o'tadi) · `ops-p3-live-verify --live` → **18/18 ✅** (rezerv 0→1→0 · kassir
+> to'ladi 201 · payedSum 200=200 · qoldiq 1000→999 · **salesCount 0→1** · kassir bekor
+> qildi 201 · kassir refund **403** · sinov cheklari qaytarildi, ombor 1000 ga qaytdi) ·
+> `ops-p3-cancel-stuck-sales --apply` → **6 qotgan chek bekor qilindi**.
+> **Prod holati:** `picking = 0 · ready = 0 · draft = 0`, rezerv net 0.
+>
+> **Ochiq qoldi:** brauzer-QA YO'Q (→P10) · omborchi hisobi prodda hamon yo'q,
+> `sklad_keepers = 0` ⇒ yig'ish topshirig'i yaratilmaydi (bloker emas: «Sotish» yo'li bor) ·
+> `payedSumMinor` backfill QILINMADI (eski 2 sinov cheki → P13) · ikki kassa poyga sinovi
+> yo'q (→P10) · 🔴 **VPS zaxirasi 09-avgustdan beri har kuni o'tkazib yuborilmoqda**
+> (disk 90%, 10GB guard; zaxira fayllarini O'CHIRMADIM — egasining qarori).
+>
+> **Keyingi:** `docs/REJA-KASSA-PROD-2026-08.md` → **FAZA P4** (smena: unutilgan smena
+> himoyasi + jonli yopish sinovi). To'liq hisobot: o'sha faylning «HISOBOTLAR» → P3.
+
 > **🕒 2026-08-12a (REJA-KASSA-PROD **FAZA P2** — qarz: mijoz kartasi bitta halol raqam +
 > tarix · ✅ DEPLOYED + PROD BACKFILL + BRAUZER-QA) — `160cdcbc` va `4b0d6392` prodda**
 > (`Deploy done: 160cdcbc… → 4b0d6392…`, BUILD_ID `RTIel8gVI8RP6eK4BdvmW`).
