@@ -101,6 +101,33 @@ metrikasi bor. Lekin `KpiProfile` **0 qator** ⇒ ball hisoblanmaydi. Egasining 
 - MK32 xarakteristika testlari 3 kuzatuvni tuzatmagan (xotira).
 - Prod DB'da **test-qoldiq 1000** va sun'iy narxlar (`prod-test-stock-1000`).
 
+### 🔴 F. XODIM YARATISH — egasi UI'dan kassir qo'sha OLMAYDI (2026-08-11 qo'shildi)
+
+3 test kassiri **faqat skript bilan** yaratildi (`ops-create-test-cashiers.ts`), chunki to'liq
+zanjir UI'dan chiqmaydi. Ishlaydigan kassir uchun zanjir (o'lchangan,
+`prod-test-cashiers` xotirasi): **rol (kiosk) → smena jadvali → smena → xodim →
+EmployeeRole → SmenaEmployee → PIN**. UI'da hozir borligi ma'lum: xodim yaratish sahifasi,
+rol biriktirish, PIN modali (F1 to'lqini). **Qolgan bo'g'inlar UI'da bormi-yo'qmi —
+O'LCHANMAGAN**: smenaga biriktirish (`SmenaEmployee`siz POS «Siz bu smenaga
+biriktirilmagansiz» deb rad etadi), kiosk-rolning UI'dan berilishi, HR bog'lanishlar
+(bo'lim/lavozim — 2026-08-11 da ham skript bilan qilindi). Egasi yangi kassir yollasa —
+hozir tizim orqali qo'sha olmaydi, bu real-savdo blokeri.
+
+### 🔴 G. SAVDOGACHA ZANJIR — kassagacha bo'lgan ma'lumotlar ham tayyor emas
+
+Savdo kassaga yetguncha tizimda to'g'ri turishi kerak bo'lgan narsalar (o'lchangan holat):
+- **Kassa sozlamalari:** `CashDesk` prodda **2 ta va ikkalasi bir xil nom** — «Asosiy kassa» ×2.
+  POS qaysi birini olishi noaniq (server «eng eskisini» oladi); Z-hisobot/chek shapkasidagi
+  tashkilot rekvizitlari tekshirilmagan.
+- **Katalog/narxlar:** tovarlar bir-martalik skript bilan import qilingan
+  (`scripts/ops-import-products.ts`, untracked — xlsx'dan). Narx zanjiri POS uchun uch qavat:
+  chakana (default salePrice) · optom (`wholesalePriceTypeId`) · tan (`buyPrice`) — importda
+  uchalasi to'g'ri to'lganmi **o'lchanmagan**. Narxsiz tovar POS'da **0 so'mga sotilishi** mumkin
+  (himoya bormi — o'lchanmagan).
+- **Qoldiq:** hamma tovarda sun'iy **1000 dona** (50 ta inventarizatsiya bilan qo'yilgan,
+  qaytarish retsepti `prod-test-stock-1000` xotirasida). Real savdo boshlanishidan oldin real
+  inventarizatsiya shart — aks holda qoldiq hisoboti birinchi kundan yolg'on.
+
 ---
 
 ## 2. FAZALAR XARITASI (har biri = alohida sessiya)
@@ -117,10 +144,15 @@ metrikasi bor. Lekin `KpiProfile` **0 qator** ⇒ ball hisoblanmaydi. Egasining 
 | **P8** | POS i18n: hardcoded matnlar | web | ✅ | ☐ |
 | **P9** | KPI: profil + ball (`REJA-KASSA-KPI` K1–K2 shu yerdan) | prod-data + api | kerak bo'lsa | ☐ |
 | **P10** | Yakuniy adversarial browser-QA (butun kassa cohort'i) | Phase-2 QA | — | ☐ |
+| **P11** | Xodim/kassir hayot sikli — UI'dan, skriptsiz | web settings/hr + api | ✅ | ☐ |
+| **P12** | Katalog va narx zanjiri (chakana·optom·tan, 0-narx himoyasi) | api/web product + POS | ✅ | ☐ |
+| **P13** | Go-live tozalash: test ma'lumotlardan realga | prod-op + kichik fix | kerak bo'lsa | ☐ |
 
 Tartib sababi: P1–P2 — egasi ko'rgan jonli xatolar (eng ustuvor). P3 — realda savdo shu yerda
 qotadi. P4–P5 — pul hisobi. P6–P7 — qurilma. P8 — sifat. P9 — KPI (egasining qoidasi).
-P10 — hammasi ustidan mustaqil tekshiruv.
+P11–P12 — savdogacha zanjir (xodim yollash va katalog/narx — realda birinchi kun kerak bo'ladi).
+P13 — real savdoga o'tish ostonasida (test-qoldiqni realga almashtirish undan oldin ma'nosiz).
+P10 — eng oxirida, hammasi ustidan mustaqil tekshiruv.
 
 ---
 
@@ -402,6 +434,123 @@ Faza tugagach «HISOBOTLAR» ga P10 hisobotini yoz va ISHNI TO'XTAT.
 
 ---
 
+## FAZA P11 — Xodim/kassir hayot sikli: UI'dan, skriptsiz
+
+**Muammo (o'lchangan, §1.F):** egasi tizim orqali yangi kassir qo'sha olmaydi — 3 test kassiri
+faqat skript bilan yaratilgan. Ishlaydigan kassir zanjiri: rol (kiosk) → jadval → smena →
+xodim → EmployeeRole → **SmenaEmployee** → PIN. UI bu zanjirning qaysi bo'g'inlarini qoplashi
+o'lchanmagan.
+
+### Vazifalar
+1. **O'lcha (UI'dan, admin sifatida):** yangi sinov-xodimni faqat sahifalar orqali yaratishga
+   urin — har qadamda nima bor/nima yo'q jadvalga tushsin: yaratish · login/parol · rol
+   biriktirish (kiosk rol ro'yxatda ko'rinadimi) · PIN qo'yish (F1 modali) · **smenaga
+   biriktirish** (`SmenaEmployee` uchun UI bormi?) · bo'lim/lavozim/guruh (P-linking skripti
+   qilgan bog'lanishlar UI'dan qilinadimi).
+2. **Uzilgan bo'g'inlarni yop:** yo'q UI'ni qo'sh (eng ehtimoli — smenaga biriktirish va
+   kiosk-rol tayinlash). Yangi ekran o'ylab topilmaydi: mavjud xodim kartasi /
+   `settings/employees` oqimiga bo'lim sifatida kiradi.
+3. **Bog'liq sahifalarni tekshir:** yaratilgan kassir hamma joyda to'g'ri ko'rinsin —
+   `settings/employees` ro'yxati · HR sahifalari (`/hr` xodimlar, davomat, oylik) ·
+   `/menejer` ekranlari · POS kirish (`/kassa-kirish` da yangi PIN ishlaydi). Kamida bitta
+   sinov-xodim bilan **uchdan-uchgacha UI-yo'l** jonli o'tkaziladi.
+4. **Arxivlash/ishdan ketish:** xodim arxivlansa PIN bilan kira olmasligi va smenadan
+   chiqishi tekshiriladi (`manager-daily-kpi-acceptance` xotirasi: ketganda ruxsatlar ochiq
+   qolishi — ma'lum xavf-klass).
+5. Testlar (web wiring + api yangi endpoint bo'lsa) + gate → deploy → jonli verify.
+6. Sinov-xodim arxivlanadi (prodda axlat qolmasin) — hisobotda yoziladi.
+7. Hisobot → **TO'XTA**.
+
+### Tugash mezoni
+Egasi hech qanday skriptsiz, faqat sahifalar orqali yangi kassir yarata oladi va u POS'ga
+kira oladi; zanjirning har bo'g'ini hisobotdagi jadvalda «UI'dan ✅» deb belgilangan.
+
+### Sessiya prompti (nusxa ol)
+
+```
+docs/REJA-KASSA-PROD-2026-08.md faylini o'qi va FAQAT «FAZA P11 — Xodim/kassir hayot sikli»
+ni bajar. Rejaning §0 majburiy.
+
+Avval UI'dan to'liq zanjirni O'LCHA (qaysi bo'g'in yo'q — jadval), keyin yo'q bo'g'inlarni
+qo'sh. Mavjud sahifalar oqimiga kir, yangi ekran o'ylab topma. Oxirida sinov-xodim bilan
+uchdan-uchgacha UI-yo'l: yaratish → rol → smena → PIN → /kassa-kirish. Gate → deploy →
+jonli verify. Faza tugagach «HISOBOTLAR» ga P11 hisobotini yoz va ISHNI TO'XTAT.
+```
+
+---
+
+## FAZA P12 — Katalog va narx zanjiri (savdogacha tayyorlik)
+
+**Muammo (o'lchangan, §1.G):** tovarlar bir-martalik skript importidan kelgan; POS uch narxga
+tayanadi (chakana `salePrice` · optom `wholesalePriceTypeId` · tan `buyPrice`) — importda
+uchalasi to'g'ri to'lganmi o'lchanmagan. Narxsiz tovar 0 so'mga sotilishi mumkin.
+
+### Vazifalar
+1. **O'lcha (prod, read-only skript):** nechta tovarda chakana narx yo'q/0 · optom narx yo'q ·
+   tan narx yo'q (NULL — bu «0» emas!) · narx turi ulanmagan. Natija son bilan hisobotga.
+2. **0-narx himoyasi:** POS'da narxsiz tovar savatga qo'shilganda kassir **ochiq ogohlantirish**
+   ko'rsin (jim 0 so'mlik qator emas). ZARAR tasmasi allaqachon bor — bu undan oldingi qatlam
+   (narx umuman YO'Q holati). Server tomonda ham 0-narx chek post bo'lishiga siyosat: egasidan
+   so'raladi (taqiqlash / ogohlantirish bilan ruxsat).
+3. **Tovar kartasi → POS zanjiri:** kartada narx o'zgartirilsa POS darhol ko'rishi (kesh/query
+   invalidatsiya) jonli tekshiriladi; import skriptidagi narx-mapping xatosi topilsa tuzatiladi.
+4. **Import skriptini rasmiylashtir:** `ops-import-products.ts` (untracked) repoga kirsin yoki
+   o'rnini bosuvchi hujjatlashtirilgan yo'l ko'rsatilsin — egasi keyingi safar tovar qo'shishni
+   qanday qilishi aniq bo'lsin (UI'dan yakka qo'shish allaqachon bor — faqat ommaviy import savol).
+5. Testlar + gate → deploy → jonli verify (narxsiz sinov-tovar bilan POS xulqi).
+6. Hisobot → **TO'XTA**.
+
+### Sessiya prompti (nusxa ol)
+
+```
+docs/REJA-KASSA-PROD-2026-08.md faylini o'qi va FAQAT «FAZA P12 — Katalog va narx zanjiri»
+ni bajar. Rejaning §0 majburiy.
+
+Avval prod'ni o'lcha (narxsiz/tansiz tovarlar soni — read-only skript), keyin 0-narx
+himoyasini qo'sh (siyosatni egasidan so'ra), tovar-kartasi→POS zanjirini jonli tekshir.
+Gate → deploy → jonli verify. Faza tugagach «HISOBOTLAR» ga P12 hisobotini yoz va ISHNI
+TO'XTAT.
+```
+
+---
+
+## FAZA P13 — Go-live tozalash: test ma'lumotlardan realga
+
+**Nima uchun:** prod hozir sinov maydonchasi — qoldiq 1000, sun'iy narxlar, test kassirlar
+PIN'i `1111/2222/3333`, ikkita bir xil nomli kassa. Real savdo shu ma'lumotlar ustida boshlansa
+birinchi kundan hisobotlar yolg'on bo'ladi. **Bu faza real savdo boshlanishi arafasida, P1–P12
+tugagach yugurtiriladi.**
+
+### Vazifalar
+1. **Test-qoldiqni realga:** `prod-test-stock-1000` xotirasidagi qaytarish retsepti bo'yicha
+   sun'iy 1000-lar olib tashlanadi → egasi bilan **real inventarizatsiya** kiritiladi (yoki
+   real qoldiq ma'lum bo'lgan qismigina — qolgani 0/«sanalmagan»; qaysi biri — egasi qaror qiladi).
+2. **Kassa sozlamalari:** ikkita «Asosiy kassa»dan qaysi biri haqiqiy — ikkinchisi nomlanadi/
+   arxivlanadi; chek va Z-hisobot shapkasidagi tashkilot rekvizitlari (nom, STIR, manzil)
+   egasi bergan qiymatlar bilan to'ldiriladi va chop-ko'rinishda tekshiriladi.
+3. **Hisoblar gigienasi:** test kassirlar yo real ismlarga o'tkaziladi (PIN almashtiriladi —
+   `1111` real savdoda qolmasin), yo arxivlanadi; `juftlash` admin hisobining paroli
+   almashtiriladi (u hisobotlarda ochiq yozilgan); egasining asosiy hisobi tekshiriladi.
+4. **Test hujjatlar:** sinov cheklari/smenalar/qarz-sinovlari (P1–P5 dan qolganlari) —
+   ro'yxati chiqariladi, egasi bilan bekor/arxiv qaroriga kelinadi. 🔴 O'chirish EMAS —
+   bekor qilish (jurnal izi qolsin).
+5. Har amal DRY→APPLY skript yoki UI orqali, natijalar son bilan hisobotga.
+6. Hisobot → **TO'XTA**. Shu faza yopilgach kassa real savdoga ochiq deb e'lon qilinadi
+   (P10 QA undan keyin ham bir aylanishi ma'qul).
+
+### Sessiya prompti (nusxa ol)
+
+```
+docs/REJA-KASSA-PROD-2026-08.md faylini o'qi va FAQAT «FAZA P13 — Go-live tozalash» ni bajar.
+Rejaning §0 majburiy. Bu faza EGASI BILAN o'tadi: real qoldiq, rekvizitlar, PIN'lar — hammasi
+uning qaroridan keyin. prod-test-stock-1000 xotirasidagi retseptdan boshla.
+
+Har amal avval DRY, natija son bilan. O'chirish yo'q — bekor qilish/arxivlash. Faza tugagach
+«HISOBOTLAR» ga P13 hisobotini yoz va ISHNI TO'XTAT.
+```
+
+---
+
 ## HISOBOTLAR
 
 > Har faza agenti o'z bo'limini shu yerda to'ldiradi. Shablon o'zgartirilmaydi, bo'limlar
@@ -571,3 +720,6 @@ bilan tekshirildi — begona fayl yo'q.
 ### P8 — ☐ hali bajarilmagan
 ### P9 — ☐ hali bajarilmagan
 ### P10 — ☐ hali bajarilmagan
+### P11 — ☐ hali bajarilmagan
+### P12 — ☐ hali bajarilmagan
+### P13 — ☐ hali bajarilmagan
