@@ -266,9 +266,17 @@ kerak, aks holda yangilanish keyingi «Chiqish» ga qoladi.
 
 ### Server tomoni (bir marta, admin)
 
-Kanal — oddiy statik katalog. Nginx `location` uchala konfiguratsiyada bor
-(`deploy/nginx-*.conf`), yuklash tartibi va tuzoqlar
-`deploy/DEPLOY-sherset.md` → «7. Kassa (Electron) installer + update channel».
+Kanal — oddiy statik katalog. **erp.sherset.uz da 2026-08-11 da YOQILDI**
+(`deploy/nginx-erp.sherset.uz.conf` → `location /downloads/`, fayllar
+`/var/www/kassa-downloads/desktop/` da — ATAYLAB repo tashqarisida, chunki
+deploy `git reset --hard` qiladi). Boshqa domenlarniki `deploy/nginx-*.conf`
+da; yuklash tartibi va tuzoqlar `deploy/DEPLOY-sherset.md` → «7. Kassa
+(Electron) installer + update channel».
+
+🔴 Shu paytgacha kanal **404** qaytarardi: repo'da erp.sherset.uz uchun nginx
+konfiguratsiyasi umuman yo'q edi va yuqoridagi «uchala konfiguratsiyada bor»
+degan gap FAOL prod'ga tegishli emasdi. Ya'ni ilova har 4 soatda so'rov
+yuborib, jimgina 404 olardi.
 
 ```
 https://<server>/downloads/desktop/latest.yml
