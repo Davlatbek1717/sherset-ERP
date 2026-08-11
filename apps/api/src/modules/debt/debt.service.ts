@@ -2063,15 +2063,20 @@ export class DebtService {
         throw new NotFoundException('Qarz topilmadi');
       }
 
-      await this.balances.applyDelta(
-        tx,
-        accountId,
-        debt.counterpartyId,
-        debt.currency,
-        -debt.totalMinor,
-        // Jurnal (Faza 9) — teskari yozuv o'sha qarz kartochkasiga havola qiladi.
-        { docType: 'debt', docId: id, organizationId: null },
-      );
+      // 🔴 P1 SIMMETRIYASI: adopsiya qatori (`balanceAdopted`) balansga
+      // `+total` YOZMAGAN — qarz u yerda allaqachon bor edi. Unga `−total`
+      // yozish mijozning HAQIQIY qarzini o'chirib yuborardi.
+      if (!debt.balanceAdopted) {
+        await this.balances.applyDelta(
+          tx,
+          accountId,
+          debt.counterpartyId,
+          debt.currency,
+          -debt.totalMinor,
+          // Jurnal (Faza 9) — teskari yozuv o'sha qarz kartochkasiga havola qiladi.
+          { docType: 'debt', docId: id, organizationId: null },
+        );
+      }
     });
 
     return { ok: true };

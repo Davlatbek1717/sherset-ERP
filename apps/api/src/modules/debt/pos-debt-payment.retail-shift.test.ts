@@ -113,7 +113,11 @@ function makeDb(sessions: SessionRow[]) {
   };
 
   const tx = {
-    $queryRaw: async () => open().map((d) => ({ id: d.id })),
+    // P1 — `pay()` avval BALANS qatorini qulflaydi. Bu to'plam smena
+    // wiring'ini o'lchaydi va balansni seed qilmaydi ⇒ bo'sh natija =
+    // «qator yo'q» (adopsiya yo'q).
+    $queryRaw: async (s: TemplateStringsArray) =>
+      s.join(' ').includes('counterparty_balances') ? [] : open().map((d) => ({ id: d.id })),
     debt: debtModel,
     debtPayment: paymentModel,
   };

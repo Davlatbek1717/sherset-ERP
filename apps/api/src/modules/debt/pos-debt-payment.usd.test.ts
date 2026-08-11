@@ -169,7 +169,11 @@ function makeDb(rows: DebtRow[]) {
   };
 
   const tx = {
-    $queryRaw: async () => openOf().map((d) => ({ id: d.id })),
+    // P1 — `pay()` avval BALANS qatorini qulflaydi. Bu to'plam dollar
+    // konvertatsiyasini o'lchaydi va balansni seed qilmaydi ⇒ bo'sh natija =
+    // «qator yo'q» (adopsiya yo'q, reyestr qoldig'i yagona chegara).
+    $queryRaw: async (s: TemplateStringsArray) =>
+      s.join(' ').includes('counterparty_balances') ? [] : openOf().map((d) => ({ id: d.id })),
     debt: debtModel,
     debtPayment: paymentModel,
   };

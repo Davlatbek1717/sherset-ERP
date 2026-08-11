@@ -193,7 +193,11 @@ function makeDb(rows: DebtRow[]) {
 
   function makeTx(owned: Set<string>) {
     return {
-      $queryRaw: async (_s: TemplateStringsArray, ...values: unknown[]) => {
+      $queryRaw: async (s: TemplateStringsArray, ...values: unknown[]) => {
+        // P1 — `pay()` endi IKKI qulf oladi. Bu to'plam FIFO/qulf xulqini
+        // o'lchaydi va balans qatorini SEED QILMAYDI ⇒ bo'sh natija =
+        // «qator yo'q» (o'lchanmagan): adopsiya yo'q, reyestr xulqi o'zgarmaydi.
+        if (s.join(' ').includes('counterparty_balances')) return [];
         const [accountId, counterpartyId] = values as [string, string];
         await acquire(`cp:${counterpartyId}`, owned);
         // Qulf olingandan KEYIN qayta baholash (EvalPlanQual).

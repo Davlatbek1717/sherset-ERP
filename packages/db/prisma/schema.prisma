@@ -11290,6 +11290,18 @@ model Debt {
   problemAt     DateTime? @map("problem_at") @db.Timestamptz()
   problemById   String?   @map("problem_by_id") @db.Uuid
 
+  /// 🔴 BALANSDAN ADOPSIYA QILINGAN QATOR (P1, 2026-08-11).
+  ///
+  /// `true` ⇒ bu qator mijozning `CounterpartyBalance` dagi ALLAQACHON MAVJUD
+  /// qarzini reyestrga olib kirish uchun to'lov paytida ochilgan
+  /// (`pos-debt-payment.service.ts#adoptBalanceDebt`). Odatdagi `Debt.create`
+  /// balansga `+totalMinor` yozadi (§7.3 simmetriyasi) — adopsiya qatori esa
+  /// YOZMAYDI: qarz balansda bor, qo'shsak IKKI KARRA sanalardi.
+  ///
+  /// ⚠️ SIMMETRIYA MAJBURIY: `remove()` ham bunday qatorga `−totalMinor`
+  /// yozmasligi shart, aks holda o'chirish mijozning qarzini yo'q qilardi.
+  balanceAdopted Boolean @default(false) @map("balance_adopted")
+
   /// Mas'ul xodim (call-markaz operatori) — ro'yxat filtri.
   ownerId    String? @map("owner_id") @db.Uuid
   /// Qarzni bergan kassir — §3.9 kunlik kassir hisoboti shu ustundan yig'iladi.

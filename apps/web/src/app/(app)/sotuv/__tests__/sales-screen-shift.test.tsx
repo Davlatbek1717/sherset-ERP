@@ -41,6 +41,11 @@ const CASH_DESK_ID = '55555555-5555-4555-8555-555555555555';
 
 const DEBT_SUMMARY = {
   counterparty: { id: 'cp-1', name: 'Usta Vali', phone: '+998 90 111 22 33' },
+  // P1 — oyna endi `payableMinor` ni o'qiydi (server `debtPayable` bilan bir
+  // formula). Bu fixture'da balans reyestrga TENG ⇒ adopsiya yo'q, ya'ni
+  // smena/kassa wiring xulqi o'zgarmaydi.
+  payableMinor: '5000000',
+  adoptableMinor: '0',
   outstandingMinor: '5000000',
   openCount: 2,
   oldestAt: '2026-07-01T10:00:00.000Z',

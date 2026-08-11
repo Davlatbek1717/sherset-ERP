@@ -30,6 +30,16 @@ interface DebtRow {
 
 interface DebtSummary {
   counterparty: CounterpartyRow;
+  /**
+   * 🔴 P1 — POS QABUL QILA OLADIGAN summa: `max(reyestr qoldig'i, balans)`.
+   * Ekran AYNAN shu sonni ko'rsatadi va ortiqcha-to'lov chegarasini ham
+   * shundan oladi. Formula server bilan bitta (`debtPayable`) — ikkinchi
+   * hisob-kitob manbai yaratilmaydi.
+   */
+  payableMinor: string;
+  /** Shundan reyestrda yo'q, to'lov paytida reyestrga olib kiriladigan qism. */
+  adoptableMinor: string;
+  /** `Debt` reyestridagi ochiq qoldiq — pastdagi ro'yxat AYNAN shu. */
   outstandingMinor: string;
   openCount: number;
   oldestAt: string | null;
@@ -167,7 +177,15 @@ export function DebtPaymentDialog({
   const usdBlocked = usdRateE8 == null || usdRateE8 <= 0n;
   const isUsd = payCurrency === 'USD';
 
-  const outstanding = BigInt(summary?.outstandingMinor ?? '0');
+  /**
+   * 🔴 P1 — `payableMinor`, `outstandingMinor` EMAS. Reyestr prodda bo'sh
+   * bo'lgani uchun eski son bilan ekran «Qarz yo'q» derdi va tasdiqlash
+   * tugmasi umuman chizilmasdi — kassada berilgan qarzni kassada to'lash
+   * yo'li yo'q edi (`pos-debt-two-ledger-split`).
+   */
+  const outstanding = BigInt(summary?.payableMinor ?? '0');
+  /** Reyestrda yo'q, balansdan olinadigan qism — pastda ochiq ko'rsatiladi. */
+  const adoptable = BigInt(summary?.adoptableMinor ?? '0');
   // FE-09: yagona pul-parse. Ilgari bu yerda lokal `toMinor` yashardi —
   // float orqali yaxlitlardi va valyuta scale'ini qattiq 100 deb olardi.
   //
@@ -399,6 +417,21 @@ export function DebtPaymentDialog({
 
                     {/* Qarzlar ro'yxati — qaysi biri qachon ochilgani ko'rinsin. */}
                     <div className="flex flex-col gap-1">
+                      {/* P1 — reyestrda `QRZ-` qatori yo'q, lekin balansda qarz
+                          bor holat. Jimgina umumiy songa qo'shib qo'yish
+                          kassirga «bu pul qayerdan» degan savolni javobsiz
+                          qoldirardi. */}
+                      {adoptable > 0n && (
+                        <div
+                          data-test-id="debt-pay-from-balance"
+                          className="flex items-center justify-between rounded-lg border border-[var(--ms-border)] border-dashed px-3 py-1.5 text-xs"
+                        >
+                          <span className="text-[var(--ms-text-muted)]">
+                            {t('debt_from_balance')}
+                          </span>
+                          <span className="font-medium tabular-nums">{formatMoney(adoptable)}</span>
+                        </div>
+                      )}
                       {(summary?.debts ?? []).map((d) => (
                         <div
                           key={d.id}

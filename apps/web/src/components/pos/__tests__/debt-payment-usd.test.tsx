@@ -44,6 +44,10 @@ function routes(outstandingMinor: string, rate: unknown = RATE) {
     if (path.startsWith('/debts/pos/summary')) {
       return {
         counterparty: CP,
+        // P1 — ekran endi `payableMinor` ni o'qiydi. Bu to'plamda balans
+        // reyestrga TENG (adopsiya yo'q) ⇒ dollar xulqi o'zgarmaydi.
+        payableMinor: outstandingMinor,
+        adoptableMinor: '0',
         outstandingMinor,
         openCount: 1,
         oldestAt: '2026-07-01T00:00:00.000Z',

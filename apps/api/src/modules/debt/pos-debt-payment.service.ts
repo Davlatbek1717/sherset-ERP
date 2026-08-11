@@ -1,18 +1,25 @@
 import { randomUUID } from 'node:crypto';
 import type { Prisma } from '@moysklad/db';
 import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { allocateDocumentNumber } from '../../prisma/document-number.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { CounterpartyBalanceService } from '../counterparty-balance/counterparty-balance.service.js';
 import { MoneyService } from '../money/money.service.js';
 import { debtCashDeskDeltas } from './debt-cash-ledger.js';
-import { type FifoDebt, allocateFifo, splitOriginalMinor, summarize } from './debt-fifo.js';
+import {
+  type FifoDebt,
+  allocateFifo,
+  outstandingOf,
+  splitOriginalMinor,
+  summarize,
+} from './debt-fifo.js';
 import { recalcDebt } from './debt-recalc.js';
 import {
   type PosDebtPaymentInput,
   PosDebtPaymentSchema,
   usdCentsToSomTiyin,
 } from './debt.schema.js';
-import { splitDebtSources } from './pos-customer-debt.js';
+import { debtPayable, planAdoption, splitDebtSources } from './pos-customer-debt.js';
 
 /** FIFO/chek uchun kerakli maydonlar — qulfli va qulfsiz o'qish bir xil shaklda. */
 const DEBT_FIFO_SELECT = {
@@ -24,6 +31,17 @@ const DEBT_FIFO_SELECT = {
   createdAt: true,
   nextContactAt: true,
 } as const;
+
+/**
+ * Qarz DAFTARI valyutasi (P1).
+ *
+ * `DebtPayment.amountMinor` har doim shu valyutada (sxema izohi), FIFO ham
+ * valyutaga qaramay so'mda taqsimlaydi. Mijoz dollar bersa `usdCentsToSomTiyin`
+ * uni shu valyutaga keltiradi. Adopsiya va balans qulfi ham AYNAN shu valyuta
+ * qatoriga tegadi — boshqasini olsak, to'lov mijozning boshqa daftaridan
+ * ayrilardi.
+ */
+const DEBT_LEDGER_CURRENCY = 'UZS';
 
 /**
  * POS «Qarz to'lovi» oynasi (kassa TZ §7.2).
@@ -77,10 +95,20 @@ export class PosDebtPaymentService {
     ]);
     const s = summarize(rows.map(toFifo));
     const split = splitDebtSources(balanceRows, s.outstandingMinor, tillCurrency);
+    const payable = debtPayable(split.balanceMinor, s.outstandingMinor);
 
     return {
       counterparty: cp,
-      /** `Debt` reyestri — `pos/pay` FIFO'si AYNAN shuni yopadi. */
+      /**
+       * 🔴 P1 — KASSIR EKRANIDAGI ASOSIY SON: POS shu summagacha qabul qila
+       * oladi. `outstandingMinor` (reyestr) EMAS: prodda reyestr bo'sh,
+       * qarz esa balansda — ekran o'sha reyestrga qarab «qarzi yo'q» derdi.
+       * Formulasi server bilan bitta (`debtPayable`, sof modul).
+       */
+      payableMinor: payable.payableMinor.toString(),
+      /** Shundan reyestrda YO'Q, to'lov paytida adopsiya qilinadigan qism. */
+      adoptableMinor: payable.adoptableMinor.toString(),
+      /** `Debt` reyestri — FIFO taqsimoti AYNAN shundan boshlanadi. */
       outstandingMinor: s.outstandingMinor.toString(),
       openCount: s.openCount,
       oldestAt: s.oldestAt,
@@ -166,20 +194,57 @@ export class PosDebtPaymentService {
     const batchId = randomUUID();
 
     const result = await this.prisma.client.$transaction(async (tx) => {
+      // ⚠️ QULF TARTIBI: BALANS → QARZLAR (P1). Ikkalasi ham shu tranzaksiya
+      // oxirigacha ushlanadi.
+      //
+      // Nega balans BIRINCHI: (1) adopsiya qarori aynan balansdan olinadi va
+      // reyestr bo'sh bo'lganda `debts … FOR UPDATE` hech nimani ushlamaydi —
+      // ikki parallel to'lov bir xil qoldiqni ko'rib balansdan ORTIQ yozardi;
+      // (2) `debt.service.addCashPayment` yo'li ham amalda shu tartibda
+      // qulflaydi (recalc → applyDelta → debt.update), ya'ni ikki yo'l bir xil
+      // tartibda yuradi va o'zaro deadlock qilmaydi.
+      const balanceMinor = await this.lockBalance(tx, accountId, input.counterpartyId);
+
       // ⚠️ FIFO REJA TRANZAKSIYA ICHIDA, QULFLANGAN qatorlardan hisoblanadi
       // (2026-08-08 `M-10`). Ilgari qarzlar tx'dan TASHQARIDA o'qilardi: bir
       // mijozga ikki parallel to'lov bir xil eski `paidMinor`ni ko'rib, bir
       // qarzga jami qarzdan ortiq allokatsiya yozardi.
       const rows = await this.lockOpenDebts(tx, accountId, input.counterpartyId);
-      if (rows.length === 0) {
+      const registryOutstandingMinor = rows.reduce((acc, r) => acc + outstandingOf(r), 0n);
+
+      // P1 — «to'lanadigan qarz» = max(reyestr, balans). Shu bitta son
+      // ekranda ham, bu yerda ham AYNAN bir formuladan chiqadi.
+      const { payableMinor } = debtPayable(balanceMinor, registryOutstandingMinor);
+      if (payableMinor <= 0n) {
         throw new BadRequestException('Mijozda ochiq qarz yo`q');
       }
-
-      const plan = allocateFifo(rows.map(toFifo), amountMinor);
-      if (plan.leftoverMinor > 0n) {
+      if (amountMinor > payableMinor) {
         // Ortiqcha to'lovni jimgina «avans» qilib yozib qo'ymaymiz: kassa
         // TZ §6.2 bo'yicha qaytim FAQAT naqddan beriladi va bu qaror
         // kassirniki. Shuning uchun aniq xato — qancha ortiqcha ekani bilan.
+        throw new BadRequestException(
+          `To\`lov qarzdan ${(amountMinor - payableMinor).toString()} tiyinga ko\`p. Qaytimni kassadan bering yoki summani kamaytiring.`,
+        );
+      }
+
+      // Reyestrdan ortiq qism — balansdan reyestrga OLIB KIRILADI (adopsiya).
+      // Qator shu yerda tug'iladi va pastdagi FIFO uni oxirgi bo'lib yopadi
+      // (`createdAt` = hozir ⇒ eng yangi). Shartnoma: `pos-customer-debt.ts`.
+      const { adoptMinor } = planAdoption({
+        amountMinor,
+        registryOutstandingMinor,
+        balanceMinor,
+      });
+      const fifoRows =
+        adoptMinor > 0n
+          ? [...rows, await this.adoptBalanceDebt(tx, accountId, userId, input, adoptMinor)]
+          : rows;
+
+      const plan = allocateFifo(fifoRows.map(toFifo), amountMinor);
+      if (plan.leftoverMinor > 0n) {
+        // Yetib bo'lmaydigan shox: yuqoridagi `payableMinor` tekshiruvi va
+        // adopsiya birgalikda butun summaga joy topadi. Baribir turadi —
+        // FIFO qoidasi kelajakda o'zgarsa pul jimgina yo'qolmasin.
         throw new BadRequestException(
           `To\`lov qarzdan ${plan.leftoverMinor.toString()} tiyinga ko\`p. Qaytimni kassadan bering yoki summani kamaytiring.`,
         );
@@ -201,7 +266,9 @@ export class PosDebtPaymentService {
             );
 
       for (const [index, alloc] of plan.allocations.entries()) {
-        const debt = rows.find((r) => r.id === alloc.debtId);
+        // `fifoRows` — reyestr + (bo'lsa) adopsiya qatori. `rows` bo'lsa
+        // adopsiya qatorining cheki jimgina tushib qolardi.
+        const debt = fifoRows.find((r) => r.id === alloc.debtId);
         if (!debt) continue;
 
         await tx.debtPayment.create({
@@ -390,6 +457,96 @@ export class PosDebtPaymentService {
       select: DEBT_FIFO_SELECT,
       orderBy: { createdAt: 'asc' },
     });
+  }
+
+  /**
+   * Kontragentning qarz-valyutasidagi balans qatorini QULFLAB o'qiydi (P1).
+   *
+   * 🔴 `null` = qator YO'Q (o'lchanmagan), «0» EMAS — bu farq `debtPayable`da
+   * qaror o'zgartiradi.
+   *
+   * NEGA raw SQL: Prisma'da qator-qulfi yo'q, `findFirst` esa snapshot beradi.
+   * Reyestr bo'sh mijozda `debts … FOR UPDATE` hech nimani ushlamaydi, ya'ni
+   * balansdan ortiq yozishga qarshi YAGONA to'siq shu qulf. Qator yo'q bo'lsa
+   * qulf ham yo'q — lekin u holda adopsiya ham bo'lmaydi (`null` ⇒ 0).
+   */
+  private async lockBalance(
+    tx: Prisma.TransactionClient,
+    accountId: string,
+    counterpartyId: string,
+  ): Promise<bigint | null> {
+    const rows = await tx.$queryRaw<Array<{ balance_minor: bigint }>>`
+      SELECT balance_minor
+      FROM counterparty_balances
+      WHERE account_id = ${accountId}::uuid
+        AND counterparty_id = ${counterpartyId}::uuid
+        AND currency = ${DEBT_LEDGER_CURRENCY}
+      FOR UPDATE
+    `;
+    const row = rows[0];
+    return row === undefined ? null : BigInt(row.balance_minor);
+  }
+
+  /**
+   * Balansdagi qarzning to'lanayotgan qismini REYESTRGA olib kirish (P1).
+   *
+   * Qator `balanceAdopted: true` bilan tug'iladi va **balansga `+total`
+   * YOZMAYDI** — qarz u yerda allaqachon bor (`debt.service.create` bilan
+   * asosiy farq; sabab `pos-customer-debt.ts` «ADOPSIYA» bo'limida).
+   *
+   * `nextContactAt: null` — chaqiruvchi uni o'sha tranzaksiyada to'liq yopadi,
+   * ya'ni qo'ng'iroq jadvaliga tushmasligi kerak. Izoh yozuvi (`debt_issue`)
+   * mijoz kartasidagi tarixda «bu qator qayerdan paydo bo'ldi» degan savolga
+   * javob beradi.
+   */
+  private async adoptBalanceDebt(
+    tx: Prisma.TransactionClient,
+    accountId: string,
+    userId: string,
+    input: PosDebtPaymentInput,
+    totalMinor: bigint,
+  ) {
+    const year = new Date().getFullYear();
+    const prefix = `QRZ-${year}-`;
+    const seq = await allocateDocumentNumber(tx, accountId, prefix, async () => {
+      const last = await tx.debt.findFirst({
+        where: { accountId, name: { startsWith: prefix } },
+        orderBy: { name: 'desc' },
+        select: { name: true },
+      });
+      return last ? Number.parseInt(last.name.slice(prefix.length), 10) || 0 : 0;
+    });
+
+    const debt = await tx.debt.create({
+      data: {
+        accountId,
+        counterpartyId: input.counterpartyId,
+        name: `${prefix}${String(seq).padStart(5, '0')}`,
+        totalMinor,
+        paidMinor: 0n,
+        currency: DEBT_LEDGER_CURRENCY,
+        status: 'unpaid',
+        balanceAdopted: true,
+        nextContactAt: null,
+        ownerId: userId,
+        issuedById: userId,
+        comment: 'Balansdagi qarzdan kassada qabul qilingan to`lov uchun ochildi (P1).',
+      },
+      select: DEBT_FIFO_SELECT,
+    });
+
+    await tx.debtNote.create({
+      data: {
+        accountId,
+        debtId: debt.id,
+        text: 'Qator kassadagi to`lov paytida mijoz BALANSIDAGI qarzdan ochildi — balansga qayta qo`shilmadi.',
+        authorId: userId,
+        authorRole: 'cashier',
+        kind: 'debt_issue',
+      },
+    });
+
+    return debt;
   }
 
   /**

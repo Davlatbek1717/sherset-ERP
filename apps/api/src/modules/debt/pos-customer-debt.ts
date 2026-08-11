@@ -1,7 +1,13 @@
 /**
  * F9 — POS mijoz kartasi: **ikki qarz daftarini ochiq qilish** (sof modul).
  *
- * 🔴 MUAMMO (kod bilan o'lchangan, 2026-08-11). Bu loyihada mijoz qarzi ikki
+ * 🔴 P1 (2026-08-11) YANGILANISHI — pastdagi «NEGA BU YERDA UCHRASHTIRILMAYDI»
+ * qarori BEKOR QILINDI. Endi POS to'lovi ham BALANS bo'yicha ishlaydi:
+ * `debtPayable` + `planAdoption` (shu faylning oxirida) reyestrdan tashqaridagi
+ * qarzni to'lov paytida reyestrga OLIB KIRADI (adopsiya). Sarlavhadagi tarix
+ * ataylab saqlanadi — u yoriqning KELIB CHIQISHINI tushuntiradi.
+ *
+ * MUAMMO (kod bilan o'lchangan, 2026-08-11). Bu loyihada mijoz qarzi ikki
  * joyda yashaydi va ular BIR XIL emas:
  *
  *   1. `CounterpartyBalance` — universal balans. POS'da qarzga sotilgan chek
@@ -17,7 +23,8 @@
  * OQIBAT: kassir qarzga sotadi → ertasiga mijoz to'lagani keladi → «Qarz
  * to'lovi» oynasi «ochiq qarz yo'q» deydi. Pulni qabul qilish yo'li yo'q.
  *
- * NEGA BU YERDA UCHRASHTIRILMAYDI (qaror, F9): ikkalasini bitta raqamga
+ * NEGA BU YERDA UCHRASHTIRILMAYDI (F9 qarori — P1 da BEKOR qilindi, quyidagi
+ * «ADOPSIYA» bo'limiga qarang): ikkalasini bitta raqamga
  * qo'shib qo'yish yoki chekdan `Debt` yozib yuborish — ikkisi ham balansda
  * IKKI KARRA sanashga olib boradi (2-manba `Debt.create` ham xuddi shu
  * balansga `+total` yozadi). To'g'ri yechim — daftarni bitta qilish, ya'ni
@@ -102,4 +109,97 @@ export function splitDebtSources(
       balanceMinor < registryOutstandingMinor,
     otherCurrencies: balances.filter((b) => b.currency !== tillCurrency && b.balanceMinor !== 0n),
   };
+}
+
+// ─────────────────────────── ADOPSIYA (P1, 2026-08-11) ──────────────────────
+//
+// 🔴 QAROR: «bitta daftar — bitta haqiqat» endi TO'LOV yo'lida ham amal qiladi.
+//
+// Muammo (prodda o'lchangan): `Debt` reyestri 0 qator, `DebtPayment` 0, lekin
+// `CounterpartyBalance`da 15+ kontragentda katta qoldiq. POS FIFO'si faqat
+// reyestrni yopgani uchun mijoz kassaga pul olib kelsa QABUL QILISH YO'LI YO'Q.
+//
+// Ko'rib chiqilgan ikki variant:
+//   (A) `DebtPayment.debtId` ni nullable qilish va «reyestrsiz to'lov» yozish.
+//       RAD ETILDI: `debtId` — butun modulning o'qi (recalc, storno marshruti
+//       `/debts/:debtId/payments/:id/reverse`, PKO cheki `payment.debt.name`,
+//       hisobotlar). Nullable qilish har bir o'quvchida yangi `null` shoxi
+//       ochardi — bitta faza ichida xavfsiz qamrab bo'lmaydigan kenglik.
+//   (B) ✅ TANLANDI — **adopsiya**: to'lov paytida balansdagi qarzning AYNAN
+//       to'lanayotgan qismi uchun reyestrga qator ochiladi va o'sha qator
+//       darhol to'liq yopiladi. Pastdagi hamma yo'l (FIFO · recalc · kassa
+//       daftari · smena naqdi · PKO cheki · storno) O'ZGARISHSIZ ishlaydi.
+//
+// ⚠️ ADOPSIYA QATORI BALANSGA `+total` YOZMAYDI (`Debt.balanceAdopted = true`).
+// Sabab: qarz balansda ALLAQACHON bor — qo'shsak IKKI KARRA sanalardi. Shuning
+// uchun `remove()` ham unga `−total` yozmasligi shart (simmetriya).
+//
+// NEGA «to'lanayotgan qism», butun qoldiq emas: butun qoldiqni adopsiya qilsak
+// 15 kontragent birinchi to'lovdayoq reyestrga OCHIQ qarz bo'lib kirardi va
+// qarzdorlar ro'yxati / eslatma cron / Telegram oqimi kutilmaganda portlardi.
+// To'lanayotgan qism esa o'sha tranzaksiyada `paid` bo'lib yopiladi — u faqat
+// TARIX (kim, qachon, qancha), yangi dunning nishoni emas.
+
+/** `debtPayable` natijasi — ekran ham, server ham AYNAN shu qoidadan yuradi. */
+export interface DebtPayablePlan {
+  /** POS qabul qila oladigan MAKSIMUM (kassa valyutasi, minor). */
+  payableMinor: bigint;
+  /** Shundan reyestrda YO'Q, balansdan olib kirish mumkin bo'lgan qism. */
+  adoptableMinor: bigint;
+}
+
+/**
+ * «To'lanadigan qarz» — kassir ekranda ko'radigan va server qabul qiladigan son.
+ *
+ * Qoida: balans reyestrdan KATTA bo'lsa — balans (farqi adopsiya qilinadi);
+ * aks holda reyestr (mavjud xulq). `null` balans = O'LCHANMAGAN, «0» emas —
+ * uni 0 deb o'qish reyestrdagi haqiqiy qarzni ham to'lanmaydigan qilardi.
+ * Manfiy balans = BIZ qarzdormiz ⇒ undan qarz olinmaydi.
+ */
+export function debtPayable(
+  balanceMinor: bigint | null,
+  registryOutstandingMinor: bigint,
+): DebtPayablePlan {
+  const registry = registryOutstandingMinor > 0n ? registryOutstandingMinor : 0n;
+  if (balanceMinor === null || balanceMinor <= registry) {
+    return { payableMinor: registry, adoptableMinor: 0n };
+  }
+  return { payableMinor: balanceMinor, adoptableMinor: balanceMinor - registry };
+}
+
+export interface AdoptionPlanInput {
+  /** Kelgan to'lov, QARZ valyutasiga keltirilgan (USD → so'm) minor. */
+  amountMinor: bigint;
+  /** `Debt` reyestridagi ochiq qoldiq (qulflangan qatorlardan). */
+  registryOutstandingMinor: bigint;
+  /** Kontragentning qarz-valyutasidagi balansi; `null` = qator yo'q. */
+  balanceMinor: bigint | null;
+}
+
+export interface AdoptionPlan {
+  /** Reyestrga ochiladigan adopsiya qatorining summasi (`0` = kerak emas). */
+  adoptMinor: bigint;
+  /** Hech qayerga sig'magan ortiqcha — chaqiruvchi buni 400 bilan rad etadi. */
+  overpayMinor: bigint;
+}
+
+/**
+ * Kelgan summani ikki daftar bo'yicha taqsimlash REJASI (DB yo'q, sof qoida).
+ *
+ * Tartib ATAYLAB shunday: avval REYESTR (eng eski qarzlar FIFO'si), qolgani
+ * balansdan adopsiya. Aks holda qo'lda ochilgan `QRZ-` qarzlar hech qachon
+ * yopilmasdi va «muddati o'tgan» hisoboti yolg'on bo'lardi.
+ */
+export function planAdoption({
+  amountMinor,
+  registryOutstandingMinor,
+  balanceMinor,
+}: AdoptionPlanInput): AdoptionPlan {
+  const registry = registryOutstandingMinor > 0n ? registryOutstandingMinor : 0n;
+  const need = amountMinor - registry;
+  if (need <= 0n) return { adoptMinor: 0n, overpayMinor: 0n };
+
+  const { adoptableMinor } = debtPayable(balanceMinor, registry);
+  const adoptMinor = need <= adoptableMinor ? need : adoptableMinor;
+  return { adoptMinor, overpayMinor: need - adoptMinor };
 }
