@@ -419,11 +419,23 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 > orqali **chetlab o'tilardi**. Yakuniy holat: api `store+permissions+product` **775 passed** ·
 > web `components/stores` **79 passed** · typecheck 10/10 · i18n gate 9 · biome 0.
 >
-> **⚙️ OPS (bajarildi, LOKAL bazada):** `cd apps/api && npx tsx src/scripts/topup-role-permissions.ts`
-> — PASS 1: 4 eski rol · PASS 2: 6 shablon roli / 17 qator; ikkinchi yugurishda **0 qator**
-> (idempotentlik jonli o'lchandi). Bazada tasdiqlandi: Omborchi va Ombor menejeri
-> `storecell.update = ALL`. **PRODDA HALI YUGURTIRILMAGAN — yugurtirilmasa yacheyka amallari
-> hammaga 403** (avval skript, keyin API restart).
+> **✅ DEPLOYED — erp.sherset.uz (2026-08-11 03:42 UTC, jonli tekshirilgan).** Kod box'ga
+> parallel sessiyaning deploy'i bilan yetgan (mening 10 commitim `3609b0ea` ning ajdodlari),
+> build HEAD'dan KEYIN qurilgan (`.next/BUILD_ID` 03:35 UTC vs HEAD 03:27 UTC). Men bajarganim:
+> **ruxsat qatorlari + API restart + verify.**
+> **⚙️ OPS (bajarildi):** LOKAL — PASS 1: 4 rol · PASS 2: 6 rol/17 qator; 2-yugurish **0 qator**
+> (idempotentlik o'lchandi); Omborchi va Ombor menejeri `storecell.update = ALL`.
+> **PROD** — `role_permissions` nuqtali backup (`/root/sherset-v2-backups/role_permissions-20260811-053949.sql.gz`,
+> 1850 qator) → skript → **storecell 0 → 24 qator** → `pm2 restart sherset-v2-api` (15s da 200).
+> **Jonli verify:** `/api/v1/health` 200 · `by-barcode` **401** (bor va qo'riqlangan, 404 emas) ·
+> erp.sherset.uz **200** · yangi i18n kalitlari serverdagi chunk ichida
+> (`count_bulk_becomes`/`scan_replace_named`/`scan_evict_blocked`/`move_stock_changed` →
+> `static/chunks/5276-*.js`) · api uptime 39s, restartdan keyin yangi xato YO'Q
+> (err.log'dagi DI xatosi 2 soat oldingi POS_PIN_PEPPER hodisasidan, hal qilingan).
+> **⚠️ PRODDA OMBORCHI ROLI YO'Q:** bazada faqat 5 rol bor (Administrator[admin] · Kassir[cashier] ·
+> Employee · Manager · ReadOnly) — `storekeeper`/`warehouse_manager` shablon rollari umuman
+> yaratilmagan. Ya'ni yacheyka amallari hozir **Administrator** ostida ishlaydi; omborchiga ochish
+> uchun avval rol shablonidan rol yaratilishi kerak.
 >
 > **⚠️ O'LCHANGAN BO'SHLIQ:** `store.update` bazaga **yetib bormadi** — `TOPUP_ENTITIES`
 > allow-listi ataylab faqat `storecell` ni ko'radi (boshqa entity'ga tegsa admin bekor qilgan
