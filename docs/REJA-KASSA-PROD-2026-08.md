@@ -128,6 +128,33 @@ Savdo kassaga yetguncha tizimda to'g'ri turishi kerak bo'lgan narsalar (o'lchang
   qaytarish retsepti `prod-test-stock-1000` xotirasida). Real savdo boshlanishidan oldin real
   inventarizatsiya shart — aks holda qoldiq hisoboti birinchi kundan yolg'on.
 
+### 🔴 H. UZILGAN BOG'LANISHLAR REYESTRI (2026-08-11 chuqur tekshiruv)
+
+Bir-biriga oqishi kerak-u, oqmaydigan joylar. Har qator qaysi faza yopishini ko'rsatadi —
+**faza agenti o'z qatorlarini vazifa deb oladi.** Yorliqlar: **[O'LCHANGAN]** — shu tekshiruvda
+kod/proddan dalillangan; **[XOTIRA]** — avvalgi sessiyalarda o'lchangan (xotira fayli bor);
+**[SHUBHA]** — hali o'lchanmagan, faza avval o'lchaydi.
+
+| # | Uzilish | Dalil | Faza |
+|---|---|---|---|
+| H1 | **Qaytarish → mijoz balansi YO'Q.** `sales-return` faqat stock yozadi; demand/invoice-out/supply/invoice-in balans yozadi, return **YOZMAYDI** — tovar qaytargan mijozning qarzi kamaymaydi | [O'LCHANGAN] `sales-return.service.ts` da `counterpartyBalance/applyDelta` 0 marta; qo'shni 4 hujjatda bor | **P14** |
+| H2 | **POS smena ↔ davomat/soatlik KPI.** `worked_minutes` FAQAT `HrAttendance` (GPS check-in) dan; kassirda davomat yozuvi 0 → «soatiga tushum» KPI hech qachon o'lchanmaydi; POS smena vaqti davomatga oqmaydi | [O'LCHANGAN] `employee-daily-kpi.service.ts:446` (faqat hrAttendance) + prod `HrAttendance=0` (kassirlar) | **P9** (siyosat: POS smena vaqti davomat bo'lib yozilsinmi — egasi qaror qiladi) |
+| H3 | **POS xarajat (RKO) → P&L ko'rmaydi** — kassadan chiqqan xarajat foyda-zarar hisobotiga tushmaydi (MK41 qarzi) | [XOTIRA] `expense-budget-fact-sources` | **P14** |
+| H4 | **Pul daftari backfill yo'q** — `/money` va bank-balans faqat 2026-08-08 dan keyingi hujjatlarni ko'radi | [XOTIRA] `money-ledger-writers-faza11` | **P14** |
+| H5 | **Picking rezerv qilmaydimi?** — chek `picking`da turganda stock ushlab turilishi ko'rinmadi: ikkinchi kassir oxirgi donani sotib yuborishi mumkin | [SHUBHA] `sendToPicking` atrofida reserve/hold chaqiruvi topilmadi | **P3** (o'lchab, kerak bo'lsa tuzatadi) |
+| H6 | **Qaytarish ↔ qarz:** kam to'lov bilan sotilgan (qarz yozilgan) chek qaytarilsa qarz nima bo'ladi — o'lchanmagan (`retail-sale.service.ts:1319` atrofida ishlov bor, jonli sinalmagan) | [SHUBHA] | **P5** |
+| H7 | **Smena farqi → Telegram egaga:** wiring BOR (`cashier-session.service.ts:731` variance → `hrTelegramOutbox`, `toSelf`) — lekin jonli yetkazish sinalmagan va prod webhook-secret muammosi ma'lum | [O'LCHANGAN wiring + XOTIRA `telegram-webhook-fail-closed-deploy-blocker`] | **P4** |
+| H8 | **Payme/Click to'lovi → PaymentIn DRAFT** — gateway to'lovi hujjat yaratadi lekin post qilmaydi, balans o'zgarmaydi; POS QR shu gateway'ga ulansa qarz «to'langan-u to'lanmagan» bo'lib qoladi | [XOTIRA] `gateway-capture-payment-in-draft` | **P5** (QR yo'lini aniqlashda tekshiriladi) |
+| H9 | **SalesPlan: 2 plan-turida fakt manbai yo'q** — kassa tushumi rejaga oqmasligi mumkin | [XOTIRA] `sales-plan-fact-single-source` | **P9** (KPI bilan birga o'lchanadi) |
+| H10 | **KPI kunlik sana bir kun orqada** (`hr-kpi.service.ts:55` yorliq bug'i, ataylab qoldirilgan qarz) — kassir «kecha»gi balli noto'g'ri kunga tushishi mumkin | [XOTIRA] `hr-kpi-daily-date-off-by-one` | **P9** |
+| H11 | **InvoiceIn → yetkazuvchi balansi Supply-only** — kirim faktura balansdan uzilgan (kassa doirasidan tashqari, lekin balans-daftar ishonchiga tegadi) | [XOTIRA] `supplier-debt-supply-only` | ro'yxatda (alohida qaror) |
+| H12 | `payedSumMinor=0` posted chekda ham (payments bor bo'lsa ham) — o'lik maydonmi, bug'mi | [O'LCHANGAN prod] | **P3** |
+
+Yaxshi yangilik — tekshirilgan va **BUZILMAGAN** bog'lanishlar (qayta qurish shart emas):
+posted chek → stock kamayishi (`StockService` kaskadi) · POS naqd → `MoneyService` daftari ·
+qarz-to'lov naqdi → smena «kutilgan naqd» (`debt-cash-wiring.test`) · zakaz to'liq to'langanda
+rezerv bo'shaydi (`page 997–1014`) · smena farqi → farq akti → menejer navbati FSM.
+
 ---
 
 ## 2. FAZALAR XARITASI (har biri = alohida sessiya)
@@ -147,6 +174,7 @@ Savdo kassaga yetguncha tizimda to'g'ri turishi kerak bo'lgan narsalar (o'lchang
 | **P11** | Xodim/kassir hayot sikli — UI'dan, skriptsiz | web settings/hr + api | ✅ | ☐ |
 | **P12** | Katalog va narx zanjiri (chakana·optom·tan, 0-narx himoyasi) | api/web product + POS | ✅ | ☐ |
 | **P13** | Go-live tozalash: test ma'lumotlardan realga | prod-op + kichik fix | kerak bo'lsa | ☐ |
+| **P14** | Daftar-simmetriya: qaytarish→balans · xarajat→P&L · money backfill | api + backfill | ✅ | ☐ |
 
 Tartib sababi: P1–P2 — egasi ko'rgan jonli xatolar (eng ustuvor). P3 — realda savdo shu yerda
 qotadi. P4–P5 — pul hisobi. P6–P7 — qurilma. P8 — sifat. P9 — KPI (egasining qoidasi).
@@ -246,10 +274,12 @@ tugamaydi, smenaga tushmaydi. `payedSumMinor=0` posted chekda ham (payments bor 
 3. Qotib qolgan `picking` cheklar siyosati: smena yopilishida ogohlantirish/avto-bekor —
    qaror + implement.
 4. `payedSumMinor=0` g'alatiligini o'lcha: bug'mi yoki o'lik maydonmi — hujjatlashtir, kerak
-   bo'lsa tuzat.
-5. Testlar + gate → deploy → jonli verify: to'liq sotuv zanjiri (chek → posted → smenada
+   bo'lsa tuzat (§1.H — H12).
+5. **§1.H — H5:** `picking`da turgan chek stock'ni ushlab turadimi — o'lcha; ushlamasa ikkinchi
+   kassir oxirgi donani sotib yuborishi mumkin (oversell). Qaror + kerak bo'lsa tuzatish.
+6. Testlar + gate → deploy → jonli verify: to'liq sotuv zanjiri (chek → posted → smenada
    ko'rinadi) prod'da kichik summa bilan.
-6. Hisobot → **TO'XTA**.
+7. Hisobot → **TO'XTA**.
 
 ### Sessiya prompti (nusxa ol)
 
@@ -278,7 +308,10 @@ farq akti/qabul zanjiri jonli ishlamagan.
    2 chek → yopadi, **ataylab 5 000 farq** → akt yozildi · `pending` navbatga tushdi · egasi
    qabul qiladi → jurnal. Har qadam dalil bilan.
 4. Z-hisobot chop ko'rinishida to'lov turlari qatorlari jonli tekshiriladi.
-5. Testlar + gate → (kod o'zgargan bo'lsa deploy) → hisobot → **TO'XTA**.
+5. **§1.H — H7:** farq akti Telegram xabari egaga HAQIQATAN yetib bordimi — jonli tekshiriladi
+   (wiring bor, yetkazish sinalmagan; prod webhook-secret muammosi ma'lum —
+   `telegram-webhook-fail-closed-deploy-blocker`).
+6. Testlar + gate → (kod o'zgargan bo'lsa deploy) → hisobot → **TO'XTA**.
 
 ### Sessiya prompti (nusxa ol)
 
@@ -304,7 +337,10 @@ marta allaqachon jimgina singan (Zod jim tashlash klassi).
    (naqd+karta) · kam to'lov→qarz (P1 dan keyin) · ortiqcha naqd→qaytim · USD (agar kassada bor).
 2. Har birida: chek posted · `RetailSalePayment` to'g'ri method/currency · smena «kutilgan naqd»
    faqat naqd qismiga o'sdi · Z-hisobot kesimida to'g'ri qator.
-3. Topilgan har xato shu fazada tuzatiladi (issiq kontekst), testi bilan.
+3. **§1.H — H6:** kam to'lovli (qarz yozilgan) chek QAYTARILGANDA qarz nima bo'lishi —
+   jonli o'lchanadi. **H8:** POS QR yo'li Payme/Click gateway'iga ulanganmi — ulansa
+   `gateway-capture-payment-in-draft` xavfi (to'lov keldi-yu balans o'zgarmaydi) tekshiriladi.
+4. Topilgan har xato shu fazada tuzatiladi (issiq kontekst), testi bilan.
 4. Gate → (kerak bo'lsa deploy) → hisobot → **TO'XTA**.
 
 ### Sessiya prompti (nusxa ol)
@@ -404,6 +440,15 @@ ko'r zonasini yopadigan guard. Faza tugagach «HISOBOTLAR» ga P8 hisobotini yoz
 vazifalar batafsil. Qisqacha: «Kassir» lavozimiga `KpiProfile` (metrikalar: `till_variance_abs`,
 `cash_revenue`, `receipt_count`, `discount_given`, `below_cost_*`…), og'irlik/maqsadlarni
 **egasi tasdiqlaydi**, keyin uchdan-uchgacha: smena yopish → ertasi 00:40 cron → ball chiqdi.
+
+Qo'shimcha (§1.H reyestridan, shu fazaga biriktirilgan):
+- **H2 [O'LCHANGAN]:** `worked_minutes` faqat GPS-davomatdan keladi — kassirda davomat yo'q,
+  «soatiga tushum» hech qachon o'lchanmaydi. Egasidan siyosat so'raladi: POS smena
+  ochish/yopish vaqti davomat sifatida yozilsinmi, yoki kassir profilida soatlik metrikalar
+  o'chirilsinmi. Qaror asosida implement.
+- **H9:** kassa tushumi SalesPlan faktiga oqishini tekshir (`sales-plan-fact-single-source`).
+- **H10:** KPI kunlik sana bir kun orqada yorlig'i (`hr-kpi-daily-date-off-by-one`) — kassir
+  balli to'g'ri kunga tushishini jonli tekshir; xato tasdiqlansa shu fazada tuzat.
 
 ### Sessiya prompti (nusxa ol)
 
@@ -547,6 +592,52 @@ uning qaroridan keyin. prod-test-stock-1000 xotirasidagi retseptdan boshla.
 
 Har amal avval DRY, natija son bilan. O'chirish yo'q — bekor qilish/arxivlash. Faza tugagach
 «HISOBOTLAR» ga P13 hisobotini yoz va ISHNI TO'XTAT.
+```
+
+---
+
+## FAZA P14 — Daftar-simmetriya: qaytarish→balans · xarajat→P&L · money backfill
+
+**Muammo (§1.H reyestri):** hujjatlar pul-daftarlariga NOSIMMETRIK yozadi — natijada raqamlar
+sekin-asta haqiqatdan uzoqlashadi:
+- **H1 [O'LCHANGAN]:** `sales-return` mijoz balansiga yozmaydi — tovar qaytargan mijozning
+  qarzi kamaymaydi (demand/invoice-out/supply/invoice-in yozadi, return YO'Q).
+- **H3 [XOTIRA]:** POS xarajati (RKO) P&L'ga tushmaydi (MK41).
+- **H4 [XOTIRA]:** pul daftari backfill'i yo'q — `/money` 2026-08-08 dan oldingi hujjatlarni
+  ko'rmaydi.
+
+### Vazifalar
+1. **Simmetriya auditi (jadval):** balansga yozishi KERAK bo'lgan barcha hujjat turlari ro'yxati
+   (demand · invoice-out · supply · invoice-in · sales-return · purchase-return ·
+   prepayment-return · retail-sale kam-to'lov · payment-in/out · cash-in/out) — har biri uchun
+   «yozadi / yozmaydi / yozmasligi to'g'ri» o'lchanadi. `debt-ledger-asymmetry` xotirasidagi
+   ishora qoidasi (create +total · to'lov −paid · remove −total) tayanch.
+2. **H1 tuzatish:** `sales-return` post/unpost balans deltasini yozadi (qaytarish = mijoz qarzi
+   kamayadi). Teskarilash yo'li ham simmetrik. Purchase-return uchun yetkazuvchi tomoni ham
+   tekshiriladi. 🔴 Tarixiy return hujjatlari uchun backfill savol — avval o'lchab (nechta bor,
+   summasi), egasi bilan qaror.
+3. **H3:** POS RKO xarajatlari P&L/xarajat hisobotiga oqishi — `expense-budget-fact-sources`
+   xotirasidagi «bir pul ikki marta sanalmasin» chegarasi bilan.
+4. **H4:** money-ledger backfill — DRY→son solishtiruv→APPLY, manifest bilan
+   (`cell-migration-delta-not-total` uslubi).
+5. Testlar (har yangi yozuvchi uchun simmetriya-test: post + unpost = 0) + gate → deploy →
+   jonli verify (1 sinov qaytarish: balans kamaydi; P&L'da 1 sinov xarajat ko'rindi).
+6. Hisobot → **TO'XTA**.
+
+### Tugash mezoni
+Simmetriya jadvali to'liq (har hujjat turi belgilangan), H1/H3/H4 yopilgan yoki egasi qarori
+bilan chetga qo'yilgani hujjatlangan; jonli verify dalillari bor.
+
+### Sessiya prompti (nusxa ol)
+
+```
+docs/REJA-KASSA-PROD-2026-08.md faylini o'qi va FAQAT «FAZA P14 — Daftar-simmetriya» ni bajar.
+Rejaning §0 majburiy, §1.H reyestri — vazifa manbai (H1/H3/H4).
+
+Avval simmetriya auditini jadval qilib o'lcha (qaysi hujjat balans yozadi/yozmaydi), keyin H1
+(sales-return→balans) TDD bilan tuzat, H3/H4 ni retseptlar bo'yicha yop. P1/P2 hisobotlarini
+o'qi — qarz shartnomasi ustiga qurasan. Gate → deploy → jonli verify. Faza tugagach
+«HISOBOTLAR» ga P14 hisobotini yoz va ISHNI TO'XTAT.
 ```
 
 ---
@@ -723,3 +814,4 @@ bilan tekshirildi — begona fayl yo'q.
 ### P11 — ☐ hali bajarilmagan
 ### P12 — ☐ hali bajarilmagan
 ### P13 — ☐ hali bajarilmagan
+### P14 — ☐ hali bajarilmagan
