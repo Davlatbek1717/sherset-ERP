@@ -9035,7 +9035,7 @@
       "customer_card_history": "История долга",
       "customer_card_history_empty": "Движений не записано",
       "customer_card_history_opening": "Начальный остаток (исторический)",
-      "customer_card_history_more": "Ещё записей: {count} — полная история в карточке контрагента",
+      "customer_card_history_more": "Всего записей: {count} — полная история в карточке контрагента",
       "customer_card_doc": {
         "retailsale": "Чек",
         "debt": "Долг",

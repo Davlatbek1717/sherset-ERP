@@ -331,6 +331,48 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-08-12a (REJA-KASSA-PROD **FAZA P2** — qarz: mijoz kartasi bitta halol raqam +
+> tarix · ✅ DEPLOYED + PROD BACKFILL + BRAUZER-QA) — `160cdcbc` va `4b0d6392` prodda**
+> (`Deploy done: 160cdcbc… → 4b0d6392…`, BUILD_ID `RTIel8gVI8RP6eK4BdvmW`).
+>
+> **Yoriq (o'zim o'lchadim):** kartada IKKI katta son yonma-yon turardi va farq uchun
+> ogohlantirish chiqardi — P1 dan keyin o'sha ogohlantirish YOLG'ON edi (kassada to'lash
+> mumkin). Tarix esa umuman yo'q edi: jurnalda **2 qator**, balansda **206 qator**
+> (203 noldan farqli: 82 musbat / 121 manfiy; 1 715 kontragentdan 1 509 tasida qator yo'q).
+>
+> **Nima qilindi:** (1) kartada bitta son — `payableMinor`, ya'ni **server AYNAN shu
+> summagacha qabul qiladi** (P1 ning `debtPayable` formulasi; ekran = tizim xulqi).
+> «Reyestrdan tashqarida» ogohlantirishi olib tashlandi, `registryExceedsBalance` qoldi.
+> (2) **NULL ≠ 0** endi raqamni «—» qilib bloklamaydi — balans qatori yo'qligi alohida
+> qator bo'lib OCHIQ aytiladi. (3) **Qarz tarixi** — `GET /debts/pos/history/:cpId`, manba
+> `CounterpartyBalanceEntry` (docType filtri YO'Q), yorliqlar umumiy resolverdan; `opening`
+> qatori **harakat emas** — alohida «boshlang'ich qoldiq», alohida so'rov bilan (sahifalashdan
+> mustaqil). (4) Backfill skripti: qaror sof `planOpeningBackfill` ga ajratildi (FARQ bo'yicha
+> ⇒ idempotent), **manifest + post-verify + rollback SQL** qo'shildi.
+>
+> **Prod backfill (raqam bilan):** DRY 206/203/3, Σdelta **211 593 195 507 tiyin** → APPLY
+> **203 qator yozildi** → post-verify **Σ(jurnal)==balans 206/206** → qayta DRY **0 qator**
+> (idempotentlik jonli tasdiqlandi). Rollback SQL manifestda (`/root/p2-opening-APPLY.json`).
+> Backfill `CounterpartyBalance` ga TEGMAYDI — faqat jurnalga INSERT.
+>
+> **Jonli verify:** `ops-p2-live-verify.ts` (READ-ONLY, qayta yugurtiriladi) **9/9 OK**;
+> **brauzerda prodda** ikkala kontragent turi ko'rildi — importli «AAAA XARIDOR»
+> (2 341 175 224,35 so'm + 2 harakat qatori + alohida boshlang'ich qoldiq) va yangi
+> «Toshkent Stroy gorot 555» (0,00 + «Balans qatori yo'q» + «Harakat yozilmagan»).
+>
+> **Gate:** typecheck 0 · lint:product 0 error · i18n:gate 9/9 · api vitest **8047** ·
+> web vitest **3631**. ⚠️ Commit hook'siz (`core.hooksPath=/dev/null`) va gate qo'lda:
+> parallel sessiya **P12** ustida ishlayotgani uchun lint-staged begona fayl qo'shardi
+> (`CLAUDE.md` §6.7 B); `messages/{ru,uz}.json` «HEAD + faqat mening hunk'larim» blobi bilan.
+>
+> **Ochiq qoldi:** kassir/kiosk roli bilan sinalmadi (P1 dan meros, → P5/P10) · tarix
+> sahifalashi yo'q (oxirgi 20 + «Jami N») · `opening` qatorlari org-kesimida
+> «taqsimlanmagan» (Faza 10 ning ataylab tanlangan narxi, endi 203 qator) · prod konsolida
+> aloqasiz `notifications/stream` SSE `ERR_HTTP2_PROTOCOL_ERROR` (→ P10).
+>
+> **Keyingi:** `docs/REJA-KASSA-PROD-2026-08.md` → **FAZA P3** (chek hayot sikli:
+> picking-qotish + to'g'ri yo'l). To'liq hisobot: o'sha faylning «HISOBOTLAR» → P2.
+
 > **🕒 2026-08-11g (REJA-KASSA-PROD **FAZA P1** — qarz: POS to'lovi BALANS bo'yicha ·
 > ✅ DEPLOYED + JONLI TASDIQ) — `bf1483da` prodda** (`Deploy done: 2a0160af… → 0cc09114…`,
 > BUILD_ID `Dv1POETnhwI1uIzDUOZVy`).

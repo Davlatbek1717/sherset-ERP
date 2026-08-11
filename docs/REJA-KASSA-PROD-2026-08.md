@@ -162,7 +162,7 @@ rezerv bo'shaydi (`page 997–1014`) · smena farqi → farq akti → menejer na
 | Faza | Nomi | Tegadigan joy | Deploy | Holat |
 |---|---|---|---|---|
 | **P1** | Qarz: POS to'lovi BALANS bo'yicha ishlaydi | api `debt`/`retail-sale` + web POS | ✅ | ✅ `bf1483da` (jonli tasdiq; brauzer-QA yo'q) |
-| **P2** | Qarz: mijoz kartasi bitta halol raqam + tarix | api + web + backfill | ✅ | ☐ |
+| **P2** | Qarz: mijoz kartasi bitta halol raqam + tarix | api + web + backfill | ✅ | ✅ `160cdcbc` (backfill 203; brauzer-QA prodda bajarildi) |
 | **P3** | Chek hayot sikli: picking-qotish + to'g'ri yo'l | api + web POS | ✅ | ☐ |
 | **P4** | Smena: unutilgan smena himoyasi + jonli yopish sinovi | api + prod-op | ✅ | ☐ |
 | **P5** | To'lov turlari jonli sinovi (naqd·karta·QR·aralash·valyuta) | o'lchov + fix | kerak bo'lsa | ☐ |
@@ -914,7 +914,175 @@ i18n:gate **9/9** · api vitest **7995 passed / 573 fayl** · web vitest **3588 
 4. `ops-p1-live-verify.ts` qayta yugurtiriladi (DRY default) — P2 dan keyin regressiya
    tekshiruvi sifatida ishlating.
 
-### P2 — ☐ hali bajarilmagan
+### P2 — Qarz: mijoz kartasi bitta halol raqam + tarix · 2026-08-12 · `160cdcbc` + `4b0d6392`
+
+**Holat:** ✅ tugadi — **prodda jonli tasdiqlangan** (backfill 203 qator · verify 9/9 ·
+**brauzer-QA prod'da BAJARILDI**, ikkala kontragent turi ekrandan ko'rildi).
+
+**O'lchov (avval, reja §0.6 — o'zim o'lchadim, rejaga ishonmadim):** prod `sherset_v2`,
+2026-08-11 kechqurun:
+
+| Nima | Qiymat |
+|---|---|
+| `CounterpartyBalance` | **206 qator** (203 tasi noldan farqli: **82 musbat** mijoz qarzdor, **121 manfiy** biz qarzdormiz; hammasi UZS) |
+| `CounterpartyBalanceEntry` (jurnal) | **2 qator** — ikkalasi ham P1 ning sinov to'lovi (`debtpayment`) |
+| `Debt` / `DebtPayment` | 1 / 1 — P1 ning adopsiya qatori (soft-delete) va storno qilingan to'lovi |
+| `Counterparty` | 1 715 (ya'ni **1 509 tasida balans qatori umuman yo'q**) |
+
+Ya'ni reja §1.A ning «tarix bo'sh» dalili HAMON amal qiladi: kassir kartada 2,3 mlrd so'mlik
+qarzni ko'radi-yu, uning kelib chiqishini ko'rsatadigan birorta qator yo'q edi.
+
+**Dizayn qarorlari (hisobotga yozilgan holda):**
+
+1. **«Bitta halol raqam» = `payableMinor`, o'rtacha yoki yig'indi EMAS.** Halollik mezoni
+   ataylab tor tanlandi: **ekrandagi son = serverning xulqi**. `payableMinor` — P1 ning
+   `debtPayable` sof funksiyasi (`max(reyestr, balans)`), ya'ni `POST /debts/pos/pay` AYNAN
+   shu summagacha qabul qiladi. Ikki daftar («Umumiy qarz» + «Reyestrda») yonma-yon katta
+   son bo'lib chizilishi TO'XTATILDI, «reyestrdan tashqarida» ogohlantirishi esa OLIB
+   TASHLANDI — P1 dan keyin u yolg'on (kassada to'lash MUMKIN), reja §2.1 aynan shuni so'ragan.
+   `registryExceedsBalance` ogohlantirishi QOLDI: u haqiqiy nomuvofiqlik signali.
+2. 🔴 **NULL ≠ 0 saqlandi, lekin ko'rinishi almashtirildi.** Ilgari o'lchanmagan balans
+   raqamni «—» qilardi ⇒ kassir hech nima qila olmasdi. Endi asosiy raqam baribir
+   ko'rsatiladi (u serverning xulqi — «0 qabul qilaman»), balans qatori yo'qligi esa
+   ALOHIDA qator bo'lib **ochiq aytiladi**: «Balans qatori yo'q — bu mijoz bo'yicha hech
+   qanday harakat yozilmagan». Ma'lumot yashirilmadi, faqat harakatni bloklamaydigan joyga
+   ko'chirildi.
+3. **Tarix manbai — `CounterpartyBalanceEntry` jurnali, ya'ni asosiy raqam bilan BIR daftar.**
+   `docType` bo'yicha filtr YO'Q (`journalWhere()` shakli, chala-ro'yxat bug-klassi qulfi) —
+   yangi hujjat turi qo'shilsa bu yo'l o'zgarmaydi. Yorliqlar umumiy
+   `counterparty-balance-doc-resolver.ts` dan (o'z hujjat-ro'yxati YARATILMADI, `DUP-06`).
+4. 🔴 **`opening` qatori HARAKAT emas.** Backfill qatorining `createdAt` i — backfill KUNI.
+   Uni oddiy qator qilib chizsak kassir «bugun 2,3 mlrd qarz yozilibdi» degan yolg'onni
+   ko'rardi. Shuning uchun u alohida «Boshlang'ich qoldiq (tarixiy)» qatori, va u
+   **sahifalashdan mustaqil alohida so'rov** bilan olinadi — tarixi uzun mijozda birinchi
+   sahifaga tushmasa jimgina yo'qolardi.
+5. **Backfill usuli O'ZGARTIRILMADI** (Faza 10 da tanlangan «opening snapshot»): hujjat-replay
+   ATAYLAB rad etilgan (`DUP-02` — chala hujjat-ro'yxati jimgina saldo yo'qotadi). Qo'shilgani —
+   **qaror sof modulga ajratildi** (`planOpeningBackfill`, 9 test) va **manifest + post-verify
+   + rollback SQL** kiritildi (reja §2.2 talabi, `cell-migration-delta-not-total` sabog'i).
+
+**Fayllar:**
+- `apps/api/src/modules/debt/pos-debt-history.ts` (yangi) → sof `foldPosHistory`: `opening`
+  ajratish · hujjatning O'Z sanasi bo'yicha tartib · yorliq topilmasa ham qator chiqadi
+- `apps/api/src/modules/debt/pos-debt-payment.service.ts` → `history()` metodi (jurnal +
+  resolver + `opening` alohida aggregate); `docKey` importi olib tashlandi
+- `apps/api/src/modules/debt/debt.controller.ts` → `GET pos/history/:counterpartyId`,
+  ruxsat `debtpayment.create` (`pos/summary` bilan AYNAN bir xil sabab)
+- `apps/api/src/scripts/opening-backfill-plan.ts` (yangi) → sof `planOpeningBackfill`
+  (FARQ bo'yicha ⇒ idempotent) + `balanceKey`
+- `apps/api/src/scripts/backfill-counterparty-balance-journal.ts` → sof rejaga ko'chirildi;
+  **manifest** (DRY'da ham) · **APPLY dan keyin `Σ(jurnal)==balans` qayta o'qib tekshiriladi**
+  · **rollback SQL bosib chiqariladi**
+- `apps/api/src/scripts/ops-p2-live-verify.ts` (yangi) → qayta yugurtiriladigan, **to'liq
+  READ-ONLY** jonli verify (9 tekshiruv)
+- `apps/web/src/components/pos/customer-card-panel.tsx` → bitta raqam + «balans qatori yo'q»
+  qatori + **Qarz tarixi** bo'limi (`opening` alohida, «yana bor» belgisi)
+- `apps/web/src/messages/{ru,uz}.json` → `customer_card_payable*`, `customer_card_balance_missing`,
+  `customer_card_history*`, `customer_card_doc.*` (14 hujjat turi yorlig'i); eski
+  `customer_card_{balance,registry,unregistered}` O'CHIRILDI
+
+**Testlar (TDD — RED avval o'lchandi):**
+- `pos-debt-history.test.ts` (13) — RED: butun fayl yiqildi (modul yo'q edi). Sof qoida
+  (5) + servis shakli (6, shundan `docType` filtri YO'Qligi va limit chegarasi) + tartib.
+- `opening-backfill-plan.test.ts` (9) — RED: butun fayl yiqildi. **Idempotentlik** (ikkinchi
+  reja bo'sh), manfiy qoldiq belgisi, valyuta aralashmasligi, reja invarianti.
+- `customer-card-panel.test.tsx` (21, ilgari 12) — RED: **9/21 yiqildi** (yangi shartnoma).
+  Qulflangan: bitta raqam · ikki raqobatchi son YO'Q · `unregistered` ogohlantirishi YO'Q ·
+  NULL≠0 ochiq aytilishi · tarix so'rovi · `opening` alohida · bo'sh tarix.
+
+**Gate:** typecheck **0** · lint:product **0 error** (901 warning, siyosat ruxsat beradi) ·
+i18n:gate **9/9** · api vitest **8047 passed / 577 fayl** · web vitest **3631 passed / 258 fayl**.
+
+⚠️ Gate **qo'lda** yugurtirildi va commit hook'siz qilindi (`core.hooksPath=/dev/null`):
+parallel sessiya ayni paytda **P12 (narx POLI)** ustida ishlayapti, lint-staged esa butun
+daraxtni stash qilib ularning tugallanmagan ishini commit'ga qo'shardi (`CLAUDE.md` §6.7 B).
+`messages/{ru,uz}.json` ikkala sessiya ham tahrirlagani uchun **«HEAD + faqat mening
+hunk'larim»** blobi bilan staged qilindi (`git hash-object -w` + `update-index --cacheinfo`,
+anchor topilmasa to'xtaydigan skript bilan). `git show --stat HEAD` = **aynan 11 fayl**.
+
+**Deploy:** ✅ ikki marta (`DS_TARGET=v2`): `160cdcbc` (kod) va `4b0d6392` (verify skripti).
+box HEAD = `4b0d6392` · web `/login` **200** · api `/health` **200** ·
+`BUILD_ID=RTIel8gVI8RP6eK4BdvmW` · yangi kod bundle'da (`customer_card_history` →
+`.next/static/chunks/app/(app)/sotuv/page-8cc62c2e17667f08.js`) · `pos/history/:counterpartyId`
+marshruti box manbasida.
+
+**PROD BACKFILL (raqamlar bilan):**
+
+| Qadam | Natija |
+|---|---|
+| **DRY** (`MANIFEST=/root/p2-opening-DRY.json`) | materiallashgan **206** · yoziladi **203** · allaqachon mos **3** · **Σdelta = 211 593 195 507 tiyin** (2 115 931 955,07 so'm) |
+| **APPLY** (`/root/p2-opening-APPLY.json`) | **yozildi 203** ta `opening` qatori |
+| **Post-verify** (skript o'zi qayta o'qib) | ✅ `Σ(jurnal) == balans` — **206/206 kalit** |
+| **Idempotentlik** (DRY qayta) | yoziladi **0** · allaqachon mos **206** · Σdelta **0** |
+| **Rollback** (manifestda + bosib chiqarilgan) | `DELETE FROM counterparty_balance_entries WHERE doc_type = 'opening' AND created_at >= '2026-08-11T20:01:27.093Z' AND created_at <= '2026-08-11T20:01:27.444Z';` |
+
+Backfill `CounterpartyBalance` ga UMUMAN tegmaydi (faqat jurnalga INSERT) — eng yomon holatda
+«tarix ko'rinmaydi», «qoldiq buzildi» EMAS.
+
+**JONLI VERIFY — 1. skript** (`ops-p2-live-verify.ts`, ishlab turgan API orqali, **9/9 OK**):
+
+```
+✅ INVARIANT Σ(jurnal) == balans — 206/206 kalit mos
+   jurnal: 205 qator (shundan opening: 203)
+── IMPORTLI: «AAAA XARIDOR» · balans 2 341 175 224 so'm
+✅ karta asosiy raqami = balans — payableMinor=2 341 175 224 · reyestr=0
+✅ boshlang'ich qoldiq jurnaldan — openingMinor=2 341 175 224 so'm
+✅ 🔴 `opening` HARAKAT ro'yxatida YO'Q — 2 harakat qatori · totalCount=3
+✅ tarix + boshlang'ich qoldiq = balans
+── YANGI: «Toshkent Stroy gorot 555» (balans qatori yo'q)
+✅ 🔴 NULL ≠ 0 — balanceMinor=null · payableMinor=0
+✅ 🔴 boshlang'ich qoldiq qatori YO'Q (null)
+✅ tarix bo'sh va shunday deb qaytadi — entries=0 · totalCount=0 · hasMore=false
+```
+
+**JONLI VERIFY — 2. BRAUZER** (prod `erp.sherset.uz/sotuv`, Playwright, `admin@demo.local`,
+ochiq smena; reja §2.3 talabi — «Oxirgi xaridlar / Zakazlar / to'lovlar tarixi» ekrandan):
+
+| Kontragent | Ekranda ko'rilgani |
+|---|---|
+| **AAAA XARIDOR** (importli) | «To'lanadigan qarz **2 341 175 224,35 сум**» + «Kassa shu summagacha qabul qiladi». **Ikkinchi katta son YO'Q, ogohlantirish YO'Q.** «Qarz tarixi»: `QRZ-2026-00001 · Qarz to'lovi · 26-08-11 · +1 000,00` va `−1 000,00`; ostida ALOHIDA «Boshlang'ich qoldiq (tarixiy) 2 341 175 224,35 сум». «Oxirgi xaridlar» → «Xarid yo'q», «Jarayondagi zakazlar» → «Zakaz yo'q» |
+| **Toshkent Stroy gorot 555** (yangi) | «To'lanadigan qarz **0,00 сум**» + «**Balans qatori yo'q — bu mijoz bo'yicha hech qanday harakat yozilmagan**» + «Qarz tarixi: **Harakat yozilmagan**» |
+
+Konsolda **mening kodimdan xato yo'q**; yagona xato — aloqasiz, oldindan mavjud
+`/api/v1/notifications/stream` SSE `ERR_HTTP2_PROTOCOL_ERROR` (pastda, ochiq xavflarda).
+
+**Nima QILINMADI:**
+- **Kassir/kiosk roli bilan sinalmadi** — brauzer va skript verify'i `Admin User` tokeni bilan
+  ketdi. Yangi `GET /debts/pos/history/:id` ruxsati `debtpayment.create` (summary/pay bilan
+  bir xil), lekin kassirda u prodda BOR-YO'QLIGI hamon **o'lchanmagan** — bu P1 ning ochiq
+  xavfi edi va P2 uni YOPMADI (`stale-seeded-db-missing-permission-rows` xotirasi shu
+  klassni bir marta tutgan). → **P5/P10**.
+- **Tarixda sahifalash (pagination) YO'Q** — faqat oxirgi 20 yozuv + «Jami N ta yozuv»
+  yorlig'i. Kassir ekrani uchun ataylab: to'liq tarix kontragent kartasida. Prodda hech bir
+  kontragentda 20 dan ortiq harakat yo'q edi, ya'ni `hasMore` shoxi **jonli sinalmadi**
+  (faqat Vitest'da).
+- **Boshqa valyuta tarixi** — `history` kassa valyutasi kesimida ishlaydi (`?currency=`),
+  boshqa valyutadagi qoldiq kartada faqat SON bo'lib ko'rinadi, tarixi yo'q. Prodda barcha
+  203 qoldiq UZS ⇒ jonli farq yo'q.
+- **1 509 balanssiz kontragent uchun hech narsa yozilmadi** (ataylab): balans qatori faqat
+  birinchi harakatda tug'iladi, ya'ni ularda haqiqatan ham hujjat bo'lmagan. Ularga
+  «opening 0» yozish = ma'lumot yasash bo'lardi.
+- **`/counterparties/[id]` (buxgalteriya kartasi) TEGILMADI** — P2 kassir kartasi haqida.
+- **Qaytarish→balans (H1), xarajat→P&L (H3), money backfill (H4)** — P14 hududi, tegilmadi.
+
+**Ochiq xavf / keyingi fazaga eslatma:**
+1. 🟠 **`opening` qatorlari org-kesimida «taqsimlanmagan»** (`organizationId: null`). Bu Faza 10
+   da ataylab tanlangan narx (`DUP-15`: materiallashgan jadvalda ham org o'lchovi yo'q edi,
+   taqsimotni o'ylab topish = ma'lumot yasash). Endi u **203 qatorga** ko'paydi — org bo'yicha
+   akt/statement ochilganda 2,1 mlrd so'm «taqsimlanmagan» bandida ko'rinadi. Bu **kutilgan**,
+   lekin egasi buni birinchi marta ko'rsa savol tug'ilishi mumkin.
+2. 🟠 **Kartadagi «0,00 so'm» + «balans qatori yo'q» juftligi** — agar Faza 9 dan OLDIN qarzi
+   bo'lgan-u balans qatori tug'ilmagan kontragent bo'lsa, ekran 0 ko'rsatadi. O'lchov shuni
+   aytadi: qarzi bo'lgan 206 kontragentning HAMMASIDA qator bor (import ularni yaratgan), ya'ni
+   bu holat prodda ma'lum emas. Baribir — izoh qatori aynan shu savolni ochiq qoldirish uchun.
+3. 🔴 **P1 dan meros va HAMON ochiq:** storno adopsiya qatorini `unpaid` holatda ochiq
+   qoldiradi ⇒ qarzdorlar ro'yxati / eslatma cron / Telegram uni ko'radi. P2 kartani
+   soddalashtirdi, lekin **dunning oqimiga tegmadi**. → P4/P16 da ko'rilsin.
+4. 🟠 **Aloqasiz, lekin jonli o'lchandi:** prod brauzer konsolida
+   `GET /api/v1/notifications/stream` → `ERR_HTTP2_PROTOCOL_ERROR`. SSE nginx/HTTP2 ostida
+   uzilyapti ⇒ bildirishnomalar oqimi ishlamayotgan bo'lishi mumkin. **P10 da tekshirilsin.**
+5. `ops-p2-live-verify.ts` **READ-ONLY** — P3/P14 dan keyin regressiya tekshiruvi sifatida
+   qayta yugurtiring (P1 ning `ops-p1-live-verify.ts` bilan birga).
 ### P3 — ☐ hali bajarilmagan
 ### P4 — ☐ hali bajarilmagan
 ### P5 — ☐ hali bajarilmagan

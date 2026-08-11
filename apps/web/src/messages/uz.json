@@ -9035,7 +9035,7 @@
       "customer_card_history": "Qarz tarixi",
       "customer_card_history_empty": "Harakat yozilmagan",
       "customer_card_history_opening": "Boshlang'ich qoldiq (tarixiy)",
-      "customer_card_history_more": "Yana {count} ta yozuv bor — to'liq tarix kontragent kartasida",
+      "customer_card_history_more": "Jami {count} ta yozuv — to'liq tarix kontragent kartasida",
       "customer_card_doc": {
         "retailsale": "Chek",
         "debt": "Qarz",
