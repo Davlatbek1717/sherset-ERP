@@ -331,6 +331,45 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-08-11c (F1 · REJA-KASSIR-EXE · ✅ DEPLOYED tasdiqlandi · kod o'zgarmadi) —**
+> **`eb5dee41 → 992fff98` (11 commit: F8 zakazni to'lash · F9 mijoz kartasi · xodim PIN modali)
+> prodda.** 🔴 Muhim: bu deploy'ni **oldingi sessiya allaqachon qilgan edi** (box `/tmp/deploy.log`:
+> `Deploy done: eb5dee41… → 992fff98…`, 2026-08-11 06:54 +0200 — oxirgi commitdan 1 daqiqa keyin).
+> Reja «11 commit push qilinmagan» degan edi — **premisa eskirgan**; lokal `sherset/climart-adoption`
+> remote-ref'i fetch qilinmagani uchun shunday ko'ringan. Push/deploy QAYTA qilinmadi (kerak emas edi).
+>
+> **Bu sessiya qilgani = to'liq gate + mustaqil jonli verifikatsiya (dalil bilan):**
+> typecheck 10/10 · lint:product 0 error (848 warning, siyosat bo'yicha ruxsat) · i18n:gate 9/9 ·
+> web vitest **3514 passed / 26 skipped, 0 failed** (248 fayl) · api vitest **7970 passed / 2 skipped,
+> 0 failed** (570 fayl). Migratsiya diff BO'SH · yangi `process.env` o'qishi YO'Q ⇒ POS_PIN_PEPPER
+> klassidagi env-bloker takrorlanmadi.
+> **Jonli dalillar:** box `git rev-parse HEAD` = lokal HEAD `992fff98` · `https://erp.sherset.uz/` **200** ·
+> `/api/v1/health` **200** · `/api/v1/debts/pos/summary/<uuid>` **401** (F9 marshruti bor va qo'riqlangan,
+> 404 emas) · pm2 `sherset-v2-api`/`-web` online, uptime **309 daqiqa** (= 06:55 dagi deploy restartidan beri
+> uzluksiz, crash-loop yo'q) ·
+> `api.err.log` oxirgi yozuvi 03:37 UTC = **muvaffaqiyatli bootdan OLDINGI** POS_PIN_PEPPER hodisasi,
+> undan keyin yangi xato yo'q · `web.err.log` oxirgi yozuvi 2026-08-08.
+> **Build ichida yangi kod bor** (grep, `.next`): `customer_card_title` → `static/chunks/app/(app)/sotuv/
+> page-ef837f5b…js` (F9) · `orders_pay_no_positions` (F8) · `pos_pin_title` → `static/chunks/338-…js`
+> (oxirgi commit `992fff98` FE kodi build'da) · `BUILD_ID` mtime 06:53 +0200 > oxirgi commit 06:49 +0200.
+>
+> **⚠️ Topilgan qarzlar (tuzatilmadi — F1 da yangi kod yozilmaydi):**
+> (1) `apps/api/.env.example` **eskirgan**: box `.env` da yo'q 9 kalitning (`JWT_ACCESS_SECRET`,
+> `JWT_REFRESH_SECRET`, `JWT_ACCESS_TTL`, `JWT_REFRESH_TTL`, `PASSWORD_HASH_ROUNDS`, `CBRU_API_BASE`, `TZ`,
+> `LOG_LEVEL`, `LOG_PRETTY`) **hech biri kodda o'qilmaydi** (o'lchandi: 0 o'quvchi; LOG_* da default bor).
+> Ya'ni bloker EMAS, lekin `.env.example` diff'i endi shovqin — POS_PIN_PEPPER retsepti (§deploy) uchun
+> yolg'on-pozitiv manbai. (2) **Disk `/` 93% band, 7.2G bo'sh**; `/root/sherset-v2-backups` 2.7G/6 fayl —
+> keyingi FE-build'li deploy'dan oldin tozalash kerak bo'lishi mumkin.
+>
+> **BROWSER-QA YO'Q** — F8/F9/PIN ekranlari brauzerda bosib ko'rilmagan (reja bo'yicha egasi qiladi).
+> Status: **Phase-1 + jonli marshrut/build verifikatsiyasi**, runtime-UI tasdiqlanmagan.
+>
+> **📌 Sabog'i (keyingi fazalarga):** `git log <remote>..HEAD` **`git fetch` siz ishonchsiz** — remote-ref
+> eskirgan bo'lsa allaqachon chiqarilgan ish «kutayotgan» ko'rinadi. Deploy'dan oldin **avval `git fetch`**.
+> Diqqat: prodda turgan kod HEAD'i = `992fff98`; shu entry'ning o'z commit'i (faqat hujjat) undan keyin
+> keladi va **deploy talab qilmaydi** — box HEAD'i undan 1 commit orqada bo'lishi KUTILGAN holat.
+> Keyingi: `docs/REJA-KASSIR-EXE-2026-08.md` **FAZA 2** (savat qatori tahrir oynasi) — alohida sessiya.
+
 > **🕒 2026-08-11b (DEPLOY → erp.sherset.uz · ✅ DEPLOYED · kod o'zgarmadi) —**
 > **`ff7e0a8b → e622d5da` (174 fayl) prod'da.** Migratsiya `20260810180000_pos_device_and_pin_lookup`
 > qo'llandi · money+web build · api/web restart. Deploy `deploy-smart.sh DS_TARGET=v2` bilan.
