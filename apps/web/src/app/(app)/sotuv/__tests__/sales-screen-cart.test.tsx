@@ -207,6 +207,23 @@ describe('SalesScreen — savat qatorlari', () => {
     );
   });
 
+  // F2 — narx parse'i YAGONA (`parseAmountToMinor`). Ilgari sahifa o'z
+  // nusxasini yozardi (`Number.parseFloat × 100`) va u «12abc» dan jimgina
+  // 12 ni sug'urib olardi: ekranda «12abc», chekka 1 200 tiyin. To'lov oynasi
+  // esa allaqachon qat'iy parse ishlatardi — ikki maydon bir xil matnni ikki
+  // xil tushunardi. Endi bittasi: buzuq kiritma = 0.
+  it('🔴 narx maydoniga «12abc» — narx 0 (jimgina 12 EMAS)', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<SotuvPage />);
+
+    const line = await addFirstProduct(user);
+    await setPrice(user, line, '12abc');
+
+    const after = screen.getByTestId('sotuv-cart-line');
+    expect(within(after).getByRole('textbox')).toHaveValue('12abc');
+    expect(norm(after.textContent)).toContain('Narx:0,00 сум');
+  });
+
   it('narxni tahrirlash qator summasi va foydasini darhol siljitadi', async () => {
     const user = userEvent.setup();
     renderWithProviders(<SotuvPage />);
@@ -424,6 +441,113 @@ describe('SalesScreen — savat va tovar ro‘yxati bog‘lanishi', () => {
 
     const cartTab = screen.getByRole('button', { name: /^Savat/ });
     expect(within(cartTab).getByText('3')).toBeInTheDocument();
+  });
+});
+
+/**
+ * F2 — sensorli monoblok uchun savat qatori tahrir oynasi.
+ *
+ * Oynaning O'Z xulqi `components/pos/__tests__/cart-line-edit-modal.test.tsx`
+ * da qulflangan; bu yerda qulflanadigan narsa — SAHIFA bilan ulanishi: qator
+ * qanday ochadi va oynaning natijasi savatga qanday qo'llanadi.
+ *
+ * Mavjud −/+ va ichki narx maydoni ATAYLAB QOLDIRILDI (yuqoridagi testlar
+ * ularni hamon tekshiradi): sichqonchali ish o'rni ham shu ekranni ishlatadi,
+ * va ularni olib tashlash MK32 ataylab qulflagan xarakteristikani buzardi.
+ * Oyna — qo'shimcha yo'l, almashtiruvchi emas.
+ */
+describe('SalesScreen — savat qatori tahrir oynasi (F2)', () => {
+  /** Qator nomini bosib oynani ochadi. */
+  async function openEditor(user: ReturnType<typeof userEvent.setup>) {
+    const line = await addFirstProduct(user);
+    await user.click(within(line).getByTestId('sotuv-cart-line-edit'));
+    return await screen.findByTestId('pos-line-edit');
+  }
+
+  /** Oyna numpadini bosadi (sahifada boshqa raqamlar ham bor). */
+  async function tap(user: ReturnType<typeof userEvent.setup>, ...keys: string[]) {
+    const pad = screen.getByTestId('pos-line-edit');
+    for (const k of keys) await user.click(within(pad).getByRole('button', { name: k }));
+  }
+
+  it('qator nomini bosish oynani joriy soni va narx bilan ochadi', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<SotuvPage />);
+
+    const modal = await openEditor(user);
+    expect(modal).toHaveTextContent('Kabel 2×2.5');
+    expect(norm(within(modal).getByTestId('pos-line-edit-qty').textContent)).toContain('1');
+    expect(norm(within(modal).getByTestId('pos-line-edit-price').textContent)).toContain(
+      '10 000,00',
+    );
+  });
+
+  it('oynada soni kiritilib saqlansa savat qatori yangilanadi', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<SotuvPage />);
+
+    await openEditor(user);
+    await tap(user, '1', '2');
+    await user.click(screen.getByTestId('pos-line-edit-save'));
+
+    await waitFor(() => expect(screen.queryByTestId('pos-line-edit')).not.toBeInTheDocument());
+    const line = screen.getByTestId('sotuv-cart-line');
+    expect(within(line).getByTestId('sotuv-cart-qty')).toHaveTextContent('12');
+    // 12 × 10 000 = 120 000
+    expect(norm(line.textContent)).toContain('120 000,00');
+  });
+
+  it('oynada kasr miqdor (1.5) savatga SATR bo‘lib tushadi', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<SotuvPage />);
+
+    await openEditor(user);
+    await tap(user, '1', '.', '5');
+    await user.click(screen.getByTestId('pos-line-edit-save'));
+
+    const line = await screen.findByTestId('sotuv-cart-line');
+    expect(within(line).getByTestId('sotuv-cart-qty')).toHaveTextContent('1.5');
+    // 1.5 × 10 000 = 15 000 — `BigInt(1.5)` otilmaydi.
+    expect(norm(line.textContent)).toContain('15 000,00');
+  });
+
+  it('oynada narx tushirilsa savatga qo‘llanadi (tasma ham siljiydi)', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<SotuvPage />);
+
+    await openEditor(user);
+    await user.click(screen.getByTestId('pos-line-edit-price'));
+    await tap(user, '5', '0', '0', '0');
+    await user.click(screen.getByTestId('pos-line-edit-save'));
+
+    const line = await screen.findByTestId('sotuv-cart-line');
+    expect(within(line).getByRole('textbox')).toHaveValue('5000');
+    expect(line).toHaveAttribute('data-price-band', 'loss');
+    expect(norm(within(line).getByTestId('sotuv-cart-profit').textContent)).toBe(
+      'Foyda: -1 000,00 сум (-20%)',
+    );
+  });
+
+  it('oynadagi «O‘chirish» qatorni savatdan olib tashlaydi', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<SotuvPage />);
+
+    await openEditor(user);
+    await user.click(screen.getByTestId('pos-line-edit-remove'));
+
+    await waitFor(() => expect(screen.queryByTestId('sotuv-cart-line')).not.toBeInTheDocument());
+    expect(screen.queryByTestId('pos-line-edit')).not.toBeInTheDocument();
+  });
+
+  it('oynada soni 0 qilinsa qator o‘chadi (savatdagi «−» bilan bir xil)', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<SotuvPage />);
+
+    await openEditor(user);
+    await tap(user, '0');
+    await user.click(screen.getByTestId('pos-line-edit-save'));
+
+    await waitFor(() => expect(screen.queryByTestId('sotuv-cart-line')).not.toBeInTheDocument());
   });
 });
 

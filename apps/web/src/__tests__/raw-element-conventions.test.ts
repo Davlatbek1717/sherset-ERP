@@ -121,6 +121,13 @@ const EXEMPT_INPUT_TEXTNUM = [
   // taqiqlangan turlar (date/password/…) yo'q.
   'app/(app)/sotuv/page.tsx',
   'components/pos/rasmilashtirish-modal.tsx',
+  // F2 — savat qatorining sensorli tahrir oynasi. Yagona maydon: numpad
+  // yozadigan faol qiymat (`type="text"` ATAYLAB — `type="number"` oraliq
+  // «1.» holatini yeydi va kasr miqdor kiritib bo'lmasdi, FE-02). DS Input
+  // o'z paddingi/o'lchami bilan keladi, bu yerda esa maydon 3xl raqamli va
+  // numpad grid'i bilan bir butun — `rasmilashtirish-modal.tsx` bilan
+  // AYNAN bir xil sabab.
+  'components/pos/cart-line-edit-modal.tsx',
 ];
 // Types every site of which is migrated — banned outright, no exemptions.
 const BANNED_INPUT_TYPES = [

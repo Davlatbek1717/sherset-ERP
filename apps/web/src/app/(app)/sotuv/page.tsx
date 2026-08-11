@@ -1,5 +1,6 @@
 'use client';
 
+import { CartLineEditModal } from '@/components/pos/cart-line-edit-modal';
 import { CashOutDialog } from '@/components/pos/cash-out-dialog';
 import type { CustomerCardRow } from '@/components/pos/customer-card-panel';
 import { CustomerCardPanel } from '@/components/pos/customer-card-panel';
@@ -1194,20 +1195,60 @@ function SalesScreen({
     setCart((prev) => prev.filter((l) => l.productId !== productId));
   }, []);
 
-  const updatePrice = useCallback((productId: string, input: string) => {
-    setCart((prev) =>
-      prev.map((l) => {
-        if (l.productId !== productId) return l;
-        const num = Number.parseFloat(input.replace(/\s/g, '').replace(',', '.'));
-        // K-3: parse muvaffaqiyatsiz (bo'sh satr, harf) → 0n, ESKI narx EMAS.
-        // Ko'ringan narsa = yuboriladigan narsa: maydon bo'sh ko'rinib turib
-        // rasmiylashtirishga eski narx ketishi kassirni aldardi. 0 narxli
-        // qatorni esa ZARAR tasmasi darhol ko'rsatadi va server ham ushlaydi.
-        const minor = !Number.isNaN(num) && num >= 0 ? BigInt(Math.round(num * 100)) : 0n;
-        return { ...l, priceStr: input, priceMinor: minor };
-      }),
-    );
-  }, []);
+  /**
+   * Savat qatorining narxi.
+   *
+   * K-3: parse muvaffaqiyatsiz (bo'sh satr, harf) → `0n`, ESKI narx EMAS.
+   * Ko'ringan narsa = yuboriladigan narsa: maydon bo'sh ko'rinib turib
+   * rasmiylashtirishga eski narx ketishi kassirni aldardi. 0 narxli qatorni
+   * esa ZARAR tasmasi darhol ko'rsatadi va server ham ushlaydi.
+   *
+   * F2 — parse YAGONA (`parseAmountToMinor`). Ilgari bu yerda o'z nusxasi
+   * turardi (`Number.parseFloat(...) × 100`) va u to'lov oynasidan uch joyda
+   * ayrilardi (o'lchangan): `«12abc»` → 1 200 tiyin (ekranda «12abc», chekka
+   * 12 so'm), `«.5»` → 50, `«15,000.50»` → 1 500. Bundan tashqari `× 100`
+   * QATTIQ scale edi — 0 kasrli kassa valyutasida (JPY uslubi) narx 100
+   * barobar shishardi. Endi ikkala maydon bir xil qoidaga bo'ysunadi.
+   */
+  const updatePrice = useCallback(
+    (productId: string, input: string) => {
+      setCart((prev) =>
+        prev.map((l) =>
+          l.productId === productId
+            ? { ...l, priceStr: input, priceMinor: parseAmountToMinor(input, tillCurrency) }
+            : l,
+        ),
+      );
+    },
+    [tillCurrency],
+  );
+
+  // ── F2 — savat qatori tahrir oynasi (sensorli monoblok) ───────────────────
+  // Oyna savatning O'ZIDA saqlanmaydi: `editingProductId` bo'yicha JONLI
+  // topiladi, ya'ni oyna ochiq turganda savat qatori o'zgarsa (masalan
+  // zakazdan yuklansa) oyna eski nusxani ko'rsatmaydi. Qator yo'qolsa —
+  // `editingLine` `null` bo'ladi va oyna o'zi yopiladi.
+  const [editingProductId, setEditingProductId] = useState<string | null>(null);
+  const editingLine = cart.find((l) => l.productId === editingProductId) ?? null;
+
+  const applyLineEdit = useCallback(
+    (productId: string, next: { quantity: string; priceStr: string; priceMinor: bigint }) => {
+      setCart((prev) =>
+        prev.map((l) =>
+          l.productId === productId
+            ? {
+                ...l,
+                quantity: next.quantity,
+                priceStr: next.priceStr,
+                priceMinor: next.priceMinor,
+              }
+            : l,
+        ),
+      );
+      setEditingProductId(null);
+    },
+    [],
+  );
 
   // Savat darajasidagi chegirma (`discountPct`) har bir pozitsiyaga foiz sifatida
   // yoziladi — shunda backend chegirmali `sumMinor`'ni saqlaydi va chek «Chegirma»
@@ -2459,9 +2500,21 @@ function SalesScreen({
                       >
                         {/* Qator 1: Nom + soni + o'chirish */}
                         <div className="flex items-center gap-2">
-                          <div className="min-w-0 flex-1 truncate text-sm font-medium text-[var(--ms-text-primary)]">
+                          {/* F2 — nomni bosish katta tahrir oynasini ochadi
+                              (sensorli monoblokda 24px tugmalar yetmaydi).
+                              Trigger AYNAN nom: butun qator bosiladigan
+                              bo'lsa, ichidagi narx maydoniga tegish ham
+                              oynani ochib yuborardi. Qulflangan savatda
+                              oyna FAQAT KO'RISH rejimida ochiladi. */}
+                          <button
+                            type="button"
+                            data-test-id="sotuv-cart-line-edit"
+                            onClick={() => setEditingProductId(line.productId)}
+                            title={t('line_edit_open')}
+                            className="min-w-0 flex-1 truncate text-left font-medium text-sm text-[var(--ms-text-primary)] hover:underline"
+                          >
                             {line.productName}
-                          </div>
+                          </button>
                           {/* Soni — zakazga bog'langan savatda QULFLANGAN */}
                           {cartLocked ? (
                             <span
@@ -2848,6 +2901,23 @@ function SalesScreen({
         currency={tillCurrency}
         onConfirm={(p) => payReadySaleMut.mutate(p)}
         loading={payReadySaleMut.isPending}
+      />
+
+      {/* F2 — savat qatorining katta tahrir oynasi (sensorli monoblok).
+          `readOnly` zakaz qulfini takrorlaydi: qulf faqat qator ichidagi
+          tugmalarda qolsa, oyna uni chetlab o'tadigan ikkinchi yo'l bo'lardi. */}
+      <CartLineEditModal
+        line={editingLine}
+        currency={tillCurrency}
+        readOnly={cartLocked}
+        onClose={() => setEditingProductId(null)}
+        onSave={(next) => {
+          if (editingLine) applyLineEdit(editingLine.productId, next);
+        }}
+        onRemove={() => {
+          if (editingLine) removeFromCart(editingLine.productId);
+          setEditingProductId(null);
+        }}
       />
     </div>
   );

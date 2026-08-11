@@ -17,7 +17,7 @@
  */
 
 import { api } from '@/lib/api-client';
-import { renderWithProviders, screen, userEvent, waitFor } from '@/test-utils';
+import { renderWithProviders, screen, userEvent, waitFor, within } from '@/test-utils';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import SotuvPage from '../page';
 import { type Route, norm, router, salesRoutes } from './harness';
@@ -277,9 +277,41 @@ describe('F8 — chek zakazga bog‘lanadi', () => {
     const lines = await screen.findAllByTestId('sotuv-cart-line');
     expect(lines).toHaveLength(2);
     for (const line of lines) {
+      // Tahrir vositalari YO'Q: narx maydoni ham, ±/✕ tugmalari ham.
       expect(line.querySelectorAll('input')).toHaveLength(0);
-      expect(line.querySelectorAll('button')).toHaveLength(0);
+      for (const name of ['−', '+', '✕']) {
+        expect(within(line).queryByRole('button', { name })).toBe(null);
+      }
     }
+  });
+
+  /**
+   * F2 — savat qatorini bosish katta tahrir oynasini ochadi. Qulflangan
+   * savatda oyna FAQAT KO'RISH bo'lishi shart (`readOnly={cartLocked}`), aks
+   * holda kassa zakaz qulfini oyna orqali chetlab o'tardi.
+   *
+   * 🔴 O'LCHANGAN FAKT (F2 sessiyasi): `payingOrderId` FAQAT
+   * `setCheckoutOpen(true)` bilan birga qo'yiladi va rasmiylashtirish oynasi
+   * yopilganda darhol tozalanadi. Ya'ni qulflangan savat HAR DOIM ochiq
+   * modal ortida turadi — Radix fon ustiga `pointer-events: none` qo'yadi va
+   * qatorni bosib bo'lmaydi. Shu sababli bu yerdagi tekshiruv «bosib ochish»
+   * emas, QULF O'ZI: qatorda tahrir vositalari yo'q (yuqoridagi test) va
+   * oynaning read-only shartnomasi komponent darajasida qulflangan
+   * (`components/pos/__tests__/cart-line-edit-modal.test.tsx`).
+   */
+  it('qulflangan savat qatorida tahrir triggeri bor, lekin fon bosilmaydi', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<SotuvPage />);
+    await openOrderDetail(user);
+    await user.click(await screen.findByRole('button', { name: 'To‘lash' }));
+
+    const lines = await screen.findAllByTestId('sotuv-cart-line');
+    // Trigger chizilgan (nom o'sha tugma), lekin u modal ortida —
+    // rasmiylashtirish oynasi ochiq turganda savat butunlay erishilmas.
+    expect(within(lines[0] as HTMLElement).getByTestId('sotuv-cart-line-edit')).toHaveTextContent(
+      'Avtomat IEK 16A',
+    );
+    expect(screen.queryByTestId('pos-line-edit')).not.toBeInTheDocument();
   });
 
   it('to‘lov mavjud yo‘l bilan ketadi — `POST /retail-sales/:id/post`', async () => {
