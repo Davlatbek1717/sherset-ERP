@@ -136,19 +136,81 @@ function installExitGesture() {
  * 🔴 Uslublar faqat CSSOM (`el.style.x = …`) orqali: `<style>` tegi sahifaning
  * `style-src` siyosatiga tushardi, CSSOM esa CSP'dan tashqarida.
  */
-const KB_ROWS = [
+const KB_LATIN_ROWS = [
   ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0'],
   ['q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p'],
   ['a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l'],
   ['z', 'x', 'c', 'v', 'b', 'n', 'm'],
 ];
-const KB_SYMBOLS = ['@', '.', '-', '_', '/', ':'];
+/**
+ * ЙЦУКЕН + O'ZBEK KIRILLI (`ў қ ғ ҳ` — rus alifbosida YO'Q, oxirgi qatorda).
+ * Mijoz nomi, izoh, manzil kirillda yoziladi; F3 gacha ularni umuman kiritib
+ * bo'lmasdi (2026-08-11, real qurilma).
+ */
+const KB_CYRILLIC_ROWS = [
+  ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0'],
+  ['й', 'ц', 'у', 'к', 'е', 'н', 'г', 'ш', 'щ', 'з', 'х', 'ъ'],
+  ['ф', 'ы', 'в', 'а', 'п', 'р', 'о', 'л', 'д', 'ж', 'э'],
+  ['я', 'ч', 'с', 'м', 'и', 'т', 'ь', 'б', 'ю', 'ё', 'ў', 'қ', 'ғ', 'ҳ'],
+];
+/**
+ * Raqamli maydon layouti — kassa terminali tartibida (7-8-9 tepada).
+ * `⌫` shu yerda: raqam kiritishda eng ko'p ishlatiladigan ikkinchi tugma.
+ */
+const KB_NUMBER_ROWS = [
+  ['7', '8', '9'],
+  ['4', '5', '6'],
+  ['1', '2', '3'],
+  ['.', '0', '⌫'],
+];
+// `'` — o'zbek lotinidagi `o'`/`g'` uchun SHART (ism/nom yozib bo'lmasdi).
+const KB_SYMBOLS = ['@', '.', '-', '_', '/', ':', "'"];
 /** Klaviatura chiqadigan maydon turlari. */
 const KB_TYPES = ['text', 'password', 'email', 'url', 'search', 'tel', 'number', ''];
+/** Shu turlar/rejimlarda QWERTY emas, numpad chiqadi (reja F3 §1). */
+const KB_NUMERIC_TYPES = ['number', 'tel'];
+const KB_NUMERIC_MODES = ['decimal', 'numeric', 'tel'];
+
+const KEY_H = '46px'; // harf tugmasi
+const NUM_KEY_H = '68px'; // raqam tugmasi — barmoq uchun ataylab kattaroq
+const BACKSPACE = '⌫';
+
+/**
+ * Til tanlovi SAQLANADI: preload har navigatsiyada noldan ishga tushadi, ya'ni
+ * saqlanmasa kassir har sahifa almashganda «РУС» ni qaytadan bosardi.
+ *
+ * 🔴 `localStorage` ATAYLAB (main'ga IPC emas): yangi IPC kanali qo'shilsa
+ * `main.js` bilan ikkinchi shartnoma paydo bo'lardi. Saqlagich yo'q bo'lsa
+ * (`file://` sahifa, o'chirilgan storage) — jim lotinga tushadi, klaviatura
+ * baribir ishlaydi.
+ */
+const KB_LANG_STORAGE_KEY = 'sherset.kbd.lang';
+
+function readKeyboardLang() {
+  try {
+    return window.localStorage.getItem(KB_LANG_STORAGE_KEY) === 'cyr' ? 'cyr' : 'latin';
+  } catch {
+    return 'latin';
+  }
+}
+
+function writeKeyboardLang(lang) {
+  try {
+    window.localStorage.setItem(KB_LANG_STORAGE_KEY, lang);
+  } catch {
+    // Saqlanmasa ham joriy sahifada ishlaydi — jim o'tamiz.
+  }
+}
 
 function installTouchKeyboard() {
   let root = null;
+  /** Tugmalar shu konteynerda — layout almashganda FAQAT u qayta quriladi. */
+  let panel = null;
   let shift = false;
+  /** Harf alifbosi: 'latin' | 'cyr' — navigatsiyalar orasida saqlanadi. */
+  let lang = readKeyboardLang();
+  /** Joriy layout: 'latin' | 'cyr' | 'num'. `null` = hali chizilmagan. */
+  let layout = null;
   /** @type {HTMLElement | null} */
   let target = null;
 
@@ -158,20 +220,21 @@ function installTouchKeyboard() {
 
   const send = (key) => ipcRenderer.send('kbd:key', key);
 
-  const makeKey = (label, onPress, flex) => {
+  const makeKey = (label, onPress, opts) => {
+    const o = opts || {};
     const b = document.createElement('button');
     b.type = 'button';
     b.tabIndex = -1;
     b.textContent = label;
     styles(b, {
-      flex: String(flex || 1),
+      flex: String(o.flex || 1),
       minWidth: '0',
-      height: '52px',
-      margin: '3px',
-      fontSize: '19px',
+      height: o.height || KEY_H,
+      margin: '2px',
+      fontSize: o.fontSize || '19px',
       fontWeight: '600',
       color: '#0f172a',
-      background: '#ffffff',
+      background: o.active ? '#cbd5e1' : '#ffffff',
       border: '1px solid #cbd5e1',
       borderRadius: '8px',
       cursor: 'pointer',
@@ -180,6 +243,83 @@ function installTouchKeyboard() {
     b.addEventListener('mousedown', (e) => e.preventDefault());
     b.addEventListener('click', onPress);
     return b;
+  };
+
+  const makeRow = () => {
+    const r = document.createElement('div');
+    styles(r, { display: 'flex' });
+    return r;
+  };
+
+  const hide = () => {
+    if (root) root.style.display = 'none';
+  };
+
+  /** Harf layoutining pastki qatori: shift · til · belgilar · probel · ⌫ · yashirish. */
+  const letterFooter = () => {
+    const r = makeRow();
+    r.appendChild(
+      makeKey(
+        '⇧',
+        () => {
+          shift = !shift;
+          render();
+        },
+        { flex: 1.3, active: shift },
+      ),
+    );
+    r.appendChild(
+      makeKey(
+        lang === 'cyr' ? 'ABC' : 'РУС',
+        () => {
+          lang = lang === 'cyr' ? 'latin' : 'cyr';
+          layout = lang;
+          shift = false;
+          writeKeyboardLang(lang);
+          render();
+        },
+        { flex: 1.6 },
+      ),
+    );
+    for (const s of KB_SYMBOLS) r.appendChild(makeKey(s, () => send(s)));
+    r.appendChild(makeKey('␣', () => send(' '), { flex: 3 }));
+    r.appendChild(makeKey(BACKSPACE, () => send('Backspace'), { flex: 1.4 }));
+    r.appendChild(makeKey('Yashirish', hide, { flex: 2 }));
+    return r;
+  };
+
+  const numberFooter = () => {
+    const r = makeRow();
+    r.appendChild(makeKey('Yashirish', hide, { height: KEY_H }));
+    return r;
+  };
+
+  const render = () => {
+    if (!panel) return;
+    panel.textContent = ''; // eski tugmalar ketadi (`innerHTML` CSP/lint sababli emas)
+    const numeric = layout === 'num';
+    const rows = numeric ? KB_NUMBER_ROWS : layout === 'cyr' ? KB_CYRILLIC_ROWS : KB_LATIN_ROWS;
+    // Numpad tor va markazda: 1280px ekranda uchta tugma butun enga cho'zilsa
+    // barmoq nishoni emas, «taxta» bo'lib qolardi.
+    styles(panel, { maxWidth: numeric ? '520px' : 'none', margin: '0 auto' });
+    const height = numeric ? NUM_KEY_H : KEY_H;
+    const fontSize = numeric ? '26px' : '19px';
+    for (const row of rows) {
+      const r = makeRow();
+      for (const ch of row) {
+        if (ch === BACKSPACE) {
+          r.appendChild(makeKey(BACKSPACE, () => send('Backspace'), { height, fontSize }));
+          continue;
+        }
+        // Yorliq va yuboriladigan belgi BIR XIL bo'lishi shart: ilgari kalit
+        // tugmaning `textContent` idan o'qilardi va shift holati ikki joyda
+        // (yorliq + o'qish) saqlanardi.
+        const key = shift ? ch.toUpperCase() : ch;
+        r.appendChild(makeKey(key, () => send(key), { height, fontSize }));
+      }
+      panel.appendChild(r);
+    }
+    panel.appendChild(numeric ? numberFooter() : letterFooter());
   };
 
   const build = () => {
@@ -196,63 +336,31 @@ function installTouchKeyboard() {
       display: 'none',
       boxShadow: '0 -6px 20px rgba(0,0,0,.25)',
     });
-
-    for (const row of KB_ROWS) {
-      const r = document.createElement('div');
-      styles(r, { display: 'flex' });
-      for (const ch of row) {
-        r.appendChild(
-          makeKey(ch, (e) => {
-            const btn = e.currentTarget;
-            send(shift ? btn.textContent.toUpperCase() : btn.textContent.toLowerCase());
-          }),
-        );
-      }
-      root.appendChild(r);
-    }
-
-    const last = document.createElement('div');
-    styles(last, { display: 'flex' });
-    last.appendChild(
-      makeKey(
-        'ABC',
-        () => {
-          shift = !shift;
-          for (const b of root.querySelectorAll('button')) {
-            const t = b.textContent;
-            if (t.length === 1 && /[a-z]/i.test(t))
-              b.textContent = shift ? t.toUpperCase() : t.toLowerCase();
-          }
-        },
-        1.4,
-      ),
-    );
-    for (const s of KB_SYMBOLS) last.appendChild(makeKey(s, () => send(s)));
-    last.appendChild(makeKey('␣', () => send(' '), 3));
-    last.appendChild(makeKey('⌫', () => send('Backspace'), 1.4));
-    last.appendChild(
-      makeKey(
-        'Yashirish',
-        () => {
-          root.style.display = 'none';
-        },
-        2,
-      ),
-    );
-    root.appendChild(last);
-
+    panel = document.createElement('div');
+    root.appendChild(panel);
     document.body.appendChild(root);
   };
 
+  const attr = (el, name) => (el.getAttribute(name) || '').toLowerCase();
+
+  /** Pul/miqdor/telefon maydoni — QWERTY emas, numpad. */
+  const numericField = (el) =>
+    KB_NUMERIC_TYPES.includes(attr(el, 'type')) || KB_NUMERIC_MODES.includes(attr(el, 'inputmode'));
+
   const wanted = (el) =>
     !!el &&
-    ((el.tagName === 'INPUT' && KB_TYPES.includes((el.getAttribute('type') || '').toLowerCase())) ||
-      el.tagName === 'TEXTAREA');
+    ((el.tagName === 'INPUT' && KB_TYPES.includes(attr(el, 'type'))) || el.tagName === 'TEXTAREA');
 
   document.addEventListener('focusin', (e) => {
     if (!wanted(e.target)) return;
     target = e.target;
     if (!root) build();
+    const next = numericField(target) ? 'num' : lang;
+    if (next !== layout) {
+      layout = next;
+      shift = false;
+      render();
+    }
     root.style.display = 'block';
     // Maydon klaviatura ostida qolib ketmasin.
     if (typeof target.scrollIntoView === 'function') {
