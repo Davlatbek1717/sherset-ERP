@@ -331,6 +331,54 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-08-11a (Ombor «Scan» + «Sanash» — egasining TZ v3 si; reja+ijro, 10 commit) —
+> **Phase-1: strukturaviy + unit/xulq testlari bilan tasdiqlangan, BROWSER-SMOKE YO'Q.**
+> TZ matni: `docs/superpowers/specs/2026-08-10-yacheyka-scan-sanash-tz-v3.md` · reja:
+> `docs/superpowers/plans/2026-08-10-yacheyka-scan-sanash-tz-v3.md` · jarayon jurnali (git-ignored):
+> `.superpowers/sdd/2026-08-10-yacheyka-scan-sanash-tz-v3/progress.md` + `task-1..5-report.md`.**
+>
+> **Nima qilindi (6 bo'lak, har biri subagent + review sikli bilan):** (1) yangi **`storecell`**
+> ruxsat obyekti — 6 yacheyka marshruti `store.update` dan ajratildi, omborchiga ochildi; chiqarish
+> (unbind) TZ §3 bo'yicha ATAYLAB `store.update` da qoldi. (2) `PUT cells/:cellId/stock` ga
+> **`mode: 'set' | 'add'`** — «Umumiy sanash» endi qo'shadi (26+100=126), delta **serverda**
+> hisoblanadi (lost-update yo'q), avto-«Оприходование» aynan qo'shilgan miqdorga. (3) `useScanQueue`
+> — skanlar navbati + `onError`. (4) «Scan» oynasi: yacheyka bo'yicha eslab qolinadigan qaror,
+> staged «chiqarib qo'shish» (avval DELETE, keyin POST), beep, `canEvict` darvozasi.
+> (5) «Sanash»: bitta qimirlamaydigan son-maydon, qatorda «hozirgi → bo'ladi», saqlashdan oldin
+> butun jadval validatsiyasi. (6) Egasi qarorlari: yacheykada **qoldiq bo'lsa chiqarish
+> BLOKLANADI** (409 `CELL_STOCK_NOT_EMPTY`, hujjatsiz stok o'zgarmaydi) + `warehouse_manager` ga
+> `store.update`.
+>
+> **🔴 Review 4 Critical + 12 Important topdi — hech biri statik gate'da ko'rinmasdi.** Eng
+> muhimlari: «Sanash»da tarmoq xatosida ekranda eski kartochka qolib **noto'g'ri yacheykaga mutlaq
+> yozuv** ketardi · «Scan»da burst'da ikkinchi skan konflikt dialogini ustidan yozib skanni **jim
+> yo'qotardi** · band yacheyka so'rovi yiqilsa yacheyka butun sessiyaga «bo'sh» deb muhrlanardi ·
+> `mode:'add'` hujjatsiz yo'lda qoldiqni **kamaytirardi** · qoldiq qulfi `product-cell-move.rebind`
+> orqali **chetlab o'tilardi**. Yakuniy holat: api `store+permissions+product` **775 passed** ·
+> web `components/stores` **79 passed** · typecheck 10/10 · i18n gate 9 · biome 0.
+>
+> **⚙️ OPS (bajarildi, LOKAL bazada):** `cd apps/api && npx tsx src/scripts/topup-role-permissions.ts`
+> — PASS 1: 4 eski rol · PASS 2: 6 shablon roli / 17 qator; ikkinchi yugurishda **0 qator**
+> (idempotentlik jonli o'lchandi). Bazada tasdiqlandi: Omborchi va Ombor menejeri
+> `storecell.update = ALL`. **PRODDA HALI YUGURTIRILMAGAN — yugurtirilmasa yacheyka amallari
+> hammaga 403** (avval skript, keyin API restart).
+>
+> **⚠️ O'LCHANGAN BO'SHLIQ:** `store.update` bazaga **yetib bormadi** — `TOPUP_ENTITIES`
+> allow-listi ataylab faqat `storecell` ni ko'radi (boshqa entity'ga tegsa admin bekor qilgan
+> ruxsatni tiriltirardi). Ya'ni «chiqarib qo'shish» jonli bazada hamon faqat admin/egada. Yechim:
+> rol matritsasi ekranidan qo'lda berish YOKI `warehouse_manager`+`store` uchun nuqtali top-up.
+>
+> **📌 Backlog (review topdi, ataylab tuzatilmadi):** (a) **uchinchi yo'l** — tovar kartasi
+> `PUT /products` `__yacheyka` ni qulfsiz qayta yozadi (legacy faqat-yorliq bog'lanishda fantom
+> qoldiq klassi); (b) `pick-list.controller.ts:50` `cells-by-products` da `@RequirePermission` yo'q
+> + `use-pick-sheet.ts:90` `.catch(() => ({}))` 403 ni jim yutadi (varaq «Yacheykasiz» bo'lib
+> chiqadi); (c) Serializable retry ulanmagan — `shared/serialization-retry.ts` MAVJUD; (d) fantom
+> qoldiq TARIXI tozalanmagan (ops skripti yo'q, prod hajmi o'lchanmagan); (e) `rebind` eski
+> yacheykani NOM bo'yicha akkaunt-bo'ylab qidiradi (nom faqat ombor ichida noyob).
+>
+> **➡️ KEYINGI QADAM: TZ §4 — do'konda real skaner + telefon bilan Phase-2 QA** (`/qa-cohort`).
+> Undan oldin lokal bazada dev-stack ko'tarilsin; §4 checklisti TZ faylining oxirida.**
+
 > **🕒 2026-08-10m (REJA-KPI-SODDALASHTIRISH **KPI-06** — Phase-2 QA, real brauzer) —
 > **PHASE-2 VERIFIED** (KPI-01…KPI-04 yuzasi). 6 stsenariydan **5 ✅ / 1 ⚠️ qisman**;
 > **4 defekt topildi va tuzatildi**. To'liq hisobot:
