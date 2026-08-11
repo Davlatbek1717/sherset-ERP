@@ -7957,6 +7957,8 @@
       "orders_filter_confirmed": "Tasdiqlangan",
       "orders_filter_draft": "Yangi",
       "orders_no_agent": "Mijoz ko‘rsatilmagan",
+      "orders_pay": "To‘lash",
+      "orders_pay_no_positions": "Zakazda to‘lanadigan pozitsiya yo‘q",
       "orders_positions": "Pozitsiyalar",
       "orders_reserved": "Rezerv",
       "organization": "Tashkilot",

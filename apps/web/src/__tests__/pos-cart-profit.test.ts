@@ -46,7 +46,20 @@ describe('/sotuv savat foydasi', () => {
   });
 
   it('formulalar umumiy paketdan keladi, sahifada qayta yozilmaydi', () => {
-    for (const fn of ['classifyPrice', 'lineProfitMinor', 'marginPercent', 'sumCostMinor']) {
+    // F8 (AUDIT): `lineProfitMinor` / `markdownMinor` / `sumCostMinor` —
+    // `@moysklad/money` variantlari miqdorni `bigint` oladi, ya'ni og'irlik
+    // tovarining 1.5 kg ini UMUMAN ifodalay olmaydi (`BigInt(1.5)` RangeError
+    // otib POS ni oq ekranga aylantirardi). Ular POS uchun sof, sinalgan
+    // kasr-miqdorli ekvivalentlarga ko'chdi (`lib/pos/cart-math.ts`).
+    // Qoida O'ZGARMADI: formulalar sahifada emas, moduldan keladi.
+    for (const fn of [
+      'classifyPrice',
+      'marginPercent',
+      'cartLineProfitMinor',
+      'cartLineMarkdownMinor',
+      'cartLineRevenueMinor',
+      'cartCostMinor',
+    ]) {
       expect(src).toContain(fn);
     }
     // Qo'lda yozilgan «(narx − tan) × soni» yoki foiz formulasi bo'lmasin.
@@ -112,7 +125,16 @@ describe('/sotuv savat foydasi', () => {
     expect(src).toContain('revenueMinor - cartCost.costMinor');
     expect(src).toContain('revenueBaseMinor(payingSale?.sumMinor, discountedTotal)');
     // Chegirma ham sof modulda — sahifada inline foiz formulasi qolmasin.
-    expect(src).toContain('applyDiscountMinor(cartTotal, discountPct)');
+    //
+    // F8 (AUDIT) — formula ALMASHTIRILDI: ilgari bu yerda
+    // `applyDiscountMinor(cartTotal, discountPct)` turardi, ya'ni chegirma
+    // JAMIga bir marta va pastga yaxlitlanib qo'llanardi. Server esa har
+    // qatorni ALOHIDA half-up yaxlitlaydi va `post()` da `expectedSumMinor`
+    // ni QAT'IY tenglik bilan solishtiradi — o'lchangan farq: 3 × 115 tiyin,
+    // −10% → ekran 311, chek 312 (`lib/pos/cart-math.test.ts`). Ekran endi
+    // serverning o'z formulasini (`discountedCartTotalMinor`) ishlatadi.
+    expect(src).toContain('discountedCartTotalMinor(');
+    expect(src).not.toContain('applyDiscountMinor(cartTotal, discountPct)');
     // ...va bironta qator tan narxsiz bo'lsa, jami umuman ko'rsatilmaydi.
     expect(src).toContain('cartCost.complete ?');
   });

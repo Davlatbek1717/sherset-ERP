@@ -10,26 +10,142 @@
  * va bu chekда jimgina noto'g'ri jami beradi.
  */
 
-import { computePositionTotal } from '@moysklad/money';
+import { computePositionTotal, scaleMinorByQty } from '@moysklad/money';
 
-/** Savat qatoridan hisob uchun kerakli minimal. */
+/**
+ * Savat qatoridan hisob uchun kerakli minimal.
+ *
+ * ⚠️ `quantity` — `number | string`, va bu ATAYLAB (F8 audit tuzatishi).
+ * Server sxemasi miqdorni `Decimal(20,6)` qabul qiladi
+ * (`retail-sale.schema.ts`: `/^\d+(\.\d{1,6})?$/`), ya'ni og'irlik bilan
+ * sotiladigan tovar savatda 1.5 kg bo'lishi MUMKIN. Ilgari bu yerda faqat
+ * `number` turardi va jami `BigInt(l.quantity)` bilan hisoblanardi —
+ * `BigInt(1.5)` **RangeError** otadi. React render'i ichida otilgan xato esa
+ * butun POS ni oq ekranga aylantiradi: chek yo'q, pul yo'q, kassir sababini
+ * bilmaydi. Zakaz pozitsiyalari ham kasr bo'lishi mumkin (F8), shuning uchun
+ * miqdor endi hamma joyda DECIMAL-SATR sifatida yuritiladi.
+ */
 export interface CartLineLike {
-  quantity: number;
+  quantity: number | string;
   priceMinor: bigint;
 }
 
-/** Savatdagi jami dona soni. */
-export function cartCount(lines: ReadonlyArray<{ quantity: number }>): number {
+/**
+ * Savatdagi jami dona soni.
+ *
+ * Kasr miqdor (0.5 kg) bo'lsa natija ham kasr bo'ladi — bu faqat kassirga
+ * ko'rsatiladigan «nechta pozitsiya» hisobi, pul hisobi emas.
+ */
+export function cartCount(lines: ReadonlyArray<{ quantity: number | string }>): number {
   let n = 0;
-  for (const l of lines) n += l.quantity;
+  for (const l of lines) {
+    const q = typeof l.quantity === 'number' ? l.quantity : Number(l.quantity);
+    if (Number.isFinite(q)) n += q;
+  }
   return n;
 }
 
-/** Chegirmasiz jami (tiyin). */
+/**
+ * Chegirmasiz jami (tiyin).
+ *
+ * `scaleMinorByQty` — serverning `computePositionTotal` bilan AYNI fixed-point
+ * yo'li (half-up, mikro-birlik), ya'ni ekrandagi jami chekdagidan farq
+ * qilmaydi va kasr miqdor otilmaydi.
+ */
 export function cartTotalMinor(lines: ReadonlyArray<CartLineLike>): bigint {
   let sum = 0n;
-  for (const l of lines) sum += l.priceMinor * BigInt(l.quantity);
+  for (const l of lines)
+    sum += scaleMinorByQty(l.priceMinor, normalizeQtyDecimal(String(l.quantity)));
   return sum;
+}
+
+/**
+ * Miqdor-satrga `delta` qo'shadi va SATR qaytaradi (± tugmalari).
+ *
+ * Nega float emas: `0.1 + 0.2 = 0.30000000000000004` va u `Decimal(20,6)`
+ * regexidan o'tmay 400 olardi. Hisob mikro-birlikda (10^6) — server
+ * masshtabining o'zi. Manfiy natija `'0'` ga qisiladi: chaqiruvchi 0 li
+ * qatorni savatdan olib tashlaydi.
+ */
+export function addQtyDecimal(qty: string, delta: number): string {
+  const base = qtyToMicro(qty);
+  const step = Number.isFinite(delta) ? BigInt(Math.round(delta * 1e6)) : 0n;
+  const next = base + step;
+  if (next <= 0n) return '0';
+  const int = next / 1_000_000n;
+  const frac = (next % 1_000_000n).toString().padStart(6, '0').replace(/0+$/, '');
+  return frac === '' ? int.toString() : `${int}.${frac}`;
+}
+
+/**
+ * Savatning tan narx jami — `Σ tan × miqdor`, kasr miqdorni qo'llab.
+ *
+ * `@moysklad/money` dagi `sumCostMinor` ning miqdori `bigint`, ya'ni u kasr
+ * miqdorni umuman ifodalay olmaydi. `complete` shartnomasi esa AYNAN
+ * o'sha: bitta qatorning tan narxi noma'lum bo'lsa jami TO'LIQ EMAS deb
+ * belgilanadi va u qator hech narsa qo'shmaydi — nolni tan narx deb sanash
+ * 100% marja yolg'onini beradi (NULL ≠ 0, kassa TZ §5.3).
+ */
+export function cartCostMinor(
+  lines: ReadonlyArray<{ costMinor: bigint | null; quantity: number | string }>,
+): { costMinor: bigint; complete: boolean } {
+  let costMinor = 0n;
+  let complete = true;
+  for (const l of lines) {
+    if (l.costMinor == null) {
+      complete = false;
+      continue;
+    }
+    costMinor += scaleMinorByQty(l.costMinor, normalizeQtyDecimal(String(l.quantity)));
+  }
+  return { costMinor, complete };
+}
+
+/**
+ * Savat qatorining tushumi (tiyin) — `narx × miqdor`, half-up.
+ *
+ * `@moysklad/money` da to'g'ridan-to'g'ri ekvivalenti yo'q: u yerdagi qator
+ * formulalari miqdorni `bigint` oladi va kasr miqdorni (1.5 kg) ifodalay
+ * olmaydi. Shuning uchun bu uchtasi shu yerda — sof va sinalgan holda —
+ * turadi; sahifada `(narx − tan) × soni` ni QAYTA YOZISH taqiqlangan
+ * (`__tests__/pos-cart-profit.test.ts`).
+ */
+export function cartLineRevenueMinor(line: CartLineLike): bigint {
+  return scaleMinorByQty(line.priceMinor, normalizeQtyDecimal(String(line.quantity)));
+}
+
+/**
+ * Qator foydasi (tiyin) — `(narx − tan narx) × miqdor`.
+ *
+ * Tan narx NULL bo'lsa natija ham **NULL**, 0 EMAS: nol tan narx 100% marja
+ * beradi va bu savat aynan ko'rsatmaslik uchun bor raqam (kassa TZ §5.3).
+ */
+export function cartLineProfitMinor(line: {
+  priceMinor: bigint;
+  costMinor: bigint | null;
+  quantity: number | string;
+}): bigint | null {
+  if (line.costMinor == null) return null;
+  return scaleMinorByQty(
+    line.priceMinor - line.costMinor,
+    normalizeQtyDecimal(String(line.quantity)),
+  );
+}
+
+/**
+ * «Kassir qancha tushirib berdi» (tiyin) — `(kartochka narxi − sotilgan) × miqdor`.
+ * Kartochka narxi noma'lum bo'lsa NULL — yo'q raqam ogohlantirish sababi emas.
+ */
+export function cartLineMarkdownMinor(line: {
+  basePriceMinor: bigint | null;
+  priceMinor: bigint;
+  quantity: number | string;
+}): bigint | null {
+  if (line.basePriceMinor == null) return null;
+  return scaleMinorByQty(
+    line.basePriceMinor - line.priceMinor,
+    normalizeQtyDecimal(String(line.quantity)),
+  );
 }
 
 /**
