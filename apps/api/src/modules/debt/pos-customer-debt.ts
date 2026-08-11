@@ -48,6 +48,13 @@ export interface DebtSourceSplit {
   /**
    * Balansda bor, lekin reyestrda YO'Q qism — ya'ni POS «Qarz to'lovi»
    * oynasi qabul QILA OLMAYDIGAN qarz. `null` — balans o'lchanmagan.
+   *
+   * ⚠️ ANIQ MA'NOSI: «reyestrdan TASHQARIDAGI qarz», «POS chekidan kelgan
+   * qarz» EMAS. Balansga POS chekidan tashqari `InvoiceOut`, `PaymentIn`,
+   * `CashIn/Out` va boshqa hujjatlar ham yozadi
+   * (`counterparty-balance.service.ts` sarlavhasidagi ro'yxat). Ularning
+   * hammasi shu farqqa tushadi — shuning uchun ekrandagi yorliq ham
+   * «chekdan kelgan» deb TOR aytmaydi.
    */
   unregisteredMinor: bigint | null;
   /**
