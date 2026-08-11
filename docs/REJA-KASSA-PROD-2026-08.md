@@ -172,7 +172,7 @@ rezerv bo'shaydi (`page 997–1014`) · smena farqi → farq akti → menejer na
 | **P9** | KPI: profil + ball (`REJA-KASSA-KPI` K1–K2 shu yerdan) | prod-data + api | kerak bo'lsa | ☐ |
 | **P10** | Yakuniy adversarial browser-QA (butun kassa cohort'i) | Phase-2 QA | — | ☐ |
 | **P11** | Xodim/kassir hayot sikli — UI'dan, skriptsiz | web settings/hr + api | ✅ | ☐ |
-| **P12** | Katalog va narx zanjiri (chakana·optom·tan, 0-narx himoyasi) | api/web product + POS | ✅ | ☐ |
+| **P12** | Katalog/narx: POL (minimal=tan, qulf) · 0-narx himoyasi | api/web product + POS | ✅ | ☐ |
 | **P13** | Go-live tozalash: test ma'lumotlardan realga | prod-op + kichik fix | kerak bo'lsa | ☐ |
 | **P14** | Daftar-simmetriya: qaytarish→balans · xarajat→P&L · money backfill | api + backfill | ✅ | ☐ |
 | **P15** | Kunlik kassa hisoboti: har kassa 100% + jamlama, admin panelda | api `report` + web | ✅ | ☐ |
@@ -552,26 +552,59 @@ jonli verify. Faza tugagach «HISOBOTLAR» ga P11 hisobotini yoz va ISHNI TO'XTA
 
 ---
 
-## FAZA P12 — Katalog va narx zanjiri (savdogacha tayyorlik)
+## FAZA P12 — Katalog va narx zanjiri: narx POLI (minimal = tan narx) + 0-narx himoyasi
 
 **Muammo (o'lchangan, §1.G):** tovarlar bir-martalik skript importidan kelgan; POS uch narxga
 tayanadi (chakana `salePrice` · optom `wholesalePriceTypeId` · tan `buyPrice`) — importda
 uchalasi to'g'ri to'lganmi o'lchanmagan. Narxsiz tovar 0 so'mga sotilishi mumkin.
 
+**🔴 EGASINING NARX-SIYOSAT QARORI (2026-08-11, monoblokda F2 oynasini ko'rib):**
+
+Hozir tahrir oynasida narx tan narxdan pastga tushsa qizil **«ZARAR −12 000 сум tushirildi»**
+belgisi chiqadi — lekin saqlashga RUXSAT beradi. Egasi buni o'zgartirdi:
+
+1. **ZARAR belgisi va «tushirildi» summasi oynada KO'RSATILMASIN.**
+2. **O'rniga «Minimal: X so'm» ko'rsatilsin** — minimal = tovarning **sotib olingan narxi**
+   (`buyPrice` / tan narx).
+3. **Minimaldan past narxni UMUMAN kiritib bo'lmasin** — bu ogohlantirish emas, **QULF**:
+   «Saqlash» bloklanadi (sabab yozuvi bilan), va 🔴 **server ham rad etadi**
+   (`retail-sale` post validatsiyasi) — ekran qulfi himoya emas, haqiqiy chegara serverda.
+
+Yozib qo'yilgan kontekst: «Minimal: X» ni ko'rsatish tan narxni oshkor qiladi — egasi buni
+**bilib qaror qildi** (marja-yashirish qarori bilan zid emas: foyda RAQAMI hamon yashirin,
+faqat pastki chegara ko'rinadi).
+
 ### Vazifalar
 1. **O'lcha (prod, read-only skript):** nechta tovarda chakana narx yo'q/0 · optom narx yo'q ·
    tan narx yo'q (NULL — bu «0» emas!) · narx turi ulanmagan. Natija son bilan hisobotga.
 2. **0-narx himoyasi:** POS'da narxsiz tovar savatga qo'shilganda kassir **ochiq ogohlantirish**
-   ko'rsin (jim 0 so'mlik qator emas). ZARAR tasmasi allaqachon bor — bu undan oldingi qatlam
-   (narx umuman YO'Q holati). Server tomonda ham 0-narx chek post bo'lishiga siyosat: egasidan
-   so'raladi (taqiqlash / ogohlantirish bilan ruxsat).
-3. **Tovar kartasi → POS zanjiri:** kartada narx o'zgartirilsa POS darhol ko'rishi (kesh/query
+   ko'rsin (jim 0 so'mlik qator emas). Server tomonda ham 0-narx chek post bo'lishiga siyosat:
+   egasidan so'raladi (taqiqlash / ogohlantirish bilan ruxsat).
+3. **Narx POLI (egasining yuqoridagi qarori) — implement:**
+   - Tahrir oynasida (`cart-line-edit-modal`): ZARAR belgisi va «tushirildi» summasi **olib
+     tashlanadi**; o'rniga **«Minimal: X so'm»** (X = `buyPrice`). Narx poldan past bo'lsa —
+     «Saqlash» **bloklanadi**, maydon qizarib sabab yoziladi.
+   - **Server quli (asosiy himoya):** `retail-sale` post'da pozitsiya narxi < tan narx ⇒
+     aniq xato bilan **rad** (ekran quli chetlab o'tilsa ham o'tmasin).
+   - **Tan narx NULL bo'lsa:** pol yo'q — bu holat 0-narx himoyasi (2-band) bilan birga
+     hal qilinadi; NULL ≠ 0 (`retail-cost-freeze-null-contract` xotirasi), NULL'ni «pol=0»
+     deb o'qish TAQIQ.
+   - **Chek-darajali chegirma bilan o'zaro ta'sir:** umumiy chegirma qator narxini pol
+     ostiga tushira oladimi — o'lchab, egasiga variantlar bilan savol (chegirma qisiladimi /
+     taqiqlanadimi).
+   - **Ergashuvchi o'zgarishlar:** savat qatoridagi ZARAR tasmasi endi erishilmas bo'ladi
+     (pol uni oldinroq to'sadi) — testlar yangi xulqqa moslanadi; **«optomdan past» sariq
+     ogohlantirish QOLADI** (optom ≥ tan — bu oraliqda sotish mumkin, faqat ogohlantiriladi).
+   - Marja-yashirish qarori bilan munosabat hisobotda takrorlanadi: foyda RAQAMI hamon
+     ko'rsatilmaydi, faqat pol («Minimal») ko'rinadi — egasi bilib qaror qildi.
+4. **Tovar kartasi → POS zanjiri:** kartada narx o'zgartirilsa POS darhol ko'rishi (kesh/query
    invalidatsiya) jonli tekshiriladi; import skriptidagi narx-mapping xatosi topilsa tuzatiladi.
-4. **Import skriptini rasmiylashtir:** `ops-import-products.ts` (untracked) repoga kirsin yoki
+5. **Import skriptini rasmiylashtir:** `ops-import-products.ts` (untracked) repoga kirsin yoki
    o'rnini bosuvchi hujjatlashtirilgan yo'l ko'rsatilsin — egasi keyingi safar tovar qo'shishni
    qanday qilishi aniq bo'lsin (UI'dan yakka qo'shish allaqachon bor — faqat ommaviy import savol).
-5. Testlar + gate → deploy → jonli verify (narxsiz sinov-tovar bilan POS xulqi).
-6. Hisobot → **TO'XTA**.
+6. Testlar (pol quli: ekran + server + chegirma holati; TDD) + gate → deploy → jonli verify
+   (narxsiz sinov-tovar + poldan past narx urinishi — ikkalasi ham rad etilishi dalil bilan).
+7. Hisobot → **TO'XTA**.
 
 ### Sessiya prompti (nusxa ol)
 
@@ -579,10 +612,11 @@ uchalasi to'g'ri to'lganmi o'lchanmagan. Narxsiz tovar 0 so'mga sotilishi mumkin
 docs/REJA-KASSA-PROD-2026-08.md faylini o'qi va FAQAT «FAZA P12 — Katalog va narx zanjiri»
 ni bajar. Rejaning §0 majburiy.
 
-Avval prod'ni o'lcha (narxsiz/tansiz tovarlar soni — read-only skript), keyin 0-narx
-himoyasini qo'sh (siyosatni egasidan so'ra), tovar-kartasi→POS zanjirini jonli tekshir.
-Gate → deploy → jonli verify. Faza tugagach «HISOBOTLAR» ga P12 hisobotini yoz va ISHNI
-TO'XTAT.
+Avval prod'ni o'lcha (narxsiz/tansiz tovarlar soni — read-only skript), keyin: (a) 0-narx
+himoyasi (siyosatni egasidan so'ra); (b) 🔴 NARX POLI — faza matnidagi egasining qarori:
+oynada ZARAR o'rniga «Minimal: X» (X = tan narx), poldan pastni saqlab BO'LMAYDI, server ham
+rad etadi, NULL tan narx ≠ pol 0; (c) tovar-kartasi→POS zanjiri. TDD. Gate → deploy → jonli
+verify. Faza tugagach «HISOBOTLAR» ga P12 hisobotini yoz va ISHNI TO'XTAT.
 ```
 
 ---
