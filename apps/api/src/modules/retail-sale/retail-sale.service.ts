@@ -358,6 +358,9 @@ export class RetailSaleService {
     const where: Prisma.RetailSaleWhereInput = {
       accountId,
       ...(filter.sessionId ? { sessionId: filter.sessionId } : {}),
+      // F9 — POS mijoz kartasi. Berilmasa `where` ga UMUMAN tushmaydi, ya'ni
+      // mavjud ro'yxat sahifasining so'rov shakli o'zgarmaydi.
+      ...(filter.agentId ? { agentId: filter.agentId } : {}),
       ...(filter.state ? { state: filter.state } : {}),
       ...(filter.dateFrom || filter.dateTo
         ? {

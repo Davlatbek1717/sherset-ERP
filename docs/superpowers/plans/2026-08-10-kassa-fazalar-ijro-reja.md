@@ -2326,18 +2326,186 @@ Tuzatish 4 parallel agent + o'zim (auth), har biri TDD (RED ko'rilgan → fix �
 
 ### F9 hisoboti
 
-- **Holat:** ⬜ bajarilmagan
-- **Sana:**
-- **O'zgargan fayllar:**
+- **Holat:** ✅ bajarildi (Phase-1)
+- **Sana:** 2026-08-11 · worktree `D:/projects/sherset-kassa-f9`, branch `kassa-f9`, baza `b5e10c85`
+- **O'zgargan fayllar** (27 fayl, +1796/−17):
+  - **Yangi (API, sof modullar + testlar):** `apps/api/src/modules/debt/pos-customer-debt.ts` ·
+    `…/debt/pos-customer-debt.test.ts` · `…/debt/pos-debt-summary.test.ts` ·
+    `apps/api/src/modules/counterparty/phone-search.ts` · `…/counterparty/phone-search.test.ts` ·
+    `…/counterparty/counterparty-phone-search.test.ts` · `…/counterparty/pos-contact.test.ts` ·
+    `apps/api/src/modules/retail-sale/retail-sale-agent-filter.test.ts` ·
+    `apps/api/src/modules/auth/kiosk-policy-customer-card.test.ts`
+  - **Tahrirlangan (API):** `auth/kiosk-policy.ts` · `counterparty/{controller,schema,service}.ts` ·
+    `debt/{debt.controller,pos-debt-payment.service,pos-debt-payment.service.test}.ts` ·
+    `retail-sale/{retail-sale.schema,retail-sale.service}.ts` ·
+    `permissions/role-templates.ts` + `role-templates.test.ts` + `__snapshots__/…snap`
+  - **Yangi (web):** `apps/web/src/components/pos/customer-card-panel.tsx` (477 qator) ·
+    `…/pos/__tests__/customer-card-panel.test.tsx` (288 qator)
+  - **Tahrirlangan (web):** `components/pos/debt-payment-dialog.tsx` (+17) ·
+    `messages/{uz,ru}.json` (+19/+19) ·
+    🔴 **`app/(app)/sotuv/page.tsx` — 47 qo'shildi / 1 o'zgardi** (import 2 · holat 4 ·
+    `tPos` 3 · tugma 9 · `<CustomerCardPanel>` bloki 21 · `initialAgent` 1 + izohlar).
+    Butun mantiq yangi faylda — F8 bilan konflikt maydoni ataylab kichik.
 - **Qilingan ish:**
-- **Panel manbalari:**
+  1. **Mijoz paneli** (`customer-card-panel.tsx`): telefon/ism qidiruvi · qarz (ikki daftar
+     ajratilgan) · oxirgi 5 chek + qayta chop etish · jarayondagi zakazlar (3 POS holati) ·
+     telefon/izoh tahriri · tez amallar callback orqali (`onPayDebt` / `onOpenOrder` /
+     `onReprintReceipt`).
+  2. **`GET /debts/pos/summary/:id` kengaytirildi:** `balanceMinor` · `unregisteredMinor` ·
+     `registryExceedsBalance` · `otherCurrencyBalances` · `?currency=` (kassa valyutasi).
+  3. **AUDIT-6 (🟡) tuzatildi:** summary'dagi `orderAt` endi `createdAt` (ilgari
+     `nextContactAt ?? createdAt`) — ekran tartibi server FIFO tartibi bilan MOS
+     (`pos-debt-payment.service.ts`, `toFifo` bilan bitta o'q).
+  4. **`GET /retail-sales?agentId=`** qo'shildi (ilgari faqat `search` bor edi — bir xil ismli
+     ikki mijoz aralashardi).
+  5. **Telefon qidiruvi** raqamlashtirildi (pastda).
+  6. **`PATCH /counterparties/:id/pos-contact`** — TOR yo'l (`PosContactSchema.strict()`:
+     `version` + `phone` + `description`). Kassir shabloniga `counterparty.update` qo'shildi.
+  7. **🔴 Kiosk allowlist auditi** (pastda) · i18n ru+uz (20 kalit).
+- **Panel manbalari (qaysi raqam qayerdan) — 🔴 IKKI QARZ DAFTARI:**
+  | Ekrandagi blok | Endpoint | Server manbai |
+  |---|---|---|
+  | «Umumiy qarz» | `GET /debts/pos/summary/:id` → `balanceMinor` | `CounterpartyBalance` (kassa valyutasi qatori) |
+  | «Reyestrda» | o'sha javob → `outstandingMinor` | `Σ(Debt.totalMinor − Debt.paidMinor)`, `loadOpenDebts` |
+  | Ogohlantirish | o'sha javob → `unregisteredMinor` | farq, `splitDebtSources` (sof modul) |
+  | Oxirgi xaridlar | `GET /retail-sales?agentId=` | `RetailSale` |
+  | Zakazlar | `GET /customer-orders?agentId=&state=` | `CustomerOrder` (F7 holatlari) |
+
+  **Ikki manbani KOD darajasida solishtirdim** (brauzer o'lchovi bu to'lqinda yo'q):
+  - `CounterpartyBalance(cp, UZS)` ga **kim yozadi**: `Debt` yaratish `+totalMinor`
+    (`debt.service.ts:617`) · `Debt` o'chirish `−totalMinor` (`debt.service.ts:2066`) ·
+    har to'lov `−paidDelta` (`debt-recalc.ts:69`) · **POS qarzga sotuvi `+debtAmount`**
+    (`retail-sale.service.ts:996–1013`) · **POS qaytarishi `−debtReturn`**
+    (`retail-sale.service.ts:1472–1482`) · shuningdek `InvoiceOut/InvoiceIn/PaymentIn/PaymentOut/
+    CashIn/CashOut` (`counterparty-balance.service.ts` sarlavhasidagi ro'yxat).
+  - `Σ(Debt)` ga **kim yozadi**: faqat reyestr `create` / `payment` / `remove`.
+  - ⇒ **Identity:** mijozning butun tarixi faqat reyestrdan iborat bo'lsa, ikki son AYNAN teng
+    (`+total` va `−paid` ⇒ balans = total − paid). Bitta POS qarz-cheki qo'shilsa —
+    `balans = reyestr + chek`. Ya'ni farq **haqiqiy**, yaxlitlash artefakti emas.
+  - ⚠️ **Aniqlik:** `unregisteredMinor` = «reyestrdan TASHQARIDAGI qarz», «chekdan kelgan qarz»
+    EMAS — balansga `InvoiceOut` va boshqa hujjatlar ham yozadi. Yorliq (`uz/ru`) va kod izohi
+    shunga MOSLANDI (avvalgi tor da'vo tuzatildi).
+  - **QAROR (nega uchrashtirilmadi):** ikkalasini bitta raqamga qo'shish yoki chekdan `Debt`
+    yozish — ikkisi ham balansda **ikki karra sanash** beradi (`Debt.create` ham AYNAN shu
+    balansga `+total` yozadi; xotira `debt-ledger-asymmetry`). To'g'ri yechim — to'lov yo'lini
+    balansdan yuritish (migratsiya + `DebtPayment` shartnomasi) ⇒ alohida faza. Bu fazada farq
+    **yashirilmaydi**: kassir uni ekranda ko'radi va POS'da yopolmasligini biladi — jim `400`
+    dan halolroq.
+  - 🟡 **O'lchangan nomuvofiqlik (tuzatilmadi, F9 doirasidan tashqari):** `counterparty.service.ts`
+    ro'yxati AYNAN shu balansni `?? 0n` bilan o'qiydi (`balanceMinor` ustuni) — ya'ni qatori
+    yo'q mijozni «0» deb chizadi, POS kartasi esa «—» (o'lchanmagan). Bir raqam, ikki konventsiya.
+- **NULL ≠ 0 shartnomasi:** balans qatori faqat birinchi `applyDelta` da tug'iladi, yozuvchi esa
+  Faza 9 da qo'shilgan va **backfill yugurtirilmagan** (xotira: «Balans o'quvchilari jurnaldan»).
+  Shuning uchun qator yo'qligi «qarzi yo'q» EMAS ⇒ `balanceMinor: null` → `formatMoney(null)` →
+  «—», va farq bloki umuman chizilmaydi. Test bilan qulflangan (API 1 + FE 1).
 - **Telefon-qidiruv holati:**
-- **Refund ↔ qarz o'lchovi natijasi:**
-- **Brauzer o'lchovi:**
-- **Gate natijasi:**
-- **Commit(lar):**
+  - **Tekshirildi:** mavjud `?search=` allaqachon `phone contains` qiladi
+    (`counterparty.service.ts`, `mode:'insensitive'`) — ya'ni «qamraydi».
+  - **Topilgan bo'shliq:** normalizatsiya YO'Q. `901234567` so'rovi bazadagi
+    `+998 90 123 45 67` ni TOPMAYDI (LIKE ajratgichlarni bilmaydi).
+  - **Indeks holati (o'lchandi, `pg_indexes`):** `counterparties` da `name` (trgm), `inn` (trgm +
+    btree), `bank account` (btree), `account_id+code` bor; **`phone` uchun HECH QANDAY indeks
+    yo'q**. `pg_trgm` **O'RNATILGAN** (eski xotira yozuvidan farqli).
+  - **Qo'shildi:** `isPhoneQuery` dan o'tgan so'rov uchun raqamlashtirilgan qidiruv
+    (`regexp_replace(phone,'\D','','g') LIKE $1`, parametr sifatida), natija mavjud `OR` ga
+    QO'SHILADI (ism/kod shoxlari o'chmaydi). Chegaralar: ≥5 raqam, ≤20 raqam, `LIMIT 50`.
+  - 🔴 **QARZ:** bu **seq-scan** — `regexp_replace` ustida funksional indeks YO'Q, uni qo'shish
+    migratsiya talab qiladi (bu to'lqinda taqiqlangan). Normalizatsiyalangan ustun + indeks —
+    kelgusi fazaga.
+  - ⚠️ **O'LCHANMAGAN:** lokal `climart_adopt` da telefoni bor kontragent **0 ta** ⇒ prodda
+    qaysi format ustun ekanini ma'lumot bilan asoslab bo'lmadi. Yechim formatdan MUSTAQIL
+    (ikkala tomon ham raqamlashtiriladi), lekin skan tezligi prod hajmida o'lchanmagan.
+- **Refund ↔ qarz o'lchovi natijasi (kod bilan, DB bilan EMAS):**
+  - `retail-sale.service.ts#refund` → `if (debtReturn > 0n && debtorId)`
+    `counterpartyBalance.applyDelta(…, −debtReturn, {docType:'retailsale'})` (1472–1482).
+    ⇒ **Qarzga sotilgan chek qaytarilganda qarz KAMAYADI** — `post()` dagi `+debtAmount`
+    ning aynan teskarisi. **Nuqson topilmadi, tuzatish kerak bo'lmadi.**
+  - Qarzdor `resolveCreditDebtorId` bilan tiklanadi (chekdagi `agentId`, u yo'q bo'lsa
+    `SOLD_ON_CREDIT` audit payload'idan); topilmasa refund `400` bilan to'xtaydi va
+    `debtReturnMinor=0` ni taklif qiladi — jim yo'qotish yo'q.
+  - **Simmetriya:** ikkala tomon ham `CounterpartyBalance` da, `Debt` reyestrida EMAS ⇒ POS
+    qaytarishi «reyestrsiz qarz» qismini kamaytiradi, kartada shu zahoti ko'rinadi.
+  - ⚠️ **O'lchanmagan:** haqiqiy chek post→refund sikli DB'da yugurtirilmadi (dev-stack
+    portlari band, §5). Da'vo faqat KOD o'qishiga asoslanadi.
+- **🔴 Kiosk allowlist auditi (§2/3-punkt):**
+  - **AUDIT TOPILMASI (tuzatildi):** `{ prefix: '/counterparties', methods:['GET','POST'] }`
+    `exact`siz PREFIKS qoida edi ⇒ **butun daraxt ochiq** edi:
+    `POST /counterparties/bulk-delete`, `bulk-update`, `bulk-archive`, `bulk-import`,
+    `bulk-set-state`, `:id/archive`, `:id/clone`, `:id/bank-accounts`, `GET :id/metrics`
+    (foyda/marja paneli), `GET :id/position`. Ularni faqat IKKINCHI qatlam (ruxsat matritsasi)
+    to'xtatardi; kiosk ro'yxati esa aynan «URL bilan kirish bloklansin» uchun bor (TZ §3.1).
+  - **Endi (F7 naqshi: `:param` + `exact`, `*` YO'Q):**
+    | Yo'l | Metod | `exact` |
+    |---|---|---|
+    | `/counterparties` | `GET`, `POST` | ✅ |
+    | `/counterparties/:id` | `GET` | ✅ |
+    | `/counterparties/:id/pos-contact` | `PATCH` | ✅ |
+  - **Negativ testlar** (`kiosk-policy-customer-card.test.ts`, 28 assert): 20 yo'l YOPIQ
+    ekani qulflandi — `PATCH/PUT/DELETE /counterparties/:id`, 5 ta `bulk-*`, `:id/archive`,
+    `:id/clone`, 3 ta `bank-accounts`, `:id/metrics`, `:id/position`, tor yo'lning atrofi
+    (`POST`/`DELETE` `pos-contact`, `…/pos-contact/extra`, `/counterparties/pos-contact`),
+    va `/counterparty-groups` (o'xshash nomli modul).
+  - **Qo'shimcha qulf:** `role-templates.test.ts` («kassirga berilgan HAR katakcha kiosk
+    marshrutida ham ochiq») `counterparty.update` uchun ANIQ yo'l + `PATCH` metod override
+    oldi — ya'ni ruxsat va marshrut MOSligini mashina tekshiradi.
+  - **Tekshirildi:** POS yuzasidagi barcha `/counterparties` chaqiruvlari (3 komponent, 4 joy)
+    yangi tor qoidalarga to'liq mos — hech biri yopilib qolmadi.
+- **Brauzer o'lchovi:** 🔴 **YO'Q** (§5 — `pnpm dev` portlari band). O'lchanishi kerak bo'lgan
+  stsenariylar, kutilgan raqamlari bilan:
+  1. Kassada qarzga 60 000 so'mlik chek → mijoz kartasi: «Umumiy qarz» **600,00**,
+     «Reyestrda» **0,00**, ogohlantirish **600,00** bilan ko'rinadi.
+  2. O'sha chekni to'liq qaytarish → «Umumiy qarz» **0,00**, ogohlantirish **yo'qoladi**.
+  3. Qo'lda `QRZ-` 40 000 ochish → «Umumiy qarz» **400,00** = «Reyestrda» **400,00**,
+     ogohlantirish **yo'q**; «Qarzni to'lash» bosilganda dialog mijozni **oldindan tanlagan**
+     holda ochiladi va FIFO 400,00 ni yopadi.
+  4. Balans qatori umuman yo'q mijoz (eski `Debt`) → «Umumiy qarz» **«—»**, «0 so'm» EMAS,
+     ogohlantirish **yo'q**.
+  5. `+998 90 123 45 67` formatida saqlangan mijozni `901234567` deb qidirish → **topiladi**
+     (bu to'lqinda faqat SQL shakli testlangan, jonli qator yo'q).
+  6. Telefonni kartadan o'zgartirish → `PATCH …/pos-contact` **200**, ro'yxatda yangi raqam;
+     `PATCH /counterparties/:id` (DevTools orqali) → **403** (kiosk).
+  7. Kiosk-kassir `GET /counterparties/:id/metrics` ni URL bilan chaqirsa → **403**.
+- **Gate natijasi (ketma-ket, 2026-08-11):**
+  - `pnpm --filter @moysklad/money build` — ✅
+  - `pnpm --filter @moysklad/api typecheck` — ✅ 0 xato *(diqqat: worktree'da Prisma client
+    generatsiya qilinmagan edi ⇒ avval `pnpm --filter @moysklad/db generate`; busiz 18 soxta
+    xato chiqadi)*
+  - `pnpm --filter @moysklad/web typecheck` — ✅ 0 xato
+  - `pnpm biome check <tegilgan yo'llar>` — ✅ **0 error** (yangi 2 web faylda 0 diagnostika;
+    qolgan 20 warning `useSortedClasses` — `page.tsx`/`debt-payment-dialog.tsx` da OLDINDAN bor)
+  - `pnpm --filter @moysklad/api test` — **7911/7916 ✅**, 3 yiqilish: `mutation-guard-coverage`
+    (×1) va `publication.service` (×2). **Yolg'iz qayta yugurtirildi → 72/72 ✅** ⇒ §0.4 dagi
+    parallel-yuk artefakti (`Test timed out in 5000ms`, argon2), meniki EMAS. `testTimeout`
+    oshirilmadi.
+  - `pnpm --filter @moysklad/web test` — ✅ **244/244 fayl, 3396 test yashil** (26 skip, 0 yiqilish)
+  - `pnpm i18n:gate` — ✅ 9/9 (473 fayl, 12 982 kalit)
+  - **Gate topgan va tuzatilgan 3 haqiqiy nuqson:** (a) `pos-debt-payment.service.test.ts`
+    double'ida `counterpartyBalance` yo'q edi; (b) yangi panel raw `<input>` ishlatgan edi →
+    DS `Input` (`raw-element-conventions`); (c) lokal `interface ListResponse` →
+    `@moysklad/contracts` `ListEnvelope` (`shared-api-contracts`).
+- **Commit(lar):** `80e79ae3` (sof modullar + allowlist) · `3dc58e0b` (server tomoni) ·
+  `669faba9` (POS paneli + i18n + wiring) · + shu hisobotning `docs(kassa)` commit'i.
+  Har commitdan keyin `git show --stat HEAD` bajarildi. Hooklar `core.hooksPath=/dev/null`
+  bilan chetlab o'tildi (parallel to'lqinda lint-staged begona fayl qo'shishi mumkin — CLAUDE.md
+  §6.7 B); gate'lar **qo'lda to'liq** yugurtirildi (yuqoridagi ro'yxat). Push QILINMADI.
 - **Kelgusi fazalarga qoldirilgan:**
-- **Yorliq:**
+  1. 🔴 **Ikki daftarni BITTA qilish** — to'lov yo'lini `CounterpartyBalance` dan yuritish.
+     Migratsiya + `DebtPayment` shartnomasi o'zgaradi ⇒ alohida faza. Hozircha farq faqat
+     KO'RSATILADI, to'lanmaydi.
+  2. **Telefon uchun normalizatsiyalangan ustun + indeks** (`phone_digits` + btree/trgm) —
+     hozirgi qidiruv seq-scan. Migratsiya talab qiladi.
+  3. **`counterparty.service.ts` ro'yxatidagi `balanceMinor ?? 0n`** — «qator yo'q» ni «0» deb
+     chizadi (POS kartasi «—» deydi). Bitta raqam, ikki konventsiya; NULL≠0 ni ro'yxatga ham
+     yoyish kerak.
+  4. **`GET /customer-orders?states=` (csv)** — panel hozir 3 holat uchun 3 so'rov yuboradi.
+  5. **Kassa valyutasi ≠ UZS holati** — `CounterpartyBalance` valyuta kesimida; `?currency=`
+     tayyor, lekin USD kassa bilan uchdan-uchgacha sinalmagan.
+  6. **F8 bilan kesishgani uchun QOLDIRILDI (ataylab):** savat/miqdor/chegirma/jamilar
+     (`lib/pos/cart-math.ts`, `CartLine`) ga UMUMAN tegilmadi; `sotuv/page.tsx` da tez-amal
+     tugmalari ichkariga emas, `<CustomerCardPanel>` propslariga chiqarildi. Kartadan
+     «savatga qo'shish» / «zakazdan savat to'ldirish» kabi amallar — F8 tugagach.
+- **Yorliq:** 🟡 **Phase-1: strukturaviy, runtime-tasdiqlanmagan** — brauzer-smoke YO'Q,
+  lokal DB'da jonli sinov YO'Q.
 
 ### F10 hisoboti
 

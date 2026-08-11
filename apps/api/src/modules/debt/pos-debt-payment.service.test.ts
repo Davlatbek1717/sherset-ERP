@@ -216,8 +216,14 @@ function makeDb(rows: DebtRow[]) {
     debt: debtModel(null),
     debtPayment: paymentModel,
     counterparty: {
-      findFirst: async () => ({ id: CP, name: 'Mijoz', phone: null }),
+      findFirst: async () => ({ id: CP, name: 'Mijoz', phone: null, description: null }),
     },
+    // F9 — `summary()` endi IKKINCHI daftarni ham o'qiydi
+    // (`CounterpartyBalance`). Bu to'plam FIFO/qulf xulqini o'lchaydi, ya'ni
+    // balans bu yerda ahamiyatsiz: bo'sh ro'yxat = «qator yo'q» ⇒ servis
+    // `balanceMinor: null` (o'lchanmagan) qaytaradi va reyestr raqamlari
+    // o'zgarmaydi.
+    counterpartyBalance: { findMany: async () => [] as Array<never> },
     organization: { findFirst: async () => null },
   };
 

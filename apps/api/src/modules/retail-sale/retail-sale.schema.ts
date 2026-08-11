@@ -220,6 +220,10 @@ export type ZReportQueryInput = z.infer<typeof ZReportQuerySchema>;
 
 export const RetailSaleFilterSchema = z.object({
   sessionId: z.string().uuid().optional(),
+  // F9 — mijoz kartasidagi «oxirgi xaridlar» bloki ANIQ kontragent bo'yicha
+  // o'qiydi. `search` (agent.name contains) buning o'rnini bosolmaydi: bir
+  // xil ismli ikki mijoz aralashib ketardi.
+  agentId: z.string().uuid().optional(),
   state: RetailSaleStateSchema.optional(),
   dateFrom: z.coerce.date().optional(),
   dateTo: z.coerce.date().optional(),

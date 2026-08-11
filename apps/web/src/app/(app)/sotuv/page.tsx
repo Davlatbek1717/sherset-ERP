@@ -1,6 +1,8 @@
 'use client';
 
 import { CashOutDialog } from '@/components/pos/cash-out-dialog';
+import type { CustomerCardRow } from '@/components/pos/customer-card-panel';
+import { CustomerCardPanel } from '@/components/pos/customer-card-panel';
 import { DebtPaymentDialog } from '@/components/pos/debt-payment-dialog';
 import { RasmiyashtirishModal } from '@/components/pos/rasmilashtirish-modal';
 import { useDestructiveMutation } from '@/hooks/use-destructive-mutation';
@@ -843,6 +845,9 @@ function SalesScreen({
 }) {
   const t = useTranslations('pages.sotuv');
   const tCommon = useTranslations('common');
+  // F9 — mijoz kartasi yorliqlari POS komponentlari bilan bir joyda
+  // (`pages.pos`), chunki panelning o'zi shu namespace'ni o'qiydi.
+  const tPos = useTranslations('pages.pos');
   const qc = useQueryClient();
   const { toast } = useToast();
   const { confirm } = useConfirm();
@@ -971,6 +976,10 @@ function SalesScreen({
     : 'UZS';
   const [drawerMode, setDrawerMode] = useState<'in' | 'out' | null>(null);
   const [debtPayOpen, setDebtPayOpen] = useState(false);
+  // F9 — mijoz kartasi. Panel alohida faylda (`customer-card-panel.tsx`);
+  // bu yerda faqat holat va uch callback.
+  const [customerCardOpen, setCustomerCardOpen] = useState(false);
+  const [debtPayAgent, setDebtPayAgent] = useState<CustomerCardRow | null>(null);
   const [cashOutOpen, setCashOutOpen] = useState(false);
   const [drawerAmount, setDrawerAmount] = useState('');
   const [drawerComment, setDrawerComment] = useState('');
@@ -2149,9 +2158,22 @@ function SalesScreen({
                   «kutilgan naqd»iga kiradi, ya'ni smena yakunida ortiqcha
                   ko'rinmaydi. Shuning uchun u shu yerda, kassa operatsiyalari
                   ichida turadi. */}
+              {/* F9 — mijoz kartasi: telefon-qidiruv, qarz (ikki daftar),
+                  oxirgi cheklar, jarayondagi zakazlar. */}
               <button
                 type="button"
-                onClick={() => setDebtPayOpen(true)}
+                onClick={() => setCustomerCardOpen(true)}
+                data-test-id="pos-customer-card-open"
+                className="mb-3 w-full rounded-lg border border-[var(--ms-border)] py-2 text-sm font-medium text-[var(--ms-text-primary)] transition-colors hover:bg-[var(--ms-bg-hover)]"
+              >
+                {tPos('customer_card_title')}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setDebtPayAgent(null);
+                  setDebtPayOpen(true);
+                }}
                 data-test-id="pos-debt-pay-open"
                 className="mb-3 w-full rounded-lg border border-[var(--ms-border)] py-2 text-sm font-medium text-[var(--ms-text-primary)] transition-colors hover:bg-[var(--ms-bg-hover)]"
               >
@@ -2771,12 +2793,36 @@ function SalesScreen({
         }}
       />
 
+      {/* F9 — mijoz kartasi. Butun mantiq alohida faylda; bu yerda faqat
+          uch callback: qarz oynasini shu mijoz bilan ochish, zakazlar
+          tabiga o'tish, chekni qayta chop etish. */}
+      <CustomerCardPanel
+        open={customerCardOpen}
+        onOpenChange={setCustomerCardOpen}
+        currency={tillCurrency}
+        onPayDebt={(cp) => {
+          setCustomerCardOpen(false);
+          setDebtPayAgent(cp);
+          setDebtPayOpen(true);
+        }}
+        onOpenOrder={(orderId) => {
+          setCustomerCardOpen(false);
+          setSelectedOrderId(orderId);
+          setTab('zakazlar');
+        }}
+        onReprintReceipt={(saleId) => {
+          setCustomerCardOpen(false);
+          void printCustomerReceipt(saleId);
+        }}
+      />
+
       <DebtPaymentDialog
         open={debtPayOpen}
         onOpenChange={setDebtPayOpen}
         sessionId={session.id}
         cashDeskId={session.cashDesk?.id ?? null}
         currency={tillCurrency}
+        initialAgent={debtPayAgent}
         onPaid={(result) => {
           toast.success(
             result.closedCount > 0

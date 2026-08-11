@@ -21,17 +21,29 @@ import {
   CreateCounterpartyAccountSchema,
   type CreateCounterpartyInput,
   CreateCounterpartySchema,
+  PosContactSchema,
   type UpdateCounterpartyAccountInput,
   UpdateCounterpartyAccountSchema,
   type UpdateCounterpartyInput,
   UpdateCounterpartySchema,
 } from './counterparty.schema.js';
+import { isPhoneQuery, phoneDigits } from './phone-search.js';
 
 // Account base currency. The whole counterparty list renders money as UZS
 // (salesAmount, Баланс, Средний чек), so the list-level money aggregates are
 // scoped to this currency for coherence. Multi-currency FX normalisation is a
 // Phase-2 concern; centralised here so a future base-currency lookup is one edit.
 const BASE_CURRENCY = 'UZS';
+
+/**
+ * F9 — telefon skanida qaytariladigan eng ko'p id.
+ *
+ * Skan indekssiz (`regexp_replace` ustida funksional indeks yo'q), shuning
+ * uchun chegara qattiq: kassada telefon bo'yicha qidiruv 1–2 mijozni topadi,
+ * yuzlab emas. Chegara oshib ketsa — bu qidiruv emas, ro'yxat: kassir
+ * ko'proq raqam yozsin.
+ */
+const PHONE_SEARCH_LIMIT = 50;
 
 // moysklad custom-attribute («Доп. поле») types that reference another entity. Their
 // stored value is a denormalized `{ id, name }` (e.g. «Усто» → a counterparty), so the
@@ -55,8 +67,58 @@ const REFERENCE_ATTR_TYPES = [
 export class CounterpartyService {
   constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
+  /**
+   * F9 — kassadan telefon/izohni tuzatish (TOR yo'l).
+   *
+   * Xom `raw` `update()` ga UZATILMAYDI: avval oq ro'yxat sxemasi parse
+   * qiladi, keyin natijadan YANGI obyekt quriladi. Shu bilan «bir kun
+   * `PosContactSchema` ga maydon qo'shilsa u avtomat o'tib ketadi» klassi
+   * yopiladi — bu yerda har maydon QO'LDA ko'chiriladi.
+   *
+   * Audit, versiya qulfi va xato xaritalash `update()` da qoladi (nusxa
+   * yozilmaydi — bitta yozuvchi, bitta haqiqat).
+   */
+  async updatePosContact(accountId: string, userId: string, id: string, raw: unknown) {
+    const parsed = PosContactSchema.parse(raw);
+    const patch: Record<string, unknown> = { version: parsed.version };
+    if (parsed.phone !== undefined) patch.phone = parsed.phone;
+    if (parsed.description !== undefined) patch.description = parsed.description;
+    return this.update(accountId, userId, id, patch);
+  }
+
+  /**
+   * F9 — telefonni RAQAM bo'yicha topish (ajratgichlarga qaramay).
+   *
+   * `phone` ustuni normalizatsiyalanmagan (`+998 90 123-45-67` ham,
+   * `901234567` ham bo'lishi mumkin), shuning uchun ikkala tomon ham
+   * raqamga keltiriladi. Qiymat PARAMETR sifatida uzatiladi — SQL matniga
+   * yopishtirilmaydi.
+   *
+   * 🔴 QARZ (hisobotda): `regexp_replace(...)` ustida FUNKSIONAL INDEKS YO'Q,
+   * ya'ni bu seq-scan. To'g'ri yechim — normalizatsiyalangan ustun + indeks,
+   * u migratsiya talab qiladi. Shu sababdan skan ikki tomonlama cheklangan:
+   * (a) `isPhoneQuery` filtri, (b) `LIMIT`.
+   */
+  private async findIdsByPhoneDigits(accountId: string, digits: string): Promise<string[]> {
+    const rows = await this.prisma.client.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+      SELECT id
+      FROM counterparties
+      WHERE account_id = ${accountId}::uuid
+        AND phone IS NOT NULL
+        AND regexp_replace(phone, '\\D', '', 'g') LIKE ${`%${digits}%`}
+      LIMIT ${PHONE_SEARCH_LIMIT}
+    `);
+    return rows.map((r) => r.id);
+  }
+
   async list(accountId: string, rawFilter: unknown) {
     const filter = CounterpartyFilterSchema.parse(rawFilter);
+    // F9 — telefon qidiruvi. Faqat so'rov haqiqatan telefon shaklida bo'lsa
+    // yuguradi (`isPhoneQuery`), ya'ni «Alisher» yozilganda qimmat skan yo'q.
+    const phoneMatchIds =
+      filter.search && isPhoneQuery(filter.search)
+        ? await this.findIdsByPhoneDigits(accountId, phoneDigits(filter.search))
+        : [];
     // «Создан» / «Когда изменен» — half-open day ranges (the To bound is widened
     // to 23:59:59.999 of that day so an inclusive end-date works). Same shape as
     // the products/cash-in updatedAt range; UTC day-boundary skew is the app-wide
@@ -192,6 +254,10 @@ export class CounterpartyService {
               { code: { contains: filter.search, mode: 'insensitive' } },
               // «событ» — the latest call/event summary (moysklad searches events too).
               { calls: { some: { summary: { contains: filter.search, mode: 'insensitive' } } } },
+              // F9 — raqamlashtirilgan telefon mosligi. Mavjud shoxlarga
+              // QO'SHILADI (ularning o'rnini bosmaydi): kassir telefon yozsa
+              // ham, ism/kod bo'yicha topilgan mijozlar ro'yxatdan tushmasin.
+              ...(phoneMatchIds.length ? [{ id: { in: phoneMatchIds } }] : []),
             ],
           }
         : {}),

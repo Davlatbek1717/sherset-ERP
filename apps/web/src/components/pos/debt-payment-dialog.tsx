@@ -73,6 +73,13 @@ interface Props {
   cashDeskId?: string | null;
   /** Kassa valyutasi — major→minor scale (FE-08). */
   currency?: CurrencyCode;
+  /**
+   * F9 — mijoz kartasidan «Qarzni to'lash» bosilganda oldindan tanlangan
+   * mijoz. Berilsa qidiruv qadami O'TKAZIB YUBORILADI: kassir mijozni
+   * kartada allaqachon topgan, uni ikkinchi marta qidirish xato kiritish
+   * yo'lini ochardi (bir xil ismli ikkinchi mijozga to'lov).
+   */
+  initialAgent?: CounterpartyRow | null;
   onPaid?: (result: PayResult) => void;
 }
 
@@ -115,6 +122,7 @@ export function DebtPaymentDialog({
   sessionId,
   cashDeskId,
   currency = 'UZS',
+  initialAgent = null,
   onPaid,
 }: Props) {
   const qc = useQueryClient();
@@ -255,6 +263,15 @@ export function DebtPaymentDialog({
   useEffect(() => {
     if (!open) reset();
   }, [open, reset]);
+
+  /**
+   * F9 — oldindan tanlangan mijozni OCHILGANDA o'rnatadi. `reset()` faqat
+   * yopilishda yuguradi, ya'ni bu effekt uning ustidan yozmaydi; oyna
+   * yopilib qayta ochilganda esa yangi `initialAgent` qo'llanadi.
+   */
+  useEffect(() => {
+    if (open && initialAgent) setAgent(initialAgent);
+  }, [open, initialAgent]);
 
   const handleDigit = useCallback((d: string) => {
     setError(null);
