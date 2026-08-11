@@ -388,19 +388,43 @@ TO'XTAT.
 
 ---
 
-## FAZA P7 — Chop etish o'lchovi
+## FAZA P7 — Chop etish o'lchovi: chek TASDIQSIZ, AVTOMATIK chiqishi
 
 **Holat:** chek/Z/pick-list chop yo'llari kodda bor, lekin **hech bir printerda o'lchanmagan**
 (`desktop/README.md` «Chop etishni o'lchash — HALI BAJARILMAGAN» ro'yxati tayyor turibdi).
 
+**🔴 JONLI SIMPTOM (egasi, 2026-08-11 monoblokda):** chek chiqarishda avval brauzerda chek
+sahifasi ochilib **tasdiqlash so'raladi** — avtomatik chiqmaydi. Egasining so'zi bilan:
+«exe qilishdan asosiy maqsadlardan biri chekni avtomatik chiqarish edi». **Bu fazaning
+birinchi maqsadi — jim chop.**
+
+**Diagnoz (kod o'lchandi, `lib/print-agent.ts` → `printReceiptViaAgent`):** zanjir uch qavat —
+(1) qobiq/agent bormi → (2) sozlamalardan `receiptPrinterName` o'qiladi → (3) printer tanlangan
+bo'lsa `electronAPI.printSheet` **JIM** bosadi; **tanlanmagan bo'lsa** (`null`) jim chop
+o'tkazib yuboriladi va brauzer sahifasi (`?auto=1`) ochiladi — Chromium tasdiq oynasi chiqadi.
+Egasi ko'rgan xulq aynan «printer sozlanmagan» shoxi. Tanlash joyi:
+**Sozlamalar → Omborchilar** sahifasi, «Mijoz cheki printeri» kartasi (akkaunt-darajali;
+nom qurilmadagi Windows printer nomi bilan AYNAN mos bo'lishi kerak).
+
 ### Vazifalar
-1. `desktop/README.md` dagi 6-qadamlik o'lchov ro'yxatini to'liq bajar (virtual PDF-printer
+1. **Jim chop yo'lini jonli tiklash (asosiy maqsad):** monoblokda chek printerining aniq
+   Windows nomini aniqla (`listPrinters`) → Sozlamalar → Omborchilar → «Mijoz cheki printeri»ga
+   yoz → sinov savdo → chek **tasdiqsiz, avtomatik** chiqishini kuzat. Z-hisobot va PKO cheki
+   ham shu yo'ldan. Har qadam dalil bilan; chiqmasa — qaysi qavatda uzilgani
+   (`handled/ok/error`) hisobotga.
+2. **UX himoyasi:** qobiq ichida printer sozlanmagan bo'lsa kassirga tushunarli ogohlantirish
+   chiqsin («Chek printeri tanlanmagan — Sozlamalar → Omborchilar»), chalg'ituvchi brauzer
+   tasdiq-popup'i o'rniga. Kichik kod o'zgarishi + test.
+3. `desktop/README.md` dagi 6-qadamlik o'lchov ro'yxatini to'liq bajar (virtual PDF-printer
    yaramasa real chek printerida): kirill buzilmasligi · 80mm en · bo'y mazmun bo'yicha (A4
    emas) · noto'g'ri printer nomi = ko'rinadigan xato · pick-list va Z-hisobot ham.
-2. Mijoz-ekran (HDMI bo'lsa): ochilish · jonli yangilanish · yopilish · monitorsiz toast.
-3. Topilgan xatolar shu fazada tuzatiladi (uch renderer sinxroni — `ombor-chek-uch-renderer`
+4. Mijoz-ekran (HDMI bo'lsa): ochilish · jonli yangilanish · yopilish · monitorsiz toast.
+5. Topilgan xatolar shu fazada tuzatiladi (uch renderer sinxroni — `ombor-chek-uch-renderer`
    xotirasi: birini o'zgartirsang qolganini ham tekshir).
-4. Gate → hisobot → **TO'XTA**.
+6. ⚠️ Ma'lum chegara (hisobotda takrorlansin): `receiptPrinterName` **akkaunt-darajali** —
+   ikkinchi kassa qurilmasi boshqa printer ishlatsa bitta sozlama yetmaydi (per-qurilma
+   sozlama — alohida qaror, bu fazada faqat hujjatlanadi).
+7. Gate → hisobot → **TO'XTA**.
 
 ### Sessiya prompti (nusxa ol)
 
@@ -408,8 +432,11 @@ TO'XTAT.
 docs/REJA-KASSA-PROD-2026-08.md faylini o'qi va FAQAT «FAZA P7 — Chop etish o'lchovi» ni bajar.
 Rejaning §0 majburiy. desktop/README.md «Chop etishni o'lchash» bo'limi — bajarish ro'yxati.
 
-Har qadam dalil bilan; printer yo'q bo'lsa qaysi qadamlar «sinalmadi» — ochiq yoz. Faza tugagach
-«HISOBOTLAR» ga P7 hisobotini yoz va ISHNI TO'XTAT.
+ASOSIY MAQSAD: chek TASDIQSIZ avtomatik chiqsin. Jonli simptom va diagnoz faza matnida —
+birinchi qadam Sozlamalar → Omborchilar da chek printerini to'g'ri nom bilan tanlab, sinov
+savdoda jim chiqishini kuzatish (egasi bilan). Keyin printer-sozlanmagan holat uchun aniq
+ogohlantirish qo'sh. Har qadam dalil bilan; kuzatilmagani «sinalmadi» deb yoziladi. Faza
+tugagach «HISOBOTLAR» ga P7 hisobotini yoz va ISHNI TO'XTAT.
 ```
 
 ---
