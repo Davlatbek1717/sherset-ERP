@@ -1,11 +1,12 @@
 # Sherset Kassa — Electron o'rami (`desktop/`)
 
-> Holat: **F3 — Phase-1 (strukturaviy, runtime-tasdiqlanmagan · printer-tasdiqlanmagan).**
-> Bu papka kod darajasida tayyor, lekin **hech qachon ishga tushirilmagan**
-> (parallel to'lqin qoidasi: F2/F3 sessiyalarida `pnpm install` ham, Electron ham
-> ishga tushirilmadi). Chop etish va mijoz-ekran **ulandi** (F3), lekin hech bir
-> printerda va hech bir 2-monitorda **o'lchanmagan** — «Chop etishni o'lchash»
-> bo'limiga qarang. Installer va avtoyangilanish — **F4**.
+> Holat: **joriy reliz `1.3.0` (2026-08-11) — kanalda, o'rnatish oqimi Phase-1.**
+> `.exe` **yig'iladi va kanalga chiqadi** (o'lchangan, pastga qarang), lekin
+> qobiqning O'ZI bu repo'da hech qachon ishga tushirilmagan: chop etish, mijoz-ekran
+> va ekran klaviaturasi **hech bir printerda, hech bir 2-monitorda va hech bir
+> qurilmada o'lchanmagan** — «Chop etishni o'lchash» bo'limiga qarang.
+> Avtoyangilanish: **kanal tomoni o'lchangan**, qurilmadagi o'tish (yuklab olish →
+> «Chiqish» → UAC → 1.3.0) — «Avtoyangilanish» bo'limining oxiridagi jadvalda.
 
 ## Nima qiladi
 
@@ -154,17 +155,21 @@ hisoblanadi — real chek printeri shart emas):
   qo'shildi — yuqoridagi «Chop etish» va «Mijoz-ekran» bo'limlariga qarang.
   Hech bir printerda va hech bir 2-monitorda **o'lchanmagan**.
 - **F4 (bajarildi, pastga qarang):** `electron-builder` (NSIS) konfiguratsiyasi,
-  `electron-updater` simlari, nginx kanali va operator yo'riqnomasi tayyor.
-  🔴 Qolgan yagona narsa — `build/icon.ico` (binar fayl, repo'da YO'Q).
+  `electron-updater` simlari, nginx kanali va operator yo'riqnomasi tayyor;
+  `1.1.0`/`1.2.0`/`1.3.0` yig'ildi va kanalga chiqdi.
+  🔴 `build/icon.ico` **git'da yo'q va bo'lmaydi ham** — `.gitignore` dagi
+  `build/` naqshi uni tutadi. Ya'ni **toza klonda `pnpm run dist` birinchi
+  qadamda to'xtaydi** (`check-build-assets.js`); ikonkani qo'lda qo'yish kerak.
 
 ---
 
 ## Installer yig'ish (`.exe`)
 
-> 🔴 **Bu yerdagi qadamlar HECH QACHON yugurtirilmagan.** F4 sessiyasida
-> `electron` va `electron-builder` ataylab o'rnatilmadi (~200 MB, foydalanuvchi
-> rozilik bermagan). Ya'ni konfiguratsiya **strukturaviy** — «.exe yig'iladi»
-> degan da'vo hozircha tasdiqlanmagan.
+> ✅ **Bu yerdagi qadamlar Windows'da yugurtirilgan** (oxirgisi 2026-08-11,
+> `1.3.0`): `pnpm install --ignore-workspace` + `pnpm run dist` o'tdi, `.exe`
+> (82 MB, MZ) + `latest.yml` + `.blockmap` chiqdi. Ya'ni «.exe yig'iladi» —
+> **o'lchangan** da'vo. 🔴 «O'rnatiladi va o'zi yangilanadi» esa boshqa da'vo:
+> uning holati «Avtoyangilanish» bo'limining oxirida.
 
 Konfiguratsiya `package.json` ning `build` blokida turadi (alohida
 `electron-builder.yml` EMAS). Sabab: `build` blokini qo'riqchi test
@@ -202,11 +207,11 @@ pnpm install            # bir marta (electron + electron-builder ≈ 200 MB)
 pnpm run dist           # = node check-build-assets.js && electron-builder --win nsis
 ```
 
-Natija (hozirgi `version: 1.2.0` uchun):
+Natija (hozirgi `version: 1.3.0` uchun):
 
 ```
-desktop/dist/Sherset-Kassa-Setup-1.2.0.exe
-desktop/dist/Sherset-Kassa-Setup-1.2.0.exe.blockmap
+desktop/dist/Sherset-Kassa-Setup-1.3.0.exe
+desktop/dist/Sherset-Kassa-Setup-1.3.0.exe.blockmap
 desktop/dist/latest.yml
 ```
 
@@ -287,16 +292,57 @@ https://<server>/downloads/desktop/Sherset-Kassa-Setup-<versiya>.exe
 default**. Ish paytida manzil qurilma juftlangan serverdan olinadi
 (spec §3.2), shuning uchun bitta `.exe` istalgan tenant domenida ishlaydi.
 
-### Ma'lum cheklovlar (o'lchanmagan / qarz)
+### Yangi versiyani kanalga qo'yish (tartib muhim)
 
-- **Yig'ish o'lchandi (2026-08-11):** `pnpm install --ignore-workspace` +
-  `pnpm run dist` Windows'da o'tdi, `dist/Sherset-Kassa-Setup-1.1.0.exe`
-  chiqdi (`build/icon.ico` web brendidan yasaldi — ko'k→binafsha chaqmoq).
-  Qolgan oqim (yuklash → topilishi → o'rnatish) **hali yugurtirilmagan**;
-  Electron ilovasining o'zi ham hech qachon ishga tushirilmagan.
-  Phase-2 (F12, real kassa PC) da o'lchanadi.
-- Birinchi reliz **`1.1.0`** — ataylab prerelease EMAS: `electron-updater` ning
-  prerelease→reliz o'tishi bu loyihada tekshirilmagan.
+```bash
+# 1. AVVAL og'ir fayllar, OXIRIDA latest.yml — aks holda manifest bir necha
+#    daqiqa mavjud bo'lmagan .exe ga ishora qiladi va qurilma xato oladi.
+scp Sherset-Kassa-Setup-<v>.exe Sherset-Kassa-Setup-<v>.exe.blockmap <vps>:/var/www/kassa-downloads/desktop/
+scp latest.yml <vps>:/var/www/kassa-downloads/desktop/
+# 2. Butunligini SHA bilan tasdiqla (hajm YETARLI EMAS):
+ssh <vps> "openssl dgst -sha512 -binary /var/www/kassa-downloads/desktop/Sherset-Kassa-Setup-<v>.exe | openssl base64 -A"
+#    → latest.yml dagi sha512 bilan AYNAN bir xil bo'lishi shart.
+```
+
+🔴 **82 MB scp uzilib qoladi** (2026-08-11 da 2 MB dan keyin
+`Connection reset by peer`). `rsync` bu Windows mashinasida **yo'q**. Tiklanadigan
+usul — yetishmagan **quyruqni** qo'shish (uzilsa ham fayl to'g'ri PREFIKS bo'lib
+qoladi, keyingi urinish o'sha joydan davom etadi):
+
+```bash
+R=$(ssh <vps> "stat -c %s '<remote>' 2>/dev/null || echo 0")
+tail -c +$((R + 1)) <local> | ssh <vps> "cat >> '<remote>'"
+```
+
+Eski versiya fayllari **o'chirilmaydi** — orqaga qaytish yo'li shu
+(`latest.yml` ni eski nusxaga qaytarish kifoya; `allowDowngrade = false`
+bo'lgani uchun bu allaqachon yangilangan qurilmani qaytarmaydi, faqat
+qolganlarini to'xtatadi).
+
+### Reliz tarixi va oqimning O'LCHANGAN qismi
+
+| Versiya | Sana | Nima kirdi |
+|---|---|---|
+| `1.1.0` | 2026-08-11 | birinchi yig'ilgan `.exe` (prerelease EMAS — `electron-updater` ning prerelease→reliz o'tishi bu loyihada tekshirilmagan) |
+| `1.2.0` | 2026-08-11 | chiqish imosi, chop etish, mijoz-ekran; kanalga birinchi bo'lib qo'yilgan reliz |
+| `1.3.0` | 2026-08-11 | qobiq klaviaturasi: **numpad layout** (`type=number|tel`, `inputMode=decimal|numeric|tel`) + **kirill/РУС** almashtirgichi |
+
+**Kanal tomoni — o'lchangan (2026-08-11, `1.3.0`):**
+`https://erp.sherset.uz/downloads/desktop/latest.yml` → **200**, ichida
+`version: 1.3.0`; `.exe` → **200**, `Content-Length` = 81 951 579 = yasalgan fayl
+hajmi; yuklab olingan faylning **sha512 base64 qiymati `latest.yml` dagisi bilan
+bir xil** (ya'ni kanal butun artefaktni buzmasdan beradi), 12 s.
+`Accept-Ranges: bytes` — differensial yuklash uchun kerak.
+
+**Qurilma tomoni — 🔴 O'LCHANMAGAN.** «Topildi → fonda yuklandi → «Chiqish» →
+UAC → 1.3.0 bo'lib qaytdi» zanjiri **hech qachon jonli ko'rilmagan**. Kanal
+javob berishi bu zanjirni isbotlamaydi.
+
+**Qurilmada versiyani ko'rish yo'li — faqat Windows orqali.** `preload.js`
+`window.electronAPI.version` ni beradi, lekin web ilova uni **hech qayerda
+ko'rsatmaydi** — «1.3.0 bo'ldimi?» savoliga javob «Приложения и возможности» →
+«Sherset Kassa» dan olinadi. `[updater]` yozuvlari `console.warn` ga chiqadi va
+paketlangan ilovada terminalsiz **ko'rinmaydi** (fayl-log yo'q).
 - Yangilanish o'rnatilgach ilova **qaytadan ochilmaydi** (`isForceRunAfter: false`) —
   kassir «Chiqish» bosgan edi, demak ish tugagan.
 - **Pul yashigi impulsi** — yuqoridagi qarz (Electron API'sida yo'l yo'q).

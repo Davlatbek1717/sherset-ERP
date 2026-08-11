@@ -331,6 +331,26 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-08-11e (F4 · REJA-KASSIR-EXE · exe **v1.3.0** kanalda · web deploy YO'Q) —**
+> Qobiq **1.2.0 → 1.3.0**; F3 ning klaviaturasi (numpad + kirill) endi yig'ilgan artefakt ichida —
+> `app.asar` da `sherset.kbd.lang` / `РУС` / `ЙЦУКЕН` **topildi** (yorliq emas, mazmun tekshirildi).
+> `pnpm run dist` → `Sherset-Kassa-Setup-1.3.0.exe` **81 951 579 b**, `ProductVersion 1.3.0.0`, imzosiz (§8.2).
+>
+> **Kanal o'lchandi:** `https://erp.sherset.uz/downloads/desktop/latest.yml` → **200 · `version: 1.3.0`**;
+> `.exe` → **200**, `Content-Length` = yasalgan hajm; **kanaldan to'liq yuklab olib sha512 solishtirildi —
+> `latest.yml` dagi bilan AYNAN bir xil** (12.3 s). 1.2.0 fayllari o'chirilmadi (rollback).
+> 🔴 82 MB `scp` **uzildi** (2 MB dan keyin `Connection reset by peer`), lokal `rsync` yo'q — quyruqni
+> `tail -c +N | ssh "cat >> file"` bilan tiklab qo'yildi; retsept `desktop/README.md` da.
+>
+> **Gate:** typecheck 10/10 · lint:product 0 error (849 warning) · i18n:gate 9/9 ·
+> web vitest **3568 passed / 26 skipped, 0 failed** (250 fayl) · `kassa-installer-config` 30 passed.
+> **Web deploy YO'Q** — bu fazada `apps/*` ga tegilmagan (kanalga faqat statik fayl qo'yildi).
+> 🔴 **JONLI O'TISH SINALMADI** — «qayta ochish → fonda yuklash → Chiqish → UAC → 1.3.0» zanjirining
+> **hech bir qadami** kuzatilmadi. Qurilma tomoni hamon o'lchanmagan qarz; kanal javob berishi buni
+> isbotlamaydi. Bog'liq ochiq savol: kirill harfi `sendInputEvent({type:'char'})` orqali Chromium'ga
+> yetadimi (F3 hisoboti belgilagan xavf) — artefaktda kirill BOR, lekin «maydonga tushadi» o'lchanmagan.
+> Batafsil (cheklovlar + ochiq xavflar): `docs/REJA-KASSIR-EXE-2026-08.md` → F4 hisoboti.
+
 > **🕒 2026-08-11d (F2 · REJA-KASSIR-EXE · savat qatori tahrir oynasi · ✅ DEPLOYED) —**
 > **`913e3c2a` prodda** (`Deploy done: 992fff98… → 913e3c2a…`, BUILD_ID 2026-08-11 13:22 +0200).
 > Monoblokda savat qatoridagi −/+ 24×24px va narx maydoni 96px edi — 12 dona tovar = 12 marta bosish.

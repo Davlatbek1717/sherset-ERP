@@ -614,4 +614,107 @@ Push ham qilinmadi.
 - F4 uchun arzon va aniq mezon (F2 hisoboti aytgani): monoblokda **savat qatorini ochib, soni/narx
   maydoniga tegilsin** — QWERTY emas, numpad chiqishi kerak.
 
-### F4 — ☐ hali bajarilmagan
+### F4 — exe v1.3.0 relizi + avtoyangilanish oqimi · 2026-08-11 · `<commit>`
+
+**Holat:** ⚠️ qisman — **artefakt va kanal to'liq o'lchandi**, qurilmadagi
+**1.2.0 → 1.3.0 o'tishi** esa quyidagi «Jonli oqim» jadvalidagidek.
+
+**Nima o'zgardi:**
+- Qobiq versiyasi **1.2.0 → 1.3.0**; F3 ning klaviaturasi (numpad + kirill) endi
+  **yig'ilgan artefakt ichida** — ya'ni qurilmaga yetadigan yagona yo'l ochildi.
+- `erp.sherset.uz/downloads/desktop/` kanali endi **1.3.0** ni beradi
+  (`latest.yml` + `.exe` + `.blockmap`); 1.2.0 fayllari **o'chirilmadi** (orqaga qaytish yo'li).
+- `desktop/README.md` endi o'lchangan holatni yozadi: nima **isbotlangan** (yig'ish, kanal)
+  va nima **isbotlanmagan** (qurilmadagi o'tish), + reliz-qo'yish tartibi va uzilgan
+  yuklamani tiklash retsepti.
+
+**Fayllar:**
+| Yo'l | Nima qilindi |
+|---|---|
+| `desktop/package.json` | `version: 1.2.0` → **`1.3.0`** (yagona versiya manbai) |
+| `desktop/README.md` | sarlavha-holati, «Installer yig'ish» ogohlantirishi (endi o'lchangan), reliz tarixi jadvali, kanalga qo'yish tartibi + resumable-upload retsepti, `icon.ico` gitignore gotcha'si, versiyani qayerdan o'qish |
+| `NEXT.md` · `docs/REJA-KASSIR-EXE-2026-08.md` | `2026-08-11e` entry + shu hisobot |
+| (kod fayllari **tegilmadi** — `main.js`/`preload.js`/`updater.js` o'zgarmadi) | |
+
+**Yig'ish (o'lchangan, Windows):**
+```
+pnpm install --ignore-workspace   → "Already up to date" (electron postinstall IGNORED — pastga qara)
+pnpm run dist                     → dist/Sherset-Kassa-Setup-1.3.0.exe (81 951 579 b, MZ)
+                                    + latest.yml (version: 1.3.0) + .blockmap (86 038 b)
+```
+- **F3 kodi artefakt ICHIDA ekani tasdiqlandi** (yorliq emas, mazmun):
+  `dist/win-unpacked/resources/app.asar` ichida `sherset.kbd.lang`, `РУС`, `ЙЦУКЕН` — **uchalasi ham topildi**.
+- Paketlangan `Sherset Kassa.exe` → `ProductVersion = 1.3.0.0`.
+- Imzo yo'q (`no signing info identified` ×4) — spec §8.2 bo'yicha **ataylab**.
+
+**Kanalga qo'yish va jonli verify (dalillar):**
+| Tekshiruv | Natija |
+|---|---|
+| `latest.yml` HTTPS | **200**, `Content-Type: text/yaml`, ichida **`version: 1.3.0`** |
+| `.exe` HTTPS | **200**, `Content-Length: 81 951 579` = yasalgan fayl hajmi |
+| `.blockmap` HTTPS | **200**, 86 038 b |
+| **Butunlik (hajm emas, SHA)** | kanaldan to'liq yuklab olindi (12.3 s, 6.6 MB/s) → sha512 `81LuT+L+…e8KA==` = `latest.yml` dagi qiymat = serverdagi fayl qiymati ✅ |
+| Range so'rovi | `curl -r 0-1` → `MZ` (nginx `Accept-Ranges: bytes` — differensial yuklash yo'li ochiq) |
+| Katalog | `/var/www/kassa-downloads/desktop/` — 1.3.0 **va** 1.2.0 yonma-yon (rollback) |
+| VPS disk | 11G bo'sh (90%) — 82 MB dan keyin ham joy bor |
+
+**Gate:** typecheck ✅ **10/10** · lint:product ✅ **0 error** (849 warning) ·
+i18n:gate ✅ **9/9** · web vitest ✅ **3568 passed / 26 skipped (3594), 250 fayl, 0 failed** ·
+`kassa-installer-config.test.ts` ✅ **30 passed** (README fayl nomi ↔ `package.json` versiyasi mosligini
+aynan shu qo'riqchi ushlab turadi — reja ogohlantirgan gotcha).
+
+**Jonli oqim sinovi (reja §5) — 🔴 SINALMADI (hech bir qadami kuzatilmadi):**
+
+| Qadam | Holat |
+|---|---|
+| 1.2.0 li monoblokda ilova qayta ishga tushirildi | **sinalmadi** |
+| `[updater]` «yangi versiya yuklab olindi» | **sinalmadi** (bu yozuv paketlangan ilovada baribir ko'rinmaydi — pastga qara) |
+| «Chiqish» (burchakni 2s ushlash) | **sinalmadi** |
+| UAC «Ha» | **sinalmadi** |
+| Qayta ochilganda versiya 1.3.0 | **sinalmadi** |
+| Numpad + kirill qurilmada | **sinalmadi** |
+
+Sessiya davomida egasiga aniq yo'riqnoma berildi va u sinashga rozi bo'ldi, lekin **natija shu
+sessiyada yetib kelmadi** — shuning uchun hech bir qadam «ishladi» deb yozilmaydi. Ya'ni
+o'lchangan da'vo: «kanal to'g'ri artefaktni beradi». O'lchanmagan da'vo: «qurilma uni topadi,
+yuklaydi va o'rnatadi». Bu ikkinchisi **hech qachon jonli ko'rilmagan** (F4 ning asosiy sababi
+aynan shu edi — qarz saqlanib qoldi).
+
+**Ma'lum cheklovlar (TUZATILMADI, reja shunday buyurgan):**
+1. **O'rnatish faqat «Chiqish» yo'lida** (`main.js` → `quitShell` → `installOnQuit`).
+   Kompyuter tugmadan o'chirilsa yangilanish keyingi safarga qoladi. `autoInstallOnAppQuit = false`
+   ataylab — savdo o'rtasida qayta ishga tushmasin.
+2. **`perMachine: true` ⇒ UAC.** Kassirda admin huquqi bo'lmasa yangilanish o'rnatilmaydi.
+   Per-user'ga o'tish qayta o'rnatishni talab qiladi — alohida qaror.
+3. **Pul yashigi impulsi** — hamon yo'q (Electron API'sida yo'l yo'q).
+
+**Nima QILINMADI:**
+1. **`deploy/DEPLOY-sherset.md` §7 yangilanmadi** — u `sherset.biznesjon.uz` misolida yozilgan;
+   reliz tartibi va uzilgan-yuklamani tiklash retsepti `desktop/README.md` ga yozildi. Ikki hujjat
+   endi bir-birini takrorlaydi (qo'riqchi test ikkalasidan ham `latest.yml` + kanal yo'lini talab qiladi).
+2. **Web deploy QILINMADI** — bu fazada `apps/*` ga tegilmagan, prodga chiqadigan kod yo'q.
+   Kanalga faqat statik fayllar qo'yildi (deploy skripti ishlatilmadi, `pm2 restart` yo'q).
+3. **`desktop/pnpm-lock.yaml` git'ga qo'shilmadi** — u untracked holda turibdi (oldingi sessiya
+   yaratgan, 06:50). Meniki emas, §6.1 bo'yicha tegilmadi.
+4. **`build/icon.ico` git'da yo'q** va bo'lolmaydi ham (`.gitignore` da `build/`) — toza klonda
+   `pnpm run dist` birinchi qadamda to'xtaydi. README'da yozildi, tuzatilmadi (binar fayl siyosati).
+5. **Elektron o'rnatuvchining O'ZI bu mashinada ishga tushirilmadi** (82 MB `.exe` ni dev
+   mashinaga o'rnatish — fazadan tashqari, orqaga qaytarish qimmat).
+
+**Ochiq xavf / keyingi ishga eslatma:**
+- 🔴 **F3 ning kirill savoli hamon ochiq bo'lishi mumkin:** `main.js:598`
+  `sendInputEvent({ type: 'char', keyCode: key })` ASCII uchun ishlashi ma'lum, **kirill uchun
+  o'lchanmagan**. Artefakt ichida kirill borligi (yuqorida tasdiqlangan) «harf maydonga tushadi»
+  degani EMAS. Qurilmada tushmasa — zaxira yo'l `webContents.insertText(key)`.
+- ⚠️ **Qurilmada versiyani ko'rsatadigan joy yo'q.** `window.electronAPI.version` preload'da bor,
+  lekin web ilova uni hech qayerda chizmaydi; `[updater]` yozuvlari `console.warn` ga ketadi va
+  paketlangan ilovada ko'rinmaydi (fayl-log yo'q). Ya'ni «yangilandimi?» savoliga javob faqat
+  Windows «Приложения и возможности» dan olinadi. **Arzon tuzatish:** kirish ekranining burchagida
+  versiya + oxirgi updater holati.
+- ⚠️ **82 MB scp uziladi** (bu sessiyada 2 MB dan keyin `Connection reset by peer`), lokal `rsync` yo'q.
+  Retsept README'da: yetishmagan quyruqni `tail -c +N | ssh "cat >> file"` bilan qo'shish, keyin
+  **sha512 bilan** tasdiqlash (hajm yetarli emas).
+- ⚠️ `pnpm install --ignore-workspace` da **electron postinstall bloklangan** («Ignored build
+  scripts: electron@33.4.11») — ya'ni `desktop/node_modules/electron` da binar YO'Q va
+  `pnpm run dev` (Electron'ni lokal ochish) hamon ishlamaydi. `electron-builder` o'z keshidan
+  yig'gani uchun `dist` ta'sirlanmadi. Lokal sinov kerak bo'lsa: `pnpm approve-builds`.
