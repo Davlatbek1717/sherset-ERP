@@ -28,6 +28,9 @@ function makeStockStub() {
     lockBalances: vi.fn().mockResolvedValue(new Map()),
     assertAvailable: vi.fn(),
     applyDeltas: vi.fn().mockResolvedValue(undefined),
+    applyReservationDeltas: vi.fn().mockResolvedValue(undefined),
+    // P3 — `false` = bo'shatiladigan rezerv yo'q edi.
+    releaseReservationByDoc: vi.fn().mockResolvedValue(false),
   };
 }
 

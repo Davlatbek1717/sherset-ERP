@@ -57,6 +57,8 @@ import {
   formatVarianceMessage,
   planVarianceActs,
 } from './shift-variance.js';
+// P3 — yopilishni bloklovchi yakunlanmagan cheklar xabari (sof modul).
+import { describeUnresolvedSales } from './unresolved-sales.js';
 
 /** Hisob valyutasi — Z-hisobotdagi jamilar shu valyutada (MK31). */
 const BASE_CURRENCY = 'UZS';
@@ -254,13 +256,23 @@ export class CashierSessionService {
         // qilib ham bo'lmaydi (`post()` ochiq smena talab qiladi), bekor qilish
         // esa kassirga taklif qilinmasdi.
         const pending = [...allowedFrom('cancel')];
-        const unresolved = await tx.retailSale.count({
+        // P3 (egasi qarori, 2026-08-12): to'siq QOLADI, lekin endi ROʻYXAT
+        // bilan. Avto-bekor ATAYLAB YO'Q — tizim kassirning o'rniga pul
+        // qarorini qabul qilmaydi (haqiqiy mijoz kutayotgan chek jimgina
+        // yo'qolib ketardi). Kassir har chekni O'ZI to'laydi yoki bekor
+        // qiladi; P3 dan beri uning ikkalasiga ham ruxsati bor.
+        //
+        // Ilgari bu yerda faqat SON bor edi va xabar inglizcha edi
+        // («Session has 4 unresolved sale(s)…»). Kassir qaysi chek ekanini
+        // bilmasdi: prodda 5 ta qotgan chek turibdi va ular POS ro'yxatida
+        // ikki BOSHQA bo'limda yotadi. Endi nom + summa aytiladi.
+        const unresolvedSales = await tx.retailSale.findMany({
           where: { accountId, sessionId, state: { in: pending } },
+          select: { name: true, state: true, sumMinor: true },
+          orderBy: { createdAt: 'asc' },
         });
-        if (unresolved > 0) {
-          throw new BadRequestException(
-            `Session has ${unresolved} unresolved sale(s) (${pending.join('/')}). Post or cancel them before closing.`,
-          );
+        if (unresolvedSales.length > 0) {
+          throw new BadRequestException(describeUnresolvedSales(unresolvedSales));
         }
 
         const cashInputs = await this.collectCashInputs(

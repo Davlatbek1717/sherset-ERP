@@ -8035,6 +8035,8 @@
       "search_customer": "Mijoz qidirish (ism, telefon)...",
       "search_placeholder": "Tovar qidirish yoki shtrix-kod...",
       "select_placeholder": "— tanlang —",
+      "sell_direct": "Sotish",
+      "sell_direct_hint": "Yig'ishsiz — darhol to'lov",
       "send_to_picker": "Omborchiga yuborish",
       "sending": "Yuborilmoqda...",
       "sent_to_picker": "Omborchiga yuborildi",

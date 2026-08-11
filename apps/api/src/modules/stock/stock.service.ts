@@ -708,6 +708,13 @@ export class StockService {
    * unpost/cancel cannot drive reservedQty negative.
    *
    * Caller MUST have lockBalances'd the affected rows in the same tx.
+   *
+   * Qaytaradi: rostdan ham BO'SHATILDIMI. Chaqiruvchiga bu kerak, chunki
+   * bo'shatish `Stock.reservedQty` ni o'zgartiradi — ya'ni undan keyin
+   * qulflangan balanslar ESKIRADI va `assertAvailable` eski rezerv bilan
+   * hisoblardi. Javob `false` bo'lsa (rezervi yo'q hujjat — masalan
+   * picking'siz sotilgan chek) qayta o'qish KERAK EMAS, va bu yo'l bitta
+   * ortiqcha qulflovchi SELECT ham qilmaydi (P3, 2026-08-12).
    */
   async releaseReservationByDoc(
     tx: Prisma.TransactionClient,
@@ -716,12 +723,12 @@ export class StockService {
     docType: string,
     docId: string,
     reason: 'release_unpost' | 'release_cancel' | 'release_consume' | 'release_manual',
-  ): Promise<void> {
+  ): Promise<boolean> {
     const rows = await tx.stockReservation.findMany({
       where: { accountId, docType, docId },
       select: { storeId: true, assortmentKind: true, assortmentId: true, qtyDelta: true },
     });
-    if (rows.length === 0) return;
+    if (rows.length === 0) return false;
 
     const nets = netOutstandingReservations(
       rows.map((r) => ({
@@ -731,7 +738,7 @@ export class StockService {
         qtyDelta: r.qtyDelta.toString(),
       })),
     );
-    if (nets.length === 0) return; // already fully released — idempotent
+    if (nets.length === 0) return false; // already fully released — idempotent
 
     await this.applyReservationDeltas(
       tx,
@@ -747,5 +754,6 @@ export class StockService {
         reason,
       })),
     );
+    return true;
   }
 }

@@ -8035,6 +8035,8 @@
       "search_customer": "Поиск клиента (имя, телефон)...",
       "search_placeholder": "Поиск товара или штрих-код...",
       "select_placeholder": "— выберите —",
+      "sell_direct": "Продать",
+      "sell_direct_hint": "Без сборки — сразу оплата",
       "send_to_picker": "Отправить кладовщику",
       "sending": "Отправка...",
       "sent_to_picker": "Отправлено кладовщику",

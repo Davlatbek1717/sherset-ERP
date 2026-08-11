@@ -36,6 +36,10 @@ function makeStockStub() {
     lockBalances: vi.fn().mockResolvedValue(new Map()),
     assertAvailable: vi.fn(),
     applyDeltas: vi.fn().mockResolvedValue(undefined),
+    applyReservationDeltas: vi.fn().mockResolvedValue(undefined),
+    // P3 — `false` = «bo'shatiladigan rezerv yo'q» (picking'siz sotilgan
+    // chek). Servis shu javobga qarab balanslarni qayta o'qimaydi.
+    releaseReservationByDoc: vi.fn().mockResolvedValue(false),
   };
 }
 

@@ -20,7 +20,17 @@ vi.mock('@/lib/api-client', () => ({
   api: { get: vi.fn(), post: vi.fn(), put: vi.fn(), patch: vi.fn(), delete: vi.fn() },
 }));
 
+/**
+ * P3 — kiosk (kassir) rejimini testdan boshqarish uchun mutable bayroq.
+ * `vi.mock` modul darajasida ko'tariladi, shuning uchun holat shu yerda
+ * turadi va har test uni o'zi qo'yadi (`beforeEach` da nolga qaytariladi).
+ */
+const authState = { kiosk: false };
+
 vi.mock('@/lib/auth-store', () => ({
+  // P3 — chek panelida qaytarish tugmasi kiosk uchun yashiriladi; sahifa
+  // shu yordamchini import qiladi, dublyorda ham bo'lishi shart.
+  isKioskUser: () => authState.kiosk,
   useAuth: () => ({
     user: { id: 'u-1', name: 'Kassir Aliyev' },
     accessToken: 't',
@@ -66,6 +76,7 @@ function refundQtyInputs(): HTMLElement[] {
 }
 
 beforeEach(() => {
+  authState.kiosk = false;
   vi.mocked(api.get).mockReset();
   vi.mocked(api.post).mockReset();
   vi.mocked(api.get).mockImplementation(router(chekRoutes()));
@@ -186,6 +197,45 @@ describe('ChekDetailPanel — ko‘rinish', () => {
     const header = screen.getByText('CHEK-00001').parentElement as HTMLElement;
     expect(norm(header.textContent)).toContain('Tayyor');
     expect(screen.queryByRole('button', { name: '↩ Qaytarish' })).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * P3 (egasi qarori, 2026-08-12) — QAYTARISH KASSIRDA YO'Q.
+ *
+ * Kassirga `retailsale.approve` berildi (usiz u chekni na to'lay, na bekor
+ * qila olardi — prodda 4 ta chek aynan shundan qotgan edi). Lekin qaytarish
+ * AYNI ruxsatda o'tirardi, ya'ni to'lovni ochish kassadan PUL CHIQARISHNI
+ * ham jimgina ochib yuborardi. Server tomonda u `salesreturn.create` ga
+ * ko'chirildi; bu yerda EKRAN tomoni: kassirga har bosganda 403 beradigan
+ * «buzuq» tugma ko'rsatilmaydi.
+ */
+describe('ChekDetailPanel — qaytarish kassirda YOPIQ (P3)', () => {
+  it('kiosk rejimida «Qaytarish» tugmasi ko‘rinmaydi', async () => {
+    authState.kiosk = true;
+    const user = userEvent.setup();
+    renderWithProviders(<SotuvPage />);
+    await openChekDetail(user);
+
+    expect(screen.queryByRole('button', { name: '↩ Qaytarish' })).not.toBeInTheDocument();
+  });
+
+  it('to‘liq rejimda (menejer/admin) tugma JOYIDA', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<SotuvPage />);
+    await openChekDetail(user);
+
+    expect(screen.getByRole('button', { name: '↩ Qaytarish' })).toBeInTheDocument();
+  });
+
+  it('kioskda chekning qolgan qismi (chop etish) ISHLAYDI — panel o‘chirilmaydi', async () => {
+    authState.kiosk = true;
+    const user = userEvent.setup();
+    renderWithProviders(<SotuvPage />);
+    await openChekDetail(user);
+
+    expect(screen.getByText('CHEK-00001')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '🖨 Chek' })).toBeInTheDocument();
   });
 });
 

@@ -86,8 +86,21 @@ export class RetailSaleController {
     return this.sales.cancel(user.accountId, user.sub, id);
   }
 
+  /**
+   * P3 (2026-08-12) — qaytarish `retailsale.approve` DAN `salesreturn.create` GA
+   * ko'chirildi (egasi qarori).
+   *
+   * Sabab: o'sha fazada kassirga `retailsale.approve` berildi — usiz u chekni
+   * na to'lay, na bekor qila olardi. Lekin qaytarish AYNI ruxsatda o'tirardi,
+   * ya'ni to'lovni ochish kassadan pul chiqarishni ham jimgina ochib yuborardi.
+   * Egasi qarori: qaytarish menejer/admin ishi bo'lib qoladi.
+   *
+   * `salesreturn` — mavjud entity (yangi union a'zosi kiritilmadi) va amal
+   * mazmunan to'g'ri: qaytarish chek MIRRORINI YARATADI. Xuddi shu entity'ni
+   * `restock-task.controller` ham qaytarish yo'lida ishlatadi.
+   */
   @Post(':id/refund')
-  @RequirePermission({ entity: 'retailsale', action: 'approve' })
+  @RequirePermission({ entity: 'salesreturn', action: 'create' })
   async refund(
     @CurrentUser() user: AuthenticatedUser,
     @Param('id') id: string,

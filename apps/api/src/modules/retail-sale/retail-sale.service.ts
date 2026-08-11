@@ -869,6 +869,23 @@ export class RetailSaleService {
           // ularni o'qiydi.
           ...legacy,
           changeMinor: change,
+          // 🔴 P3 / §1.H — H12 (2026-08-12). Prodda o'lchandi: `payedSumMinor`
+          // 17/17 chekda 0 edi — 84 600 so'm NAQD olingan `posted` chekda ham.
+          // Sabab: bu ustunga RetailSale yo'lida hech kim YOZMAGAN (grep:
+          // faqat `CustomerOrder` uchun o'qilardi). Ya'ni «to'landi» degan
+          // raqam butun kassa bo'ylab yolg'on 0 turardi.
+          //
+          // Ma'nosi — repodagi QOLGAN HAMMA hujjat bilan bir xil shartnoma
+          // (invoice/order/supply): `sumMinor − payedSumMinor` = shu hujjat
+          // bo'yicha QOLGAN qarz. Shuning uchun formula `jami − qarz`:
+          //   · to'liq to'langan chek     → payed = jami
+          //   · qarzga qoldirilgan qism   → payed = jami − qarz
+          //
+          // ATAYLAB `pay.paidMinor` EMAS: u mijoz UZATGAN pul (qaytim ham
+          // ichida). 32 000 so'mlik tovarga $2 bergan chek (prod ТРН-2026-00016,
+          // qaytim 104.10 so'm) unda 32 104.10 «to'langan» bo'lib yozilardi va
+          // hujjat o'z summasidan ko'p to'langan bo'lib ko'rinardi.
+          payedSumMinor: total - debtAmount,
         },
       });
       if (flipResult.count === 0) {
@@ -1035,6 +1052,34 @@ export class RetailSaleService {
             where: { id: sale.customerOrderId, accountId },
             data: { reservedSumMinor: 0n },
           });
+          balances = await this.stock.lockBalances(tx, accountId, storeId, assortments);
+        }
+
+        // P3 (2026-08-12) — CHEKNING O'Z REZERVI YUTILADI.
+        //
+        // `send-to-picking` tovarni shu chek nomiga band qilgan (H5). To'lov —
+        // tovarning jismonan chiqishi, ya'ni hold endi qoldiqning O'ZIGA
+        // aylanadi: bo'shatilmasa `reservedQty` qoldiqdan oshib ketardi va
+        // sotilgan tovar boshqa hech kimga «доступно» bo'lmasdi.
+        //
+        // Tartib zakaz shoxi bilan AYNI sababdan: `assertAvailable` dan OLDIN,
+        // aks holda chekning O'Z rezervi o'z to'lovini bloklardi (yig'ilgan
+        // chek kassada 409 olardi — H5 ni tuzatib, o'rniga battarini qo'yish).
+        //
+        // `draft` dan to'g'ridan-to'g'ri sotuvda yozuv yo'q ⇒ toza no-op
+        // (`releaseReservationByDoc` `rows.length === 0` da darhol `false`
+        // qaytaradi), shuning uchun shoxlanish kerak emas. Balanslar esa
+        // FAQAT rostdan bo'shatilganda qayta o'qiladi — picking'siz sotuv
+        // yo'li (POS «Sotish» tugmasi) bitta ham ortiqcha so'rov qilmaydi.
+        const releasedOwnHold = await this.stock.releaseReservationByDoc(
+          tx,
+          accountId,
+          userId,
+          'retailsale',
+          id,
+          'release_consume',
+        );
+        if (releasedOwnHold) {
           balances = await this.stock.lockBalances(tx, accountId, storeId, assortments);
         }
 
@@ -1232,6 +1277,9 @@ export class RetailSaleService {
         name: true,
         sessionId: true,
         sumMinor: true,
+        // P3 — rezervni bo'shatish uchun do'kon KERAK, va u `send-to-picking`
+        // rezerv yozgan joy bilan AYNI manbadan olinadi (smena do'koni).
+        session: { select: { storeId: true } },
         positions: { select: { productId: true, quantity: true }, orderBy: { position: 'asc' } },
       },
     });
@@ -1257,6 +1305,38 @@ export class RetailSaleService {
       if (flipResult.count === 0) {
         throw new ConflictException(
           `RetailSale ${id} state changed; cancel aborted (already posted?)`,
+        );
+      }
+
+      // P3 (2026-08-12) — YIG'ISH REZERVI BO'SHATILADI.
+      //
+      // Bekor qilingan chek tovarni band ushlab turolmaydi: mijoz ketdi,
+      // tovar javonda. Bo'shatilmasa hold ABADIY qolardi — uni yechadigan
+      // hujjat endi yo'q (bekor qilingan chekni na post, na qayta cancel
+      // qilib bo'ladi) va o'sha tovar hech kimga sotilmasdi.
+      //
+      // Flip bilan BIR tranzaksiyada: ajralsa, oradagi xato «chek bekor,
+      // tovar band» holatini qoldirardi. `releaseReservationByDoc`
+      // idempotent (net ≤ 0 → no-op), ya'ni rezervsiz `draft` chekni bekor
+      // qilish ham, takroriy bekor ham `reservedQty` ni manfiyga tushirmaydi.
+      const cancelStock = sale.positions.filter(
+        (p): p is typeof p & { productId: string } => p.productId !== null,
+      );
+      if (cancelStock.length > 0) {
+        // `releaseReservationByDoc` shartnomasi — qulf SHU tx da.
+        await this.stock.lockBalances(
+          tx,
+          accountId,
+          sale.session.storeId,
+          cancelStock.map((p) => ({ kind: 'product' as const, id: p.productId })),
+        );
+        await this.stock.releaseReservationByDoc(
+          tx,
+          accountId,
+          userId,
+          'retailsale',
+          id,
+          'release_cancel',
         );
       }
       await this.writeAuditEvents(tx, accountId, sale.sessionId, userId, [
@@ -1532,6 +1612,16 @@ export class RetailSaleService {
           sumMinor: refundPositions.totalMinor,
           cashAmountMinor: cashReturn,
           cardAmountMinor: cardReturn,
+          // H12 — mirrorda ham AYNI shartnoma: `sumMinor − payedSumMinor` =
+          // shu hujjat bo'yicha hali yopilmagan qism.
+          //
+          // Bu yerda `totalMinor` DEB YOZIB BO'LMAYDI: qaytarish hisob-kitobi
+          // qisman bo'lishi mumkin — `validateRefundSettlement` faqat YUQORI
+          // chegara qo'yadi (naqd+karta ≤ olingan pul, qarz-yechim ≤ olingan
+          // qarz), pastdan tenglikni talab qilmaydi. Tovari qaytarilgan-u puli
+          // hali berilmagan qaytarish qonuniy holat, va u «to'liq to'langan»
+          // bo'lib yozilmasligi kerak.
+          payedSumMinor: cashReturn + cardReturn + debtReturn,
           // SALES-04: the credit share this return wrote off. Persisted (not
           // recomputed) because the cumulative caps of every LATER partial
           // refund are measured against it.
@@ -1930,22 +2020,112 @@ export class RetailSaleService {
     throw e;
   }
 
+  /**
+   * `draft → picking` — chek omborchiga yig'ishga ketadi.
+   *
+   * 🔴 P3 (2026-08-12, §1.H — H5) — BU YERDA TOVAR REZERV QILINADI.
+   *
+   * Ilgari bu metod FAQAT holat flipi edi (+ topshiriq yaratish): yig'ilayotgan
+   * chek ombor qoldig'iga umuman tegmasdi. Oqibati o'lchangan bo'shliq —
+   * ikkinchi kassa oxirgi donani sotib yuborishi mumkin edi. Minus qoldiq
+   * CHIQMASDI (`post()` da `assertAvailable` bor), lekin xato eng yomon
+   * joyga — MIJOZ OLDIDA, tovar allaqachon yig'ilgandan keyingi TO'LOV
+   * lahzasiga — surilardi. Egasi qarori (2026-08-12): rezerv qilinsin.
+   *
+   * Uch bo'g'in bitta hujjat bo'yicha (zakaz bilan AYNI mexanizm):
+   *   `send-to-picking` → `reserve`          (shu yer)
+   *   `cancel`          → `release_cancel`   (`cancel()`)
+   *   `post`            → `release_consume`  (`post()`, `assertAvailable` dan OLDIN)
+   *
+   * `draft` dan to'g'ridan-to'g'ri sotuvda (P3 «Sotish» yo'li) rezerv umuman
+   * bo'lmaydi — `releaseReservationByDoc` esa yozuvi yo'q hujjatda toza
+   * no-op, ya'ni ikkala yo'l bir xil kod bilan yopiladi.
+   */
   async sendToPicking(accountId: string, id: string, userId: string, userName: string) {
     const sale = await this.prisma.client.retailSale.findFirst({
       where: { id, accountId },
-      select: { id: true, state: true },
+      select: {
+        id: true,
+        state: true,
+        // Rezerv do'koni — chekning O'ZINIKI EMAS, SMENANIKI. `post()` ombor
+        // kaskadini aynan `session.storeId` ga yozadi (o'sha faylning
+        // `storeId` o'zgaruvchisi), chek `storeId` esa prodda NULL bo'lib
+        // yotibdi (17/17 chekda). Ikki xil manbadan olsak, rezerv bir
+        // do'konga tushib, yechim boshqasidan bo'lardi — hech qachon
+        // bo'shamaydigan hold.
+        session: { select: { storeId: true, store: { select: { allowNegativeStock: true } } } },
+        positions: { select: { productId: true, quantity: true } },
+      },
     });
     if (!sale) throw new NotFoundException(`RetailSale ${id} not found`);
     if (!canTransition(sale.state, 'send-to-picking')) {
       throw new BadRequestException(transitionRejection(sale.state, 'send-to-picking'));
     }
-    const result = await this.prisma.client.retailSale.updateMany({
-      where: { id, accountId, state: { in: [...allowedFrom('send-to-picking')] } },
-      data: { state: 'picking' },
+
+    const storeId = sale.session.storeId;
+    const allowNegative = sale.session.store.allowNegativeStock;
+    const stockPositions = sale.positions.filter(
+      (p): p is typeof p & { productId: string } => p.productId !== null,
+    );
+
+    // Flip va rezerv BITTA tranzaksiyada. Ajralsa ikki yoriq ochilardi:
+    // flip o'tib rezerv yiqilsa — chek yig'ishda-yu tovar band emas; rezerv
+    // o'tib flip yiqilsa — tovar abadiy band, uni bo'shatadigan hujjat yo'q.
+    await this.prisma.client.$transaction(async (tx) => {
+      // `lockBalances` — `applyReservationDeltas` shartnomasi (kommentida
+      // ochiq yozilgan): chaqiruvchi SHU tx da qulflashi SHART, aks holda
+      // ikki parallel rezerv `reservedQty` ni lost-update qiladi.
+      const balances =
+        stockPositions.length > 0
+          ? await this.stock.lockBalances(
+              tx,
+              accountId,
+              storeId,
+              stockPositions.map((p) => ({ kind: 'product' as const, id: p.productId })),
+            )
+          : new Map();
+
+      // Yetarlilik AYNAN shu yerda tekshiriladi — rezervning butun ma'nosi
+      // shu: xato mijoz oldida emas, savat bosilgan lahzada chiqsin.
+      // `assertAvailable` «доступно = qoldiq − rezerv» ni hisoblaydi, ya'ni
+      // boshqa kassaning ochiq cheki ham hisobga olinadi.
+      if (stockPositions.length > 0) {
+        this.stock.assertAvailable(
+          allowNegative,
+          stockPositions.map((p) => ({
+            assortmentKind: 'product',
+            assortmentId: p.productId,
+            requested: String(p.quantity),
+          })),
+          balances,
+        );
+      }
+
+      const result = await tx.retailSale.updateMany({
+        where: { id, accountId, state: { in: [...allowedFrom('send-to-picking')] } },
+        data: { state: 'picking' },
+      });
+      if (result.count === 0) {
+        throw new ConflictException('Sale state changed; send-to-picking aborted');
+      }
+
+      if (stockPositions.length > 0) {
+        await this.stock.applyReservationDeltas(
+          tx,
+          accountId,
+          userId,
+          stockPositions.map((p) => ({
+            storeId,
+            assortmentKind: 'product',
+            assortmentId: p.productId,
+            qtyDelta: String(p.quantity),
+            docType: 'retailsale',
+            docId: id,
+            reason: 'reserve' as const,
+          })),
+        );
+      }
     });
-    if (result.count === 0) {
-      throw new ConflictException('Sale state changed; send-to-picking aborted');
-    }
     // Create per-sklad picking tasks for each configured warehouse keeper.
     // Best-effort: a failure here must not roll back the state change.
     this.createPickingTasksForSale(accountId, id, userId, userName).catch((e) => {
@@ -1976,6 +2156,11 @@ export class RetailSaleService {
         name: true,
         storeId: true,
         store: { select: { name: true } },
+        // P3 — chek `storeId`i prodda 17/17 hollarda NULL (POS uni
+        // to'ldirmaydi; `post()` ombor kaskadini SMENA do'koniga yozadi).
+        // Zaxirasiz yig'ish topshirig'i do'konsiz chiqardi — omborchi
+        // panelida «qaysi do'kondan yig'ay?» degan bo'sh ustun.
+        session: { select: { storeId: true, store: { select: { name: true } } } },
         positions: {
           include: {
             product: {
@@ -2024,8 +2209,8 @@ export class RetailSaleService {
       `createPickingTasks[${saleId}]: grouped into sklads: ${[...groups.keys()].join(', ')}, keepers: ${[...keeperBySklad.keys()].join(', ')}`,
     );
 
-    const storeId = sale.storeId ?? null;
-    const storeName = sale.store?.name ?? null;
+    const storeId = sale.storeId ?? sale.session?.storeId ?? null;
+    const storeName = sale.store?.name ?? sale.session?.store?.name ?? null;
     // Yacheykasiz tovarlar uchun zaxira omborchi: birinchi sozlangani.
     const fallbackKeeper = keepers[0];
 

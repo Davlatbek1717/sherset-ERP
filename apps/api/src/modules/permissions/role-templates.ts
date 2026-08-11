@@ -313,7 +313,24 @@ export const ROLE_TEMPLATES: Record<RoleTemplateSlug, RoleTemplate> = {
     uiMode: 'kiosk',
     defaults: ALL_NO,
     grants: merge(
-      grant(['retailsale'], { view: 'ALL', create: 'ALL', update: 'ALL', print: 'ALL' }),
+      // P3 (2026-08-12) — `approve` KASSIRGA OCHILDI. Busiz kassa umuman
+      // sotolmasdi: `POST /retail-sales/:id/post` ham, `:id/cancel` ham
+      // `retailsale.approve` talab qiladi, kassirda esa u `NO` edi ⇒ jonli
+      // probe 403 «retailsale.approve uchun kamida OWN kerak (sizda: NO)»
+      // qaytarardi. Prod dalili: Kassir 1/2 da 4 ta `picking` chek va 0 ta
+      // posted — cheklar «omborchi yo'q» dan emas, TO'LOV TAQIQIDAN qotardi.
+      //
+      // 🔴 QAYTARISH BU RUXSATGA KIRMAYDI (egasi qarori, 2026-08-12): kassadan
+      // pul CHIQISHI menejer qarori bo'lib qoladi. Shuning uchun
+      // `POST /retail-sales/:id/refund` `salesreturn.create` ga ko'chirildi —
+      // aks holda `approve` ni ochish qaytarishni ham jimgina ochib yuborardi.
+      grant(['retailsale'], {
+        view: 'ALL',
+        create: 'ALL',
+        update: 'ALL',
+        approve: 'ALL',
+        print: 'ALL',
+      }),
       grant(['cashiersession'], { view: 'ALL', create: 'ALL', update: 'ALL', print: 'ALL' }),
       grant(['product', 'productfolder', 'pricetype'], { view: 'ALL' }),
       // F9 — mijoz kartasi. `update` kiosk'da FAQAT bitta tor yo'lda yashaydi:
@@ -396,6 +413,16 @@ export const ROLE_TEMPLATES: Record<RoleTemplateSlug, RoleTemplate> = {
       // ombor kartochkasini tahrirlash huquqini bermasdan ochiladi.
       grant(['storecell'], { view: 'ALL', update: 'ALL' }),
       grant(['label'], { view: 'ALL', print: 'ALL' }),
+      // P3 (2026-08-12) — KASSA CHEKINI YIG'ISH omborchining ishi, lekin unda
+      // `retailsale` ruxsati UMUMAN yo'q edi: `POST /retail-sales/:id/mark-ready`
+      // (`retailsale.update`) 403 qaytarardi va yig'ish zanjirining o'rtasi
+      // uzilgan turardi. `view` — yig'iladigan cheklar ro'yxati (`/omborchi`),
+      // `print` — yig'ish varaqasi.
+      //
+      // `approve` va `create` ATAYLAB yo'q: omborchi tovarni yig'adi, PUL
+      // olmaydi va chek yaratmaydi (narx/pul unga ko'rinmaydi — shu shablon
+      // sarlavhasidagi qoida).
+      grant(['retailsale'], { view: 'ALL', update: 'ALL', print: 'ALL' }),
     ),
   },
 

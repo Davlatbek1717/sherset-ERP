@@ -318,7 +318,19 @@ describe('RetailSaleService.post — zakaz to‘lovi', () => {
 
     await svc.post(ACCOUNT, USER_ID, SALE_ID, PAYMENT);
 
-    expect(stock.releaseReservationByDoc).not.toHaveBeenCalled();
+    // P3 dan keyin `releaseReservationByDoc` chekning O'Z rezervi uchun ham
+    // chaqiriladi, shuning uchun «umuman chaqirilmagan» da'vosi endi mavzuni
+    // ko'rsatmasdi — ZAKAZ rezervi tegilmaganini tekshiramiz.
+    expect(stock.releaseReservationByDoc).not.toHaveBeenCalledWith(
+      expect.anything(),
+      ACCOUNT,
+      USER_ID,
+      'customerorder',
+      ORDER_ID,
+      expect.anything(),
+    );
+    // Chekning o'z rezervi so'raladi (bu yerda yo'q — stub `false` qaytaradi),
+    // shuning uchun balanslar QAYTA O'QILMAYDI: bitta qulflash.
     expect(stock.lockBalances).toHaveBeenCalledTimes(1);
     // To'lov baribir zakazga tushadi — `applyPayment` qisman to'lovda holatni
     // O'ZGARTIRMAYDI, ya'ni zakaz `paid` bo'lmaydi va qoldig'i to'lanishi mumkin.

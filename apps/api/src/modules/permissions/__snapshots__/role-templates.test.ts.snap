@@ -198,7 +198,7 @@ exports[`MK29 — shablon matritsasi snapshot (10/10) > cashier matritsasi 1`] =
   "pricetype": "view:ALL",
   "product": "view:ALL",
   "productfolder": "view:ALL",
-  "retailsale": "view:ALL create:ALL update:ALL print:ALL",
+  "retailsale": "view:ALL create:ALL update:ALL approve:ALL print:ALL",
   "settings": "view:ALL",
 }
 `;
@@ -428,6 +428,7 @@ exports[`MK29 — shablon matritsasi snapshot (10/10) > storekeeper matritsasi 1
   "move": "view:ALL create:ALL update:ALL print:ALL",
   "product": "view:ALL",
   "productfolder": "view:ALL",
+  "retailsale": "view:ALL update:ALL print:ALL",
   "store": "view:ALL",
   "storecell": "view:ALL update:ALL",
   "supply": "view:ALL update:ALL print:ALL",

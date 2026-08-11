@@ -95,9 +95,17 @@ function makeWorld() {
       for (const d of deltas)
         stockDeltas.push(String((d as { assortmentId: string }).assortmentId));
     }),
-    releaseReservationByDoc: vi.fn(async () => {
-      order.reservedSumMinor = 0n;
-    }),
+    // P3 dan keyin `post()` buni IKKI hujjat uchun chaqiradi: zakaz rezervi
+    // (`customerorder`) va chekning o'z yig'ish rezervi (`retailsale`).
+    // Dublyor ikkalasini FARQLAYDI — aks holda chek yo'li zakaz mirrorini
+    // ham nolga tushirib, testni yolg'on yashil qilardi.
+    releaseReservationByDoc: vi.fn(
+      async (_tx: unknown, _a: string, _u: string, docType: string) => {
+        if (docType !== 'customerorder') return false; // chekda rezerv yo'q
+        order.reservedSumMinor = 0n;
+        return true;
+      },
+    ),
   };
 
   const money = {
@@ -253,8 +261,12 @@ describe('F8 — ikki kassir bitta zakazni bir vaqtda to‘laydi', () => {
     expect(w.cashDeltas).toEqual([ORDER_SUM]);
     // Ombor ham bir marta yechildi.
     expect(w.stockDeltas).toEqual([PRODUCT_ID]);
-    // Rezerv bir marta yutildi.
-    expect(w.stock.releaseReservationByDoc).toHaveBeenCalledTimes(1);
+    // ZAKAZ rezervi bir marta yutildi (chekning o'z rezervi alohida chaqiruv —
+    // shuning uchun umumiy son emas, `customerorder` chaqiruvlari sanaladi).
+    const orderReleases = w.stock.releaseReservationByDoc.mock.calls.filter(
+      (c) => c[3] === 'customerorder',
+    );
+    expect(orderReleases).toHaveLength(1);
   });
 
   it('uchinchi urinish (zakaz allaqachon `paid`) ham rad etiladi', async () => {

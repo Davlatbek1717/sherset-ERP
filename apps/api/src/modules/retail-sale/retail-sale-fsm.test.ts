@@ -83,6 +83,10 @@ function makeStockStub() {
     lockBalances: vi.fn().mockResolvedValue(new Map()),
     assertAvailable: vi.fn(),
     applyDeltas: vi.fn().mockResolvedValue(undefined),
+    applyReservationDeltas: vi.fn().mockResolvedValue(undefined),
+    // P3 — `false` = «bo'shatiladigan rezerv yo'q edi». Haqiqiy servis shu
+    // javob bo'yicha balanslarni qayta o'qish-o'qimaslikni hal qiladi.
+    releaseReservationByDoc: vi.fn().mockResolvedValue(false),
   };
 }
 
@@ -210,6 +214,9 @@ function makeCancelClient(state: string) {
       name: 'CHK-1',
       sessionId: SESSION_ID,
       sumMinor: 100_000n,
+      // P3 — rezervni bo'shatish do'koni smenadan olinadi (chek `storeId`i
+      // POS'da to'ldirilmaydi — prodda 17/17 chekda NULL).
+      session: { storeId: STORE_ID },
       positions: [{ productId: 'prod-1', quantity: 2 }],
     }),
     updateMany: vi.fn().mockResolvedValue({ count: 1 }),

@@ -139,6 +139,9 @@ function makeHarness(opts: Opts) {
     lockBalances: vi.fn(async () => new Map()),
     assertAvailable: vi.fn(),
     applyDeltas: vi.fn(async () => undefined),
+    applyReservationDeltas: vi.fn(async () => undefined),
+    // P3 — `false` = bo'shatiladigan rezerv yo'q edi.
+    releaseReservationByDoc: vi.fn(async () => false),
   };
 
   const svc = new RetailSaleService(

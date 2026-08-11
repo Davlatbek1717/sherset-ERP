@@ -10,7 +10,7 @@ import { useDestructiveMutation } from '@/hooks/use-destructive-mutation';
 import { useFillViewport } from '@/hooks/use-fill-viewport';
 import { usePermissions } from '@/hooks/use-permissions';
 import { api } from '@/lib/api-client';
-import { useAuth } from '@/lib/auth-store';
+import { isKioskUser, useAuth } from '@/lib/auth-store';
 // B8 — savat matematikasi sof modulda (20 test). Ilgari bu qoidalar shu
 // faylda edi va ularni sinash uchun butun POS ekranini render qilish
 // kerak bo'lardi, shuning uchun ular umuman sinalmagan edi.
@@ -359,6 +359,9 @@ function ChekDetailPanel({ saleId, onBack }: { saleId: string; onBack: () => voi
   const qc = useQueryClient();
   const { toast } = useToast();
   const finishPrint = usePrintOutcome();
+  // P3 — kiosk (kassir) qaytara olmaydi; sabab tugma yonidagi izohda.
+  const { user } = useAuth();
+  const isKiosk = isKioskUser(user);
   const [returnMode, setReturnMode] = useState(false);
   // positionId → qaytariladigan miqdor, **decimal SATR** (defolt — to'liq
   // sotilgan miqdor). FE-02: `number` bo'lganda kassir kasr miqdor kirita
@@ -491,7 +494,17 @@ function ChekDetailPanel({ saleId, onBack }: { saleId: string; onBack: () => voi
         >
           🖨 {t('receipt')}
         </button>
+        {/* P3 (egasi qarori, 2026-08-12) — QAYTARISH KASSIRDA YO'Q.
+            Kassirga `retailsale.approve` berildi (usiz u chekni na to'lay,
+            na bekor qila olardi), lekin qaytarish AYNI ruxsatdan
+            `salesreturn.create` ga KO'CHIRILDI: kassadan pul chiqishi
+            menejer qarori bo'lib qoladi. Tugmani kioskda ko'rsatib turish
+            uni har bosganda 403 beradigan «buzuq» tugmaga aylantirardi —
+            shuning uchun yashiriladi.
+            ⚠️ Bu QULAYLIK, cheklov emas: haqiqiy qulf serverdagi ruxsat
+            matritsasida (`retail-sale-lifecycle-permissions.test.ts`). */}
         {data.state === 'posted' &&
+          !isKiosk &&
           (returnMode ? (
             <button
               type="button"
@@ -1501,6 +1514,47 @@ function SalesScreen({
       setPayingSale({ id: saleId, sumMinor: BigInt(sumMinor) });
       setSelectedOrderId(null);
       setTab('savat');
+      setCheckoutOpen(true);
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  /**
+   * P3 — TO'G'RIDAN-TO'G'RI SOTISH (yig'ishsiz). Egasi qarori, 2026-08-12.
+   *
+   * MUAMMO (o'lchangan): savatning YAGONA tugmasi «Omborchiga yuborish» edi,
+   * ya'ni har sotuv omborchi zanjiridan o'tishi SHART edi. Prodda esa
+   * `sklad_keepers` = 0 qator — yig'ish topshirig'i umuman yaratilmasdi va
+   * chek «Jarayonda» da qolardi. Kichik xarid (bitta rozetka) uchun ham
+   * omborchi kutish real savdoni to'xtatadi.
+   *
+   * Chek `draft` da yaratiladi va DARHOL to'lov oynasi ochiladi: `post()`
+   * FSM'i `draft` dan to'lovni allaqachon qabul qiladi (`allowedFrom('post')`),
+   * `send-to-picking` esa CHETLAB o'tiladi — ya'ni na yig'ish varaqasi, na
+   * rezerv yozuvi (tovar shu ondayoq `post()` da qoldiqdan chiqadi, oraliq
+   * hold ma'nosiz bo'lardi).
+   *
+   * Savat ATAYLAB TOZALANMAYDI: to'lov oynasi bekor qilinsa kassir savatini
+   * yo'qotmasligi kerak. Tozalash `onSold` da — chek rostdan to'langanda.
+   */
+  const directSellMut = useMutation({
+    mutationFn: async () => {
+      const draft = await api.post<{ id: string; sumMinor?: string }>('/retail-sales', {
+        sessionId: session.id,
+        positions: positions(),
+      });
+      // Summa SERVERNIKI: `post()` `expectedSumMinor` ni chek `sumMinor`i
+      // bilan QAT'IY solishtiradi va farq bo'lsa 409 beradi. Server qator-
+      // ba-qator yaxlitlaydi, ya'ni ekrandagi jami bir tiyinga ayrilishi
+      // mumkin (F8 yo'lida aynan shu klass tuzatilgan).
+      //
+      // `?? '0'` bilan yumshatib bo'LMAYDI: 0 summa to'lov oynasini bo'sh
+      // chek bilan ochib, keyin 409 berardi — kassir sababini tushunmasdi.
+      if (draft.sumMinor == null) throw new Error(t('load_error'));
+      return { id: draft.id, sumMinor: BigInt(draft.sumMinor) };
+    },
+    onSuccess: (draft) => {
+      setPayingSale(draft);
       setCheckoutOpen(true);
     },
     onError: (e: Error) => toast.error(e.message),
@@ -2907,6 +2961,49 @@ function SalesScreen({
                     : `${pricePolicyBlock.productName}: ${t('cart_floor_blocked')}`}
                 </div>
               )}
+
+              {/* P3 — TO'G'RIDAN-TO'G'RI SOTISH (yig'ishsiz, darhol to'lov).
+                  Yuqorida turadi va to'q rangda: kichik xaridda ASOSIY yo'l shu.
+                  «Omborchiga yuborish» pastda, ochiqroq rangda — katta zakaz
+                  uchun qoladi. Ikkalasi ham AYNI narx-siyosat qulfi ostida
+                  (P12): 0 narx yoki poldan past narx ikkalasini ham bloklaydi,
+                  aks holda yangi tugma qulfni chetlab o'tish yo'li bo'lardi. */}
+              <button
+                type="button"
+                onClick={() => directSellMut.mutate()}
+                disabled={cart.length === 0 || directSellMut.isPending || pricePolicyBlock != null}
+                data-test-id="sotuv-sell-direct"
+                className="mb-2 flex h-14 w-full items-center justify-center gap-2 rounded-2xl bg-emerald-600 font-semibold text-base text-white shadow-lg transition-all hover:bg-emerald-700 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                {directSellMut.isPending ? (
+                  <span className="flex items-center gap-2">
+                    <svg
+                      className="h-4 w-4 animate-spin"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      aria-hidden="true"
+                    >
+                      <circle
+                        className="opacity-25"
+                        cx="12"
+                        cy="12"
+                        r="10"
+                        stroke="currentColor"
+                        strokeWidth="4"
+                      />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
+                    </svg>
+                    {t('sending')}
+                  </span>
+                ) : (
+                  <>
+                    <span>{t('sell_direct')}</span>
+                    <span className="font-normal text-emerald-100 text-xs">
+                      {t('sell_direct_hint')}
+                    </span>
+                  </>
+                )}
+              </button>
 
               {/* Omborchiga yuborish */}
               <button

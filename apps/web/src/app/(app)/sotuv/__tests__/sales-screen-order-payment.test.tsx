@@ -27,6 +27,9 @@ vi.mock('@/lib/api-client', () => ({
 }));
 
 vi.mock('@/lib/auth-store', () => ({
+  // P3 — chek panelida qaytarish tugmasi kiosk uchun yashiriladi; sahifa
+  // shu yordamchini import qiladi, dublyorda ham bo'lishi shart.
+  isKioskUser: () => false,
   useAuth: () => ({
     user: { id: 'u-1', name: 'Kassir Aliyev' },
     accessToken: 't',
