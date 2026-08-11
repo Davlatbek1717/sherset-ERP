@@ -33,9 +33,14 @@ import {
 } from '@/lib/pos/cart-math';
 // Smena yopish sanog'i uchun xavfsiz pul-parse (buzuq kiritma → 0n, crash emas).
 import { parseAmountToMinor } from '@/lib/pos/parse-amount';
+// Chop natijasi → keyingi qadam (qobiqda popup ochilmaydi) — izohi modulda.
+import { printFollowUp } from '@/lib/pos/print-fallback';
 // Ekranga nima chiqishi (hisob-kitobga tegmaydi) — izohi shu faylda.
 import { SHOW_MARGIN_ON_SCREEN } from '@/lib/pos/ui-flags';
 import {
+  type PrintIdleReason,
+  fetchAgentPrinters,
+  hasNativePrinting,
   printPickingViaAgent,
   printReceiptViaAgent,
   printZReportViaAgent,
@@ -289,6 +294,53 @@ interface ChekDetailData {
   positions: ChekDetailPosition[];
 }
 
+/**
+ * Chop natijasini YAKUNLASH — chek, Z-hisobot va yacheykali chek uchun bitta yo'l.
+ *
+ * 🔴 P7 (2026-08-11, egasi monoblokda): har qanday `handled:false` ga
+ * `?auto=1` popup'i ochilardi. Qobiq ichida o'sha popup `window.print()`
+ * chaqiradi ⇒ Chromium TASDIQ oynasi — «exe chekni o'zi chiqarsin»ning
+ * teskarisi. Endi sozlama muammosi (printer tanlanmagan/biriktirilmagan)
+ * qobiqda popup emas, MANZILLI ogohlantirish beradi; oddiy brauzerda popup
+ * yagona chop yo'li bo'lgani uchun o'zgarmaydi. Qaror `printFollowUp` da.
+ *
+ * Ogohlantirishga qurilmadagi printer NOMLARI ham qo'shiladi: sozlamadagi
+ * qiymat Windows printer nomi bilan AYNAN mos bo'lishi shart, egasi esa
+ * kiosk ichidan Windows ro'yxatini ochib ko'ra olmaydi.
+ */
+function usePrintOutcome() {
+  const t = useTranslations('pages.sotuv');
+  const { toast } = useToast();
+  return useCallback(
+    async (
+      outcome: { handled: boolean; ok: boolean; reason?: PrintIdleReason },
+      popup: { url: string; features?: string },
+    ) => {
+      switch (printFollowUp(outcome, { inShell: hasNativePrinting() })) {
+        case 'none':
+          return;
+        case 'error':
+          toast.error(t('print_error'));
+          return;
+        case 'configure-printer': {
+          const printers = await fetchAgentPrinters();
+          const hint = t('printer_not_set_hint');
+          toast.warning(t('printer_not_set'), {
+            description: printers.length
+              ? `${hint} ${t('printer_not_set_available', { printers: printers.slice(0, 3).join(', ') })}`
+              : hint,
+            duration: 12000,
+          });
+          return;
+        }
+        default:
+          window.open(popup.url, '_blank', popup.features ?? 'width=420,height=680,noopener');
+      }
+    },
+    [toast, t],
+  );
+}
+
 function ChekDetailPanel({ saleId, onBack }: { saleId: string; onBack: () => void }) {
   const t = useTranslations('pages.sotuv');
   const tCommon = useTranslations('common');
@@ -299,6 +351,7 @@ function ChekDetailPanel({ saleId, onBack }: { saleId: string; onBack: () => voi
 
   const qc = useQueryClient();
   const { toast } = useToast();
+  const finishPrint = usePrintOutcome();
   const [returnMode, setReturnMode] = useState(false);
   // positionId → qaytariladigan miqdor, **decimal SATR** (defolt — to'liq
   // sotilgan miqdor). FE-02: `number` bo'lganda kassir kasr miqdor kirita
@@ -423,17 +476,9 @@ function ChekDetailPanel({ saleId, onBack }: { saleId: string; onBack: () => voi
           type="button"
           onClick={async () => {
             // Same routing as a fresh sale: agent → configured receipt printer,
-            // else the browser popup.
+            // else the browser popup (qobiqda esa — ogohlantirish).
             const outcome = await printReceiptViaAgent(data.id);
-            if (!outcome.handled) {
-              window.open(
-                `/print/retail-sale/${data.id}?auto=1`,
-                '_blank',
-                'width=420,height=680,noopener',
-              );
-            } else if (!outcome.ok) {
-              toast.error(t('print_error'));
-            }
+            await finishPrint(outcome, { url: `/print/retail-sale/${data.id}?auto=1` });
           }}
           className="flex h-8 items-center gap-1.5 rounded-lg border border-[var(--ms-border)] px-3 text-xs font-medium text-[var(--ms-text-muted)] hover:bg-[var(--ms-bg-hover)]"
         >
@@ -819,19 +864,17 @@ function ZakazDetailPanel({
  * biri fallback'ni unutib qo'yardi.
  */
 function usePrintZReport() {
-  const t = useTranslations('pages.sotuv');
-  const { toast } = useToast();
   const labels = useZReceiptLabels();
+  const finishPrint = usePrintOutcome();
   return useCallback(
     async (sessionId: string) => {
       const outcome = await printZReportViaAgent(sessionId, labels);
-      if (!outcome.handled) {
-        window.open(`/print/z-report/${sessionId}?auto=1`, '_blank', 'width=420,height=760');
-        return;
-      }
-      if (!outcome.ok) toast.error(t('print_error'));
+      await finishPrint(outcome, {
+        url: `/print/z-report/${sessionId}?auto=1`,
+        features: 'width=420,height=760',
+      });
     },
-    [labels, toast, t],
+    [labels, finishPrint],
   );
 }
 
@@ -855,6 +898,7 @@ function SalesScreen({
   const { toast } = useToast();
   const { confirm } = useConfirm();
   const { runDestructive } = useDestructiveMutation();
+  const finishPrint = usePrintOutcome();
 
   // Tan narx BUTUN sahifada ko'rinadi — setkada ham, savatda ham.
   //
@@ -1283,17 +1327,9 @@ function SalesScreen({
   const printCustomerReceipt = useCallback(
     async (saleId: string) => {
       const outcome = await printReceiptViaAgent(saleId);
-      if (!outcome.handled) {
-        window.open(
-          `/print/retail-sale/${saleId}?auto=1`,
-          '_blank',
-          'width=420,height=680,noopener',
-        );
-      } else if (!outcome.ok) {
-        toast.error(t('print_error'));
-      }
+      await finishPrint(outcome, { url: `/print/retail-sale/${saleId}?auto=1` });
     },
-    [toast, t],
+    [finishPrint],
   );
 
   // When omborchi marks a sale "Tayyor", the kassir pulls it into the cart:
@@ -1448,10 +1484,14 @@ function SalesScreen({
         }
         if (outcome.errors > 0) toast.error(t('print_error_count', { n: outcome.errors }));
       } else {
-        window.open(
-          `/print/picking/${saleId}?source=retailsale&auto=1`,
-          '_blank',
-          'width=520,height=800,noopener',
+        // Yacheykali chek — chek bilan ayni qaror: qobiqda printer
+        // biriktirilmagan bo'lsa popup emas, ogohlantirish.
+        await finishPrint(
+          { handled: false, ok: false, reason: outcome.reason },
+          {
+            url: `/print/picking/${saleId}?source=retailsale&auto=1`,
+            features: 'width=520,height=800,noopener',
+          },
         );
       }
     },

@@ -33,6 +33,8 @@ vi.mock('@/lib/auth-store', () => ({
 }));
 
 vi.mock('@/lib/print-agent', () => ({
+  hasNativePrinting: vi.fn(() => false),
+  fetchAgentPrinters: vi.fn(async () => []),
   printReceiptViaAgent: vi.fn(async () => ({ handled: true, ok: true })),
   printPickingViaAgent: vi.fn(async () => ({ handled: true, printed: 1, skipped: 0, errors: 0 })),
   printZReportViaAgent: vi.fn(async () => ({ handled: true, ok: true })),

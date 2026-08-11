@@ -163,6 +163,27 @@ export interface PrintResult {
   error?: string;
 }
 
+/**
+ * Chop zanjiri QAYSI qavatda uzilgani (`handled:false` bo'lganda).
+ *
+ * Ilgari uchala uzilish ham bir xil `{ handled:false }` edi va chaqiruvchi
+ * hammasiga bitta javob berardi — brauzer popup'i (`?auto=1`). Qobiq ichida
+ * o'sha popup `window.print()` chaqiradi ⇒ Chromium TASDIQ oynasi chiqadi.
+ * Egasi monoblokda ko'rgan «chek avtomatik chiqmayapti» simptomi aynan shu
+ * (2026-08-11, P7): prodda `company_settings` 0 qator ⇒ printer sozlanmagan.
+ * Sabab ajratilgani chaqiruvchiga to'g'ri javob tanlash imkonini beradi
+ * (`lib/pos/print-fallback.ts`).
+ */
+export type PrintIdleReason =
+  /** Qobiq ham, HTTP print-agent ham yo'q — oddiy brauzer. */
+  | 'no-agent'
+  /** Chek printeri sozlanmagan (`CompanySettings.receiptPrinterName` = null). */
+  | 'printer-not-set'
+  /** Hech bir sklad'ga printer biriktirilmagan (yacheykali chek). */
+  | 'no-printer-mapped'
+  /** Sozlama yoki hujjat yuklanmadi (tarmoq/server xatosi). */
+  | 'load-failed';
+
 /** Send a job to one named printer. Provide either `text` or base64 ESC/POS bytes. */
 export async function agentPrint(
   printerName: string,
@@ -323,6 +344,8 @@ export interface PickingPrintOutcome {
   printed: number;
   skipped: number; // sheets with no mapped printer
   errors: number;
+  /** handled=false bo'lganda — uzilish qavati (`PrintIdleReason`). */
+  reason?: PrintIdleReason;
 }
 
 /**
@@ -332,8 +355,14 @@ export interface PickingPrintOutcome {
  * concurrently (the agent is multi-threaded), so two printers fire in parallel.
  */
 export async function printPickingViaAgent(saleId: string): Promise<PickingPrintOutcome> {
-  const idle: PickingPrintOutcome = { handled: false, printed: 0, skipped: 0, errors: 0 };
-  if (!(await checkPrintAgent())) return idle;
+  const idle = (reason: PrintIdleReason): PickingPrintOutcome => ({
+    handled: false,
+    printed: 0,
+    skipped: 0,
+    errors: 0,
+    reason,
+  });
+  if (!(await checkPrintAgent())) return idle('no-agent');
 
   let sheetsRes: AgentPickingSheetsResponse;
   let keepers: { items: AgentKeeperRow[] };
@@ -343,7 +372,7 @@ export async function printPickingViaAgent(saleId: string): Promise<PickingPrint
       api.get<{ items: AgentKeeperRow[] }>('/sklad-keepers'),
     ]);
   } catch {
-    return idle;
+    return idle('load-failed');
   }
 
   const printerBySklad = new Map<number, string>();
@@ -352,7 +381,10 @@ export async function printPickingViaAgent(saleId: string): Promise<PickingPrint
   const sheets = sheetsRes.sheets ?? [];
   const anyMapped = sheets.some((s) => s.skladNo != null && printerBySklad.has(s.skladNo));
   // Nothing to route (agent up but no printer configured) → let caller fall back.
-  if (sheets.length === 0 || !anyMapped) return idle;
+  // Varaq umuman yo'q — bu SOZLAMA muammosi emas (ogohlantirish noto'g'ri
+  // manzil ko'rsatardi), shuning uchun eski xulq: popup.
+  if (sheets.length === 0) return idle('load-failed');
+  if (!anyMapped) return idle('no-printer-mapped');
 
   const el = electron();
   const results = await Promise.all(
@@ -548,6 +580,8 @@ export interface ReceiptPrintOutcome {
   handled: boolean;
   ok: boolean;
   error?: string;
+  /** handled=false bo'lganda — uzilish qavati (`PrintIdleReason`). */
+  reason?: PrintIdleReason;
 }
 
 /**
@@ -557,8 +591,12 @@ export interface ReceiptPrintOutcome {
  * isn't configured, or the sale can't be loaded.
  */
 export async function printReceiptViaAgent(saleId: string): Promise<ReceiptPrintOutcome> {
-  const idle: ReceiptPrintOutcome = { handled: false, ok: false };
-  if (!(await checkPrintAgent())) return idle;
+  const idle = (reason: PrintIdleReason): ReceiptPrintOutcome => ({
+    handled: false,
+    ok: false,
+    reason,
+  });
+  if (!(await checkPrintAgent())) return idle('no-agent');
 
   let printer: string | null;
   let sale: ReceiptSale;
@@ -570,9 +608,11 @@ export async function printReceiptViaAgent(saleId: string): Promise<ReceiptPrint
     printer = settings.receiptPrinterName ?? null;
     sale = saleDetail;
   } catch {
-    return idle;
+    return idle('load-failed');
   }
-  if (!printer) return idle; // not configured → browser popup fallback
+  // Sozlanmagan: qobiqda — manzilli ogohlantirish, brauzerda — popup
+  // (`printFollowUp`). Ilgari ikkalasi ham popup edi ⇒ tasdiq oynasi.
+  if (!printer) return idle('printer-not-set');
 
   const el = electron();
   const r = el
@@ -600,8 +640,12 @@ export async function printZReportViaAgent(
   sessionId: string,
   labels: ZReceiptLabels,
 ): Promise<ReceiptPrintOutcome> {
-  const idle: ReceiptPrintOutcome = { handled: false, ok: false };
-  if (!(await checkPrintAgent())) return idle;
+  const idle = (reason: PrintIdleReason): ReceiptPrintOutcome => ({
+    handled: false,
+    ok: false,
+    reason,
+  });
+  if (!(await checkPrintAgent())) return idle('no-agent');
 
   let printer: string | null;
   let z: ZReportPayload;
@@ -613,9 +657,9 @@ export async function printZReportViaAgent(
     printer = settings.receiptPrinterName ?? null;
     z = report;
   } catch {
-    return idle;
+    return idle('load-failed');
   }
-  if (!printer) return idle; // sozlanmagan → brauzer popup'i
+  if (!printer) return idle('printer-not-set'); // sozlanmagan → chek bilan bir xil yo'l
 
   // Qaytarishlar SONI — eski endpointda. Yiqilsa chek baribir chiqadi,
   // faqat son o'rnida «—» turadi (NOL EMAS).

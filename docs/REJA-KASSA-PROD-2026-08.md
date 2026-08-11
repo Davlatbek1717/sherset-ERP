@@ -1059,7 +1059,114 @@ bilan tekshirildi — begona fayl yo'q.
 - ⚠️ Parallel sessiya P1 (qarz) ustida ishlamoqda — `apps/api/src/modules/debt/*`,
   `debt-payment-dialog.tsx`, `messages/*.json`, `schema.prisma` dirty. Keyingi faza to'liq
   suite'ni yashil ko'rmasa avval o'sha ish tugaganini tekshirsin.
-### P7 — ☐ hali bajarilmagan
+### P7 — Chop etish o'lchovi: chek TASDIQSIZ, AVTOMATIK chiqishi · 2026-08-11 · `7b969cb1`
+
+**Holat:** ⚠️ qisman — **ildiz sabab prodda O'LCHANDI va kod tomoni tuzatildi**;
+**qurilmada (monoblok) jonli sinov QILINMADI** — egasi bu sessiyada qatnashmadi, sessiya
+interaktiv emas, monoblokka kirish yo'q. Halol yorliq: **Phase-1 — strukturaviy + prod-DB
+o'lchovi, browser/qurilma smoke YO'Q.**
+
+**O'LCHOV 1 — kod zanjiri (`lib/print-agent.ts` → `printReceiptViaAgent`, o'qildi)**
+
+| Qavat | Shart | Uzilsa |
+|---|---|---|
+| 1 | qobiq/agent bormi (`checkPrintAgent`) | brauzer popup'i |
+| 2 | **`CompanySettings.receiptPrinterName` sozlanganmi** | brauzer popup'i |
+| 3 | `electronAPI.printSheet` → `printHtml` da `silent: true` | `{ok:false,error}` → kassirga xato |
+
+Qobiqning o'zi **aybdor emas**: `desktop/main.js:421` da `silent: true` turibdi (dialogsiz),
+lekin oqim qavat-3 gacha yetib bormagan.
+
+**O'LCHOV 2 — prod DB (2026-08-11, `psql`, FAQAT O'QISH, `sherset_v2`)**
+
+```
+company_settings_rows  = 0     ⇒ receiptPrinterName = NULL (chek printeri sozlanmagan)
+settings_with_printer  = 0
+sklad_keepers_rows     = 0     ⇒ yacheykali chek ham printersiz
+```
+
+Ya'ni chek **hech qachon** jim chop yo'liga tushmagan — har safar
+`/print/retail-sale/<id>?auto=1` popup'i ochilgan; u qobiq ichida (2026-08-11 dan ichki
+oynada) `window.print()` chaqiradi ⇒ **Chromium tasdiq oynasi**. Egasining simptomi shu
+bilan to'liq tushuntiriladi. Rejaning diagnozi TASDIQLANDI (taxmin emas — ma'lumot bilan).
+
+**Nima o'zgardi (kod):**
+- `printReceiptViaAgent` / `printZReportViaAgent` / `printPickingViaAgent` endi uzilish
+  **sababini** qaytaradi (`PrintIdleReason`: `no-agent` · `printer-not-set` ·
+  `no-printer-mapped` · `load-failed`). Ilgari uchalasi ham bir xil `{handled:false}` edi va
+  chaqiruvchi hammasiga bitta javob berardi — popup.
+- Qaror bitta sof funksiyaga chiqarildi: `lib/pos/print-fallback.ts` → `printFollowUp()`.
+  **Qobiq ichida sozlama uzilishi popup OCHMAYDI** — kassirga manzilli ogohlantirish
+  chiqadi: «Chek printeri tanlanmagan» + «Sozlamalar → Omborchilar…» + **qurilmadagi
+  printer nomlari** (`listPrinters()` dan, 3 tagacha). Nomlar ataylab: sozlamadagi qiymat
+  Windows nomi bilan **aynan** mos bo'lishi shart, egasi esa kiosk ichidan Windows
+  ro'yxatini ocha olmaydi.
+- **Oddiy brauzerda xulq O'ZGARMADI** — u yerda popup yagona chop yo'li (testga qulflandi).
+- Uch chaqiruvchi (chek tugmasi · savdo yakuni · Z-hisobot · yacheykali chek) bitta
+  `usePrintOutcome()` hookiga birlashtirildi — «bir joyda tuzatib, ikkinchisini unutish»
+  yo'li yopildi.
+
+**Fayllar:**
+- `apps/web/src/lib/print-agent.ts` → `PrintIdleReason` + uch funksiyada sabab qaytarish
+- `apps/web/src/lib/pos/print-fallback.ts` (yangi) → `printFollowUp()` qaror jadvali
+- `apps/web/src/app/(app)/sotuv/page.tsx` → `usePrintOutcome()` hook; 4 chaqiruv joyi
+- `apps/web/src/messages/{ru,uz}.json` → `pages.sotuv.printer_not_set{,_hint,_available}`
+- `desktop/README.md` → «Chek nega TASDIQ so'raydi» (o'lchangan sabab) + o'lchov ro'yxati
+  har qadami «sinalmadi» deb belgilandi
+- 11 mavjud POS testidagi `print-agent` mock'iga yangi eksportlar (deterministik skript)
+- Yangi testlar: `lib/pos/print-fallback.test.ts` · `lib/__tests__/print-agent-reason.test.ts`
+  · `app/(app)/sotuv/__tests__/chek-jim-chop.test.tsx`
+
+**Testlar:**
+- Yangi: 13 test (5 qaror jadvali + 5 sabab + 3 sahifa-wiring) — RED holda yozildi
+  (4 yiqilish ko'rildi), keyin GREEN.
+- `vitest run src/app/(app)/sotuv src/lib` → **40 fayl / 443 test yashil**.
+
+**Gate:** typecheck ✅ 0 · lint:product ✅ 0 error (881 warning, siyosat ruxsat beradi) ·
+i18n:gate ✅ (birinchi urinishda qizil edi — sabab **parallel sessiyaning** commit
+qilinmagan `smena-assign-section.tsx` fayli, mening kalitlarim ro'yxatda yo'q edi; ular
+kalitlarni qo'shgach yashil) · **to'liq web vitest: 255 fayl / 3601 test yashil, 26 skip**
+(`changed-tests-gate-misses-convention-guards` xotirasi — yangi `.tsx` qo'shilgani uchun
+to'liq suite).
+
+**Deploy:** QILINMADI — bu faza kod tomonini tuzatdi, lekin asosiy maqsad (chek jim chiqishi)
+**qurilmada tasdiqlanmagan**; deploy egasi bilan jonli sinov qilinadigan sessiyada mantiqiy.
+Ogohlantirish matni deploy bo'lmaguncha kassirga ko'rinmaydi.
+
+**Nima QILINMADI (ataylab yoki imkonsiz):**
+- 🔴 **1-vazifa (jonli tiklash) BAJARILMADI:** monoblokda `listPrinters()` bilan aniq nom
+  aniqlash → Sozlamalar → Omborchilarga yozish → sinov savdo → chekning tasdiqsiz chiqishini
+  kuzatish. **Egasi qatnashmadi, qurilmaga kirish yo'q.** Bu — fazaning asosiy maqsadi va u
+  HAMON OCHIQ.
+- `desktop/README.md` 1–6 qadamlari (kirill buzilmasligi · 80mm en · bo'y A4 emas · noto'g'ri
+  nom = ko'rinadigan xato · pick-list va Z-hisobot qog'ozda) — **hech biri sinalmadi**,
+  virtual PDF-printerda ham emas (dev mashinada Electron qobiq ishga tushirilmadi).
+- 4-vazifa mijoz-ekran (HDMI) — **sinalmadi** (ikkinchi monitor yo'q).
+- 5-vazifa «topilgan xatolarni tuzatish» — qurilma sinovi bo'lmagani uchun topiladigan xato
+  ham bo'lmadi; uch renderer sinxroni (`ombor-chek-uch-renderer`) TEGILMADI.
+- Prod sozlamasiga qiymat YOZILMADI (`company_settings` bo'sh qoldi) — bu egasining
+  qurilmasidagi printer nomini talab qiladi, taxmin bilan yozish mumkin emas.
+
+**Ochiq xavf / keyingi fazaga eslatma:**
+- ⚠️ **Akkaunt-darajali sozlama** (reja 6-band): `receiptPrinterName` bitta
+  `CompanySettings` qatorida. Ikkinchi kassa qurilmasi boshqa printer ishlatsa bitta
+  sozlama YETMAYDI — per-qurilma sozlama alohida qaror (hujjatlandi, bajarilmadi).
+- Ogohlantirish faqat **qobiq ichida** ko'rinadi. Oddiy brauzerdan sotayotgan kassir hamon
+  tasdiq oynasini ko'radi — bu ataylab (u yerda popup yagona chop yo'li).
+- Kiosk ichidan **Sozlamalar sahifasiga o'tib bo'lmaydi** (POS'da havola yo'q, klaviatura
+  qulflangan) ⇒ printer nomini qobiqdagi ro'yxatdan ko'chirib olish imkoni yo'q edi;
+  shuning uchun nomlar ogohlantirish matniga qo'shildi. Egasi nomni Windows «Printerlar va
+  skanerlar» dan ham olishi mumkin — **ortiqcha probel ham xato**.
+- Jonli sinovda chek chiqmasa — qaysi qavat uzilganini endi ogohlantirish/xato matni
+  aytadi (`no-agent` = qobiq emas · «tanlanmagan» = sozlama · xato toast = drayver).
+
+**Egasi uchun 3 qadam (keyingi sessiyada, monoblok yonida):**
+1. Monoblokda ilova (exe) ichida sinov savdo qiling — chek chiqmasa ogohlantirishdagi
+   **printer nomlari ro'yxatini** o'qing (yoki Windows → Printerlar va skanerlar).
+2. Admin panelda (brauzerdan bo'lsa ham) **Sozlamalar → Omborchilar → «Chek printeri (mijoz
+   cheki)»** ga o'sha nomni AYNAN yozing → Saqlang.
+3. Yana sinov savdo — chek **tasdiqsiz** chiqishi kerak. Chiqmasa: xato matnini yozib oling
+   (u drayver javobini o'z ichiga oladi).
 ### P8 — ☐ hali bajarilmagan
 ### P9 — ☐ hali bajarilmagan
 ### P10 — ☐ hali bajarilmagan

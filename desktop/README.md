@@ -162,24 +162,69 @@ env -u ELECTRON_RUN_AS_NODE <electron.exe> desktop/tools/kbd-probe/probe.js
 tugma o'lchamlari, panel balandligi (harf ~262px / numpad ~350px — hisoblangan,
 ekranda ko'rilmagan).
 
-## Chop etishni o'lchash (HALI BAJARILMAGAN)
+## Chek nega TASDIQ so'raydi — o'lchangan sabab (P7, 2026-08-11)
 
-Bu qadamlar birinchi qo'lda o'lchashda bajarilsin (virtual PDF-printer ham
-hisoblanadi — real chek printeri shart emas):
+Egasi monoblokda ko'rgan simptom: chek chiqarishda brauzer chek sahifasi ochilib
+**tasdiq so'raladi**, avtomatik chiqmaydi.
 
-1. `cd desktop && pnpm install --ignore-workspace` → `SHERSET_SERVER_URL=http://localhost:3100 pnpm run dev`.
+Zanjir uch qavat (`apps/web/src/lib/print-agent.ts` → `printReceiptViaAgent`):
+
+| Qavat | Shart | Uzilsa nima bo'ladi |
+|---|---|---|
+| 1 | qobiq/agent bormi (`checkPrintAgent`) | `reason: no-agent` → brauzer popup'i |
+| 2 | **`CompanySettings.receiptPrinterName` sozlanganmi** | `reason: printer-not-set` |
+| 3 | `electronAPI.printSheet(printer, html)` | `{ ok:false, error }` → kassirga xato |
+
+**Sabab qavat-2 da, prodda O'LCHANDI (2026-08-11, `psql`, faqat o'qish):**
+
+```
+company_settings_rows = 0      ⇒ receiptPrinterName = NULL (sozlanmagan)
+sklad_keepers_rows    = 0      ⇒ yacheykali chek ham printersiz
+```
+
+Ya'ni chek **hech qachon** jim chop yo'liga tushmagan — har safar
+`/print/retail-sale/<id>?auto=1` popup'i ochilgan, u esa qobiq ichida
+`window.print()` chaqiradi ⇒ Chromium tasdiq oynasi. Qobiq aybdor emas:
+`printHtml` da `silent: true` turibdi va u qavat-3 gacha yetib bormagan.
+
+**Tuzatish (P7, kod tomoni):** qobiq ichida sozlama uzilishi (`printer-not-set` /
+`no-printer-mapped`) endi popup OCHMAYDI — kassirga manzilli ogohlantirish
+chiqadi: «Chek printeri tanlanmagan → Sozlamalar → Omborchilar», ustiga
+qurilmadagi printer NOMLARI (`listPrinters()` dan) ham qo'shiladi, chunki
+sozlamadagi qiymat Windows nomi bilan **aynan** mos bo'lishi shart. Oddiy
+brauzerda popup — yagona chop yo'li, o'zgarmagan. Qaror bitta joyda:
+`apps/web/src/lib/pos/print-fallback.ts` (`printFollowUp`).
+
+⚠️ **Ma'lum chegara:** `receiptPrinterName` — **akkaunt darajali** (bitta
+`CompanySettings` qatori). Ikkinchi kassa qurilmasi boshqa printer ishlatsa,
+bitta sozlama yetmaydi — per-qurilma sozlama alohida qaror talab qiladi
+(hujjatlangan, bajarilmagan).
+
+## Chop etishni o'lchash (QURILMADA HALI BAJARILMAGAN)
+
+Bu qadamlar qurilmada qo'lda o'lchansin (virtual PDF-printer ham hisoblanadi —
+real chek printeri shart emas). 2026-08-11 holati: **hech biri qurilmada
+bajarilmagan** — pastdagi «sinalmadi» ustuni shuni bildiradi.
+
+0. **Birinchi qadam (yangi):** Sozlamalar → Omborchilar → «Chek printeri (mijoz
+   cheki)» ga qurilmadagi printer nomini yozing va **Saqlang**. Prodda bu
+   sozlama BO'SH (yuqorida o'lchandi) — usiz 1–5 qadamlarning hech biri jim
+   chop yo'liga tushmaydi. Nom Windows «Printerlar va skanerlar» dagi bilan
+   aynan bir xil bo'lsin (ortiqcha probel ham xato).
+1. `cd desktop && pnpm install --ignore-workspace` → `SHERSET_SERVER_URL=http://localhost:3100 pnpm run dev`. — sinalmadi
 2. Windows'da «Microsoft Print to PDF» ni Sozlamalar → chek printeri qilib tanlang;
    `listPrinters()` ro'yxatida ko'ringanini tekshiring (ro'yxat bo'sh bo'lsa —
-   `getPrintersAsync` muammosi).
-3. Sotuvni rasmiylashtiring → PDF faylda: kirill/o'zbekcha **buzilmaganini**,
-   eni 80mm, uzunligi chek mazmuniga mos ekanini tekshiring (A4 chiqsa — o'lcham
-   hisobi ishlamagan).
+   `getPrintersAsync` muammosi). — sinalmadi
+3. Sotuvni rasmiylashtiring → chek **TASDIQSIZ** chiqsin; PDF faylda:
+   kirill/o'zbekcha **buzilmaganini**, eni 80mm, uzunligi chek mazmuniga mos
+   ekanini tekshiring (A4 chiqsa — o'lcham hisobi ishlamagan). — sinalmadi
 4. Yacheykali chek (`printPickingViaAgent`) va Z-hisobot ham shu yo'ldan chiqsin.
+   — sinalmadi
 5. Noto'g'ri printer nomi bilan bir marta bosing — kassirga **xato ko'rinishi**
-   shart (jim yo'qolgan chek emas).
+   shart (jim yo'qolgan chek emas). — sinalmadi
 6. Mijoz-ekran: HDMI bilan 2-monitor ulang → Sotuv panelidagi tugma (yoki `F9`) →
    ekran ochilishi, savat qo'shilganda **darhol** yangilanishi, tugma ikkinchi
-   bosilganda yopilishi. Monitorsiz holatda xato toast'i chiqishi.
+   bosilganda yopilishi. Monitorsiz holatda xato toast'i chiqishi. — sinalmadi
 
 ## Hali yo'q (keyingi fazalar)
 
