@@ -1,5 +1,5 @@
 import uz from '@/messages/uz.json';
-import { renderWithProviders, screen, waitFor, within } from '@/test-utils';
+import { fireEvent, renderWithProviders, screen, waitFor, within } from '@/test-utils';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { CellCountModal } from './cell-count-modal';
@@ -126,6 +126,14 @@ const scan = async (code: string) => {
 };
 
 const status = () => screen.getByTestId('cell-count-status');
+
+/** Wedge-skaner yo'li: kod FOKUSDAGI elementga «teriladi» va Enter bilan
+ *  yakunlanadi — tugma ustida ham, son-maydoni ustida ham xuddi shunday. */
+function wedgeScan(code: string) {
+  const target = document.activeElement ?? document.body;
+  for (const ch of code) fireEvent.keyDown(target, { key: ch });
+  fireEvent.keyDown(target, { key: 'Enter' });
+}
 
 beforeEach(() => {
   vi.mocked(api.get).mockReset();
@@ -428,5 +436,46 @@ describe('CellCountModal — TZ v3 §2', () => {
     // qimirlamaydi, fokus/kursor ham saqlanadi.
     expect(screen.getByTestId('cell-count-qty')).toBe(before);
     expect(before).toHaveAttribute('placeholder', '50');
+  });
+
+  /**
+   * TZ §3 kirish yo'li 1 — «kursor QAYERDA bo'lishidan qat'i nazar ishlaydi».
+   * Review 2026-08-10 (I3): document-darajasidagi tutqich faqat «Scan» oynasida
+   * bor edi, ya'ni ✕ / «Kamera» / checkbox bosilgach fokus TUGMADA qolar va
+   * wedge-skaner kodi hech qayerga tushmasdi — jim yo'qolish.
+   */
+  it('§3 fokus TUGMADA bo`lsa ham wedge-skan ishlaydi', async () => {
+    mockStock({ 'cell-A': 5 });
+    open();
+    // Omborchi «Kamera» tugmasini bosdi — fokus o'sha yerda qoldi.
+    const camera = screen.getByTestId('cell-count-camera');
+    camera.focus();
+    expect(document.activeElement).toBe(camera);
+
+    wedgeScan('CELLA');
+
+    await waitFor(() => expect(status()).toHaveTextContent('01-01-01-01'));
+  });
+
+  /**
+   * Ikkinchi yuzi: son-maydoni `INPUT`, ya'ni hujjat tutqichi uni CHETLAB
+   * o'tishi shart — aks holda bitta burst IKKI marta (hook + `wedgeGuard`)
+   * navbatga tushardi va yacheyka ikki marta ochilardi.
+   */
+  it('§3 son-maydonidagi burst FAQAT `wedgeGuard` orqali ketadi (ikki marta emas)', async () => {
+    mockStock({ 'cell-A': 5 });
+    open();
+    const qty = screen.getByTestId('cell-count-qty');
+    qty.focus();
+
+    wedgeScan('CELLA');
+
+    await waitFor(() => expect(status()).toHaveTextContent('01-01-01-01'));
+    const stockCalls = vi
+      .mocked(api.get)
+      .mock.calls.filter(([u]) => String(u).includes('cell-A/stock'));
+    expect(stockCalls).toHaveLength(1);
+    // Skan qoldig'i maydonda QOLMAYDI — `wedgeGuard` uni orqaga qaytargan.
+    expect(qty).toHaveValue('');
   });
 });

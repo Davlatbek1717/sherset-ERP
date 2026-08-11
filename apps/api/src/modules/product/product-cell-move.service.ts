@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { Prisma } from '@moysklad/db';
 import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service.js';
+import { assertCellStockEmpty } from '../shared/cell-stock-guard.js';
 import { computeTransferCost } from '../shared/move-cost-basis.js';
 import { type StockBalance, StockService } from '../stock/stock.service.js';
 import { CellMoveSchema, CellPlaceSchema, CellRebindSchema } from './product-cell-move.schema.js';
@@ -139,6 +140,20 @@ export class ProductCellMoveService {
    * which only ADDS) — the old home cell's ProductCellLink row is dropped and
    * the new one created, so the product genuinely leaves the old cell's
    * contents. Any OTHER cells it's separately bound to are untouched.
+   *
+   * ⚠️ QOLDIQ QULFI (egasi 2026-08-11 · Q1; review 2026-08-11 Critical).
+   * «No stock moves … can never touch the ledger» yuqoridagi jumla TO'G'RI-yu,
+   * ADASHTIRUVCHI edi: bu metod hisob kitobiga tegmaydi, lekin BOG'LANISHNI
+   * uzadi — va aynan shu fantom qoldiq tug'diradi (link/yorliq ketadi,
+   * `StockByCell` qatori qoladi, keyingi «Umumiy sanash» uning USTIGA
+   * qo'shadi). Egasining qarori qaysi yo'ldan kelishidan qat'i nazar amal
+   * qiladi, shuning uchun bu yo'l ham `assertCellStockEmpty` dan o'tadi —
+   * `StoreAddressService.unassignProduct` bilan BIR XIL qoida, bir manbadan.
+   *
+   * BUTUN amal rad etiladi (faqat link o'chirish emas): `__yacheyka` yorlig'i
+   * — bog'lanishning IKKINCHI manbai (`getCellProducts`/`getCellStock`/
+   * `getAddressStorage` nom bo'yicha ham moslaydi), ya'ni yorliqni ko'chirish
+   * o'zi ham xuddi shu nomuvofiqlikni tug'dirardi.
    */
   async rebind(accountId: string, _userId: string, productId: string, raw: unknown) {
     const { toCellId } = CellRebindSchema.parse(raw);
@@ -163,27 +178,48 @@ export class ProductCellMoveService {
     attrs.__yacheyka = cell.name;
     attrs.__polka = polka;
 
-    await this.prisma.client.product.update({
-      where: { id: productId, accountId },
-      data: { attributes: attrs as Prisma.InputJsonValue },
-    });
+    // Qulf + yozuvlar BITTA serializable tranzaksiyada: aks holda tekshiruv
+    // bilan o'chirish orasida boshqa sessiya sanoq yozib ulgurardi va fantom
+    // baribir tug'ilardi (`move()`/`place()` dagi bir xil naqsh).
+    await this.prisma.client.$transaction(
+      async (tx) => {
+        // Eski uy-yacheyka AVVAL yechiladi — qulf har qanday yozuvdan OLDIN
+        // ishlashi shart (ilgari `product.update` birinchi bajarilardi).
+        const oldCell =
+          oldHomeName && oldHomeName !== cell.name
+            ? await tx.storeCell.findFirst({
+                where: { accountId, name: oldHomeName },
+                select: { id: true, name: true, storeId: true },
+              })
+            : null;
+        if (oldCell) {
+          await assertCellStockEmpty(tx, {
+            accountId,
+            storeId: oldCell.storeId,
+            cellId: oldCell.id,
+            cellName: oldCell.name,
+            productId,
+          });
+        }
 
-    if (oldHomeName && oldHomeName !== cell.name) {
-      const oldCell = await this.prisma.client.storeCell.findFirst({
-        where: { accountId, name: oldHomeName },
-        select: { id: true },
-      });
-      if (oldCell) {
-        await this.prisma.client.productCellLink.deleteMany({
-          where: { accountId, productId, cellId: oldCell.id },
+        await tx.product.update({
+          where: { id: productId, accountId },
+          data: { attributes: attrs as Prisma.InputJsonValue },
         });
-      }
-    }
-    await this.prisma.client.productCellLink.upsert({
-      where: { productId_cellId: { productId, cellId: toCellId } },
-      create: { accountId, productId, cellId: toCellId },
-      update: {},
-    });
+
+        if (oldCell) {
+          await tx.productCellLink.deleteMany({
+            where: { accountId, productId, cellId: oldCell.id },
+          });
+        }
+        await tx.productCellLink.upsert({
+          where: { productId_cellId: { productId, cellId: toCellId } },
+          create: { accountId, productId, cellId: toCellId },
+          update: {},
+        });
+      },
+      { isolationLevel: 'Serializable', timeout: 20000 },
+    );
 
     return { ok: true, cellName: cell.name, polka };
   }

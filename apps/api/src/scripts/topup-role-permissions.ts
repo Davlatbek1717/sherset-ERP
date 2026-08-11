@@ -26,8 +26,11 @@
  * menejeri, Kassir…) are created by `seed-role-templates.ts`, which does NOT
  * update an existing role's matrix without `--rewrite`. So a newly added
  * entity reached NOBODY: the feature shipped, the role 403'd. PASS 2 below
- * closes that gap — see `../modules/permissions/template-topup.ts` for the
- * two-layer «never overwrite, never resurrect a revoked entity» contract.
+ * closes that gap — see `../modules/permissions/template-topup.ts`, whose
+ * contract is ONE structural guard (the `TOPUP_ENTITIES` allow-list: anything
+ * outside it is invisible, so a revoked entity can never be resurrected) plus
+ * ONE behavioural rule («entity already touched ⇒ skip it entirely», which
+ * gives both hand-tweak safety and idempotency).
  *
  * Run: `npx tsx src/scripts/topup-role-permissions.ts` (from apps/api).
  * After running on a live server, restart the api process (perm cache).

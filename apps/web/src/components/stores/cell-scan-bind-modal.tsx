@@ -28,6 +28,7 @@
 
 import { useBarcodeCamera } from '@/components/stores/use-barcode-camera';
 import { useScanQueue } from '@/components/stores/use-scan-queue';
+import { useWedgeAnywhere } from '@/components/stores/use-wedge-anywhere';
 import { usePermissions } from '@/hooks/use-permissions';
 import { api } from '@/lib/api-client';
 import { beep } from '@/lib/beep';
@@ -52,6 +53,15 @@ interface ProductHit {
    *  these too (owner 2026-07-21: code entered in «TASNIF shtrix-kodi» only). */
   packBarcodes: string[] | null;
 }
+
+/**
+ * Q1 qulfi (server 409 `CELL_STOCK_NOT_EMPTY`) uchun sentinel. Xabari
+ * ALLAQACHON to'liq i18n jumlasi, shuning uchun tashqi `catch` uni
+ * `scan_save_failed` ichiga QAYTA O'RAMAYDI — ikki qavat o'ram («Saqlashda
+ * xato: „«Olma» … chiqarilmadi" — saqlanmaganlar…») kichik ekranda o'qib
+ * bo'lmas matn berardi.
+ */
+class EvictBlockedError extends Error {}
 
 /** One STAGED binding (owner 2026-07-21: scans collect into a list and are
  *  written only when «Saqlash» is pressed; «Bekor qilish» discards them all). */
@@ -264,6 +274,12 @@ export function CellScanBindModal({
     }
     let done = 0;
     let evicted = 0;
+    // TZ §1.1 b.5: «Muvaffaqiyat: „Saqlandi: N ta bog'lash" va oyna YOPILADI».
+    // Faqat TO'LIQ muvaffaqiyatda — qisman yiqilishda oyna ochiq qoladi, chunki
+    // yozilmagan qatorlar ro'yxatda turadi va «Saqlash» qayta bosiladi (§1.4
+    // oxirgi qatori). «Sanash» oynasi buni allaqachon shunday qilardi; bu yerda
+    // yo'qligi assimetriya edi (review 2026-08-10 I2).
+    let allSaved = false;
     try {
       for (const [cellId, cellRows] of byCell) {
         // TZ v3 §1.2: «chiqarib qo'shish» — AVVAL eski chiqariladi (bir marta,
@@ -272,8 +288,31 @@ export function CellScanBindModal({
         // sessiyada staged qilingan qator o'zini-o'zi chiqarib yuborardi.
         const decision = decisionsRef.current.get(cellId);
         if (decision?.mode === 'replace' && decision.evict.length > 0) {
+          const cellName = cellRows[0]?.cell.name ?? cellId;
           for (const victim of decision.evict) {
-            await api.delete(`/admin/stores/${storeId}/cells/${cellId}/products/${victim.id}`);
+            try {
+              await api.delete(`/admin/stores/${storeId}/cells/${cellId}/products/${victim.id}`);
+            } catch (e) {
+              // EGASINING QARORI (2026-08-11 · Q1): server yacheykada QOLDIQ
+              // bor mahsulotni chiqarishni RAD etadi (409 + `CELL_STOCK_NOT_
+              // EMPTY`) — hujjatsiz stok o'zgarmasligi uchun. Xom server
+              // matni bu yerda YETARLI EMAS: u mahsulot NOMINI bilmaydi
+              // (faqat id), omborchi esa qaysi tovar to'sib turganini ko'rishi
+              // shart. Shuning uchun 409 aynan shu kod bo'yicha tanib olinadi
+              // va nom/yacheyka/qoldiq bilan qayta yoziladi; boshqa har qanday
+              // xato o'z holicha yuqoriga o'tadi (yashirilmaydi).
+              const err = e as { status?: number; body?: { code?: string; qty?: string } };
+              if (err.status === 409 && err.body?.code === 'CELL_STOCK_NOT_EMPTY') {
+                throw new EvictBlockedError(
+                  t('scan_evict_blocked', {
+                    product: victim.name,
+                    cell: cellName,
+                    qty: err.body.qty ?? '?',
+                  }),
+                );
+              }
+              throw e;
+            }
             evicted += 1;
           }
           // Chiqarish BAJARILDI — qaror `together` ga tushadi. Ikki ish bir
@@ -296,8 +335,10 @@ export function CellScanBindModal({
         }
       }
       setMessage({ kind: 'ok', text: t('scan_saved_n', { count: done }) });
-      // Owner 2026-07-25: a full save also toasts «Saqlandi…».
+      // Owner 2026-07-25: a full save also toasts «Saqlandi…» — the toast lives
+      // OUTSIDE the modal, so the message survives the window closing below.
       toast.success(t('scan_saved_n', { count: done }));
+      allSaved = true;
     } catch (e) {
       // Owner 2026-07-21: NOTHING resets silently — the failure names its cause
       // and the unsaved rows stay in the list for a retry (TZ §3: + beep).
@@ -309,14 +350,26 @@ export function CellScanBindModal({
       const msg = e instanceof Error ? e.message : String(e);
       setMessage({
         kind: 'err',
+        // Q1 qulfi — matn TAYYOR (nima, qayerda, qancha, nima qilish kerak va
+        // qolgan qatorlar taqdiri), qayta o'ralmaydi.
         text:
-          evicted > 0 ? t('scan_save_partial', { msg, evicted }) : t('scan_save_failed', { msg }),
+          e instanceof EvictBlockedError
+            ? msg
+            : evicted > 0
+              ? t('scan_save_partial', { msg, evicted })
+              : t('scan_save_failed', { msg }),
       });
     }
     if (done > 0) onBound();
     setSaving(false);
+    if (allSaved) {
+      onOpenChange(false);
+      return;
+    }
+    // Qisman yiqilish: oyna OCHIQ qoladi (qolgan qatorlar ko'rinib tursin) —
+    // skan-maydonini qayta qurollantiramiz.
     rearm();
-  }, [saving, storeId, onBound, t, rearm, toast, applyPending, applyDecisions]);
+  }, [saving, storeId, onBound, onOpenChange, t, rearm, toast, applyPending, applyDecisions]);
 
   const resolve = useCallback(
     async (raw: string) => {
@@ -555,41 +608,17 @@ export function CellScanBindModal({
   );
 
   // Owner 2026-07-26 (kb-spec §1): scanning must work NO MATTER where the
-  // cursor is. A keyboard-wedge scanner is just fast keystrokes — if focus
-  // drifted to a button (or anywhere outside the input), this capture-phase
-  // listener collects the burst itself and Enter feeds it to resolve().
-  // Printable keys are swallowed so a focused button is never «clicked» by
-  // the scanner's Enter, and no virtual keyboard is involved at any point
-  // (nothing gets focused). The input's own path is untouched.
-  useEffect(() => {
-    if (!open) return;
-    const buf = { s: '', at: 0 };
-    const onKey = (e: KeyboardEvent) => {
-      if (document.activeElement === inputRef.current) return; // input handles itself
-      const el = e.target as HTMLElement | null;
-      if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable))
-        return;
-      const now = Date.now();
-      if (now - buf.at > 900) buf.s = ''; // stale half-burst — start fresh
-      buf.at = now;
-      if (e.key === 'Enter') {
-        if (buf.s) {
-          e.preventDefault();
-          e.stopPropagation();
-          const v = buf.s;
-          buf.s = '';
-          void enqueue(v);
-        }
-        return;
-      }
-      if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
-        buf.s += e.key;
-        e.preventDefault();
-      }
-    };
-    document.addEventListener('keydown', onKey, true);
-    return () => document.removeEventListener('keydown', onKey, true);
-  }, [open, enqueue]);
+  // cursor is. The handler itself now lives in `useWedgeAnywhere` — «Sanash»
+  // needed the SAME behaviour (review 2026-08-10 I3) and a second copy would
+  // have drifted. Behaviour is unchanged, including the deliberate omission of
+  // `isBlocked` here: a scan that arrives while the «Yacheyka band» question is
+  // open must still reach `resolve()`, which REFUSES it out loud (TZ §3) —
+  // blocking at the key level would make it silent again.
+  useWedgeAnywhere({
+    enabled: open,
+    onCode: (code) => void enqueue(code),
+    inputRef,
+  });
 
   // `enqueue` barqaror havola — kamera hooki qayta ishga tushmaydi.
   const onCameraDecoded = useCallback((raw: string) => void enqueue(raw), [enqueue]);

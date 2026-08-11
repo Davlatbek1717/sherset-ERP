@@ -108,16 +108,18 @@ function mockApi({ occupants, contentsFails, gateFirstContents }: MockOpts) {
 }
 
 function open() {
+  const onOpenChange = vi.fn();
   renderWithProviders(
     <CellScanBindModal
       open
-      onOpenChange={vi.fn()}
+      onOpenChange={onOpenChange}
       storeId="store-1"
       cells={CELLS}
       initialCell={null}
       onBound={vi.fn()}
     />,
   );
+  return { onOpenChange };
 }
 
 async function scan(code: string) {
@@ -509,6 +511,141 @@ describe('CellScanBindModal — TZ v3 §1', () => {
     await scan('X2');
     await waitFor(() => expect(logRows()).toHaveLength(2));
     expect(screen.queryByTestId(/^cell-scan-row-replaces-/)).not.toBeInTheDocument();
+  });
+
+  /**
+   * TZ §1.1 b.5: «Muvaffaqiyat: „Saqlandi: N ta bog'lash" va oyna yopiladi».
+   * «Sanash» oynasi buni qilardi, «Scan» — yo'q (review 2026-08-10 I2): omborchi
+   * saqlagach oyna ochiq qolar, ro'yxat bo'shab turar va «yozildimi?» degan savol
+   * tug'ilardi (qayta «Saqlash» — endi bo'sh ro'yxat bilan — hech narsa qilmasdi).
+   */
+  it('§1.1 b.5 TO`LIQ saqlanganda oyna YOPILADI', async () => {
+    mockApi({ occupants: [] });
+    const { onOpenChange } = open();
+    await scan('CELLA');
+    await scan('X1');
+    await waitFor(() => expect(logRows()).toHaveLength(1));
+
+    await userEvent.click(screen.getByTestId('cell-scan-save'));
+
+    await waitFor(() => expect(api.post).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
+  });
+
+  /** Qisman yiqilishda oyna YOPILMASLIGI shart — yozilmagan qatorlar ekranda
+   *  qolsin va «Saqlash» qayta bosilsin (§1.4 oxirgi qatori). */
+  it('§1.1 b.5 QISMAN yiqilishda oyna YOPILMAYDI (qolgan qator ko`rinib turadi)', async () => {
+    mockApi({ occupants: [] });
+    const { onOpenChange } = open();
+    await scan('CELLA');
+    await scan('X1');
+    await scan('X2');
+    await waitFor(() => expect(logRows()).toHaveLength(2));
+
+    // Birinchi qator yoziladi, ikkinchisi yiqiladi.
+    vi.mocked(api.post)
+      .mockResolvedValueOnce({} as never)
+      .mockRejectedValueOnce(new Error('tarmoq uzildi'));
+    await userEvent.click(screen.getByTestId('cell-scan-save'));
+
+    await waitFor(() =>
+      expect(screen.getByTestId('cell-scan-status')).toHaveTextContent('tarmoq uzildi'),
+    );
+    expect(onOpenChange).not.toHaveBeenCalled();
+    expect(logRows()).toHaveLength(1);
+  });
+
+  /**
+   * EGASINING QARORI (2026-08-11 · Q1). Server yacheykada QOLDIQ bor mahsulotni
+   * chiqarishni RAD etadi (409 `CELL_STOCK_NOT_EMPTY`) — hujjatsiz stok
+   * o'zgarmasligi uchun. Bu rad etish JIM YUTILMASLIGI shart: xom server matni
+   * mahsulot NOMINI bilmaydi (faqat id), omborchi esa qaysi tovar to'sib
+   * turganini ko'rishi kerak.
+   */
+  it('Q1 chiqarish QOLDIQ sababli rad etilsa — nom/yacheyka/qoldiq bilan qizil banner + beep', async () => {
+    mockApi({ occupants: [{ id: 'prod-old', name: 'Olma' }] });
+    const { onOpenChange } = open();
+    await scan('CELLA');
+    await scan('X1');
+    await waitFor(() => expect(screen.getByTestId('cell-scan-conflict-msg')).toBeInTheDocument());
+    await userEvent.click(screen.getByTestId('cell-scan-replace'));
+    await waitFor(() => expect(logRows()).toHaveLength(1));
+    vi.mocked(beep).mockClear();
+
+    const blocked = Object.assign(new Error('HTTP 409'), {
+      status: 409,
+      body: { code: 'CELL_STOCK_NOT_EMPTY', qty: '26', cell: '01-01-01-01', productId: 'prod-old' },
+    });
+    vi.mocked(api.delete).mockRejectedValueOnce(blocked);
+
+    await userEvent.click(screen.getByTestId('cell-scan-save'));
+
+    const status = await screen.findByTestId('cell-scan-status');
+    await waitFor(() => expect(status).toHaveTextContent('Olma'));
+    // Qaysi yacheyka va qancha qoldiq — ikkalasi ham ko'rinadi.
+    expect(status).toHaveTextContent('01-01-01-01');
+    expect(status).toHaveTextContent('26');
+    expect(beep).toHaveBeenCalled();
+    // Matn IKKI QAVAT o'ralmaydi — «Saqlashda xato: …» prefiksi yo'q, chunki
+    // Q1 jumlasi o'zi to'liq (nima, qayerda, qancha, nima qilish kerak).
+    expect(status).not.toHaveTextContent('Saqlashda xato');
+    // Bog'lash YOZILMADI (chiqarish o'tmagan holda POST ketsa, band yacheykaga
+    // ikkinchi tovar jimgina qo'shilib qolardi).
+    expect(api.post).not.toHaveBeenCalled();
+    // Qolgan qatorlar ro'yxatda — «Saqlash» qayta bosiladi.
+    expect(logRows()).toHaveLength(1);
+    expect(onOpenChange).not.toHaveBeenCalled();
+    // Qaror HAMON `replace`: chiqarish bajarilmagani uchun belgi YOLG'ON emas.
+    expect(screen.getByTestId(/^cell-scan-row-replaces-/)).toBeInTheDocument();
+  });
+
+  /**
+   * Shox AYNAN `body.code` bo'yicha ushlanadi, «har qanday 409» bo'yicha emas:
+   * boshqa 409 (masalan noyob-cheklov to'qnashuvi) Q1 matnini OLMASLIGI kerak,
+   * aks holda foydalanuvchiga «sanab 0 ga tushiring» deb yolg'on yo'l
+   * ko'rsatilardi. Bu test `body.code` shartini olib tashlagan mutantni tutadi.
+   */
+  it('Q1 KODSIZ 409 — umumiy xato yo`lidan boradi, «qoldiq» matni CHIQMAYDI', async () => {
+    mockApi({ occupants: [{ id: 'prod-old', name: 'Olma' }] });
+    open();
+    await scan('CELLA');
+    await scan('X1');
+    await waitFor(() => expect(screen.getByTestId('cell-scan-conflict-msg')).toBeInTheDocument());
+    await userEvent.click(screen.getByTestId('cell-scan-replace'));
+
+    const otherConflict = Object.assign(new Error('boshqa konflikt'), {
+      status: 409,
+      body: { code: 'SOMETHING_ELSE', message: 'boshqa konflikt' },
+    });
+    vi.mocked(api.delete).mockRejectedValueOnce(otherConflict);
+
+    await userEvent.click(screen.getByTestId('cell-scan-save'));
+
+    const status = await screen.findByTestId('cell-scan-status');
+    await waitFor(() => expect(status).toHaveTextContent('boshqa konflikt'));
+    // Umumiy yo'l = `scan_save_failed` o'rami; Q1 matnining birorta bo'lagi yo'q.
+    expect(status).toHaveTextContent('Saqlashda xato');
+    expect(status).not.toHaveTextContent('qoldiq');
+    expect(status).not.toHaveTextContent('Olma');
+  });
+
+  /** 409 dan BOSHQA xato maxsus matnga aylanmaydi — sabab yashirilmaydi. */
+  it('Q1 boshqa turdagi xato o`z sababini ko`rsatadi (409 matni bosib ketmaydi)', async () => {
+    mockApi({ occupants: [{ id: 'prod-old', name: 'Olma' }] });
+    open();
+    await scan('CELLA');
+    await scan('X1');
+    await waitFor(() => expect(screen.getByTestId('cell-scan-conflict-msg')).toBeInTheDocument());
+    await userEvent.click(screen.getByTestId('cell-scan-replace'));
+
+    vi.mocked(api.delete).mockRejectedValueOnce(new Error('tarmoq uzildi'));
+    await userEvent.click(screen.getByTestId('cell-scan-save'));
+
+    await waitFor(() =>
+      expect(screen.getByTestId('cell-scan-status')).toHaveTextContent('tarmoq uzildi'),
+    );
+    expect(screen.getByTestId('cell-scan-status')).not.toHaveTextContent('qoldiq');
+    expect(api.post).not.toHaveBeenCalled();
   });
 
   it('§3 chiqarish huquqi yo`q foydalanuvchida «chiqarib qo`shish» KO`RINMAYDI', async () => {

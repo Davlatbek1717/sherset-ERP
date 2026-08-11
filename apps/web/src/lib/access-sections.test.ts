@@ -83,6 +83,22 @@ describe('«Настройка доступа» sections (MoySklad dialog, owner
     expect(find('product')).toBe('goods');
   });
 
+  /**
+   * TZ v3 §3 (review 2026-08-10 I4): yacheyka amallari `store` dan AJRALIB
+   * `storecell` obyektiga o'tgan edi, lekin bu dialogda qatori yo'q edi —
+   * ya'ni admin uni HECH QAYSI ekrandan bera/ola olmasdi (faqat shablon roli
+   * yoki `topup-role-permissions` skripti orqali). Qator «Склад» bo'limida,
+   * `store` yonida turadi.
+   */
+  it('yacheyka amallari (`storecell`) — «Склад» bo`limida, `store` yonida', () => {
+    const stock = ACCESS_SECTIONS.find((s) => s.key === 'stock');
+    const slugs = stock?.entities.map((e) => e.entity) ?? [];
+    expect(slugs).toContain('storecell');
+    expect(slugs.indexOf('storecell')).toBe(slugs.indexOf('store') + 1);
+    // Ma'lumotnoma qatori: Проводить/Печатать ustunlari yo'q (hujjat emas).
+    expect(stock?.entities.find((e) => e.entity === 'storecell')?.doc).toBe(false);
+  });
+
   it('checkbox ON grants ALL on the group actions; OFF removes the cells', () => {
     let cells: MatrixCell[] = [];
     cells = setRefs(cells, groupRefs('demand', editGroup), true);

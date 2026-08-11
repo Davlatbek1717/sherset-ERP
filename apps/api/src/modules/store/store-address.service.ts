@@ -4,6 +4,7 @@ import type { z } from 'zod';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { EnterService } from '../enter/enter.service.js';
 import { LossService } from '../loss/loss.service.js';
+import { assertCellStockEmpty } from '../shared/cell-stock-guard.js';
 import { CellRangeError, type CellRangeSpec, expandCellRange } from './cell-range.util.js';
 import {
   AssignProductsSchema,
@@ -461,8 +462,12 @@ export class StoreAddressService {
 
     // Store-level true-up hujjati (avto Оприходование/Списание) SANALGAN yacheyka
     // `cellId`'ini olib boradi ⇒ applyDeltas StockByCell[cellId]'ni AYNAN `delta`ga
-    // siljitadi va u absolyut sanoq qiymatiga (oldQty+delta = qty) tushadi. Hujjat —
-    // YAGONA per-cell yozuvchi: to'g'ridan-to'g'ri StockByCell.upsert QILMAYMIZ.
+    // siljitadi va u `finalQty` ga tushadi. Ikki rejimda `finalQty` ikki xil narsa:
+    //   · `set`  — `oldQty + (qty − oldQty) = qty`, ya'ni kiritilgan MUTLAQ sanoq;
+    //   · `add`  — `oldQty + qty`, ya'ni kiritilgan son QOLDIQQA QO'SHILADI
+    //              (26 + 100 = 126; hujjatga esa aynan `delta`=100 yoziladi).
+    // Hujjat — YAGONA per-cell yozuvchi: to'g'ridan-to'g'ri StockByCell.upsert
+    // QILMAYMIZ.
     //
     // ⚠️ 2026-07-29 drift-fix: ilgari cell to'g'ridan-to'g'ri absolyut yozilar,
     // KEYIN cellId'siz hujjat post qilinardi — applyDeltas o'sha (yoki uy-)yacheykani
@@ -610,6 +615,24 @@ export class StoreAddressService {
    * any) and, when this cell IS the product's `__yacheyka` home cache,
    * clears that too (multi-bin, 2026-08-06: the two used to be one and the
    * same; now a product can have other links left after this call).
+   *
+   * ⚠️ QOLDIQ QULFI (egasi, 2026-08-11 · Q1). Chiqarish faqat BOG'LANISHNI
+   * uzadi — `StockByCell` qatoriga TEGMAYDI. Yacheykada shu mahsulotdan
+   * hisoblangan qoldiq bor holda chiqarilsa, ikki sirt bir-biriga zid gapira
+   * boshlardi (`getCellStock` tovarni ko'rsatadi, `getCellProducts` yo'q
+   * deydi) va keyingi «Umumiy sanash» (`mode:'add'`) FANTOM qoldiq ustiga
+   * qo'shardi. Egasining qarori: hujjatsiz stok o'zgarmaydi ⇒ avto-«Списание»
+   * YOZILMAYDI, amal RAD ETILADI (409) va foydalanuvchiga yo'l ko'rsatiladi.
+   *
+   * Qoida `shared/cell-stock-guard.ts` da yashaydi — bu yo'l YAGONA emas:
+   * `ProductCellMoveService.rebind` (`POST /products/:id/cell-rebind`) ham
+   * `ProductCellLink` ni o'chiradi va u ham shu qulfdan o'tadi (review
+   * 2026-08-11 Critical). Qulf + o'chirish BITTA serializable tranzaksiyada:
+   * aks holda tekshiruv bilan o'chirish orasida boshqa sessiya sanoq yozib
+   * ulgurardi.
+   *
+   * Qamrov chegarasi (VARIANT qoldig'i tekshirilmaydi) — sabab va oqibati
+   * `cell-stock-guard.ts` docblock'ida oshkora yozilgan.
    */
   async unassignProduct(accountId: string, storeId: string, cellId: string, productId: string) {
     await this.assertStore(accountId, storeId);
@@ -625,17 +648,30 @@ export class StoreAddressService {
       !Array.isArray(product.attributes)
         ? (product.attributes as Record<string, unknown>)
         : {};
-    const { count: linksRemoved } = await this.prisma.client.productCellLink.deleteMany({
-      where: { accountId, productId, cellId },
-    });
     const isHome = base.__yacheyka === cell.name;
-    if (isHome) {
-      const { __yacheyka: _y, __polka: _p, ...rest } = base;
-      await this.prisma.client.product.update({
-        where: { id: product.id },
-        data: { attributes: rest as Prisma.InputJsonValue },
-      });
-    }
+    const linksRemoved = await this.prisma.client.$transaction(
+      async (tx) => {
+        await assertCellStockEmpty(tx, {
+          accountId,
+          storeId,
+          cellId,
+          cellName: cell.name,
+          productId,
+        });
+        const { count } = await tx.productCellLink.deleteMany({
+          where: { accountId, productId, cellId },
+        });
+        if (isHome) {
+          const { __yacheyka: _y, __polka: _p, ...rest } = base;
+          await tx.product.update({
+            where: { id: product.id },
+            data: { attributes: rest as Prisma.InputJsonValue },
+          });
+        }
+        return count;
+      },
+      { isolationLevel: 'Serializable', timeout: 20000 },
+    );
     if (!isHome && linksRemoved === 0) return { unassigned: false };
     return { unassigned: true };
   }

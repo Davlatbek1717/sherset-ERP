@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { PERMISSION_ENTITIES } from './permissions.types.js';
 import { resolveTemplateMatrix } from './role-templates.js';
 import {
   type ExistingPermissionRow,
@@ -21,16 +22,21 @@ import {
  * TASHLAYDI, `update` esa deleteMany+createMany qiladi. Ya'ni «admin qo'lda
  * NO ga tushirgan» katakcha bazada QATOR QOLDIRMAYDI va uni «hech qachon
  * seed qilinmagan» katakchadan qator darajasida AJRATIB BO'LMAYDI.
- * Shuning uchun top-up ikki qavatli qo'riqchi bilan ishlaydi:
- *   (1) mavjud qator hech qachon o'zgartirilmaydi (idempotentlik + tenant tweak),
- *   (2) rolda o'sha ENTITY bo'yicha HECH QANDAY qator bo'lmasa gina qo'shiladi —
- *       ya'ni entity qo'lda sozlangan bo'lsa (birorta qatori bor), butunlay
- *       chetlab o'tiladi.
+ * Shuning uchun top-up BITTA TARKIBIY qo'riqchi + BITTA XULQ qoidasi bilan
+ * ishlaydi:
+ *   · tarkibiy — `TOPUP_ENTITIES` allow-list: undan tashqaridagi entity umuman
+ *     KO'RINMAYDI, ya'ni olib tashlangan ruxsat tiriltirilishi MUMKIN EMAS;
+ *   · xulq — rolda o'sha ENTITY bo'yicha birorta qator BO'LSA, entity butunlay
+ *     chetlab o'tiladi (qo'lda sozlash himoyasi + idempotentlik bir yo'la).
  * Aks holda skript adminning ataylab olib qo'ygan ruxsatini jimgina qaytarardi.
  */
 
-/** Joriy to'lqin — bugungi yagona yangi entity. */
-const WAVE = ['storecell'];
+/**
+ * Joriy to'lqin — PRODUKSIYA ro'yxatining O'ZI import qilinadi, literal
+ * takrorlanmaydi: aks holda testdagi `['storecell']` yashil qolib, kod'dagi
+ * ro'yxat o'zgarsa (yoki xato yozilsa) hech narsa yiqilmasdi.
+ */
+const WAVE = TOPUP_ENTITIES;
 
 /** Rolda `storecell` dan BOSHQA hamma narsa bor — ya'ni eski seed holati. */
 function storekeeperRowsWithoutStorecell(): ExistingPermissionRow[] {
@@ -39,6 +45,46 @@ function storekeeperRowsWithoutStorecell(): ExistingPermissionRow[] {
     .filter((c) => c.entity !== 'storecell')
     .map((c) => ({ entity: c.entity, action: c.action, scope: c.scope }));
 }
+
+/**
+ * ── `TOPUP_ENTITIES` ning O'ZI (review 2026-08-10) ─────────────────────────
+ *
+ * Allow-list — butun skriptning yagona «nima qo'shiladi» manbai, va u JIM
+ * yiqiladigan tur: xato yozilgan slug (`'storecelll'`) shablon matritsasidagi
+ * hech bir entity'ga mos kelmaydi ⇒ funksiya `[]` qaytaradi, skript «0 qator»
+ * deb muvaffaqiyatli tugaydi, rol esa 403 beraveradi. Tip (`PermissionEntity`)
+ * buni kompilyatsiyada tutadi; bu yerdagi tasdiqlar esa ro'yxatning MA'NOSINI
+ * qulflaydi — ro'yxat bo'sh emas, tarkibi haqiqiy entity va u shablonlarda
+ * ishlaydigan (musbat scope beradigan) entity.
+ */
+describe('TOPUP_ENTITIES — joriy to`lqin ro`yxati', () => {
+  it('bo`sh emas — aks holda skript butunlay NO-OP bo`lardi', () => {
+    expect(TOPUP_ENTITIES.length).toBeGreaterThan(0);
+  });
+
+  it('har elementi HAQIQIY PermissionEntity (xato slug jim no-op bo`lmaydi)', () => {
+    for (const e of TOPUP_ENTITIES) expect(PERMISSION_ENTITIES, e).toContain(e);
+  });
+
+  it('takror element yo`q', () => {
+    expect(new Set(TOPUP_ENTITIES).size).toBe(TOPUP_ENTITIES.length);
+  });
+
+  /**
+   * Ro'yxatdagi entity birorta shablonda MUSBAT katakcha bermasa, to'lqin
+   * hech qachon hech kimga qator qo'shmaydi — ya'ni ro'yxat yolg'on. Bu
+   * tasdiq «storecell» degan literal'ni takrorlamaydi: manba — ro'yxatning
+   * o'zi va shablon matritsasi.
+   */
+  it('har elementi kamida bitta shablonda musbat scope beradi', () => {
+    for (const entity of TOPUP_ENTITIES) {
+      const usable = (['storekeeper', 'warehouse_manager'] as const).some((slug) =>
+        resolveTemplateMatrix(slug).some((c) => c.entity === entity && c.scope !== 'NO'),
+      );
+      expect(usable, `${entity} hech bir ombor shablonida musbat emas`).toBe(true);
+    }
+  });
+});
 
 describe('missingTemplateCells — shablon roliga yetishmagan qatorlar', () => {
   it('yetishmagan `storecell` qatorlarini qo`shadi (omborchi)', () => {
