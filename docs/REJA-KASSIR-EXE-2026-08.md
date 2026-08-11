@@ -513,6 +513,105 @@ ustiga `pointer-events: none` qo'yadi va qatorni bosib bo'lmaydi. Shuning uchun:
 - Prod DB'da hamon **test kassirlari va qoldiq 1000** turibdi (11b/11c entry) — qurilma sinovida
   bu ma'lumotlar sun'iy ekanini yodda tut.
 
-### F3 — ☐ hali bajarilmagan
+### F3 — Qobiq klaviaturasi: raqamli layout + kirill · 2026-08-11 · `0dfc6995`
+
+**Holat:** ✅ tugadi (kod + qo'riqchi + gate). **Phase-1: Electron'da UMUMAN ishga tushirilmagan** —
+quyida dalili bilan. Bu fazada exe yasalmadi, deploy yo'q (reja shunday).
+
+**Nima o'zgardi:**
+- Pul/miqdor/telefon maydoniga fokus tushganda endi QWERTY emas, **NUMPAD** chiqadi: kassa tartibi
+  (7-8-9 tepada), tugma 68px, panel markazda va tor. Mezon — `type="number"|"tel"` yoki
+  `inputMode="decimal"|"numeric"|"tel"`. **F2 savat tahrir oynasi aynan `inputMode="decimal"`**
+  ishlatadi, ya'ni F2 ogohlantirgan bog'liqlik yopildi.
+- Harf layoutida **РУС/ABC almashtirgichi**: ЙЦУКЕН + **o'zbek kirilli `ў қ ғ ҳ`** (rus alifbosida
+  yo'q). Ilgari kirill harfini umuman kiritib bo'lmasdi — mijoz nomi/izoh yozilmasdi.
+- **Til tanlovi navigatsiyadan keyin tiklanadi** (`localStorage`): preload har sahifada noldan
+  ishga tushadi, saqlanmasa kassir har o'tishda «РУС» ni qayta bosardi.
+- O'zbek lotini uchun **apostrof `'`** belgilar qatoriga qo'shildi (`o'`, `g'` — ismlar).
+- Shift yorlig'i `ABC` → `⇧` (til tugmasi bilan chalkashmasin). Yorliq va yuboriladigan belgi endi
+  **bitta manbadan**: ilgari kalit tugmaning `textContent` idan qayta o'qilardi (shift holati ikki
+  joyda saqlanardi).
+
+**Fayllar:**
+| Yo'l | Nima qilindi |
+|---|---|
+| `desktop/preload.js` | `installTouchKeyboard()` qayta yozildi: 3 layout jadvali (lotin/kirill/numpad), `render()` bilan layout almashtirish, til-saqlash. +163/−55. Boshqa qismlar (`electronAPI`, `shersetShell`, `installExitGesture`) **tegilmadi** |
+| `apps/web/src/__tests__/desktop-touch-keyboard.test.ts` | **YANGI** (371 satr) — 28 xulq testi |
+| `desktop/main.js` | **O'ZGARMADI** — mavjud `kbd:key` ishlovchisi ('Backspace' + bitta belgi) yangi layoutlarga yetdi, yangi IPC kanali kerak bo'lmadi |
+| `docs/progress.json` | hook o'zi qo'shdi (faqat `generatedAt` vaqt tamg'asi) |
+
+**Qo'riqchi testning uslubi (rejaning §5 «niyatni qulfla» talabi):**
+Bu manba-grep **EMAS**. `desktop/preload.js` happy-dom ichida soxta `electron` moduli bilan
+**haqiqatan yugurtiriladi**, maydon yaratilib `focusin` beriladi, tugma bosiladi va `kbd:key`
+payload'i o'lchanadi. Sabab: grep «kirill bormi?» ga javob beradi, «kirill bosilganda o'sha harf
+ketadimi?» ga emas — F3 ning qiymati esa ikkinchisida. Testlar yorliqqa emas **xulqqa** qaraydi
+(«raqamli maydonda harf tugmasi bo'lmasin», «numpad tugmasi harf tugmasidan baland bo'lsin»).
+
+**Testlar:**
+- `vitest run src/__tests__/desktop-touch-keyboard.test.ts` → **28 passed**
+  - **RED avval o'lchandi**: implementatsiyadan oldin **13 failed | 15 passed**. 15 tasi — eski
+    xulq (K1/K2/K3 shartnomalari) ustidagi regress-qulflar, ular boshidanoq yashil bo'lishi kerak edi.
+  - **Mutatsiya sinovi**: `writeKeyboardLang(lang)` chaqiruvi olib tashlanganda **aynan 1 test**
+    («til tanlovi navigatsiyadan keyin tiklanadi») qizardi — ya'ni bu da'vo yolg'on-yashil emas.
+    Mutant qaytarildi, `node --check` bilan sintaksis tasdiqlandi.
+- Reja talab qilgan qo'riqchilar: `electron-bridge-contract.test.ts` **68 passed** +
+  `kassa-installer-config.test.ts` **30 passed** (o'zgartirilmadi, ikkalasi ham yashil)
+- To'liq web suite → **3568 passed | 26 skipped (3594)**, **250 fayl, 0 failed**
+  (F2 dagi 3540 + shu fayldagi 28)
+
+**Gate:** typecheck ✅ **10/10** · lint:product ✅ **0 error** (849 warning, siyosat bo'yicha ruxsat) ·
+i18n:gate ✅ **9/9** · web vitest ✅ **3568** · `node --check preload.js|main.js` ✅
+
+**Deploy:** ❌ qilinmadi — **reja bo'yicha shunday** (F3 da exe yasalmaydi, chiqishi F4 da).
+Push ham qilinmadi.
+
+**Qabul qilingan qarorlar:**
+1. **`type="tel"` ham numpadga kiritildi** (reja faqat `inputMode="tel"` degan edi) — telefon
+   maydoni har ikki yozuvda ham raqamli, farqlash kassirga hech narsa bermaydi.
+2. **Kirillga o'tish `layout` bilan birga `lang` ni ham o'zgartiradi** — ya'ni til raqamli maydonga
+   o'tib qaytgandan keyin ham saqlanadi (numpad tilni «unutmaydi»).
+3. **Yangi IPC kanali qo'shilmadi.** Til `localStorage` da saqlanadi, main'ga so'ralmaydi: yangi kanal
+   `main.js` bilan ikkinchi shartnoma yaratardi (`electron-bridge-contract` uni tekshiradi). Saqlagich
+   yo'q bo'lsa (`file://` sahifa) — `try/catch` jim lotinga tushadi, klaviatura baribir ishlaydi.
+4. **Panel balandligi (hisoblab chiqilgan, brauzerda O'LCHANMAGAN):** harf layouti
+   5 qator × 50px + 12px padding = **~262px** (ilgari **~302px** — ya'ni pasaydi);
+   numpad 4×72 + 50 + 12 = **~350px** (ilgari yo'q edi). Numpad balandroq, lekin tor va markazda,
+   fokusdagi maydon esa `scrollIntoView({block:'center'})` bilan ko'rinishda qoladi.
+
+**Nima QILINMADI:**
+1. 🔴 **Electron ishga tushirilmadi (reja §6).** Sabab o'lchandi: `desktop/node_modules/electron/`
+   ichida **binar yo'q** — `dist/` katalogi mavjud emas, `path.txt` bo'sh (postinstall yuklab
+   olmagan). Ya'ni `pnpm run dev` bu holatda umuman ishlamaydi. **Yuklab olishga urinmadim**:
+   (a) ~100MB tashqi yuklama, (b) ochilgan oyna kiosk rejimida ekranni egallaydi va bu sessiya
+   interaktiv emas. **«Ishlaydi» deb taxmin qilinmayapti** — hamma da'volar happy-dom o'lchovi.
+2. **Qurilma/brauzer smoke YO'Q.** Numpadni barmoq bilan bosib ko'rilmagan.
+3. **`Enter` tugmasi qo'shilmadi.** Reja so'ramagan; POS qidiruv maydoni Enter bilan ishlasa, kassir
+   uni klaviaturasiz bosa olmaydi (eski holat ham shunday edi — regress emas, qarz).
+4. **`,` (vergul) numpadda yo'q** — faqat `.`. `parseAmountToMinor` verguldi ham tushunadi, lekin
+   kassir uni kirita olmaydi.
+5. **Shift «yopishqoq»**: bitta harfdan keyin o'zi o'chmaydi, kassir `⇧` ni qayta bosadi. Sodda va
+   bashoratli deb qoldirildi.
+6. **`NEXT.md` ga entry yozilmadi** — F3 vazifalar ro'yxatida (F1/F2 dan farqli) yo'q, chunki prodga
+   hech narsa chiqmadi. Hand-off shu hisobotda.
+7. **`main.js` ga tegilmadi** — kerak bo'lmadi.
+
+**Ochiq xavf / F4 ga eslatma:**
+- 🔴 **ENG MUHIM, F4 da BIRINCHI tekshiriladigan narsa: kirill harfi Chromium'gacha yetadimi?**
+  `main.js:598` `sendInputEvent({ type: 'char', keyCode: key })` yuboradi. ASCII uchun bu ishlashi
+  ma'lum (mavjud lotin klaviaturasi shu yo'l bilan ishlaydi), **kirill uchun esa o'lchanmagan** —
+  Electron `keyCode` ni Accelerator nomlariga moslashtiradi va lotin bo'lmagan belgi jim tushib
+  qolishi mumkin. Agar qurilmada kirill bosilganda maydonga hech narsa tushmasa, sabab shu yerda,
+  preload'da emas. Zaxira yo'l: main tomonda `insertText(key)` (`webContents.insertText`) ga o'tish —
+  lekin u React uchun `sendInputEvent` dan zaifroq, shuning uchun **avval o'lchansin**.
+- ⚠️ **`localStorage` izolyatsiyalangan dunyoda** (`sandbox: true` preload) — happy-dom'da ishlaydi,
+  real Electron'da o'lchanmagan. Yiqilsa `try/catch` tutadi: til saqlanmaydi, klaviatura ishlaydi.
+- ⚠️ **PIN ekrani ikki klaviatura ko'rsatishi mumkin:** `components/pos/pos-pin-lock.tsx:112`
+  maydoni `inputMode="numeric"` — unga fokus tushsa qobiq numpadi ham chiqadi, sahifaning O'Z
+  raqamli paneli ustiga. Ilgari bu yerda QWERTY chiqardi (ya'ni regress emas, lekin endi ikki
+  numpad bo'ladi). Qurilmada ko'rilsin; kerak bo'lsa yechim — sahifada `readOnly` maydon.
+- ⚠️ Kirill qatorlari 12 va 14 tugmali — 1280px kенг ekranda tugma ~85px, tor ekranda (1024px)
+  ~70px ga tushadi. Barmoq uchun chegaraviy, lekin o'lchanmagan.
+- F4 uchun arzon va aniq mezon (F2 hisoboti aytgani): monoblokda **savat qatorini ochib, soni/narx
+  maydoniga tegilsin** — QWERTY emas, numpad chiqishi kerak.
 
 ### F4 — ☐ hali bajarilmagan
