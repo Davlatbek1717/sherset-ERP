@@ -1059,7 +1059,7 @@ bilan tekshirildi — begona fayl yo'q.
 - ⚠️ Parallel sessiya P1 (qarz) ustida ishlamoqda — `apps/api/src/modules/debt/*`,
   `debt-payment-dialog.tsx`, `messages/*.json`, `schema.prisma` dirty. Keyingi faza to'liq
   suite'ni yashil ko'rmasa avval o'sha ish tugaganini tekshirsin.
-### P7 — Chop etish o'lchovi: chek TASDIQSIZ, AVTOMATIK chiqishi · 2026-08-11 · `7b969cb1`
+### P7 — Chop etish o'lchovi: chek TASDIQSIZ, AVTOMATIK chiqishi · 2026-08-11 · `dbe8d3b7`
 
 **Holat:** ⚠️ qisman — **ildiz sabab prodda O'LCHANDI va kod tomoni tuzatildi**;
 **qurilmada (monoblok) jonli sinov QILINMADI** — egasi bu sessiyada qatnashmadi, sessiya
