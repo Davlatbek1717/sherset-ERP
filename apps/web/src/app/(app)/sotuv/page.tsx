@@ -52,7 +52,7 @@ import {
   sumCostMinor,
 } from '@moysklad/money';
 import { isCurrencyCode } from '@moysklad/money/currencies';
-import { Badge, Button, Input, formatMoney, useToast } from '@moysklad/ui';
+import { Badge, Button, Input, formatMoney, useConfirm, useToast } from '@moysklad/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   CheckCircle,
@@ -802,6 +802,7 @@ function SalesScreen({
   const tCommon = useTranslations('common');
   const qc = useQueryClient();
   const { toast } = useToast();
+  const { confirm } = useConfirm();
   const { runDestructive } = useDestructiveMutation();
 
   // Tan narx BUTUN sahifada ko'rinadi — setkada ham, savatda ham.
@@ -1278,6 +1279,42 @@ function SalesScreen({
     [runDestructive, qc, session.id, t],
   );
 
+  /**
+   * «Jarayonda» dagi chekni kassirning O'ZI tasdiqlashi (`picking → ready`).
+   *
+   * NEGA KERAK (egasi, 2026-08-11): bu o'tishni faqat omborchi qilardi. Omborchi
+   * belgilamasa — masalan tovarni qo'lma-qo'l berib yuborsa yoki ombor terminali
+   * band bo'lsa — chek «Jarayonda» da abadiy osilib qolardi: to'lash mumkin
+   * emas (to'lov faqat `ready` dan), bekor qilishdan boshqa yo'l yo'q edi.
+   *
+   * `runDestructive` ATAYLAB ishlatilmadi — u qizil «o'chirish» ohangini
+   * majburlaydi va bu ijobiy amal. Lekin tasdiqsiz ham qo'yilmadi: «Bekor
+   * qilish» tugmasi yonida turadi va noto'g'ri bosilsa kassir yig'ilmagan
+   * tovarga pul olib qo'yardi.
+   */
+  const markReady = useCallback(
+    async (saleId: string, saleName: string) => {
+      const ok = await confirm({
+        title: t('mark_ready_confirm', { name: saleName }),
+        description: t('mark_ready_hint'),
+        confirmLabel: t('mark_ready'),
+        cancelLabel: tCommon('cancel'),
+      });
+      if (!ok) return;
+      try {
+        await api.post(`/retail-sales/${saleId}/mark-ready`, {});
+        toast.success(t('mark_ready_success'));
+        qc.invalidateQueries({ queryKey: ['retail-sales-ready', session.id] });
+        qc.invalidateQueries({ queryKey: ['retail-sales-picking', session.id] });
+      } catch (e) {
+        // Server rad etsa (masalan omborchi allaqachon holatni o'zgartirgan)
+        // xabar KASSIRGA ko'rinsin — jim yutilsa tugma «ishlamayapti» bo'lardi.
+        toast.error(e instanceof Error ? e.message : t('mark_ready_error'));
+      }
+    },
+    [confirm, toast, qc, session.id, t, tCommon],
+  );
+
   // Step 2: Pay a ready sale (after omborchi marks tayyor)
   const payReadySaleMut = useMutation({
     mutationFn: async (payment: {
@@ -1653,6 +1690,14 @@ function SalesScreen({
                             className="flex h-8 shrink-0 items-center rounded-lg border border-amber-300 px-3 text-xs font-semibold text-amber-800 transition-all hover:bg-amber-100 active:scale-95"
                           >
                             {t('cancel_sale')}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => markReady(s.id, s.name)}
+                            className="flex h-8 shrink-0 items-center gap-1 rounded-lg bg-amber-500 px-3 text-xs font-bold text-white transition-all hover:bg-amber-600 active:scale-95"
+                          >
+                            <CheckCircle className="h-3.5 w-3.5" />
+                            {t('mark_ready')}
                           </button>
                         </div>
                       ))}
