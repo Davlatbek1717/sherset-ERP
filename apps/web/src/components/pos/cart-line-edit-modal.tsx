@@ -16,14 +16,10 @@
  * manba. Ikkinchi nusxa yozilsa oynadagi raqam savatdagidan farq qilardi.
  */
 
-import {
-  cartLineMarkdownMinor,
-  cartLineRevenueMinor,
-  normalizeQtyDecimal,
-} from '@/lib/pos/cart-math';
+import { cartLineRevenueMinor, normalizeQtyDecimal } from '@/lib/pos/cart-math';
 import { parseAmountToMinor } from '@/lib/pos/parse-amount';
 import { SHOW_MARGIN_ON_SCREEN } from '@/lib/pos/ui-flags';
-import { classifyPrice } from '@moysklad/money';
+import { classifyPrice, priceFloorMinor } from '@moysklad/money';
 import type { CurrencyCode } from '@moysklad/money/currencies';
 import { formatMoney } from '@moysklad/ui';
 import * as Dialog from '@radix-ui/react-dialog';
@@ -158,20 +154,41 @@ export function CartLineEditModal({
   // FE-08/FE-09: yagona pul-parse. Bo'sh/buzuq kiritma → `0n`, ESKI narx EMAS
   // (K-3 shartnomasi: ko'ringan narsa = yuboriladigan narsa).
   const priceMinor = parseAmountToMinor(priceInput, currency);
+  /**
+   * P12 — NARX POLI (egasining qarori 2026-08-11/12). Pol = min(tan narx, karta
+   * chakana narxi); tan narx NULL bo'lsa pol YO'Q (NULL ≠ 0). Qiymat
+   * `@moysklad/money` dan — server `post()` AYNI funksiyani o'qiydi, aks holda
+   * ekran «bo'ladi» degan chekni server rad etardi.
+   */
+  const floorMinor = priceFloorMinor({
+    costMinor: line.costMinor,
+    basePriceMinor: line.basePriceMinor,
+  });
+  const belowFloor = floorMinor != null && priceMinor < floorMinor;
+  /**
+   * 0-narx TAQIQI (egasining qarori 2026-08-12) — poldan MUSTAQIL: prodda
+   * 488 tovarda karta narxi umuman yo'q va ularning ko'pida tan narx ham NULL
+   * (pol yo'q), ya'ni faqat polga tayansak 0 so'mlik qator jimgina o'tib
+   * ketardi. Server ham shu qoidani qo'llaydi (`price-policy-guard.ts`).
+   */
+  const noPrice = priceMinor <= 0n;
+  const blocked = (belowFloor || noPrice) && quantity !== '0';
+  // Tasma endi POLga nisbatan (tan narxga emas): karta narxining o'zi tan
+  // narxdan past bo'lgan 46 tovarda (prodda o'lchangan) o'z narxida sotish
+  // ruxsat etilgan — ular qizil «zarar» deb belgilanmasligi kerak.
   const band = classifyPrice({
     priceMinor,
-    costMinor: line.costMinor,
+    costMinor: floorMinor,
     wholesaleMinor: line.wholesaleMinor,
   });
   const totalMinor = cartLineRevenueMinor({ quantity, priceMinor });
-  const markdownMinor = cartLineMarkdownMinor({
-    basePriceMinor: line.basePriceMinor,
-    priceMinor,
-    quantity,
-  });
 
   const handleSave = () => {
     if (readOnly) return;
+    // Poldan past yoki 0 narx SAQLANMAYDI — bu ogohlantirish emas, qulf. Soni 0
+    // (qatorni o'chirish) bundan mustasno: chiqish yo'li berkilmasligi kerak,
+    // aks holda noto'g'ri narxli qatorni oynadan olib tashlab bo'lmasdi.
+    if (blocked) return;
     // Soni 0 ⇒ qator o'chadi — savatdagi «−» tugmasi bilan AYNI xulq
     // (`addQtyDecimal` manfiy natijani `'0'` ga qisadi, chaqiruvchi qatorni
     // olib tashlaydi). Aks holda savatda 0 dona qator qolib, chek unga
@@ -317,12 +334,23 @@ export function CartLineEditModal({
                     <span className="tabular-nums">{formatMoney(line.wholesaleMinor)}</span>
                   </span>
                 )}
-                {band === 'loss' && (
+                {/* 🔴 P12 — ZARAR belgisi va «tushirildi» summasi ATAYLAB YO'Q.
+                    Egasi (2026-08-11, monoblokda) ularni pastki chegara bilan
+                    almashtirdi: kassirga «qancha yo'qotding» emas, «qayergacha
+                    tushirsa bo'ladi» kerak. Foyda RAQAMI hamon yashirin
+                    (`ui-flags.ts`) — faqat chegara ko'rinadi, egasi buni bilib
+                    tanladi. */}
+                {floorMinor != null && (
                   <span
-                    data-test-id="pos-line-edit-loss"
-                    className="rounded bg-red-600 px-1.5 py-0.5 font-bold text-[10px] text-white uppercase tracking-wide"
+                    data-test-id="pos-line-edit-floor"
+                    className={
+                      belowFloor
+                        ? 'font-bold text-red-700'
+                        : 'font-semibold text-[var(--ms-text-primary)]'
+                    }
                   >
-                    {t('cart_loss')}
+                    {t('cart_floor')}:{' '}
+                    <span className="tabular-nums">{formatMoney(floorMinor)}</span>
                   </span>
                 )}
                 {band === 'below-wholesale' && (
@@ -330,15 +358,24 @@ export function CartLineEditModal({
                     {t('cart_below_wholesale')}
                   </span>
                 )}
-                {markdownMinor != null && markdownMinor > 0n && (
-                  <span
-                    data-test-id="pos-line-edit-markdown"
-                    className="text-[var(--ms-text-muted)] tabular-nums"
-                  >
-                    −{formatMoney(markdownMinor)} {t('cart_markdown')}
-                  </span>
-                )}
               </div>
+              {noPrice ? (
+                <div
+                  data-test-id="pos-line-edit-no-price"
+                  className="mt-2 rounded-lg bg-red-600 px-3 py-2 font-bold text-sm text-white"
+                >
+                  {t('cart_no_price')}
+                </div>
+              ) : (
+                belowFloor && (
+                  <div
+                    data-test-id="pos-line-edit-floor-blocked"
+                    className="mt-2 rounded-lg bg-red-600 px-3 py-2 font-bold text-sm text-white"
+                  >
+                    {t('cart_floor_blocked')}
+                  </div>
+                )
+              )}
             </div>
 
             {readOnly ? (
@@ -401,11 +438,20 @@ export function CartLineEditModal({
               >
                 {tCommon('delete')}
               </button>
+              {/* Poldan past narxda tugma O'CHIQ: bosilib «hech nima bo'lmadi»
+                  holati kassirni chalg'itardi — sabab tepada qizil yozuv bilan
+                  turadi. `disabled` EMAS, chunki soni 0 bo'lsa (qatorni
+                  o'chirish) bosilishi kerak — qaror `handleSave` ichida. */}
               <button
                 type="button"
                 data-test-id="pos-line-edit-save"
                 onClick={handleSave}
-                className="h-14 flex-1 rounded-xl bg-emerald-500 font-bold text-base text-white shadow-md hover:bg-emerald-600 active:scale-[0.99]"
+                aria-disabled={blocked}
+                className={`h-14 flex-1 rounded-xl font-bold text-base text-white shadow-md active:scale-[0.99] ${
+                  blocked
+                    ? 'cursor-not-allowed bg-[var(--ms-text-muted)] opacity-60'
+                    : 'bg-emerald-500 hover:bg-emerald-600'
+                }`}
               >
                 {tCommon('save')}
               </button>

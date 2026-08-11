@@ -20,6 +20,12 @@ export {
 } from './position.js';
 export { amountInWords, type WordsLocale } from './amount-in-words.js';
 export {
+  lineFloorBreach,
+  priceFloorMinor,
+  type LineFloorBreach,
+  type LineFloorInput,
+} from './price-floor.js';
+export {
   classifyPrice,
   formatPercent,
   lineProfitMinor,

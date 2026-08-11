@@ -9,8 +9,9 @@
  *
  *  🔴 miqdor SATR bo'lib qoladi (`Decimal(20,6)`) — `BigInt(1.5)` RangeError
  *     otib butun POS ni oq ekranga aylantirardi (F8 audit sabog'i);
- *  🔴 narx BO'SH qoldirilsa `0n`, ESKI narx EMAS (K-3 shartnomasi:
- *     ko'ringan narsa = yuboriladigan narsa);
+ *  🔴 narx BO'SH/BUZUQ qoldirilsa ESKI narx JIMGINA KETMAYDI (K-3 shartnomasi:
+ *     ko'ringan narsa = yuboriladigan narsa). P12 dan keyin bunday qator
+ *     umuman saqlanmaydi — 0 narx taqiqlangan, ya'ni shartnoma kuchaydi;
  *  🔴 soni 0 ga tushsa qator O'CHADI (savatdagi ± bilan bir xil xulq);
  *  🔴 zakazga bog'langan (qulflangan) savatda oyna FAQAT KO'RISH —
  *     `payingOrderId` qulfi kassa tomonidan chetlab o'tilmasin;
@@ -19,7 +20,7 @@
  *    ketmasin.
  */
 
-import { CartLineEditModal } from '@/components/pos/cart-line-edit-modal';
+import { CartLineEditModal, type CartLineEditTarget } from '@/components/pos/cart-line-edit-modal';
 import { renderWithProviders, screen, userEvent, within } from '@/test-utils';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -29,7 +30,7 @@ function norm(text: string | null | undefined): string {
 }
 
 /** Kartochka: sotuv 10 000, optom chegara 8 000, tan narx 6 000 (so'mda). */
-const LINE = {
+const LINE: CartLineEditTarget = {
   productId: 'p-1',
   productName: 'Kabel 2×2.5',
   quantity: '2',
@@ -144,7 +145,7 @@ describe('Savat qatori tahrir oynasi — numpad', () => {
 });
 
 describe('Savat qatori tahrir oynasi — shartnomalar', () => {
-  it('🔴 narx BO‘SHATILSA 0n saqlanadi (eski narx KETMAYDI — K-3)', async () => {
+  it('🔴 narx BO‘SHATILSA saqlanmaydi va eski narx JIMGINA ketmaydi (K-3 + P12)', async () => {
     const user = userEvent.setup();
     const { onSave } = open();
 
@@ -152,10 +153,13 @@ describe('Savat qatori tahrir oynasi — shartnomalar', () => {
     await tap(user, '⌫', '⌫', '⌫', '⌫', '⌫');
     await user.click(screen.getByTestId('pos-line-edit-save'));
 
-    expect(onSave).toHaveBeenCalledWith({ quantity: '2', priceStr: '', priceMinor: 0n });
+    // Ilgari bu yerda `0n` SAQLANARDI (K-3: ko'ringan narsa yuboriladi).
+    // P12 dan keyin 0 narx umuman qabul qilinmaydi — muhimi o'zgarmadi:
+    // 10 000 so'mlik ESKI narx jimgina yuborilmaydi.
+    expect(onSave).not.toHaveBeenCalled();
   });
 
-  it('🔴 narxga BUZUQ kiritma (12abc) — 0n, jimgina 12 EMAS', async () => {
+  it('🔴 narxga BUZUQ kiritma (12abc) — 0n bo‘lib qoladi va saqlanmaydi', async () => {
     const user = userEvent.setup();
     const { onSave } = open();
 
@@ -165,7 +169,22 @@ describe('Savat qatori tahrir oynasi — shartnomalar', () => {
     await user.type(input, '12abc');
     await user.click(screen.getByTestId('pos-line-edit-save'));
 
-    expect(onSave).toHaveBeenCalledWith({ quantity: '2', priceStr: '12abc', priceMinor: 0n });
+    // «12abc» → 12 so'm deb JIMGINA o'qilmaydi (parse 0n beradi), 0 narx esa
+    // saqlanmaydi.
+    expect(onSave).not.toHaveBeenCalled();
+  });
+
+  it('🔴 P12 — poli YO‘Q tovarda ham 0 narx saqlanmaydi (0-narx taqiqi)', async () => {
+    const user = userEvent.setup();
+    // Tan narx NULL ⇒ pol yo'q; taqiq baribir kuchda (server ham rad etadi).
+    const { onSave } = open({ costMinor: null, basePriceMinor: null });
+
+    await user.click(screen.getByTestId('pos-line-edit-price'));
+    await tap(user, '⌫', '⌫', '⌫', '⌫', '⌫');
+    await user.click(screen.getByTestId('pos-line-edit-save'));
+
+    expect(onSave).not.toHaveBeenCalled();
+    expect(screen.getByTestId('pos-line-edit-no-price')).toBeInTheDocument();
   });
 
   it('🔴 soni 0 ga tushsa «Saqlash» qatorni O‘CHIRADI', async () => {
@@ -209,7 +228,7 @@ describe('Savat qatori tahrir oynasi — narx tasmalari JONLI', () => {
     expect(screen.queryByTestId('pos-line-edit-markdown')).not.toBeInTheDocument();
   });
 
-  it('optomdan past narx — sariq tasma + «tushirildi» summasi darhol', async () => {
+  it('optomdan past narx — sariq tasma QOLADI (optom ≥ tan: bu oraliqda sotish mumkin)', async () => {
     const user = userEvent.setup();
     open();
 
@@ -220,19 +239,23 @@ describe('Savat qatori tahrir oynasi — narx tasmalari JONLI', () => {
       'data-price-band',
       'below-wholesale',
     );
-    // Kartochka narxidan 3 000 pastga tushirilgan — soniga ko'paytirilgan (×2).
-    expect(norm(screen.getByTestId('pos-line-edit-markdown').textContent)).toContain('6 000,00');
+    // P12: «−6 000 tushirildi» summasi endi KO'RSATILMAYDI (egasining qarori) —
+    // o'rnida pastki chegara turadi.
+    expect(screen.queryByTestId('pos-line-edit-markdown')).not.toBeInTheDocument();
+    expect(norm(screen.getByTestId('pos-line-edit-floor').textContent)).toContain('6 000,00');
   });
 
-  it('tan narxdan past narx — ZARAR tasmasi', async () => {
+  it('🔴 P12 — poldan past narxda ZARAR tasmasi ko‘rsatilmaydi (egasining qarori)', async () => {
     const user = userEvent.setup();
     open();
 
     await user.click(screen.getByTestId('pos-line-edit-price'));
     await tap(user, '5', '0', '0', '0');
 
+    // Tasma qizil qoladi (kassir ko'radi), lekin «ZARAR −X tushirildi» yozuvi
+    // YO'Q: egasi o'rniga faqat pastki chegarani ko'rsatishga qaror qildi.
     expect(screen.getByTestId('pos-line-edit')).toHaveAttribute('data-price-band', 'loss');
-    expect(screen.getByTestId('pos-line-edit-loss')).toBeInTheDocument();
+    expect(screen.queryByTestId('pos-line-edit-loss')).not.toBeInTheDocument();
   });
 
   it('jami summa soni bilan JONLI o‘zgaradi', async () => {
@@ -241,6 +264,73 @@ describe('Savat qatori tahrir oynasi — narx tasmalari JONLI', () => {
 
     await tap(user, '3');
     expect(norm(screen.getByTestId('pos-line-edit-total').textContent)).toContain('30 000,00');
+  });
+});
+
+/**
+ * P12 — NARX POLI (egasining qarori, 2026-08-11/12).
+ *
+ * Oynada ZARAR belgisi o'rniga **«Minimal: X»** turadi (X = pol) va poldan past
+ * narxni **saqlab bo'lmaydi** — bu ogohlantirish emas, QULF. Pol = min(tan narx,
+ * karta chakana narxi); tan narx NULL bo'lsa pol YO'Q (NULL ≠ 0).
+ *
+ * Ekran qulfi himoyaning FAQAT ko'rinadigan qismi — haqiqiy chegara serverda
+ * (`price-policy-guard.ts`). Ikkalasi bitta manbadan (`@moysklad/money`) o'qiydi.
+ */
+describe('Savat qatori tahrir oynasi — narx POLI (P12)', () => {
+  it('«Minimal» pol sifatida tan narxni ko‘rsatadi', () => {
+    open();
+    expect(norm(screen.getByTestId('pos-line-edit-floor').textContent)).toContain('6 000,00');
+  });
+
+  it('tan narx YO‘Q bo‘lsa «Minimal» ko‘rsatilmaydi — pol yo‘q (NULL ≠ 0)', () => {
+    open({ costMinor: null });
+    expect(screen.queryByTestId('pos-line-edit-floor')).not.toBeInTheDocument();
+  });
+
+  it('karta narxi tan narxdan past bo‘lsa pol = karta narxi (46 tovar holati)', () => {
+    // Prod: chakana 3 500 < tan 24 500 ⇒ karta narxida sotish mumkin bo'lib qoladi.
+    open({
+      costMinor: 2_450_000n,
+      basePriceMinor: 350_000n,
+      priceMinor: 350_000n,
+      priceStr: '3500',
+    });
+    expect(norm(screen.getByTestId('pos-line-edit-floor').textContent)).toContain('3 500,00');
+    expect(screen.queryByTestId('pos-line-edit-floor-blocked')).not.toBeInTheDocument();
+  });
+
+  it('🔴 poldan past narx SAQLANMAYDI — sabab yoziladi', async () => {
+    const user = userEvent.setup();
+    const { onSave } = open();
+
+    await user.click(screen.getByTestId('pos-line-edit-price'));
+    await tap(user, '5', '9', '9', '9'); // 5 999 < pol 6 000
+    await user.click(screen.getByTestId('pos-line-edit-save'));
+
+    expect(onSave).not.toHaveBeenCalled();
+    expect(screen.getByTestId('pos-line-edit-floor-blocked')).toBeInTheDocument();
+  });
+
+  it('polga TENG narx saqlanadi — pol o‘zi ruxsat etilgan', async () => {
+    const user = userEvent.setup();
+    const { onSave } = open();
+
+    await user.click(screen.getByTestId('pos-line-edit-price'));
+    await tap(user, '6', '0', '0', '0');
+    await user.click(screen.getByTestId('pos-line-edit-save'));
+
+    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ priceMinor: 600_000n }));
+  });
+
+  it('poldan past narxda ham soni 0 bo‘lsa qator O‘CHADI — chiqish yo‘li berkilmaydi', async () => {
+    const user = userEvent.setup();
+    const { onRemove } = open({ priceMinor: 100_000n, priceStr: '1000' });
+
+    await tap(user, '0'); // soni = 0
+    await user.click(screen.getByTestId('pos-line-edit-save'));
+
+    expect(onRemove).toHaveBeenCalledTimes(1);
   });
 });
 

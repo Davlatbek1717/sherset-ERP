@@ -280,10 +280,12 @@ describe('RetailSaleService.post — CAS state guard', () => {
             store: { allowNegativeStock: true },
             cashDesk: { currency: 'UZS' },
           },
+          // `priceMinor` sxemada NOT NULL — P12 narx siyosati (0-narx taqiqi)
+          // uni o'qiydi, shuning uchun dublyor ham real qator shaklida turadi.
           positions: [
-            { id: 'pos-1', productId: 'prod-1', quantity: 2 },
-            { id: 'pos-2', productId: null, quantity: 1 }, // service line — skip
-            { id: 'pos-3', productId: 'prod-2', quantity: 5 },
+            { id: 'pos-1', productId: 'prod-1', quantity: 2, priceMinor: 100_000n },
+            { id: 'pos-2', productId: null, quantity: 1, priceMinor: 100_000n }, // service line — skip
+            { id: 'pos-3', productId: 'prod-2', quantity: 5, priceMinor: 100_000n },
           ],
         }),
       },

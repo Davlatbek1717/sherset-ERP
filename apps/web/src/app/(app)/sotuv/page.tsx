@@ -57,7 +57,14 @@ import type {
   ListEnvelope as ListResponse,
   PosProductRow as ProductRow,
 } from '@moysklad/contracts';
-import { Money, classifyPrice, formatPercent, marginPercent } from '@moysklad/money';
+import {
+  Money,
+  classifyPrice,
+  formatPercent,
+  lineFloorBreach,
+  marginPercent,
+  priceFloorMinor,
+} from '@moysklad/money';
 import { isCurrencyCode } from '@moysklad/money/currencies';
 import { Badge, Button, Input, formatMoney, useConfirm, useToast } from '@moysklad/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -1042,6 +1049,19 @@ function SalesScreen({
     queryKey: ['products-sotuv', search],
     queryFn: () =>
       api.get<ListResponse<ProductRow>>(`/products?search=${encodeURIComponent(search)}&limit=48`),
+    /**
+     * P12 — TOVAR KARTASI → POS zanjiri. Kassa ekrani kun bo'yi OCHIQ turadi
+     * (kiosk), global sozlama esa `staleTime: 30s` + `refetchOnWindowFocus:
+     * false` — ya'ni so'rov qayta yugurmasdi va egasi kartada narxni
+     * o'zgartirsa POS uni faqat sahifa qayta yuklangandan (yoki qidiruv matni
+     * o'zgargandan) keyin ko'rardi. Narx poli shu narxlarga tayanadi, ya'ni
+     * eskirgan kesh «minimal» ni ham eskirtirardi.
+     *
+     * 48 qatorlik so'rov — daqiqada bir marta arzon; savatga ta'sir qilmaydi
+     * (savat qatorlari o'z nusxasini tashiydi).
+     */
+    refetchInterval: 60_000,
+    refetchOnWindowFocus: true,
   });
 
   interface SaleRow {
@@ -1167,6 +1187,38 @@ function SalesScreen({
   // varianti (u `bigint` miqdor talab qiladi, ya'ni 1.5 kg ni ifodalay olmaydi).
   // `complete` shartnomasi o'zgarmagan: NULL tan narx qo'shilmaydi va jami
   // «to'liq emas» deb belgilanadi (NULL ≠ 0).
+  /**
+   * P12 — savatda narx siyosati buzilgan qator bormi (egasining qarori
+   * 2026-08-11/12): (a) narxsiz qator — prodda 488 tovar narxsiz, savatga
+   * tushsa 0 so'mga ketardi; (b) narx poli — chek chegirmasi qo'llangandan
+   * KEYIN ham qator poldan past bo'lsa chek yuborilmaydi (chegirma jimgina
+   * qisilmaydi — egasi shu variantni tanladi).
+   *
+   * 🔴 Bu ekran qulfi HIMOYA EMAS, faqat kassirni erta ogohlantirish: haqiqiy
+   * chegara serverda (`price-policy-guard.ts`), va ikkalasi ham bitta
+   * `@moysklad/money` funksiyasini o'qiydi.
+   *
+   * Zakazga bog'langan (qulflangan) savat CHETLAB o'tiladi: u yerda narx zakaz
+   * hujjatining ishi, kassir uni tuzata olmaydi — tugmani o'chirish uni chiqish
+   * yo'lisiz qoldirardi. Bunday chekni server rad etadi va sabab ko'rinadi.
+   */
+  const pricePolicyBlock = cartLocked
+    ? null
+    : (cart.find((l) => l.priceMinor <= 0n) ??
+      cart.find(
+        (l) =>
+          lineFloorBreach({
+            quantity: normalizeQtyDecimal(l.quantity),
+            priceMinor: l.priceMinor,
+            discount: String(discountPct),
+            floorMinor: priceFloorMinor({
+              costMinor: l.costMinor,
+              basePriceMinor: l.basePriceMinor,
+            }),
+          }) != null,
+      ) ??
+      null);
+
   const cartCost = cartCostMinor(cart);
   // Foyda asosi = kassa HAQIQATAN oladigan pul. Mavjud chekni to'layotgan
   // bo'lsak (omborchidan qaytgan «Tayyor» chek) — bu serverning o'z `sumMinor`i,
@@ -2497,9 +2549,17 @@ function SalesScreen({
                     // the cashier typed (the cart-level discount is a separate,
                     // footer-level figure), so editing the price moves this number
                     // immediately and visibly.
+                    // P12 — tasma POLga nisbatan (tan narxga emas): karta
+                    // narxining o'zi tan narxdan past bo'lgan tovarlarda
+                    // (prodda 46 ta) o'z narxida sotish RUXSAT etilgan, ya'ni
+                    // ularni qizil «zarar» deb belgilash yolg'on signal edi.
+                    const lineFloor = priceFloorMinor({
+                      costMinor: line.costMinor,
+                      basePriceMinor: line.basePriceMinor,
+                    });
                     const band = classifyPrice({
                       priceMinor: line.priceMinor,
-                      costMinor: line.costMinor,
+                      costMinor: lineFloor,
                       wholesaleMinor: line.wholesaleMinor,
                     });
                     // 🔴 Ilgari `BigInt(line.quantity)` edi — kasr miqdorda
@@ -2663,6 +2723,17 @@ function SalesScreen({
 
                         {/* Qator 3: chegara ogohlantirishi + qator foydasi */}
                         <div className="mt-1 flex items-center gap-2 text-xs">
+                          {/* P12 — narxsiz qator JIM qolmaydi: prodda 488 tovarda
+                              chakana narx yo'q va ular savatga 0 so'm bilan
+                              tushardi. Chek bunday qator bilan yuborilmaydi. */}
+                          {line.priceMinor <= 0n && (
+                            <span
+                              data-test-id="sotuv-cart-no-price"
+                              className="rounded bg-red-600 px-1.5 py-0.5 font-bold text-[10px] text-white"
+                            >
+                              {t('cart_no_price')}
+                            </span>
+                          )}
                           {band === 'loss' && (
                             <span
                               data-test-id="sotuv-cart-loss"
@@ -2824,11 +2895,26 @@ function SalesScreen({
                 )}
               </div>
 
+              {/* P12 — sabab tugmadan OLDIN: kassir nega yubora olmayotganini
+                  ko'rmasa, o'chgan tugmani nosozlik deb o'ylardi. */}
+              {pricePolicyBlock != null && (
+                <div
+                  data-test-id="sotuv-price-blocked"
+                  className="mb-2 rounded-xl bg-red-600 px-3 py-2 font-bold text-sm text-white"
+                >
+                  {pricePolicyBlock.priceMinor <= 0n
+                    ? `${pricePolicyBlock.productName}: ${t('cart_no_price')}`
+                    : `${pricePolicyBlock.productName}: ${t('cart_floor_blocked')}`}
+                </div>
+              )}
+
               {/* Omborchiga yuborish */}
               <button
                 type="button"
                 onClick={() => sendToPickingMut.mutate()}
-                disabled={cart.length === 0 || sendToPickingMut.isPending}
+                disabled={
+                  cart.length === 0 || sendToPickingMut.isPending || pricePolicyBlock != null
+                }
                 data-test-id="sotuv-pay"
                 className="flex h-14 w-full items-center justify-center gap-2 rounded-2xl bg-emerald-500 font-semibold text-base text-white shadow-lg transition-all hover:bg-emerald-600 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40"
               >

@@ -58,11 +58,14 @@ async function addFirstProduct(user: ReturnType<typeof userEvent.setup>) {
 }
 
 /**
- * Qator narxini o'zgartiradi. 2026-08-11 dan beri yagona yo'l — tahrir oynasi
- * (qatordagi input olib tashlandi, narxni bosish oynani ochadi). K-3
- * shartnomasi o'zgarmadi: parse bo'lmagan kiritma → `0n`, eski narx EMAS.
+ * Qator narxini o'zgartirishga URINADI. 2026-08-11 dan beri yagona yo'l —
+ * tahrir oynasi (qatordagi input olib tashlandi, narxni bosish oynani ochadi).
+ *
+ * P12 dan keyin urinish RAD ETILISHI mumkin (0 narx yoki poldan past), shuning
+ * uchun yordamchi oynaning yopilishini KUTMAYDI — natijani chaqiruvchi test
+ * o'zi tekshiradi.
  */
-async function setPrice(
+async function tryPrice(
   user: ReturnType<typeof userEvent.setup>,
   line: HTMLElement,
   value: string,
@@ -74,63 +77,59 @@ async function setPrice(
   await user.clear(input);
   if (value !== '') await user.type(input, value);
   await user.click(within(modal).getByTestId('pos-line-edit-save'));
-  await waitFor(() => expect(screen.queryByTestId('pos-line-edit')).not.toBeInTheDocument());
 }
 
 // ── K-3: parse bo'lmagan narx = 0, ESKI narx EMAS ───────────────────────────
 
 describe('K-3 — narx maydoni parse bo‘lmasa qator narxi 0 bo‘ladi', () => {
-  it('maydon BO‘SHATILSA — qator summasi 0, jami 0, ZARAR tasmasi ko‘rinadi', async () => {
+  it('maydon BO‘SHATILSA — 0 narx QABUL QILINMAYDI, savatdagi narx o‘zgarmaydi', async () => {
     const user = userEvent.setup();
     renderWithProviders(<SotuvPage />);
 
     const line = await addFirstProduct(user);
-    await setPrice(user, line, '');
+    await tryPrice(user, line, '');
 
+    // P12: oyna ochiq qoladi va sababni yozadi (ilgari 0 narx savatga tushardi).
+    expect(screen.getByTestId('pos-line-edit-no-price')).toBeInTheDocument();
+    // K-3 mohiyati saqlanadi: maydonda ko'ringan narsa (bo'sh) jimgina ESKI
+    // narxga aylanmaydi — u shunchaki saqlanmaydi, savat qatori tegilmaydi.
     const after = screen.getByTestId('sotuv-cart-line');
-    expect(norm(within(after).getByTestId('sotuv-cart-price-edit').textContent)).toBe('0,00 сум');
-    // Qator summasi 0 — ekranda ko'ringan bo'sh narx aynan 0 deb hisoblanadi;
-    // «tushirildi» yorlig'i kartochka narxidan TO'LIQ 10 000 pasayishni ko'rsatadi.
-    expect(norm(after.textContent)).toContain('Narx:0,00 сум');
-    expect(norm(within(after).getByTestId('sotuv-cart-markdown').textContent)).toBe(
-      '−10 000,00 сум tushirildi',
-    );
-    // 0 narx tan narxdan past — kassir buni ZARAR tasmasi orqali darhol ko'radi.
-    expect(within(after).getByTestId('sotuv-cart-loss')).toBeInTheDocument();
-    // Footer jami ham 0 — footer bilan qator bir manbadan gapiradi.
-    expect(norm(screen.getByTitle('Chegirma uchun ikki marta bosing').textContent)).toContain(
-      '0,00 сум',
+    expect(norm(within(after).getByTestId('sotuv-cart-price-edit').textContent)).toBe(
+      '10 000,00 сум',
     );
   });
 
-  it('bo‘sh narx bilan rasmiylashtirishga AYNAN 0 ketadi (eski narx emas)', async () => {
+  it('bo‘sh narx urinishidan keyin rasmiylashtirishga ESKI narx ketadi, 0 EMAS', async () => {
     const user = userEvent.setup();
     renderWithProviders(<SotuvPage />);
 
     const line = await addFirstProduct(user);
-    await setPrice(user, line, '');
+    await tryPrice(user, line, '');
+    await user.click(screen.getByTestId('pos-line-edit-close'));
     await user.click(screen.getByTestId('sotuv-pay'));
 
     await waitFor(() => expect(api.post).toHaveBeenCalled());
     const [, body] = vi.mocked(api.post).mock.calls[0] as [string, { positions: unknown[] }];
+    // 🔴 Muhimi: serverga 0 narx HECH QACHON ketmaydi (P12 taqiqi), va savat
+    // qatori kassir ko'rgan narxni tashiydi.
     expect(body.positions).toEqual([
-      { productId: 'p-1', quantity: '1', priceMinor: '0', discount: '0' },
+      { productId: 'p-1', quantity: '1', priceMinor: '1000000', discount: '0' },
     ]);
   });
 
-  it('HARF yozilsa ham narx 0 bo‘ladi (buzuq kiritma eski narxni yashirmaydi)', async () => {
+  it('HARF yozilsa narx jimgina o‘qilmaydi va qabul ham qilinmaydi', async () => {
     const user = userEvent.setup();
     renderWithProviders(<SotuvPage />);
 
     const line = await addFirstProduct(user);
-    await setPrice(user, line, 'abc');
+    await tryPrice(user, line, 'abc');
 
+    // «abc» → 0 (parse yagona: `parseAmountToMinor`), 0 esa qabul qilinmaydi.
+    expect(screen.getByTestId('pos-line-edit-no-price')).toBeInTheDocument();
     const after = screen.getByTestId('sotuv-cart-line');
-    expect(norm(within(after).getByTestId('sotuv-cart-price-edit').textContent)).toBe('0,00 сум');
-    // Foyda RAQAMI endi ekranda ko'rsatilmaydi (egasining qarori) — buzuq
-    // kiritmani ZARAR tasmasi ochib beradi.
-    expect(within(after).getByTestId('sotuv-cart-loss')).toBeInTheDocument();
-    expect(within(after).queryByTestId('sotuv-cart-profit')).not.toBeInTheDocument();
+    expect(norm(within(after).getByTestId('sotuv-cart-price-edit').textContent)).toBe(
+      '10 000,00 сум',
+    );
   });
 });
 

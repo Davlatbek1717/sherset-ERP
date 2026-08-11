@@ -75,6 +75,24 @@ async function setPrice(
   await waitFor(() => expect(screen.queryByTestId('pos-line-edit')).not.toBeInTheDocument());
 }
 
+/**
+ * Narx qo'yishga URINADI, lekin oynaning yopilishini kutmaydi — P12 dan keyin
+ * 0 narx va poldan past narx RAD etiladi (oyna ochiq qoladi, sabab yoziladi).
+ */
+async function tryPrice(
+  user: ReturnType<typeof userEvent.setup>,
+  line: HTMLElement,
+  value: string,
+) {
+  await user.click(within(line).getByTestId('sotuv-cart-price-edit'));
+  const modal = await screen.findByTestId('pos-line-edit');
+  await user.click(within(modal).getByTestId('pos-line-edit-price'));
+  const input = within(modal).getByTestId('pos-line-edit-input');
+  await user.clear(input);
+  if (value !== '') await user.type(input, value);
+  await user.click(within(modal).getByTestId('pos-line-edit-save'));
+}
+
 /** Qatordagi narx (endi bosiladigan tugma, input emas). */
 function priceText(line: HTMLElement): string {
   return norm(within(line).getByTestId('sotuv-cart-price-edit').textContent);
@@ -186,40 +204,30 @@ describe('SalesScreen — savat qatorlari', () => {
     expect(screen.queryByTestId('sotuv-cart-line')).not.toBeInTheDocument();
   });
 
-  // K-3 TUZATILDI (audit-fixlar): ilgari bo'shatilgan maydon ekranda bo'sh
-  // ko'rinib, hisob-kitobga va rasmiylashtirishga ESKI narx ketardi. Endi
-  // parse bo'lmagan kiritma = 0 (ko'ringan narsa = yuboriladigan narsa).
-  it('narx BO‘SHATILSA — qatorda 0 va hisobda 0 (eski narx KETMAYDI)', async () => {
+  // K-3 (audit-fixlar) → P12: ilgari bo'shatilgan maydon ekranda bo'sh
+  // ko'rinib, hisob-kitobga ESKI narx ketardi; keyin 0 bo'lib savatga tushdi;
+  // endi 0 narx UMUMAN qabul qilinmaydi (egasining 2026-08-12 qarori).
+  it('narx BO‘SHATILSA — 0 qabul qilinmaydi, qatordagi narx tegilmaydi', async () => {
     const user = userEvent.setup();
     renderWithProviders(<SotuvPage />);
 
     const line = await addFirstProduct(user);
-    await setPrice(user, line, '');
+    await tryPrice(user, line, '');
 
+    expect(screen.getByTestId('pos-line-edit-no-price')).toBeInTheDocument();
     const after = screen.getByTestId('sotuv-cart-line');
-    // Qatorda 0 ko'rinadi va summa ham aynan 0 dan hisoblanadi («tushirildi»
-    // yorlig'i kartochka narxidan to'liq pasayishni ko'rsatadi).
-    expect(priceText(after)).toBe('0,00 сум');
-    expect(norm(within(after).getByTestId('sotuv-cart-markdown').textContent)).toBe(
-      '−10 000,00 сум tushirildi',
-    );
-    // 0 narx tan narxdan past — foyda RAQAMI ko'rsatilmaydi (egasining qarori),
-    // lekin ZARAR tasmasi kassirni darhol ogohlantiradi.
-    expect(after).toHaveAttribute('data-price-band', 'loss');
-    expect(within(after).getByTestId('sotuv-cart-loss')).toHaveTextContent('ZARAR');
+    expect(priceText(after)).toBe('10 000,00 сум');
   });
 
-  // K-3 TUZATILDI: buzuq kiritma ham endi eski narxni yashirmaydi — 0 bo'ladi.
-  it('narxga HARF yozilsa — narx 0 (eski narx yashirincha qolmaydi)', async () => {
+  it('narxga HARF yozilsa — jimgina o‘qilmaydi va qabul ham qilinmaydi', async () => {
     const user = userEvent.setup();
     renderWithProviders(<SotuvPage />);
 
     const line = await addFirstProduct(user);
-    await setPrice(user, line, 'abc');
+    await tryPrice(user, line, 'abc');
 
-    const after = screen.getByTestId('sotuv-cart-line');
-    expect(priceText(after)).toBe('0,00 сум');
-    expect(after).toHaveAttribute('data-price-band', 'loss');
+    expect(screen.getByTestId('pos-line-edit-no-price')).toBeInTheDocument();
+    expect(priceText(screen.getByTestId('sotuv-cart-line'))).toBe('10 000,00 сум');
   });
 
   // F2 — narx parse'i YAGONA (`parseAmountToMinor`). Ilgari sahifa o'z
@@ -227,20 +235,18 @@ describe('SalesScreen — savat qatorlari', () => {
   // 12 ni sug'urib olardi: ekranda «12abc», chekka 1 200 tiyin. To'lov oynasi
   // esa allaqachon qat'iy parse ishlatardi — ikki maydon bir xil matnni ikki
   // xil tushunardi. Endi bittasi: buzuq kiritma = 0.
-  it('🔴 narxga «12abc» — narx 0 (jimgina 12 EMAS)', async () => {
+  it('🔴 narxga «12abc» — jimgina 12 so‘m EMAS (oynada 0 ko‘rinadi, saqlanmaydi)', async () => {
     const user = userEvent.setup();
     renderWithProviders(<SotuvPage />);
 
     const line = await addFirstProduct(user);
-    await setPrice(user, line, '12abc');
+    await tryPrice(user, line, '12abc');
 
-    // Ko'ringan narsa = yuboriladigan narsa: qatorda ham, oyna qayta
-    // ochilganda ham 0 turadi (jimgina 12 so'm chekka ketmaydi).
-    const after = screen.getByTestId('sotuv-cart-line');
-    expect(priceText(after)).toBe('0,00 сум');
-    await user.click(within(after).getByTestId('sotuv-cart-price-edit'));
-    const modal = await screen.findByTestId('pos-line-edit');
+    // Oyna ochiq qoladi va o'qilgan qiymat 0 ekanini ko'rsatadi — 12 so'm
+    // jimgina chekka ketmaydi (P12 dan oldin bu qiymat savatga tushardi).
+    const modal = screen.getByTestId('pos-line-edit');
     expect(norm(within(modal).getByTestId('pos-line-edit-price').textContent)).toContain('0,00');
+    expect(priceText(screen.getByTestId('sotuv-cart-line'))).toBe('10 000,00 сум');
   });
 
   it('narxni tahrirlash qator summasini darhol siljitadi', async () => {
@@ -309,18 +315,20 @@ describe('SalesScreen — narx tasmalari (kassa TZ §5.2)', () => {
     );
   });
 
-  it('tan narxdan past narx — ZARAR tasmasi (foyda RAQAMI yo‘q)', async () => {
+  it('🔴 P12 — tan narxdan past narx savatga UMUMAN tushmaydi (pol to‘sadi)', async () => {
     const user = userEvent.setup();
     renderWithProviders(<SotuvPage />);
 
     const line = await addFirstProduct(user);
-    await setPrice(user, line, '5000');
+    await tryPrice(user, line, '5000'); // pol 6 000
 
+    // Ilgari bu yerda qizil ZARAR tasmasi chiqar, lekin narx SAQLANARDI.
+    // Egasining qarori (2026-08-12): ogohlantirish emas — QULF.
+    expect(screen.getByTestId('pos-line-edit-floor-blocked')).toBeInTheDocument();
     const after = screen.getByTestId('sotuv-cart-line');
-    expect(after).toHaveAttribute('data-price-band', 'loss');
-    expect(within(after).getByTestId('sotuv-cart-loss')).toHaveTextContent('ZARAR');
-    // Nazorat qoldi, raqam ketdi: kassir «zarar» ekanini biladi, marja
-    // miqdorini esa ekranga qaragan mijoz ham, kassir ham ko'rmaydi.
+    expect(priceText(after)).toBe('10 000,00 сум');
+    expect(after).toHaveAttribute('data-price-band', 'ok');
+    // Marja RAQAMI hamon ekranda yo'q (`ui-flags.ts` qarori o'zgarmadi).
     expect(within(after).queryByTestId('sotuv-cart-profit')).not.toBeInTheDocument();
   });
 
@@ -475,8 +483,10 @@ describe('SalesScreen — savat va tovar ro‘yxati bog‘lanishi', () => {
     renderWithProviders(<SotuvPage />);
 
     const line = await addFirstProduct(user);
+    // Yorliq P12 da «Min» dan «Optom» ga o'zgardi: oynadagi yangi «Minimal»
+    // (narx poli) bilan chalkashmasin — ikkalasi ikki xil chegara.
     expect(norm(within(line).getByTestId('sotuv-cart-min').textContent)).toBe(
-      '· Min: 8 000,00 сум',
+      '· Optom: 8 000,00 сум',
     );
     // Tan narx ATAYLAB yo'q (marja ekranda ko'rsatilmaydi); optom chegara —
     // sotuv narxi, ya'ni maxfiy raqam emas va kassirga kerak.
@@ -572,13 +582,15 @@ describe('SalesScreen — savat qatori tahrir oynasi (F2)', () => {
 
     await openEditor(user);
     await user.click(screen.getByTestId('pos-line-edit-price'));
-    await tap(user, '5', '0', '0', '0');
+    // 7 000: optom chegaradan (8 000) past, lekin poldan (6 000) yuqori —
+    // P12 dan keyin savatga tushadigan eng past oraliq shu (poldan pastga
+    // tushirish endi qulflangan, `sales-screen-price-floor.test.tsx`).
+    await tap(user, '7', '0', '0', '0');
     await user.click(screen.getByTestId('pos-line-edit-save'));
 
     const line = await screen.findByTestId('sotuv-cart-line');
-    expect(priceText(line)).toBe('5 000,00 сум');
-    expect(line).toHaveAttribute('data-price-band', 'loss');
-    expect(within(line).getByTestId('sotuv-cart-loss')).toHaveTextContent('ZARAR');
+    expect(priceText(line)).toBe('7 000,00 сум');
+    expect(line).toHaveAttribute('data-price-band', 'below-wholesale');
   });
 
   it('oynadagi «O‘chirish» qatorni savatdan olib tashlaydi', async () => {

@@ -28,6 +28,7 @@
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { PrismaClient } from '../src/generated/index.js';
+import { mapSalePriceTiers } from '../src/sale-price-tiers.js';
 
 const prisma = new PrismaClient();
 
@@ -579,21 +580,31 @@ interface MsProduct {
   salePrices?: Array<{ value: number; priceType?: { name: string } }>;
 }
 
-/** Resolve the account's default PriceType id for stamping salePrices; falls
- * back to the legacy 'default' sentinel when price types aren't imported yet. */
-async function resolveSeedDefaultPriceTypeId(): Promise<string> {
-  const pt = await prisma.priceType.findFirst({
-    where: { accountId: ACCOUNT_ID, archived: false, isDefault: true },
-    select: { id: true },
+/**
+ * Account price types in POSITION order (default first) for stamping
+ * salePrices; falls back to the legacy 'default' sentinel when price types
+ * aren't imported yet.
+ *
+ * 🔴 P12 fix: this used to return only the default id and EVERY moysklad tier
+ * was stamped with it, so the wholesale tier never landed on its own type
+ * (measured in prod: 3960 of 4905 products had no wholesale price). The
+ * mapping now lives in one place — `packages/db/src/sale-price-tiers.ts` —
+ * shared with `scripts/ops-import-products.ts`.
+ */
+async function resolveSeedPriceTypes(): Promise<Array<{ id: string; name: string }>> {
+  const rows = await prisma.priceType.findMany({
+    where: { accountId: ACCOUNT_ID, archived: false },
+    orderBy: [{ isDefault: 'desc' }, { position: 'asc' }],
+    select: { id: true, name: true },
   });
-  return pt?.id ?? 'default';
+  return rows.length > 0 ? rows : [{ id: 'default', name: 'default' }];
 }
 
 async function importLiveProducts(): Promise<number> {
   if (!MOYSKLAD_TOKEN) return 0;
   console.log('  ↳ fetching products (this may take a while) …');
   const rows = await fetchMoyskladPaged<MsProduct>('/entity/product');
-  const defaultPtId = await resolveSeedDefaultPriceTypeId();
+  const seedPriceTypes = await resolveSeedPriceTypes();
   let inserted = 0;
   for (const r of rows) {
     if (!r.id || !r.name) continue;
@@ -616,11 +627,7 @@ async function importLiveProducts(): Promise<number> {
         archived: r.archived ?? false,
         buyPrice: toMinor(r.buyPrice?.value),
         minPrice: toMinor(r.minPrice?.value),
-        salePrices:
-          r.salePrices?.map((p) => ({
-            priceTypeId: defaultPtId,
-            value: String(Math.round(p.value)),
-          })) ?? [],
+        salePrices: mapSalePriceTiers(r.salePrices, seedPriceTypes),
       };
       if (existing) {
         await prisma.product.update({ where: { id: existing.id }, data });
@@ -1315,7 +1322,7 @@ async function importLiveProductsByKind(
   // moysklad money is ALREADY minor (×100) — store 1:1, NO extra ×100.
   const toMinor = (v: number | undefined): bigint | null =>
     v === undefined ? null : BigInt(Math.round(v));
-  const defaultPtId = await resolveSeedDefaultPriceTypeId();
+  const seedPriceTypes = await resolveSeedPriceTypes();
   let inserted = 0;
   for (const r of rows) {
     if (!r.id || !r.name) continue;
@@ -1333,11 +1340,7 @@ async function importLiveProductsByKind(
         archived: r.archived ?? false,
         buyPrice: toMinor(r.buyPrice?.value),
         minPrice: toMinor(r.minPrice?.value),
-        salePrices:
-          r.salePrices?.map((p) => ({
-            priceTypeId: defaultPtId,
-            value: String(Math.round(p.value)),
-          })) ?? [],
+        salePrices: mapSalePriceTiers(r.salePrices, seedPriceTypes),
         kind, // override on existing rows too — moysklad source-of-truth
       };
       if (existing) {

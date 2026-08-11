@@ -119,7 +119,11 @@ function makeHarness(opts: {
         // bu fayl MUZLATISHNI sinaydi, hodisalar `cashier-audit.test.ts` da.
         positions: opts.positions.map((p) => ({
           product: null,
-          priceMinor: 0n,
+          // P12 dan keyin 0-narx qatori bilan chek POST BO'LMAYDI (egasining
+          // qarori) — sukut narx bu fayldagi har bir kartaning polidan yuqori
+          // olindi, aks holda muzlatish testlari narx siyosatiga urilib qolardi.
+          priceMinor: 3_600_000n,
+          discount: '0',
           ...p,
         })),
       }),
