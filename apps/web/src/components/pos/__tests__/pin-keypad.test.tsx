@@ -84,4 +84,37 @@ describe('PinKeypad', () => {
     }) as HTMLButtonElement;
     expect(btn.disabled).toBe(true);
   });
+
+  /**
+   * Nuqtalar soni — kassirning «PIN necha raqamli?» degan yagona ishorasi.
+   * Ilgari HAR DOIM `maxLength` (6) ta chizilardi: 4 raqamli PIN qo'ygan kassir
+   * ikkita bo'sh doira oldida turib qolardi (egasi 2026-08-11 da ko'rsatdi).
+   * 4 ga QOTIRISH esa teskari xato bo'lardi — server 4–6 ni qabul qiladi va
+   * 6 raqamli PIN kiritib bo'lmay qolardi. Shuning uchun: kamida 4, kiritish
+   * bilan o'sadi, `maxLength` da to'xtaydi.
+   */
+  describe('nuqtalar soni', () => {
+    const dots = (): number =>
+      screen.getByLabelText(messages.kassaLogin.pin_label).querySelectorAll('span').length;
+
+    it('bo`sh qiymatda 4 ta (6 ta EMAS)', () => {
+      renderKeypad({ value: '', maxLength: 6 });
+      expect(dots()).toBe(4);
+    });
+
+    it('4 raqam kiritilganda ham 4 ta', () => {
+      renderKeypad({ value: '1234', maxLength: 6 });
+      expect(dots()).toBe(4);
+    });
+
+    it('5-raqam kiritilsa 5 ta bo`ladi (uzun PIN bloklanmaydi)', () => {
+      renderKeypad({ value: '12345', maxLength: 6 });
+      expect(dots()).toBe(5);
+    });
+
+    it('maxLength dan oshmaydi', () => {
+      renderKeypad({ value: '123456', maxLength: 6 });
+      expect(dots()).toBe(6);
+    });
+  });
 });

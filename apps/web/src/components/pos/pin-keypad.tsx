@@ -32,9 +32,13 @@ export function PinKeypad({ value, onChange, onSubmit, disabled, maxLength }: Pi
 
   return (
     <div className="flex flex-col items-center gap-6">
-      {/* Kiritilgan raqamlar OCHIQ ko'rsatilmaydi — kassa monitorini mijoz ham ko'radi. */}
+      {/* Kiritilgan raqamlar OCHIQ ko'rsatilmaydi — kassa monitorini mijoz ham ko'radi.
+          Nuqtalar soni: kamida MIN_PIN (4), kiritish uzayganda O'SADI, `maxLength`
+          da to'xtaydi. Ilgari doim 6 ta chizilardi va 4 raqamli PIN qo'ygan kassir
+          «yana ikkitasi qani?» deb turardi (egasining jonli sinovi, 2026-08-11) —
+          6 ga qotirib qo'yish esa 5–6 raqamli PIN'ni kiritib bo'lmas qilardi. */}
       <div className="flex h-12 items-center gap-3" aria-label={t('pin_label')}>
-        {Array.from({ length: maxLength }, (_, i) => (
+        {Array.from({ length: Math.min(maxLength, Math.max(MIN_PIN, value.length)) }, (_, i) => (
           <span
             // biome-ignore lint/suspicious/noArrayIndexKey: pozitsiya-indikator, ro'yxat emas
             key={i}
