@@ -78,6 +78,14 @@ export const DECLARED_BALANCE_WRITERS: readonly BalanceWriter[] = [
     note: 'post +sumMinor (tovar taminotchiga qaytdi ⇒ qarzimiz kamayadi), unpost·cancel teskari',
   },
   {
+    file: 'modules/sales-return/sales-return.service.ts',
+    sources: ['fixed-docs'],
+    note:
+      'post −sumMinor (tovar mijozdan qaytdi ⇒ uning qarzi kamayadi), unpost·cancel teskari. ' +
+      'P14/H1, 2026-08-12. ⚠️ `Demand` balansga yozmagani uchun hisob-fakturasiz sotuvning ' +
+      'qaytarilishi balansni manfiy tomonga suradi — hisobotda ochiq xavf.',
+  },
+  {
     file: 'modules/payment-in/payment-in.service.ts',
     sources: ['fixed-docs'],
     note: 'post −sumMinor',

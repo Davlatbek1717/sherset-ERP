@@ -162,12 +162,18 @@ async function main() {
   //       YOLG'ON signal berardi.
   //     · `purchaseReturn` QO'SHILDI (`PP-02`, +1n): taminotchiga qaytarish
   //       qabul deltasining teskarisini yozadi.
+  //
+  //   ⚠️ P14 (2026-08-12, `H1`):
+  //     · `salesReturn` QO'SHILDI (−1n): mijoz qaytarishi uning qarzini
+  //       kamaytiradi (`invoiceOut` +1n ning teskarisi). Bu qator YO'Q bo'lsa
+  //       `APPLY=1` qaytarish deltalarini jimgina yeb yuborardi (DUP-02 klassi).
   //     ⚠️ TARIXIY QATORLAR: Faza 13'gacha post qilingan InvoiceIn'larning
   //     jurnal deltalari joyida QOLADI (append-only). Ya'ni bu skript endi
   //     ularni hujjatlardan qayta qura olmaydi va o'sha kontragentlarda
   //     cross-check farqi ko'rsatadi — bu KUTILGAN, jurnal (nishon) to'g'ri.
   const fixed: Array<[GroupByDelegate, bigint]> = [
     [prisma.invoiceOut as unknown as GroupByDelegate, 1n],
+    [prisma.salesReturn as unknown as GroupByDelegate, -1n],
     [prisma.supply as unknown as GroupByDelegate, -1n],
     [prisma.purchaseReturn as unknown as GroupByDelegate, 1n],
     [prisma.paymentIn as unknown as GroupByDelegate, -1n],

@@ -11,6 +11,7 @@ import { EventEmitter2 } from '@nestjs/event-emitter';
 import { allocateDocumentNumber } from '../../prisma/document-number.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { AttributeMetadataService } from '../attribute-metadata/attribute-metadata.service.js';
+import { CounterpartyBalanceService } from '../counterparty-balance/counterparty-balance.service.js';
 import { CustomerOrderService } from '../customer-order/customer-order.service.js';
 import { HR_EVENT, type SalesReturnPostedEvent } from '../hr/hr-shared/hr-events.types.js';
 import { tashkentRangeBounds } from '../report/report-date-bounds.util.js';
@@ -59,7 +60,28 @@ interface ComputedTotals {
  *        tx, customerOrderId, deltas, direction='revert')
  *      This decrements Demand's linked shippedQty in CO + rolls CO state back
  *      (fully_shipped → partially_shipped / confirmed).
- *   4. Audit event 'salesreturn.posted'.
+ *   4. Counterparty balance: −sumMinor (P14/`H1` — see below).
+ *   5. Audit event 'salesreturn.posted'.
+ *
+ * P14 (`H1`, 2026-08-12) — KONTRAGENT BALANSI. Ilgari bu servis FAQAT qoldiqqa
+ * yozardi: mijoz tovarni qaytarsa ombor to'lardi, lekin uning qarzi (`InvoiceOut.post`
+ * yozgan `+sumMinor`) abadiy osilib qolardi va kassada o'sha yolg'on summa
+ * to'lanadigan qarz bo'lib ko'rinardi (P1/P2 `debtPayable = max(reyestr, balans)`).
+ * Endi post `−sumMinor`, unpost/cancel esa aynan teskarisini yozadi —
+ * `purchase-return` (`PP-02`) ning mijoz tomonidagi ko'zgusi.
+ *
+ * 🔴 O'LCHANGAN ASIMMETRIYA (P14 auditi, ataylab shu fazada TUZATILMADI):
+ * savdo tomonida qarzni GOODS hujjati emas, MOLIYAVIY hujjat tug'diradi —
+ * `Demand` (Отгрузка) balansga UMUMAN yozmaydi, `InvoiceOut` yozadi. Xarid
+ * tomonida esa aksincha (`Supply` yozadi, `InvoiceIn` yozmaydi — QAROR-B).
+ * Ya'ni hisob-fakturasiz sotilgan (faqat Отгрузка) tovar qaytarilsa, bu yerdagi
+ * `−sumMinor` balansni MANFIY tomonga suradi («biz qarzdormiz») — vaholanki
+ * dastlab hech qanday qarz yozilmagan edi. `SalesReturn` da `invoiceOutId` FK
+ * YO'Q (faqat `demandId`/`customerOrderId`), shuning uchun deltani manbaga
+ * bog'lab gate qilishning ishonchli yo'li yo'q. Shartli («invoice bo'lsa yoz»)
+ * variant ataylab RAD ETILDI — u jimgina yarim-qo'llanish bo'lardi. To'g'ri
+ * yechim — savdo tomoni uchun ham QAROR-B ga o'xshash egasi qarori
+ * (Demand↔InvoiceOut'dan qaysi biri qarz kanali). P14 hisobotida ochiq xavf.
  */
 @Injectable()
 export class SalesReturnService {
@@ -70,6 +92,8 @@ export class SalesReturnService {
     @Inject(AttributeMetadataService) private readonly attrs: AttributeMetadataService,
     @Inject(WebhookFireService) private readonly webhookFire: WebhookFireService,
     @Inject(EventEmitter2) private readonly events: EventEmitter2,
+    @Inject(CounterpartyBalanceService)
+    private readonly balance: CounterpartyBalanceService,
   ) {}
 
   async list(accountId: string, rawFilter: unknown) {
@@ -1171,6 +1195,23 @@ export class SalesReturnService {
           data: { state: 'posted', applicable: true, postedAt: new Date() },
         });
 
+        // Mijoz qarzi — tovar BIZGA qaytdi ⇒ uning qarzi kamayadi → −sumMinor.
+        // `InvoiceOut.post` (+sumMinor) ning aynan teskarisi. `source` ATAYLAB
+        // berilmaydi: u faqat egaga «yangi qarz paydo bo'ldi» Telegram xabari
+        // uchun, qarz KAMAYISHI esa bunday xabar chiqarmaydi (notifier no-op).
+        await this.balance.applyDelta(
+          tx,
+          accountId,
+          existing.agentId,
+          existing.currency,
+          -existing.sumMinor,
+          {
+            docType: 'salesReturn',
+            docId: id,
+            organizationId: existing.organizationId,
+          },
+        );
+
         // Cascade to CustomerOrder if we can resolve it via linked Demand
         // positions' customerOrderPositionId back-links.
         if (existing.customerOrderId) {
@@ -1294,6 +1335,20 @@ export class SalesReturnService {
           data: { state: 'draft', applicable: false, postedAt: null },
         });
 
+        // Balans reversali — post() ning −sumMinor'i qaytariladi (qarz tiklandi).
+        await this.balance.applyDelta(
+          tx,
+          accountId,
+          existing.agentId,
+          existing.currency,
+          existing.sumMinor,
+          {
+            docType: 'salesReturn',
+            docId: id,
+            organizationId: existing.organizationId,
+          },
+        );
+
         // Revert CO cascade: re-apply shipment (direction='ship') — this
         // restores shippedQty on CO positions that we decremented during post.
         if (existing.customerOrderId) {
@@ -1397,6 +1452,22 @@ export class SalesReturnService {
             };
           });
           await this.stock.applyDeltas(tx, accountId, userId, deltas);
+
+          // Balans reversali — faqat applicable bo'lgan (ya'ni post() delta
+          // yozgan) qaytarish uchun. Draft hujjatni cancel qilish balansga
+          // tegmaydi (yozilmagan deltani qaytarib bo'lmaydi).
+          await this.balance.applyDelta(
+            tx,
+            accountId,
+            existing.agentId,
+            existing.currency,
+            existing.sumMinor,
+            {
+              docType: 'salesReturn',
+              docId: id,
+              organizationId: existing.organizationId,
+            },
+          );
 
           if (existing.customerOrderId) {
             const coDeltas = existing.positions

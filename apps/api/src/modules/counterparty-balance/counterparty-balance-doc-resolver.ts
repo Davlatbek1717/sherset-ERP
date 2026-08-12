@@ -101,6 +101,7 @@ export interface BalanceDocClient {
   invoiceIn: unknown;
   supply: unknown;
   purchaseReturn: unknown;
+  salesReturn: unknown;
   paymentIn: unknown;
   paymentOut: unknown;
   cashIn: unknown;
@@ -138,11 +139,11 @@ export interface BalanceDocClient {
   };
 }
 
-// `purchaseReturn` — Faza 13 (`PP-02`). `invoiceIn` TARIXIY qatorlar uchun
-// qoladi (Faza 13 dan keyin yangi qator yozilmaydi, eskilarining raqami
-// baribir ko'rinishi kerak). docType qiymati Prisma delegat nomi bilan bir xil
-// bo'lishi SHART — pastdagi sikl `client[t]` bilan indekslaydi.
-const GOODS_TYPES = ['invoiceOut', 'invoiceIn', 'supply', 'purchaseReturn'] as const;
+// `purchaseReturn` — Faza 13 (`PP-02`). `salesReturn` — P14 (`H1`). `invoiceIn`
+// TARIXIY qatorlar uchun qoladi (Faza 13 dan keyin yangi qator yozilmaydi,
+// eskilarining raqami baribir ko'rinishi kerak). docType qiymati Prisma delegat
+// nomi bilan bir xil bo'lishi SHART — pastdagi sikl `client[t]` bilan indekslaydi.
+const GOODS_TYPES = ['invoiceOut', 'invoiceIn', 'supply', 'purchaseReturn', 'salesReturn'] as const;
 const FLAT_TYPES = [
   'paymentIn',
   'paymentOut',
