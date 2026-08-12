@@ -521,7 +521,13 @@ describe('CancelCallNoteSchema — qo‘ng‘iroq natijasini bekor qilish', () =
  *     o'qilsa 10 000× xato bo'lardi.
  */
 describe("PosDebtPaymentSchema — F6 USD qarz to'lovi", () => {
-  const base = { counterpartyId: CP, amountMinor: '100000' };
+  /**
+   * `retailShiftId` bazaga KIRITILGAN: dollar naqd uchun u majburiy (pastdagi
+   * alohida blok), va busiz quyidagi RAD-etish testlari o'z sababi bilan emas,
+   * smena qo'riqchisi bilan yiqilib «yolg'on yashil» bo'lib qolardi.
+   */
+  const SHIFT = '99999999-9999-9999-9999-999999999999';
+  const base = { counterpartyId: CP, amountMinor: '100000', retailShiftId: SHIFT };
 
   it("so'm to'lovi kursisiz ishlayveradi (regressiya yo'q)", () => {
     const v = PosDebtPaymentSchema.parse(base);
@@ -572,5 +578,47 @@ describe("PosDebtPaymentSchema — F6 USD qarz to'lovi", () => {
     expect(() =>
       PosDebtPaymentSchema.parse({ ...base, currency: 'EUR', exchangeRate: '1280000000000' }),
     ).toThrow();
+  });
+
+  /**
+   * 🔴 DOLLAR NAQD ⇒ SMENA MAJBURIY (2026-08-12, fix-round I-3).
+   *
+   * NEGA SXEMADA: dollar naqd pul daftariga ATAYLAB tushmaydi (yashiq bitta
+   * valyutali — `debt-cash-ledger.ts`). Uning yagona hisobi —
+   * `cashier-session.service` `collectUsdCashInputs`, u esa FAQAT
+   * `retailShiftId` bo'lgan qatorlarni yig'adi. Smenasiz dollar naqd hech
+   * qayerda hisoblanmaydi ⇒ kassirning kamomadi ko'rinmas bo'lardi.
+   *
+   * NON-VACUOUS: refine olib tashlansa 1-test yashil bo'lib qoladi (jim
+   * qabul), qolgan uchtasi esa bu qoida BOSHQA holatlarni bloklamasligini
+   * qulflaydi (terminal, so'm) — ya'ni qo'riqchi keragidan keng emas.
+   */
+  describe('dollar naqd ⇒ retailShiftId MAJBURIY', () => {
+    const usd = { ...base, currency: 'USD', exchangeRate: '1280000000000' };
+
+    it('🔴 smenasiz DOLLAR NAQD to‘lovni RAD etadi', () => {
+      const { retailShiftId: _omitted, ...noShift } = usd;
+      expect(() => PosDebtPaymentSchema.parse({ ...noShift, method: 'cash' })).toThrow(
+        /smena majburiy/i,
+      );
+      // `null` ham «yo'q» bilan bir xil (`nullish`), jim o'tmasin.
+      expect(() =>
+        PosDebtPaymentSchema.parse({ ...noShift, method: 'cash', retailShiftId: null }),
+      ).toThrow(/smena majburiy/i);
+    });
+
+    it('smena bilan DOLLAR NAQD o‘tadi', () => {
+      expect(PosDebtPaymentSchema.parse({ ...usd, method: 'cash' }).retailShiftId).toBe(SHIFT);
+    });
+
+    it('DOLLAR TERMINAL smenasiz ham o‘tadi (pul yashiqqa tushmaydi — ekvayerga)', () => {
+      const { retailShiftId: _omitted, ...noShift } = usd;
+      expect(PosDebtPaymentSchema.parse({ ...noShift, method: 'terminal' }).currency).toBe('USD');
+    });
+
+    it("SO'M naqd smenasiz ham o‘tadi (regressiya yo'q — u pul daftarida ko'rinadi)", () => {
+      const { retailShiftId: _omitted, ...noShift } = base;
+      expect(PosDebtPaymentSchema.parse({ ...noShift, method: 'cash' }).currency).toBe('UZS');
+    });
   });
 });

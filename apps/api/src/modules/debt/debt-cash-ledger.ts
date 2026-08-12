@@ -26,6 +26,21 @@ export interface DebtCashPaymentRow {
   amountOriginalMinor?: bigint | null;
 }
 
+/**
+ * `deskCurrency` uchun sentinel: **kassa KO'RSATILMAGAN**.
+ *
+ * `debtCashDeskDeltas` `cashDeskId` yo'q bo'lgan holatda BIRINCHI shartda `[]`
+ * qaytaradi, ya'ni bu qiymat solishtirishga hech qachon yetib bormaydi. Bo'sh
+ * satr ATAYLAB: `CashDesk.currency` — `@db.VarChar(3)` va hech qachon bo'sh
+ * bo'lolmaydi, demak qo'riqchi buzilib qolsa ham bu sentinel yolg'ondan «mos
+ * keldi» bermaydi (fail-safe: daftarga noto'g'ri yozuvdan ko'ra yozmaslik).
+ *
+ * Ilgari chaqiruvchilar bu joyga `'UZS'` / `DEBT_LEDGER_CURRENCY` yozardi — bu
+ * semantik xato edi: QARZ DAFTARI valyutasi (`DebtPayment.amountMinor` qaysi
+ * valyutada yuritilishi) YASHIQ valyutasi bilan bir narsa emas.
+ */
+export const NO_CASH_DESK_CURRENCY = '';
+
 export interface DebtCashDeltaOptions {
   /** `1n` — to'lov qabul qilindi · `-1n` — storno. */
   sign: 1n | -1n;

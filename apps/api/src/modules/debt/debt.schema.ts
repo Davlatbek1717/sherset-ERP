@@ -475,6 +475,25 @@ export const PosDebtPaymentSchema = z
   .refine((v) => v.exchangeRate == null || BigInt(v.exchangeRate) >= 1_000_000_000n, {
     message: 'Kurs eski (×10⁴) masshtabda — sahifani yangilang (kanonik ×10⁸)',
     path: ['exchangeRate'],
+  })
+  // 🔴 DOLLAR NAQD ⇒ SMENA MAJBURIY (2026-08-12).
+  //
+  // Chet valyutadagi naqd pul daftariga (`CashDesk.balanceMinor`, `/money`)
+  // ATAYLAB tushmaydi — yashiq bitta valyutali (`debt-cash-ledger.ts`
+  // `deskCurrency`, qaror `retail-sale.service.ts` MK31 bilan bir xil). Uning
+  // YAGONA hisobi — smena: `cashier-session.service` `collectUsdCashInputs`
+  // aynan `debtPayment{ retailShiftId: sessionId, method:'cash',
+  // currency:'USD' }` ni yig'adi.
+  //
+  // Demak `retailShiftId` bo'lmasa dollar HECH QAYERDA hisoblanmaydi: na
+  // daftarda, na «kutilgan naqd»da ⇒ kamomad ko'rinmaydi. Qo'shni sotuv yo'lida
+  // bu tuzoq yo'q (chek doim `sale.session` ichida), shuning uchun qo'riqchi
+  // shu yerda kerak. FE allaqachon smena id'sini yuboradi — real oqim
+  // buzilmaydi, faqat smenasiz chaqiruv rad etiladi.
+  .refine((v) => !(v.method === 'cash' && v.currency === 'USD') || v.retailShiftId != null, {
+    message:
+      'Dollar naqd to‘lovi uchun ochiq smena majburiy: dollar pul daftariga tushmaydi va faqat smena hisobida yuritiladi',
+    path: ['retailShiftId'],
   });
 export type PosDebtPaymentInput = z.infer<typeof PosDebtPaymentSchema>;
 

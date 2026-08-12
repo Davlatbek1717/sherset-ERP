@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
 import { DebtService } from './debt.service.js';
 
@@ -47,8 +48,19 @@ function makeSvc(
      * ya'ni daftarda mos `MoneyOperation` yo'q.
      */
     legacyNoLedgerRow?: true;
+    /**
+     * `CashDesk.currency` — YASHIQ valyutasi (to'lov valyutasi EMAS).
+     *
+     * Sukut 'UZS' = to'lov bilan mos. `'USD'` bersa yashiq boshqa valyutada
+     * bo'ladi va `debt-cash-ledger.ts` qoidasi bo'yicha pul bu daftarga
+     * TUSHMAYDI. Bu knob'siz butun `deskCurrency` simi qo'riqsiz qolardi:
+     * mock har doim 'UZS' qaytarsa, xizmat `deskCurrency: payment.currency`
+     * (aynan eski BUG) deb yozilganda ham hamma test yashil bo'lib turardi.
+     */
+    deskCurrency?: string;
   } = {},
 ) {
+  const deskCurrency = opts.deskCurrency ?? 'UZS';
   const debtRow = {
     id: DEBT,
     accountId: ACC,
@@ -164,7 +176,7 @@ function makeSvc(
     },
     // Storno endi yashiq VALYUTASINI o'qiydi (`debt-cash-ledger.deskCurrency`):
     // kassa boshqa valyutada bo'lsa teskari harakat ham yozilmaydi.
-    cashDesk: { findFirst: async () => ({ currency: 'UZS' }) },
+    cashDesk: { findFirst: async () => ({ currency: deskCurrency }) },
     debtPayment: paymentDelegate,
     debtNote: {
       create: async () => ({ id: 'note-1' }),
@@ -187,7 +199,7 @@ function makeSvc(
 
   const client = {
     debt: { findFirst: async () => ({ ...debtRow }) },
-    cashDesk: { findFirst: async () => ({ name: 'Kassa 1', currency: 'UZS' }) },
+    cashDesk: { findFirst: async () => ({ name: 'Kassa 1', currency: deskCurrency }) },
     debtPayment: paymentDelegate,
     debtNote: {
       findFirst: async (args: { where: { id?: string } }) =>
@@ -259,6 +271,36 @@ describe('DebtService.addCashPayment — kassa daftari (M-05)', () => {
 
     expect(cashDeltas).toHaveLength(0);
   });
+
+  /**
+   * 🔴 YASHIQ VALYUTASI SIMI — `addCashPayment` yo'li (fix-round I-2).
+   *
+   * IKKI pul-yozuvchi yo'l bor (`pos-debt-payment.pay` va shu yer) va ular
+   * BIR XIL predikatdan yurishi kerak. POS yo'li `pos-debt-payment.usd.test.ts`
+   * da qulflangan, bu yo'l esa qulfsiz edi: mock har doim `{currency:'UZS'}`
+   * qaytarardi va to'lov ham UZS bo'lgani uchun `deskCurrency: payment.currency`
+   * (AYNAN tuzatilgan bug) yozilsa ham 247 test yashil qolardi.
+   *
+   * MUTANT: `debt.service.ts` da `deskCurrency` o'rniga `payment.currency`
+   * yozilsa yoki `debt-cash-ledger.ts` dagi valyuta sharti o'chirilsa — shu
+   * test QIZIL bo'ladi.
+   */
+  it('🔴 USD kassa + SO`M to`lovi ⇒ yashiqqa TUSHMAYDI (valyuta simi qulfi)', async () => {
+    const { svc, cashDeltas, payments } = makeSvc({ deskCurrency: 'USD' });
+
+    await svc.addCashPayment(ACC, 'u1', DEBT, {
+      amountMinor: '100000',
+      method: 'cash',
+      cashDeskId: DESK,
+    });
+
+    // To'lovning O'ZI yozildi (kassirning ishi to'xtamaydi)…
+    expect(payments).toHaveLength(1);
+    expect(payments[0]?.currency).toBe('UZS');
+    // …lekin bitta-valyutali yashiq bu pulni ko'rmaydi (`MoneyService` aks
+    // holda «Currency mismatch» bilan BUTUN to'lovni orqaga qaytarardi).
+    expect(cashDeltas).toHaveLength(0);
+  });
 });
 
 describe('DebtService storno — yashiqdan qaytarish (M-05 simmetriyasi)', () => {
@@ -326,5 +368,44 @@ describe('DebtService storno — yashiqdan qaytarish (M-05 simmetriyasi)', () =>
 
     expect(cashDeltas).toHaveLength(1);
     expect(cashDeltas[0]).toMatchObject({ deltaMinor: -30_000n, documentId: 'pay-seed' });
+  });
+
+  /**
+   * 🔴 «KREDIT BOR, DEBET CHIQMADI» — jim o'tmaydi (fix-round I-1).
+   *
+   * `CashDesk.currency` keyinchalik o'zgartirilishi mumkin (`cash-desk.service`
+   * da «qoldiq nolmi» degan qo'riqchi YO'Q). Shunda UZS kredit kirgan yashiq
+   * USD bo'lib turadi: valyuta sharti deltalarni bo'sh qaytaradi, ya'ni pulni
+   * chiqarib bo'lmaydi (`MoneyService` boshqa valyutali deltani rad etadi).
+   *
+   * Ikki narsa AYNI PAYTDA talab qilinadi:
+   *  1. storno BLOKLANMAYDI — operator xato to'lovni qaytara olishi kerak
+   *     (`reversedAt` qo'yiladi, kontragent balansi qaytadi);
+   *  2. lekin JIM ham qolmaydi — `logger.error` iz qoldiradi, aks holda
+   *     yashiqdagi pul abadiy «ortiqcha» bo'lib qolar va hech kim bilmasdi.
+   *
+   * MUTANT: `debt.service.ts` da `logger.error(...)` o'chirilsa yoki
+   * `wasWritten` tekshiruvi yana `deltas.length === 0` dan KEYINGA qaytarilsa
+   * (o'sha holda bu shoxga umuman kirilmaydi) — shu test QIZIL bo'ladi.
+   */
+  it('kassa valyutasi O`ZGARIB ketgan bo`lsa: storno o`tadi, lekin XATO qayd etiladi', async () => {
+    const errorSpy = vi.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+    try {
+      // Kredit daftarda BOR (`legacyNoLedgerRow` berilmagan) — to'lov UZS,
+      // yashiq esa bugun USD.
+      const { svc, cashDeltas, payments } = makeSvc({ seedPayment: {}, deskCurrency: 'USD' });
+
+      await svc.reversePayment(ACC, 'u1', 'cashier', DEBT, 'pay-seed', { reason: 'xato summa' });
+
+      // Storno bajarildi…
+      expect(payments[0]?.reversedAt).not.toBeNull();
+      // …yashiqqa tegilmadi…
+      expect(cashDeltas).toHaveLength(0);
+      // …va bu JIMGINA emas: nomuvofiqlik jurnalda.
+      expect(errorSpy).toHaveBeenCalledTimes(1);
+      expect(String(errorSpy.mock.calls[0]?.[0])).toContain('pay-seed');
+    } finally {
+      errorSpy.mockRestore();
+    }
   });
 });

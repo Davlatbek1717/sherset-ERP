@@ -58,6 +58,13 @@ interface PaymentRow {
 const ACC = '11111111-1111-1111-1111-111111111111';
 const CP = '22222222-2222-2222-2222-222222222222';
 const DESK = '33333333-3333-3333-3333-333333333333';
+/**
+ * Dollar naqd uchun smena MAJBURIY (`PosDebtPaymentSchema` refine, fix-round
+ * I-3): dollar pul daftariga tushmaydi, hisobi faqat smenada
+ * (`collectUsdCashInputs` → `debtPayment{ retailShiftId }`). Shuning uchun
+ * quyidagi USD chaqiruvlari smena id'sini beradi — busiz sxema rad etadi.
+ */
+const SHIFT = '44444444-4444-4444-4444-444444444444';
 /** 12 800,00 so'm × 10^8 — kanonik masshtab (DB-01). */
 const RATE_E8 = '1280000000000';
 
@@ -227,6 +234,7 @@ describe("PosDebtPaymentService.pay — F6 dollar qarz to'lovi", () => {
       amountMinor: '10000', // $100.00 SENTDA
       currency: 'USD',
       exchangeRate: RATE_E8,
+      retailShiftId: SHIFT,
       method: 'cash',
       cashDeskId: DESK,
     });
@@ -243,6 +251,7 @@ describe("PosDebtPaymentService.pay — F6 dollar qarz to'lovi", () => {
       amountMinor: '10000',
       currency: 'USD',
       exchangeRate: RATE_E8,
+      retailShiftId: SHIFT,
     });
 
     expect(balanceDeltas).toEqual([{ currency: 'UZS', deltaMinor: -128_000_000n }]);
@@ -261,6 +270,7 @@ describe("PosDebtPaymentService.pay — F6 dollar qarz to'lovi", () => {
       amountMinor: '10000',
       currency: 'USD',
       exchangeRate: RATE_E8,
+      retailShiftId: SHIFT,
       method: 'cash',
       cashDeskId: DESK,
     });
@@ -278,6 +288,7 @@ describe("PosDebtPaymentService.pay — F6 dollar qarz to'lovi", () => {
       amountMinor: '10000',
       currency: 'USD',
       exchangeRate: RATE_E8,
+      retailShiftId: SHIFT,
       method: 'cash',
       cashDeskId: DESK,
     });
@@ -301,6 +312,7 @@ describe("PosDebtPaymentService.pay — F6 dollar qarz to'lovi", () => {
       amountMinor: '10000',
       currency: 'USD',
       exchangeRate: RATE_E8,
+      retailShiftId: SHIFT,
     });
 
     expect(payments[0]).toMatchObject({
@@ -321,6 +333,7 @@ describe("PosDebtPaymentService.pay — F6 dollar qarz to'lovi", () => {
       amountMinor: '10000', // $100 = 128 000 000 tiyin = ikki qarzning aynan jami
       currency: 'USD',
       exchangeRate: RATE_E8,
+      retailShiftId: SHIFT,
     });
 
     expect(payments).toHaveLength(2);
@@ -338,6 +351,7 @@ describe("PosDebtPaymentService.pay — F6 dollar qarz to'lovi", () => {
         amountMinor: '10000',
         currency: 'USD',
         exchangeRate: RATE_E8,
+        retailShiftId: SHIFT,
       }),
     ).rejects.toBeInstanceOf(BadRequestException);
   });
@@ -350,6 +364,7 @@ describe("PosDebtPaymentService.pay — F6 dollar qarz to'lovi", () => {
       amountMinor: '10000',
       currency: 'USD',
       exchangeRate: RATE_E8,
+      retailShiftId: SHIFT,
     });
 
     expect(res.receipt).toMatchObject({

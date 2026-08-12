@@ -4,6 +4,7 @@ import {
   ForbiddenException,
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { allocateDocumentNumber } from '../../prisma/document-number.js';
@@ -18,6 +19,7 @@ import { MessageTemplateService } from '../sms/sms-template.service.js';
 import { SmsService } from '../sms/sms.service.js';
 import { TelegramService } from '../telegram/telegram.service.js';
 import {
+  NO_CASH_DESK_CURRENCY,
   debtCashDeskDeltas,
   debtCashLedgerWasWritten,
   debtLedgerDocumentId,
@@ -81,6 +83,8 @@ export type ActorRole = 'operator' | 'cashier' | 'admin';
  */
 @Injectable()
 export class DebtService {
+  private readonly logger = new Logger(DebtService.name);
+
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(AttachmentService) private readonly attachments: AttachmentService,
@@ -392,9 +396,23 @@ export class DebtService {
    * Storno'ning kassa tomoni (Faza 11, `M-05`) — IKKALA qaytarish yo'li
    * (`reversePayment`, `cancelCallNote`) shu yerdan o'tadi.
    *
-   * Ikki shart: (1) to'lov umuman yashiqqa tegishlimi (`debtCashDeskDeltas` —
-   * naqd + kassa), (2) o'sha kredit HAQIQATAN daftarda bormi
-   * (`debtCashLedgerWasWritten` — Faza 11'dan oldingi to'lovlar uchun yo'q).
+   * Ikki shart: (1) o'sha kredit HAQIQATAN daftarda bormi
+   * (`debtCashLedgerWasWritten` — Faza 11'dan oldingi to'lovlar uchun yo'q),
+   * (2) to'lov bugun ham yashiqqa tegishlimi (`debtCashDeskDeltas` — naqd +
+   * kassa + valyuta mosligi).
+   *
+   * ⚠️ TARTIB AHAMIYATLI (2026-08-12). `wasWritten` BIRINCHI turadi, chunki
+   * faqat u «bu pul yashiqqa KIRGAN» degan FAKTni aytadi; `debtCashDeskDeltas`
+   * esa BUGUNGI holatdan hukm chiqaradi. Ikkisi bir-biriga zid bo'lishi mumkin:
+   * `CashDesk.currency` keyinchalik o'zgartirilsa (`cash-desk.service` da
+   * qoldiq-nol qo'riqchisi YO'Q), UZS kredit kirgan yashiq endi USD bo'lib
+   * turadi va deltalar bo'sh chiqadi. Bu holatda pulni chiqarib bo'lmaydi
+   * (`MoneyService` boshqa valyutali deltani rad etadi), lekin JIMGINA
+   * o'tkazib yuborish ham yaramaydi: `reversedAt` qo'yiladi, kontragent
+   * balansi qaytadi, yashiqda esa pul abadiy qolib ketardi. Shuning uchun
+   * storno BLOKLANMAYDI (operator xato to'lovni qaytara olishi kerak), ammo
+   * nomuvofiqlik `logger.error` bilan qayd etiladi — buxgalter qo'lda
+   * to'g'rilashi uchun iz qoladi.
    */
   private async reverseCashDeskDelta(
     tx: Prisma.TransactionClient,
@@ -411,24 +429,38 @@ export class DebtService {
     counterpartyId: string,
     reason: string,
   ): Promise<void> {
-    // Yashiq valyutasi deltalar qoidasiga kerak (`debt-cash-ledger.ts`
-    // `deskCurrency`). Kassa topilmasa STORNO BLOKLANMAYDI — shunchaki
-    // yashiqqa tegilmaydi (pastdagi `wasWritten` qo'riqchisi bilan bir ruh).
     if (!payment.cashDeskId) return;
+    // (1) FAKT: bu pul yashiqqa kirganmi? Kirmagan bo'lsa chiqarish ham yo'q —
+    // bu Faza 11'dan oldingi to'lovlarning normal holati, shovqin qilmaymiz.
+    if (!(await debtCashLedgerWasWritten(tx, accountId, payment))) return;
+
+    // (2) BUGUNGI hukm: yashiq valyutasi deltalar qoidasiga kerak
+    // (`debt-cash-ledger.deskCurrency`).
     const desk = await tx.cashDesk.findFirst({
       where: { id: payment.cashDeskId, accountId },
       select: { currency: true },
     });
-    if (!desk) return;
-    const deltas = debtCashDeskDeltas(payment, {
-      sign: -1n,
-      documentId: debtLedgerDocumentId(payment),
-      deskCurrency: desk.currency,
-      counterpartyId,
-      description: `Storno: ${reason}`,
-    });
-    if (deltas.length === 0) return;
-    if (!(await debtCashLedgerWasWritten(tx, accountId, payment))) return;
+    const deltas = desk
+      ? debtCashDeskDeltas(payment, {
+          sign: -1n,
+          documentId: debtLedgerDocumentId(payment),
+          deskCurrency: desk.currency,
+          counterpartyId,
+          description: `Storno: ${reason}`,
+        })
+      : [];
+
+    if (deltas.length === 0) {
+      // Kredit daftarda BOR, teskari harakat esa chiqmadi — ma'lumot
+      // nomuvofiqligi (yuqoridagi izoh: kassa valyutasi o'zgargan yoki kassa
+      // qatori yo'qolgan). Storno to'xtamaydi, lekin jim ham qolmaydi.
+      this.logger.error(
+        `Storno yashiqqa TEGMADI (pul yashiqda qoldi): payment=${payment.id} ` +
+          `desk=${payment.cashDeskId} deskCurrency=${desk?.currency ?? 'YO`Q'} ` +
+          `paymentCurrency=${payment.currency} — qo'lda to'g'rilash kerak`,
+      );
+      return;
+    }
     await this.money.applyDeltas(tx, accountId, deltas);
   }
 
@@ -1043,8 +1075,8 @@ export class DebtService {
     // Yashiq valyutasi ham SHU o'qishdan olinadi (`debt-cash-ledger.ts`
     // `deskCurrency`): kassa bitta valyutali va to'lov valyutasi unga mos
     // kelmasa, pul bu daftarga umuman tushmaydi. Kassa ko'rsatilmagan bo'lsa
-    // qiymat ishlatilmaydi — predikat `cashDeskId` yo'qligida `[]` qaytaradi.
-    let deskCurrency = 'UZS';
+    // sentinel qoladi va u solishtirishga yetib bormaydi (`NO_CASH_DESK_CURRENCY`).
+    let deskCurrency: string = NO_CASH_DESK_CURRENCY;
     if (input.cashDeskId) {
       const cd = await this.prisma.client.cashDesk.findFirst({
         where: { id: input.cashDeskId, accountId },

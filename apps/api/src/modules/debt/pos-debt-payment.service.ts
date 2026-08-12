@@ -11,7 +11,7 @@ import { OPENING_DOC_TYPE } from '../counterparty-balance/counterparty-balance-d
 import { journalWhere } from '../counterparty-balance/counterparty-balance-journal.util.js';
 import { CounterpartyBalanceService } from '../counterparty-balance/counterparty-balance.service.js';
 import { MoneyService } from '../money/money.service.js';
-import { debtCashDeskDeltas } from './debt-cash-ledger.js';
+import { NO_CASH_DESK_CURRENCY, debtCashDeskDeltas } from './debt-cash-ledger.js';
 import {
   type FifoDebt,
   allocateFifo,
@@ -292,7 +292,10 @@ export class PosDebtPaymentService {
       // qilingan — ilgari yashiq id'si ko'r-ko'rona qabul qilinardi); valyutasi
       // esa yashiq deltasi qoidasiga kerak (`debt-cash-ledger.deskCurrency`).
       // QULFDAN OLDIN: bu shunchaki o'qish, qulf ushlab turishga hojat yo'q.
-      let deskCurrency = DEBT_LEDGER_CURRENCY;
+      // Kassa ko'rsatilmagan bo'lsa sentinel qoladi — u solishtirishga yetib
+      // bormaydi (`DEBT_LEDGER_CURRENCY` bu yerda semantik XATO bo'lardi:
+      // qarz daftari valyutasi ≠ yashiq valyutasi).
+      let deskCurrency: string = NO_CASH_DESK_CURRENCY;
       if (input.cashDeskId) {
         const desk = await tx.cashDesk.findFirst({
           where: { id: input.cashDeskId, accountId },
