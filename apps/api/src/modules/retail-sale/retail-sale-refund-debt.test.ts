@@ -46,8 +46,13 @@ interface PriorRefund {
 
 function makeHarness(opts: {
   positions: OriginalPosition[];
-  /** Original tenders — DEBT rows are the credit the receipt put on the account. */
-  payments?: { method: string; amountMinor: bigint }[];
+  /**
+   * Original tenders — DEBT rows are the credit the receipt put on the
+   * account; CASH_* rows are what the DRAWER took (P5 naqd cap'i).
+   * `amountBaseMinor` berilmasa `amountMinor` deb olinadi (so'm qatorlarida
+   * ular teng) — dublyor SERVER select'ining shaklini takrorlaydi.
+   */
+  payments?: { method: string; amountMinor: bigint; amountBaseMinor?: bigint }[];
   priorRefunds?: PriorRefund[];
   agentId?: string | null;
   /** The SOLD_ON_CREDIT audit event of the original sale, if one was written. */
@@ -105,7 +110,10 @@ function makeHarness(opts: {
           storeId: STORE_ID,
           cashDesk: { currency: 'UZS' },
         },
-        payments: opts.payments ?? [],
+        payments: (opts.payments ?? []).map((p) => ({
+          amountBaseMinor: p.amountMinor,
+          ...p,
+        })),
         positions: opts.positions.map((p) => ({
           costMinor: null,
           basePriceMinor: null,
@@ -462,5 +470,130 @@ describe('refund() — loyalty clawback follows the refunded share (SALES-05)', 
     await svc.refund(ACCOUNT, USER_ID, SALE_ID, refundReq('10', { cashAmountMinor: '100000' }));
 
     expect(loyalty.createOperation.mock.calls[0][2]).toMatchObject({ bonusValue: -1000 });
+  });
+});
+
+/**
+ * P5 (2026-08-12) — 🔴 KANAL CAP'i, WIRING darajasida.
+ *
+ * Sof qoida `retail-refund-validation.test.ts` da; bu yerdagi savol boshqa:
+ * `refund()` uni HAQIQATAN chaqiradimi va chekning to'lov qatorlaridan
+ * naqd ulushini TO'G'RI o'qiydimi.
+ *
+ * Prod dalili (`ops-p5-live-verify.ts` R1, 2026-08-12): 100% KARTA bilan
+ * to'langan ТРН-2026-00033 `cashAmountMinor = 20000` bilan qaytarildi va
+ * **201** oldi; kassa qoldig'i 85 357,21 → 85 157,21 so'm. Ya'ni yashiq
+ * o'zi hech qachon olmagan 200 so'mni chiqarib yubordi.
+ */
+describe('refund() — yashiq olmagan pulni qaytara olmaydi (P5)', () => {
+  it('🔴 REJECTS naqd qaytarishni 100% KARTA bilan to`langan chekda', async () => {
+    const { svc, money } = makeHarness({
+      positions: TEN,
+      payments: [{ method: 'CARD', amountMinor: 100_000n }],
+    });
+
+    await expect(
+      svc.refund(ACCOUNT, USER_ID, SALE_ID, refundReq('10', { cashAmountMinor: '100000' })),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(money.applyDeltas).not.toHaveBeenCalled();
+  });
+
+  it('🔴 REJECTS naqd qaytarishni TERMINAL chekda', async () => {
+    const { svc, money } = makeHarness({
+      positions: TEN,
+      payments: [{ method: 'TERMINAL', amountMinor: 100_000n }],
+    });
+
+    await expect(
+      svc.refund(ACCOUNT, USER_ID, SALE_ID, refundReq('10', { cashAmountMinor: '1' })),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(money.applyDeltas).not.toHaveBeenCalled();
+  });
+
+  it('o`sha chek KARTA qatori orqali qaytariladi — yashiq qimirlamaydi', async () => {
+    const { svc, money, created } = makeHarness({
+      positions: TEN,
+      payments: [{ method: 'CARD', amountMinor: 100_000n }],
+    });
+
+    await svc.refund(ACCOUNT, USER_ID, SALE_ID, refundReq('10', { cardAmountMinor: '100000' }));
+
+    expect(money.applyDeltas).not.toHaveBeenCalled();
+    expect(created[0]?.data.cardAmountMinor).toBe(100_000n);
+    expect(created[0]?.data.cashAmountMinor).toBe(0n);
+  });
+
+  it('ARALASH chekda naqd FAQAT naqd ulushigacha chiqadi', async () => {
+    // 100 000: 30 000 naqd + 70 000 karta.
+    const { svc, money } = makeHarness({
+      positions: TEN,
+      payments: [
+        { method: 'CASH_UZS', amountMinor: 30_000n },
+        { method: 'CARD', amountMinor: 70_000n },
+      ],
+    });
+
+    await expect(
+      svc.refund(ACCOUNT, USER_ID, SALE_ID, refundReq('10', { cashAmountMinor: '30001' })),
+    ).rejects.toBeInstanceOf(BadRequestException);
+
+    const ok = makeHarness({
+      positions: TEN,
+      payments: [
+        { method: 'CASH_UZS', amountMinor: 30_000n },
+        { method: 'CARD', amountMinor: 70_000n },
+      ],
+    });
+    await ok.svc.refund(
+      ACCOUNT,
+      USER_ID,
+      SALE_ID,
+      refundReq('10', { cashAmountMinor: '30000', cardAmountMinor: '70000' }),
+    );
+    expect(ok.money.applyDeltas.mock.calls[0]?.[2]).toEqual([
+      expect.objectContaining({ deltaMinor: -30_000n }),
+    ]);
+    expect(money.applyDeltas).not.toHaveBeenCalled();
+  });
+
+  it('🔴 MK31 — DOLLAR cheki so`mda qaytariladi: `amountBaseMinor` o`qiladi, sent EMAS', async () => {
+    // $8.38 ≈ 100 000 tiyin. `amountMinor` (838 sent) naqd cap deb o'qilsa
+    // dollar chekni umuman qaytarib bo'lmasdi (cap 8,38 so'm chiqardi).
+    const { svc, money } = makeHarness({
+      positions: TEN,
+      payments: [{ method: 'CASH_USD', amountMinor: 838n, amountBaseMinor: 100_000n }],
+    });
+
+    await svc.refund(ACCOUNT, USER_ID, SALE_ID, refundReq('10', { cashAmountMinor: '100000' }));
+
+    expect(money.applyDeltas.mock.calls[0]?.[2]).toEqual([
+      expect.objectContaining({ deltaMinor: -100_000n }),
+    ]);
+  });
+
+  it('QISMAN qaytarishlar zanjirida naqd cap KÜMÜLATIV (bo`lib chiqarib bo`lmaydi)', async () => {
+    // 100 000: 30 000 naqd + 70 000 karta. Birinchi qaytarishda 30 000 naqd
+    // allaqachon chiqqan ⇒ ikkinchisiga naqd qolmaydi.
+    const { svc, money } = makeHarness({
+      positions: TEN,
+      payments: [
+        { method: 'CASH_UZS', amountMinor: 30_000n },
+        { method: 'CARD', amountMinor: 70_000n },
+      ],
+      priorRefunds: [
+        {
+          sumMinor: 100_000n,
+          cashAmountMinor: 30_000n,
+          cardAmountMinor: 0n,
+          debtReturnMinor: 0n,
+          positions: [],
+        },
+      ],
+    });
+
+    await expect(
+      svc.refund(ACCOUNT, USER_ID, SALE_ID, refundReq('10', { cashAmountMinor: '1' })),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(money.applyDeltas).not.toHaveBeenCalled();
   });
 });

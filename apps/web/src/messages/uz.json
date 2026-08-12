@@ -8024,6 +8024,8 @@
       "refund": "Qaytarish",
       "refund_amount_cash": "Qaytariladigan summa (naqd)",
       "refund_amount_debt": "Qarzdan yechiladi",
+      "refund_amount_card": "Kartaga/terminalga qaytariladi",
+      "refund_amount_card_hint": "Naqd berilmaydi — bu summa bank orqali kelgan, uni terminal orqali qaytaring",
       "refund_confirm": "Qaytarishni tasdiqlash",
       "refund_no_lines": "Qaytariladigan tovar tanlanmagan",
       "refund_qty_label": "Qaytadi:",

@@ -14,7 +14,9 @@ import {
   normalizeQtyDecimal,
   refundCashShareMinor,
   refundPayoutMinor,
+  refundTenderSplit,
   revenueBaseMinor,
+  saleCashLikeMinor,
   saleDebtMinor,
   toMinorOrNull,
 } from './cart-math';
@@ -565,5 +567,134 @@ describe('F8 — savat qatori formulalari (kasr miqdor)', () => {
     expect(
       cartLineMarkdownMinor({ basePriceMinor: null, priceMinor: 90_000n, quantity: '1' }),
     ).toBeNull();
+  });
+});
+
+/**
+ * P5 (2026-08-12) — qaytarishni KANAL bo'yicha bo'lish.
+ *
+ * Prodda o'lchandi (R1): 100% KARTA cheki naqd qaytarilib yashiq olmagan
+ * pulni chiqarib yubordi. Server endi buni rad etadi (`cashMaxMinor`), ya'ni
+ * POS eski payloadni yuborsa (`cash = butun pul ulushi, card = 0`) KARTA
+ * chekini umuman qaytarib bo'lmay qolardi — ekran ham bo'lishi kerak.
+ */
+describe('refundTenderSplit — naqd/naqdsiz ulushlar (P5)', () => {
+  it('100% NAQD chek: hammasi naqd', () => {
+    expect(
+      refundTenderSplit({
+        originalSumMinor: 100_000n,
+        originalDebtMinor: 0n,
+        originalCashLikeMinor: 100_000n,
+        refundSumMinor: 100_000n,
+      }),
+    ).toEqual({ cashMinor: 100_000n, cardMinor: 0n });
+  });
+
+  it('🔴 100% KARTA chek: naqd 0, hammasi karta qatoriga', () => {
+    expect(
+      refundTenderSplit({
+        originalSumMinor: 100_000n,
+        originalDebtMinor: 0n,
+        originalCashLikeMinor: 0n,
+        refundSumMinor: 100_000n,
+      }),
+    ).toEqual({ cashMinor: 0n, cardMinor: 100_000n });
+  });
+
+  it('ARALASH chek: har kanal o`z ulushida', () => {
+    // 100 000 = 30 000 naqd + 70 000 karta; yarmi qaytarilyapti ⇒
+    // naqd 15 000, karta 35 000 (jami 50 000 = pul ulushi).
+    expect(
+      refundTenderSplit({
+        originalSumMinor: 100_000n,
+        originalDebtMinor: 0n,
+        originalCashLikeMinor: 30_000n,
+        refundSumMinor: 50_000n,
+      }),
+    ).toEqual({ cashMinor: 15_000n, cardMinor: 35_000n });
+  });
+
+  it('QARZLI chek: qarz ulushi ikkala kanalga ham tushmaydi', () => {
+    // 100 000: 40 000 naqd + 60 000 qarz ⇒ pul ulushi 40 000, hammasi naqd.
+    expect(
+      refundTenderSplit({
+        originalSumMinor: 100_000n,
+        originalDebtMinor: 60_000n,
+        originalCashLikeMinor: 40_000n,
+        refundSumMinor: 100_000n,
+      }),
+    ).toEqual({ cashMinor: 40_000n, cardMinor: 0n });
+  });
+
+  it('yig`indi HECH QACHON `refundCashShareMinor` (pul ulushi) dan oshmaydi', () => {
+    for (const cashLike of [0n, 1n, 33_333n, 70_000n, 100_000n]) {
+      const money = refundCashShareMinor({
+        originalSumMinor: 100_000n,
+        originalDebtMinor: 0n,
+        refundSumMinor: 33_333n,
+      });
+      const split = refundTenderSplit({
+        originalSumMinor: 100_000n,
+        originalDebtMinor: 0n,
+        originalCashLikeMinor: cashLike,
+        refundSumMinor: 33_333n,
+      });
+      expect(split.cashMinor + split.cardMinor).toBeLessThanOrEqual(money);
+      expect(split.cashMinor).toBeGreaterThanOrEqual(0n);
+      expect(split.cardMinor).toBeGreaterThanOrEqual(0n);
+    }
+  });
+
+  it('nol chek: bo`lish yo`q, nolga bo`linish ham yo`q', () => {
+    expect(
+      refundTenderSplit({
+        originalSumMinor: 0n,
+        originalDebtMinor: 0n,
+        originalCashLikeMinor: 0n,
+        refundSumMinor: 500n,
+      }),
+    ).toEqual({ cashMinor: 0n, cardMinor: 0n });
+  });
+
+  it('to`lov qatorlari YO`Q eski chek: eski xulq — hammasi naqd', () => {
+    // `saleCashLikeMinor(undefined)` = 0 bo'lsa karta qatoriga tushib
+    // ketardi; eski cheklar naqd deb qaraladi (`saleDebtMinor` bilan bir xil
+    // zaxira qoida) — aks holda tarixiy chek qaytarilmay qolardi.
+    expect(saleCashLikeMinor(null)).toBeNull();
+    expect(
+      refundTenderSplit({
+        originalSumMinor: 100_000n,
+        originalDebtMinor: 0n,
+        originalCashLikeMinor: null,
+        refundSumMinor: 100_000n,
+      }),
+    ).toEqual({ cashMinor: 100_000n, cardMinor: 0n });
+  });
+});
+
+describe('saleCashLikeMinor — yashiq olgan ulush (P5)', () => {
+  it('CASH_UZS va CASH_USD ni `amountBaseMinor` bo`yicha qo`shadi', () => {
+    expect(
+      saleCashLikeMinor([
+        { method: 'CASH_UZS', amountBaseMinor: '30000' },
+        { method: 'CASH_USD', amountBaseMinor: '23869' },
+        { method: 'CARD', amountBaseMinor: '10000' },
+        { method: 'TERMINAL', amountBaseMinor: '10000' },
+        { method: 'DEBT', amountBaseMinor: '5000' },
+      ]),
+    ).toBe(53_869n);
+  });
+
+  it('faqat naqdsiz chek: 0 (null EMAS — qatorlar BOR)', () => {
+    expect(saleCashLikeMinor([{ method: 'CARD', amountBaseMinor: '10000' }])).toBe(0n);
+  });
+
+  it('qatorlar yo`q / noma`lum: null = O`LCHANMAGAN', () => {
+    expect(saleCashLikeMinor(undefined)).toBeNull();
+    expect(saleCashLikeMinor([])).toBeNull();
+  });
+
+  it('buzuq qiymat pul YARATMAYDI', () => {
+    expect(saleCashLikeMinor([{ method: 'CASH_UZS', amountBaseMinor: 'xx' }])).toBe(0n);
   });
 });

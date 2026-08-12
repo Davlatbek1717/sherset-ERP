@@ -302,6 +302,9 @@ describe('computeRefundSettlementCaps — payout bounded by what was actually ta
   const base = {
     priorRefundedSumMinor: 0n,
     priorMoneyReturnedMinor: 0n,
+    // P5: eski bloklarda chek TO'LIQ NAQD deb qaraladi — o'sha paytdagi
+    // yagona holat shu edi, ya'ni naqd cap pul cap bilan ustma-ust tushadi.
+    priorCashReturnedMinor: 0n,
     priorDebtReturnedMinor: 0n,
   };
 
@@ -311,9 +314,10 @@ describe('computeRefundSettlementCaps — payout bounded by what was actually ta
         ...base,
         originalSumMinor: 100_000n,
         originalDebtMinor: 100_000n,
+        originalCashLikeMinor: 0n,
         refundSumMinor: 100_000n,
       }),
-    ).toEqual({ moneyMaxMinor: 0n, debtMaxMinor: 100_000n });
+    ).toEqual({ moneyMaxMinor: 0n, cashMaxMinor: 0n, debtMaxMinor: 100_000n });
   });
 
   it('a cash receipt pays the full refund value back in money', () => {
@@ -322,9 +326,10 @@ describe('computeRefundSettlementCaps — payout bounded by what was actually ta
         ...base,
         originalSumMinor: 100_000n,
         originalDebtMinor: 0n,
+        originalCashLikeMinor: 100_000n,
         refundSumMinor: 100_000n,
       }),
-    ).toEqual({ moneyMaxMinor: 100_000n, debtMaxMinor: 0n });
+    ).toEqual({ moneyMaxMinor: 100_000n, cashMaxMinor: 100_000n, debtMaxMinor: 0n });
   });
 
   it('splits the caps in the proportion the receipt was settled', () => {
@@ -334,9 +339,10 @@ describe('computeRefundSettlementCaps — payout bounded by what was actually ta
         ...base,
         originalSumMinor: 100_000n,
         originalDebtMinor: 60_000n,
+        originalCashLikeMinor: 40_000n,
         refundSumMinor: 50_000n,
       }),
-    ).toEqual({ moneyMaxMinor: 20_000n, debtMaxMinor: 30_000n });
+    ).toEqual({ moneyMaxMinor: 20_000n, cashMaxMinor: 20_000n, debtMaxMinor: 30_000n });
   });
 
   it('subtracts what earlier refunds already returned', () => {
@@ -344,12 +350,14 @@ describe('computeRefundSettlementCaps — payout bounded by what was actually ta
       computeRefundSettlementCaps({
         originalSumMinor: 100_000n,
         originalDebtMinor: 60_000n,
+        originalCashLikeMinor: 40_000n,
         priorRefundedSumMinor: 50_000n,
         priorMoneyReturnedMinor: 20_000n,
+        priorCashReturnedMinor: 20_000n,
         priorDebtReturnedMinor: 30_000n,
         refundSumMinor: 50_000n,
       }),
-    ).toEqual({ moneyMaxMinor: 20_000n, debtMaxMinor: 30_000n });
+    ).toEqual({ moneyMaxMinor: 20_000n, cashMaxMinor: 20_000n, debtMaxMinor: 30_000n });
   });
 
   it('rounding never lets the cumulative money paid out exceed the money taken', () => {
@@ -360,8 +368,10 @@ describe('computeRefundSettlementCaps — payout bounded by what was actually ta
       const caps = computeRefundSettlementCaps({
         originalSumMinor: 100n,
         originalDebtMinor: 50n,
+        originalCashLikeMinor: 50n,
         priorRefundedSumMinor: priorRefunded,
         priorMoneyReturnedMinor: priorMoney,
+        priorCashReturnedMinor: priorMoney,
         priorDebtReturnedMinor: 0n,
         refundSumMinor: 3n,
       });
@@ -378,8 +388,10 @@ describe('computeRefundSettlementCaps — payout bounded by what was actually ta
       const caps = computeRefundSettlementCaps({
         originalSumMinor: 100n,
         originalDebtMinor: 50n,
+        originalCashLikeMinor: 50n,
         priorRefundedSumMinor: priorRefunded,
         priorMoneyReturnedMinor: 0n,
+        priorCashReturnedMinor: 0n,
         priorDebtReturnedMinor: priorDebt,
         refundSumMinor: 3n,
       });
@@ -394,12 +406,14 @@ describe('computeRefundSettlementCaps — payout bounded by what was actually ta
       computeRefundSettlementCaps({
         originalSumMinor: 100_000n,
         originalDebtMinor: 0n,
+        originalCashLikeMinor: 100_000n,
         priorRefundedSumMinor: 100_000n,
         priorMoneyReturnedMinor: 100_000n,
+        priorCashReturnedMinor: 100_000n,
         priorDebtReturnedMinor: 0n,
         refundSumMinor: 0n,
       }),
-    ).toEqual({ moneyMaxMinor: 0n, debtMaxMinor: 0n });
+    ).toEqual({ moneyMaxMinor: 0n, cashMaxMinor: 0n, debtMaxMinor: 0n });
   });
 
   it('a zero-value receipt yields zero caps (no division by zero)', () => {
@@ -408,9 +422,10 @@ describe('computeRefundSettlementCaps — payout bounded by what was actually ta
         ...base,
         originalSumMinor: 0n,
         originalDebtMinor: 0n,
+        originalCashLikeMinor: 0n,
         refundSumMinor: 0n,
       }),
-    ).toEqual({ moneyMaxMinor: 0n, debtMaxMinor: 0n });
+    ).toEqual({ moneyMaxMinor: 0n, cashMaxMinor: 0n, debtMaxMinor: 0n });
   });
 
   it('a debt bigger than the receipt (corrupt data) cannot mint a money cap', () => {
@@ -418,6 +433,7 @@ describe('computeRefundSettlementCaps — payout bounded by what was actually ta
       ...base,
       originalSumMinor: 100n,
       originalDebtMinor: 500n,
+      originalCashLikeMinor: 0n,
       refundSumMinor: 100n,
     });
     expect(caps.moneyMaxMinor).toBe(0n);
@@ -426,7 +442,7 @@ describe('computeRefundSettlementCaps — payout bounded by what was actually ta
 });
 
 describe('validateRefundSettlement — enforces both caps', () => {
-  const caps = { moneyMaxMinor: 40_000n, debtMaxMinor: 60_000n };
+  const caps = { moneyMaxMinor: 40_000n, cashMaxMinor: 40_000n, debtMaxMinor: 60_000n };
 
   it('accepts a settlement inside both caps', () => {
     expect(validateRefundSettlement(caps, 30_000n, 10_000n, 60_000n)).toBeNull();
@@ -446,5 +462,205 @@ describe('validateRefundSettlement — enforces both caps', () => {
 
   it('exact at both boundaries (no off-by-one)', () => {
     expect(validateRefundSettlement(caps, 40_000n, 0n, 60_000n)).toBeNull();
+  });
+});
+
+/**
+ * P5 (2026-08-12) — 🔴 NAQD ULUSHI CAP'i. Jonli prod probe (R1):
+ * 100% KARTA bilan to'langan chek `cashAmountMinor = jami` bilan qaytarildi
+ * va **201** oldi — kassa qoldig'i 85 357,21 → 85 157,21 so'm. Ya'ni yashiq
+ * hech qachon olmagan 200 so'mni chiqarib yubordi (bank pulini esa terminal
+ * orqali alohida qaytarish kerak ⇒ ikki karra to'lov).
+ *
+ * Sabab: `moneyMaxMinor` FAQAT «pul vs qarz» ni ajratardi, «naqd vs naqdsiz»
+ * ni EMAS. SALES-04 qarz tomonini yopgan edi, kanal tomoni ochiq qolgan.
+ *
+ * MK31: `CASH_USD` naqd-o'xshash deb sanaladi (dollar yashiqqa TUSHGAN,
+ * qaytimi ham doim so'mda beriladi — `retail-tenders.ts` §6.2). Ya'ni dollar
+ * chek so'mda qaytariladi va bu qiymat jihatidan neytral; karta/terminal esa
+ * yashiqqa UMUMAN tushmagan.
+ */
+describe('P5 — naqd cap: yashiq olmagan pulni qaytara olmaydi', () => {
+  const base = {
+    priorRefundedSumMinor: 0n,
+    priorMoneyReturnedMinor: 0n,
+    priorCashReturnedMinor: 0n,
+    priorDebtReturnedMinor: 0n,
+  };
+
+  it('🔴 100% KARTA cheki: naqd cap = 0 (pul cap esa to`liq)', () => {
+    const caps = computeRefundSettlementCaps({
+      ...base,
+      originalSumMinor: 100_000n,
+      originalDebtMinor: 0n,
+      originalCashLikeMinor: 0n,
+      refundSumMinor: 100_000n,
+    });
+    expect(caps.cashMaxMinor).toBe(0n);
+    expect(caps.moneyMaxMinor).toBe(100_000n);
+  });
+
+  it('100% NAQD cheki: naqd cap = pul cap', () => {
+    const caps = computeRefundSettlementCaps({
+      ...base,
+      originalSumMinor: 100_000n,
+      originalDebtMinor: 0n,
+      originalCashLikeMinor: 100_000n,
+      refundSumMinor: 100_000n,
+    });
+    expect(caps.cashMaxMinor).toBe(100_000n);
+    expect(caps.moneyMaxMinor).toBe(100_000n);
+  });
+
+  it('ARALASH (naqd+karta) chekda naqd cap proporsional', () => {
+    // 100 000 chek: 30 000 naqd + 70 000 karta. Yarmi qaytarilyapti.
+    const caps = computeRefundSettlementCaps({
+      ...base,
+      originalSumMinor: 100_000n,
+      originalDebtMinor: 0n,
+      originalCashLikeMinor: 30_000n,
+      refundSumMinor: 50_000n,
+    });
+    expect(caps.cashMaxMinor).toBe(15_000n);
+    expect(caps.moneyMaxMinor).toBe(50_000n);
+  });
+
+  it('naqd cap HECH QACHON pul cap`dan oshmaydi (qarzli aralash chek)', () => {
+    // 100 000: 40 000 naqd + 60 000 qarz. Naqd ulushi pul ulushiga teng.
+    const caps = computeRefundSettlementCaps({
+      ...base,
+      originalSumMinor: 100_000n,
+      originalDebtMinor: 60_000n,
+      originalCashLikeMinor: 40_000n,
+      refundSumMinor: 100_000n,
+    });
+    expect(caps.cashMaxMinor).toBe(40_000n);
+    expect(caps.moneyMaxMinor).toBe(40_000n);
+    expect(caps.cashMaxMinor).toBeLessThanOrEqual(caps.moneyMaxMinor);
+  });
+
+  it('buzuq ma`lumot: naqd ulushi jamidan katta bo`lsa qisiladi', () => {
+    const caps = computeRefundSettlementCaps({
+      ...base,
+      originalSumMinor: 100n,
+      originalDebtMinor: 0n,
+      originalCashLikeMinor: 500n,
+      refundSumMinor: 100n,
+    });
+    expect(caps.cashMaxMinor).toBe(100n);
+  });
+
+  it('avvalgi qaytarishlarning NAQDi ayiriladi (qisman qaytarish zanjiri)', () => {
+    const caps = computeRefundSettlementCaps({
+      originalSumMinor: 100_000n,
+      originalDebtMinor: 0n,
+      originalCashLikeMinor: 100_000n,
+      priorRefundedSumMinor: 50_000n,
+      priorMoneyReturnedMinor: 50_000n,
+      priorCashReturnedMinor: 50_000n,
+      priorDebtReturnedMinor: 0n,
+      refundSumMinor: 50_000n,
+    });
+    expect(caps.cashMaxMinor).toBe(50_000n);
+  });
+
+  it('yaxlitlash kümülativ naqdni olingan naqddan oshirmaydi', () => {
+    let priorRefunded = 0n;
+    let priorCash = 0n;
+    for (let i = 0; i < 33; i++) {
+      const caps = computeRefundSettlementCaps({
+        originalSumMinor: 100n,
+        originalDebtMinor: 0n,
+        originalCashLikeMinor: 50n,
+        priorRefundedSumMinor: priorRefunded,
+        priorMoneyReturnedMinor: 0n,
+        priorCashReturnedMinor: priorCash,
+        priorDebtReturnedMinor: 0n,
+        refundSumMinor: 3n,
+      });
+      priorCash += caps.cashMaxMinor;
+      priorRefunded += 3n;
+    }
+    expect(priorCash).toBeLessThanOrEqual(50n);
+  });
+
+  it('🔴 validate: naqd cap`dan oshgan naqd RAD etiladi (R1 hodisasi)', () => {
+    const caps = { moneyMaxMinor: 100_000n, cashMaxMinor: 0n, debtMaxMinor: 0n };
+    expect(validateRefundSettlement(caps, 100_000n, 0n, 0n)).toMatch(/naqd/i);
+  });
+
+  it('validate: o`sha summa KARTA qatoriga yozilsa qabul qilinadi', () => {
+    const caps = { moneyMaxMinor: 100_000n, cashMaxMinor: 0n, debtMaxMinor: 0n };
+    expect(validateRefundSettlement(caps, 0n, 100_000n, 0n)).toBeNull();
+  });
+
+  it('validate: naqd cap chegarasida (off-by-one yo`q)', () => {
+    const caps = { moneyMaxMinor: 100_000n, cashMaxMinor: 30_000n, debtMaxMinor: 0n };
+    expect(validateRefundSettlement(caps, 30_000n, 70_000n, 0n)).toBeNull();
+    expect(validateRefundSettlement(caps, 30_001n, 69_999n, 0n)).toMatch(/naqd/i);
+  });
+});
+
+/**
+ * P5 — 🔴 NULL ≠ 0. `RetailSalePayment` qatorlari kassa TZ §6.1 dan beri
+ * yoziladi; undan OLDINGI cheklarda ular UMUMAN yo'q (prodda o'lchandi).
+ * `0n` deb o'qilsa butun tarixiy chek naqd qaytarilmaydigan bo'lib qolardi.
+ */
+describe('P5 — naqd ulushi O`LCHANMAGAN bo`lsa kanal cap`i qo`yilmaydi', () => {
+  const base = {
+    priorRefundedSumMinor: 0n,
+    priorMoneyReturnedMinor: 0n,
+    priorCashReturnedMinor: 0n,
+    priorDebtReturnedMinor: 0n,
+  };
+
+  it('null ⇒ naqd cap = pul cap (avvalgi xulq, regressiya yo`q)', () => {
+    const caps = computeRefundSettlementCaps({
+      ...base,
+      originalSumMinor: 100_000n,
+      originalDebtMinor: 0n,
+      originalCashLikeMinor: null,
+      refundSumMinor: 100_000n,
+    });
+    expect(caps.cashMaxMinor).toBe(100_000n);
+    expect(caps.moneyMaxMinor).toBe(100_000n);
+  });
+
+  it('null qarzli chekda ham pul cap`dan oshmaydi', () => {
+    const caps = computeRefundSettlementCaps({
+      ...base,
+      originalSumMinor: 100_000n,
+      originalDebtMinor: 60_000n,
+      originalCashLikeMinor: null,
+      refundSumMinor: 100_000n,
+    });
+    expect(caps.cashMaxMinor).toBe(40_000n);
+    expect(caps.moneyMaxMinor).toBe(40_000n);
+  });
+
+  it('🔴 `0n` esa TAQIQ — «o`lchandi va naqd olinmagan» degani', () => {
+    const caps = computeRefundSettlementCaps({
+      ...base,
+      originalSumMinor: 100_000n,
+      originalDebtMinor: 0n,
+      originalCashLikeMinor: 0n,
+      refundSumMinor: 100_000n,
+    });
+    expect(caps.cashMaxMinor).toBe(0n);
+  });
+
+  it('null + avvalgi qaytarishlar: pul cap bilan bir xil kamayadi', () => {
+    const caps = computeRefundSettlementCaps({
+      originalSumMinor: 100_000n,
+      originalDebtMinor: 0n,
+      originalCashLikeMinor: null,
+      priorRefundedSumMinor: 50_000n,
+      priorMoneyReturnedMinor: 50_000n,
+      priorCashReturnedMinor: 50_000n,
+      priorDebtReturnedMinor: 0n,
+      refundSumMinor: 50_000n,
+    });
+    expect(caps.cashMaxMinor).toBe(50_000n);
+    expect(caps.moneyMaxMinor).toBe(50_000n);
   });
 });

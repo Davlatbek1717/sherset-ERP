@@ -182,3 +182,92 @@ describe('ChekDetailPanel — qarzli chekni qaytarish', () => {
     expect(screen.queryByText('Qarzdan yechiladi')).not.toBeInTheDocument();
   });
 });
+
+/**
+ * P5 (2026-08-12) — KARTA/TERMINAL bilan to'langan chekni qaytarish.
+ *
+ * Prodda o'lchandi (R1): bunday chek NAQD qaytarilib kassa qoldig'i 200
+ * so'mga tushdi — yashiq hech qachon olmagan pulni chiqarib yubordi. Server
+ * endi rad etadi, ya'ni ekran ham bo'linishi SHART: aks holda kassir karta
+ * chekini umuman qaytara olmasdi (400 ga urilardi).
+ */
+const CARD_ONLY = [
+  {
+    method: 'CARD',
+    amountMinor: '1800000',
+    currency: 'UZS',
+    rateMinor: null,
+    amountBaseMinor: '1800000',
+  },
+];
+
+/** 18 000: 6 000 naqd + 12 000 terminal. */
+const CASH_PLUS_TERMINAL = [
+  {
+    method: 'CASH_UZS',
+    amountMinor: '600000',
+    currency: 'UZS',
+    rateMinor: null,
+    amountBaseMinor: '600000',
+  },
+  {
+    method: 'TERMINAL',
+    amountMinor: '1200000',
+    currency: 'UZS',
+    rateMinor: null,
+    amountBaseMinor: '1200000',
+  },
+];
+
+describe('ChekDetailPanel — karta/terminal chekini qaytarish (P5)', () => {
+  it('100% KARTA chek: naqd 0, hammasi karta qatorida yuboriladi', async () => {
+    vi.mocked(api.get).mockImplementation(router(chekRoutes({ payments: CARD_ONLY })));
+    const user = userEvent.setup();
+    renderWithProviders(<SotuvPage />);
+    await openRefund(user);
+
+    await user.click(screen.getByRole('button', { name: /Qaytarishni tasdiqlash/ }));
+    await waitFor(() => expect(api.post).toHaveBeenCalled());
+    expect(api.post).toHaveBeenCalledWith('/retail-sales/s-1/refund', {
+      positions: [{ productId: 'p-1', quantity: '2' }],
+      cashAmountMinor: '0',
+      cardAmountMinor: '1800000',
+      description: 'POS qaytarish',
+    });
+  });
+
+  it('kassirga «naqd berilmaydi» deb OCHIQ aytiladi', async () => {
+    vi.mocked(api.get).mockImplementation(router(chekRoutes({ payments: CARD_ONLY })));
+    const user = userEvent.setup();
+    renderWithProviders(<SotuvPage />);
+    await openRefund(user);
+
+    const row = screen.getByTestId('pos-refund-card-share');
+    expect(norm(row.textContent)).toContain('18 000,00 сум');
+    expect(screen.getByText(/Naqd berilmaydi/)).toBeInTheDocument();
+    const footer = screen.getByText('Qaytariladigan summa (naqd)').parentElement as HTMLElement;
+    expect(norm(footer.textContent)).toContain('0,00');
+  });
+
+  it('ARALASH (naqd + terminal) chek har kanalga o‘z ulushida bo‘linadi', async () => {
+    vi.mocked(api.get).mockImplementation(router(chekRoutes({ payments: CASH_PLUS_TERMINAL })));
+    const user = userEvent.setup();
+    renderWithProviders(<SotuvPage />);
+    await openRefund(user);
+
+    await user.click(screen.getByRole('button', { name: /Qaytarishni tasdiqlash/ }));
+    await waitFor(() => expect(api.post).toHaveBeenCalled());
+    const [, body] = vi.mocked(api.post).mock.calls[0] as [string, Record<string, unknown>];
+    expect(body.cashAmountMinor).toBe('600000');
+    expect(body.cardAmountMinor).toBe('1200000');
+  });
+
+  it('naqd chekda karta qatori UMUMAN ko‘rinmaydi (yolg‘on signal yo‘q)', async () => {
+    vi.mocked(api.get).mockImplementation(router(chekRoutes({ payments: PART_DEBT })));
+    const user = userEvent.setup();
+    renderWithProviders(<SotuvPage />);
+    await openRefund(user);
+
+    expect(screen.queryByTestId('pos-refund-card-share')).not.toBeInTheDocument();
+  });
+});

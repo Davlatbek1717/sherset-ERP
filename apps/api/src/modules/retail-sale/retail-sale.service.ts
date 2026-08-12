@@ -422,7 +422,10 @@ export class RetailSaleService {
             cashDesk: { select: { id: true, name: true, currency: true } },
             cashier: { select: { id: true, name: true } },
             store: { select: { id: true, name: true } },
-            organization: { select: { id: true, name: true, legalTitle: true } },
+            // `phone` — chek shapkasining IKKINCHI qatori (egasining namunasi
+            // `chek.png`: do'kon nomi ostida telefon). Ilgari tanlanmasdi,
+            // shuning uchun chekda telefon UMUMAN chiqmasdi.
+            organization: { select: { id: true, name: true, legalTitle: true, phone: true } },
           },
         },
         agent: { select: { id: true, name: true, legalTitle: true } },
@@ -1419,7 +1422,10 @@ export class RetailSaleService {
         // SALES-04: how the receipt was actually settled. A DEBT row means
         // the till took no money for that share — refunding it in cash pays
         // out money that never arrived AND leaves the debt standing.
-        payments: { select: { method: true, amountMinor: true } },
+        // P5 — `amountBaseMinor` HAM kerak: `CASH_USD` qatorida `amountMinor`
+        // SENTDA turadi, uni tiyin deb qo'shish naqd cap'ini ~12 000× kichik
+        // ko'rsatib, dollar chekni qaytarib bo'lmaydigan qilardi.
+        payments: { select: { method: true, amountMinor: true, amountBaseMinor: true } },
       },
     });
     if (!original) throw new NotFoundException(`RetailSale ${originalSaleId} not found`);
@@ -1467,9 +1473,13 @@ export class RetailSaleService {
       (acc, r) => ({
         sumMinor: acc.sumMinor + r.sumMinor,
         moneyMinor: acc.moneyMinor + r.cashAmountMinor + r.cardAmountMinor,
+        // P5 — NAQD alohida sanaladi: kanal cap'i ham kümülativ bo'lishi kerak,
+        // aks holda chekni bo'lib-bo'lib qaytarish yo'li bilan yashiqdan
+        // olinmagan pulni chiqarish mumkin bo'lardi.
+        cashMinor: acc.cashMinor + r.cashAmountMinor,
         debtMinor: acc.debtMinor + r.debtReturnMinor,
       }),
-      { sumMinor: 0n, moneyMinor: 0n, debtMinor: 0n },
+      { sumMinor: 0n, moneyMinor: 0n, cashMinor: 0n, debtMinor: 0n },
     );
 
     // §105 over-refund guard: refunded products/qty must be a subset of
@@ -1519,11 +1529,33 @@ export class RetailSaleService {
     const originalDebtMinor = original.payments
       .filter((p) => p.method === TENDER.debt)
       .reduce((a, p) => a + p.amountMinor, 0n);
+    // P5 — YASHIQ olgan ulush. Prodda o'lchandi (R1, 2026-08-12): 100% KARTA
+    // bilan to'langan chek `cashAmountMinor = jami` bilan qaytarilib **201**
+    // oldi va kassa qoldig'i 85 357,21 → 85 157,21 so'mga tushdi. Ya'ni bank
+    // orqali kelgan pul naqd bo'lib chiqib ketdi (bankdagi qismini terminal
+    // orqali ham qaytarish kerak ⇒ ikki karra to'lov).
+    //
+    // `amountBaseMinor` o'qiladi, `amountMinor` EMAS — `CASH_USD` qatorida
+    // ikkinchisi SENTDA (MK31). Dollar naqd-o'xshash deb sanaladi: pul
+    // yashiqda va uning qaytimi allaqachon so'mda beriladi (§6.2).
+    //
+    // 🔴 NULL ≠ 0: to'lov qatorlari UMUMAN yo'q chek — kassa TZ §6.1 dan
+    // OLDINGI hujjat (prodda o'lchandi: eski posted cheklarda 0 qator).
+    // Uni «naqd olinmagan» deb o'qish butun tarixiy chekni naqd
+    // qaytarilmaydigan qilardi, ya'ni o'lchanmaganlik taqiqqa aylanardi.
+    const originalCashLikeMinor =
+      original.payments.length === 0
+        ? null
+        : original.payments
+            .filter((p) => p.method === TENDER.cashUzs || p.method === TENDER.cashUsd)
+            .reduce((a, p) => a + p.amountBaseMinor, 0n);
     const caps = computeRefundSettlementCaps({
       originalSumMinor: original.sumMinor,
       originalDebtMinor,
+      originalCashLikeMinor,
       priorRefundedSumMinor: priorTotals.sumMinor,
       priorMoneyReturnedMinor: priorTotals.moneyMinor,
+      priorCashReturnedMinor: priorTotals.cashMinor,
       priorDebtReturnedMinor: priorTotals.debtMinor,
       refundSumMinor: refundPositions.totalMinor,
     });

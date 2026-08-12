@@ -236,10 +236,30 @@ export interface RefundSettlementInput {
   originalSumMinor: bigint;
   /** The part of it left on the customer's account — Σ RetailSalePayment(DEBT). */
   originalDebtMinor: bigint;
+  /**
+   * P5 — the part of the receipt the DRAWER physically took (tiyin, so'm
+   * equivalent): Σ `CASH_UZS` + Σ `CASH_USD.amountBaseMinor`. Card/terminal
+   * money never reached the drawer, so it must never leave it.
+   *
+   * MK31 — why `CASH_USD` counts as cash-like: the dollars ARE in the drawer
+   * and change for them is already paid in so'm (`retail-tenders.ts` §6.2),
+   * i.e. the till is the exchange point. Refunding a dollar receipt in so'm
+   * at the frozen rate is value-neutral; refunding a CARD receipt in cash is
+   * not — the bank still holds that money.
+   *
+   * 🔴 `null` = **O'LCHANMAGAN**, `0n` = «naqd olinmagan». Ikkalasi bir xil
+   * EMAS. `RetailSalePayment` qatorlari kassa TZ §6.1 dan beri yoziladi;
+   * undan OLDINGI cheklarda ular umuman yo'q (prodda o'lchandi: eski posted
+   * cheklarda 0 qator). Ularni `0n` deb o'qisak butun tarixiy chek naqd
+   * qaytarilmaydigan bo'lib qolardi — o'lchanmaganlik taqiqqa aylanmasin.
+   */
+  originalCashLikeMinor: bigint | null;
   /** Σ value of the refunds already mirrored from this receipt. */
   priorRefundedSumMinor: bigint;
   /** Σ cash+card those earlier refunds already paid back. */
   priorMoneyReturnedMinor: bigint;
+  /** Σ CASH those earlier refunds already took out of the drawer. */
+  priorCashReturnedMinor: bigint;
   /** Σ debt those earlier refunds already wrote down. */
   priorDebtReturnedMinor: bigint;
   /** Value of the refund being made now (from `priceRefundFromOriginal`). */
@@ -249,6 +269,12 @@ export interface RefundSettlementInput {
 export interface RefundSettlementCaps {
   /** Most cash+card this refund may pay out. */
   moneyMaxMinor: bigint;
+  /**
+   * P5 — most CASH this refund may take out of the drawer. Always
+   * ≤ `moneyMaxMinor`; the remainder (if any) must go back through the
+   * non-cash channel (`cardReturnMinor`).
+   */
+  cashMaxMinor: bigint;
   /** Most debt this refund may write off the customer's balance. */
   debtMaxMinor: bigint;
 }
@@ -290,10 +316,29 @@ export function computeRefundSettlementCaps(i: RefundSettlementInput): RefundSet
   const moneyCapTotal = originalSum === 0n ? 0n : (money * refundedTotal) / originalSum;
   const debtCapTotal = clamp(refundedTotal - moneyCapTotal, 0n, debt);
 
+  // P5 — the drawer's own ceiling, on the SAME cumulative base so split
+  // refunds cannot drift past it. Clamped into [0, money] first: corrupt data
+  // (cash-like recorded above the receipt total, or above the money share of
+  // a credit receipt) must not mint a cash cap larger than the money cap.
+  //
+  // `null` (o'lchanmagan — to'lov qatorlari yo'q eski chek) ⇒ kanal cap'i
+  // QO'YILMAYDI, ya'ni AVVALGI xulq: `cashMax = moneyMax`.
+  const cashCapTotal =
+    i.originalCashLikeMinor == null
+      ? moneyCapTotal
+      : originalSum === 0n
+        ? 0n
+        : (clamp(i.originalCashLikeMinor, 0n, money) * refundedTotal) / originalSum;
+
   const moneyMaxMinor = moneyCapTotal - i.priorMoneyReturnedMinor;
+  const cashMaxMinor =
+    i.originalCashLikeMinor == null
+      ? moneyMaxMinor
+      : cashCapTotal - i.priorCashReturnedMinor;
   const debtMaxMinor = debtCapTotal - i.priorDebtReturnedMinor;
   return {
     moneyMaxMinor: moneyMaxMinor > 0n ? moneyMaxMinor : 0n,
+    cashMaxMinor: cashMaxMinor > 0n ? cashMaxMinor : 0n,
     debtMaxMinor: debtMaxMinor > 0n ? debtMaxMinor : 0n,
   };
 }
@@ -316,6 +361,16 @@ export function validateRefundSettlement(
   const payout = cashReturnMinor + cardReturnMinor;
   if (payout > caps.moneyMaxMinor) {
     return `Refund payout ${payout.toString()} exceeds the money actually taken for these goods (${caps.moneyMaxMinor.toString()})`;
+  }
+  // P5 — kanal cap'i. Prodda o'lchandi (R1): 100% KARTA cheki naqd qaytarilib
+  // yashiqdan hech qachon kirmagan pul chiqib ketdi. Xabar KASSIRGA
+  // ko'rinadi, shuning uchun o'zbekcha va nima qilish kerakligi bilan.
+  if (cashReturnMinor > caps.cashMaxMinor) {
+    return (
+      `Naqd qaytarish ${(cashReturnMinor / 100n).toString()} so'm — kassa bu chek uchun ` +
+      `atigi ${(caps.cashMaxMinor / 100n).toString()} so'm naqd olgan. Qolgan qismi karta/terminal ` +
+      'orqali kelgan: uni o‘sha kanal orqali qaytaring (naqd qatorini kamaytiring).'
+    );
   }
   if (debtReturnMinor > caps.debtMaxMinor) {
     return `Debt write-down ${debtReturnMinor.toString()} exceeds the credit taken on these goods (${caps.debtMaxMinor.toString()})`;

@@ -367,6 +367,81 @@ export function refundCashShareMinor(i: {
 }
 
 /**
+ * Chekning YASHIQ olgan ulushi (tiyin) — `CASH_UZS` + `CASH_USD`.
+ *
+ * `amountBaseMinor` o'qiladi, `amountMinor` EMAS: dollar qatorida ikkinchisi
+ * SENTDA turadi (MK31) va uni tiyin deb qo'shish ulushni ~12 000× kichik
+ * ko'rsatardi.
+ *
+ * `null` = **O'LCHANMAGAN** (chek detali to'lov qatorlarini bermagan yoki
+ * eski chekda ular umuman yo'q), `0n` = o'lchandi va naqd olinmagan. Ikkalasi
+ * bir xil emas: birinchisida eski xulq (hammasi naqd) saqlanadi, aks holda
+ * tarixiy cheklar POS'dan qaytarilmay qolardi.
+ */
+export function saleCashLikeMinor(
+  payments: ReadonlyArray<{ method: string; amountBaseMinor: string }> | null | undefined,
+): bigint | null {
+  if (!payments || payments.length === 0) return null;
+  let sum = 0n;
+  for (const p of payments) {
+    if (p.method !== 'CASH_UZS' && p.method !== 'CASH_USD') continue;
+    try {
+      sum += BigInt(p.amountBaseMinor);
+    } catch {
+      // Buzuq qiymat pul yaratmasin.
+    }
+  }
+  return sum;
+}
+
+/**
+ * Qaytarishni KANAL bo'yicha bo'lish — naqd (yashiqdan) va naqdsiz
+ * (karta/terminal orqali).
+ *
+ * 🔴 NEGA (P5, prodda o'lchangan): ilgari POS butun pul ulushini `cash`
+ * qatoriga yozardi. 100% KARTA bilan to'langan chek shu payloadda qaytarilib
+ * **201** oldi va kassa qoldig'i 200 so'mga tushdi — yashiq hech qachon
+ * olmagan pulni chiqarib yubordi (bankdagi qismini terminal orqali ham
+ * qaytarish kerak ⇒ ikki karra to'lov). Server endi buni rad etadi
+ * (`computeRefundSettlementCaps.cashMaxMinor`), ya'ni bu bo'linishsiz POS
+ * karta chekini UMUMAN qaytara olmasdi.
+ *
+ * Formulalar serverning cap'lari bilan AYNAN bir xil (yaxlitlash ham pastga):
+ *   naqd  = ⌊cashLike × R / sum⌋
+ *   karta = ⌊(sum − debt) × R / sum⌋ − naqd
+ * Shuning uchun `cash ≤ cashMax` va `cash + card ≤ moneyMax` — ikkala
+ * server qo'riqchisi ham chegarada o'tadi.
+ */
+export function refundTenderSplit(i: {
+  originalSumMinor: bigint;
+  originalDebtMinor: bigint;
+  /** `saleCashLikeMinor` natijasi; `null` = o'lchanmagan ⇒ eski xulq (naqd). */
+  originalCashLikeMinor: bigint | null;
+  refundSumMinor: bigint;
+}): { cashMinor: bigint; cardMinor: bigint } {
+  const moneyMinor = refundCashShareMinor({
+    originalSumMinor: i.originalSumMinor,
+    originalDebtMinor: i.originalDebtMinor,
+    refundSumMinor: i.refundSumMinor,
+  });
+  if (i.originalCashLikeMinor == null) return { cashMinor: moneyMinor, cardMinor: 0n };
+
+  const sum = i.originalSumMinor > 0n ? i.originalSumMinor : 0n;
+  if (sum === 0n) return { cashMinor: 0n, cardMinor: 0n };
+  const refunded = i.refundSumMinor < 0n ? 0n : i.refundSumMinor > sum ? sum : i.refundSumMinor;
+  // Server ham AYNAN shu qisishni qiladi: naqd ulushi pul ulushidan katta
+  // bo'lolmaydi (qaytim tufayli `amountBaseMinor` chek jamidan oshishi mumkin).
+  const cashLikeRaw = i.originalCashLikeMinor < 0n ? 0n : i.originalCashLikeMinor;
+  const debt =
+    i.originalDebtMinor < 0n ? 0n : i.originalDebtMinor > sum ? sum : i.originalDebtMinor;
+  const cashLike = cashLikeRaw > sum - debt ? sum - debt : cashLikeRaw;
+
+  const cashMinor = (cashLike * refunded) / sum;
+  const cardMinor = moneyMinor - cashMinor;
+  return { cashMinor, cardMinor: cardMinor > 0n ? cardMinor : 0n };
+}
+
+/**
  * Foyda bazasi — kassa HAQIQATAN oladigan pul.
  *
  * Mavjud chekni to'layotgan bo'lsak (omborchidan qaytgan «Tayyor» chek)

@@ -97,7 +97,11 @@ function makeHarness(
         },
         // Mirror chekda to'lov qatorlari YO'Q — bug aynan shu yerdan:
         // qarz ulushi 0 deb o'qiladi va butun summa naqdga ochiladi.
-        payments: isMirror ? [] : [{ method: 'CASH_UZS', amountMinor: 100_000n }],
+        // P5: dublyor SERVER select'ining shaklini takrorlaydi —
+        // `amountBaseMinor` naqd cap'i uchun O'QILADI.
+        payments: isMirror
+          ? []
+          : [{ method: 'CASH_UZS', amountMinor: 100_000n, amountBaseMinor: 100_000n }],
         positions: [
           {
             productId: PRODUCT_ID,

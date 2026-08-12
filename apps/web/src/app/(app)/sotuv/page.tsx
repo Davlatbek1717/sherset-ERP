@@ -24,9 +24,10 @@ import {
   clampReturnQty,
   discountedCartTotalMinor,
   normalizeQtyDecimal,
-  refundCashShareMinor,
   refundPayoutMinor,
+  refundTenderSplit,
   revenueBaseMinor,
+  saleCashLikeMinor,
   saleDebtMinor,
   cartCount as sumCartCount,
   toMinorOrNull,
@@ -396,15 +397,20 @@ function ChekDetailPanel({ saleId, onBack }: { saleId: string; onBack: () => voi
       // so'rasak server `moneyMaxMinor` bilan 400 berardi va bunday chekni
       // POS'dan umuman qaytarib bo'lmasdi. Qarz ulushi (`debtReturnMinor`)
       // ATAYLAB yuborilmaydi: server uni o'zi hisoblaydi (auto-split).
-      const cashRefund = refundCashShareMinor({
+      //
+      // P5: pul ulushi endi KANAL bo'yicha ham bo'linadi — yashiq olgani
+      // naqd, bank orqali kelgani karta qatoriga. Aks holda karta/terminal
+      // chek serverning `cashMaxMinor` qo'riqchisiga urilib qaytarilmasdi.
+      const split = refundTenderSplit({
         originalSumMinor: BigInt(data?.sumMinor ?? '0'),
         originalDebtMinor: saleDebtMinor(data?.payments),
+        originalCashLikeMinor: saleCashLikeMinor(data?.payments),
         refundSumMinor: refundValue,
       });
       await api.post(`/retail-sales/${saleId}/refund`, {
         positions,
-        cashAmountMinor: cashRefund.toString(),
-        cardAmountMinor: '0',
+        cashAmountMinor: split.cashMinor.toString(),
+        cardAmountMinor: split.cardMinor.toString(),
         // ⚠️ i18n-emas, ATAYLAB: bu hujjatning DB'da saqlanadigan izohi, ekran
         // matni emas. Kassirning tiliga bog'lasak bir xil hujjat kim yaratganiga
         // qarab turlicha yozilib qolardi (hisobot/qidiruv buziladi).
@@ -643,15 +649,23 @@ function ChekDetailPanel({ saleId, onBack }: { saleId: string; onBack: () => voi
               })),
             );
             const saleDebt = saleDebtMinor(data.payments);
-            const refundMinor = refundCashShareMinor({
+            // P5: ekran ham AYNI bo'linishni ko'rsatadi — kassir «naqd
+            // beraman» deb turib server 400 bermasin, va mijozga qaysi
+            // kanaldan pul qaytishini aytа olsin.
+            const split = refundTenderSplit({
               originalSumMinor: BigInt(data.sumMinor),
               originalDebtMinor: saleDebt,
+              originalCashLikeMinor: saleCashLikeMinor(data.payments),
               refundSumMinor: refundValue,
             });
+            const refundMinor = split.cashMinor;
             // Qarzdan yechiladigan qism — serverning auto-split'i aynan shu
             // qoldiqni yozadi. Kassir mijozga «pulingiz emas, qarzingiz
             // kamayadi» deyishi uchun ekranda ko'rinishi SHART.
-            const refundDebtMinor = refundValue - refundMinor;
+            //
+            // P5: KARTA ulushi ham chegiriladi — aks holda bank orqali
+            // qaytadigan summa «qarzdan yechiladi» bo'lib ko'rinardi.
+            const refundDebtMinor = refundValue - split.cashMinor - split.cardMinor;
             return (
               <>
                 <div className="mb-3 flex items-center justify-between">
@@ -662,6 +676,22 @@ function ChekDetailPanel({ saleId, onBack }: { saleId: string; onBack: () => voi
                     {formatMoney(refundMinor)}
                   </span>
                 </div>
+                {split.cardMinor > 0n && (
+                  <div
+                    className="mb-3 flex items-start justify-between gap-3"
+                    data-test-id="pos-refund-card-share"
+                  >
+                    <span className="text-sm text-[var(--ms-text-muted)]">
+                      {t('refund_amount_card')}
+                      <span className="mt-0.5 block text-[11px] text-[var(--ms-text-muted)]">
+                        {t('refund_amount_card_hint')}
+                      </span>
+                    </span>
+                    <span className="shrink-0 font-semibold tabular-nums text-[var(--ms-text-primary)]">
+                      {formatMoney(split.cardMinor)}
+                    </span>
+                  </div>
+                )}
                 {saleDebt > 0n && refundDebtMinor > 0n && (
                   <div className="mb-3 flex items-center justify-between">
                     <span className="text-sm text-[var(--ms-text-muted)]">
