@@ -331,6 +331,40 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-08-12g (KASSA — PIN AYNAN 4 raqam · ✅ DEPLOYED + JONLI O'LCHANDI) —**
+> **`cb1e3879` prodda** (`Deploy done: 786e2557… → cb1e3879…`; site 200 · `/kassa-kirish` 200 ·
+> `:4001/health` 200).
+>
+> Egasining jonli shikoyati: «5 marta bosganimda 5 xonalik bo'ldi, yana bosganimda 6 ta».
+> **Sabab kod xatosi EMAS** — butun PIN shartnomasi ataylab 4–6 raqamga qurilgan edi va kirish
+> sahifasi klaviaturaga `MAX_PIN = 6` uzatardi. 🔴 **Bug-klass:** `pin-keypad.test.tsx` chegarani
+> tekshiradi va tuzatishdan KEYIN ham to'liq yashil — chunki `maxLength` ni **testning o'zi**
+> uzatadi. Ya'ni «to'g'ri komponent + noto'g'ri argument» komponent testining ko'r nuqtasi.
+> Xotira: [[component-test-blind-to-caller-arg]].
+>
+> Uzunlik zanjirning to'rtala joyida birga 4 ga qulflandi (bittasi qolsa admin 6 raqamli PIN
+> qo'yadi, kassir uni 4 doirali ekranda hech qachon kirita olmaydi): `POS_PIN_RE=/^\d{4}$/`
+> (yagona manba) · 3 ta Zod sxema · `/kassa-kirish` `PIN_LENGTH=4` · `PinKeypad` doiralari endi
+> **o'zgarmas 4 ta** (ilgari o'sardi — aynan shu «yana bosaverish mumkin» ishorasini berardi) ·
+> `PosPinLock maxLength=4` · admin PIN modali.
+>
+> **JONLI VERIFIKATSIYA (statik emas):** prodda `POST /auth/pos-login` — `11111`/`111111`/`111`
+> → **400** «PIN 4 raqamdan iborat…»; `9999` (4 raqam) → **401** «PIN noto'g'ri» ya'ni sxemadan
+> o'tib argon2 tekshiruviga yetdi. Serverdagi chunk `page-3750669…js` da `maxLength:4`, `6` yo'q.
+> Qo'riqchilar: yangi `kassa-kirish/__tests__/pin-length.test.tsx` (haqiqiy sahifa render, 6 marta
+> bosiladi; **mutant bilan tekshirildi** — `PIN_LENGTH=6` da 5 testdan 4 tasi qizil) +
+> `kiosk-shell.test.ts` drift-lock (to'rtala joy).
+>
+> ⚠️ **Migratsiya qarzi:** 5–6 raqamli PIN'i bor xodim kira olmaydi — admin xodim kartasidan
+> 4 raqamli PIN qayta qo'yadi. PIN xesh saqlanadi ⇒ kimda uzun PIN borligini oldindan aniqlab
+> BO'LMAYDI. Prod test kassirlari (`1111/2222/3333`) 4 raqamli, ta'sir kutilmaydi.
+> ⚠️ 12f dagi «`MIN_PIN` topilmaydi, daraxt qizil» ogohlantirishi **YOPILDI** — o'sha yarim
+> tahrir shu ish edi; `pnpm typecheck` endi 10/10 yashil.
+> ⚠️ Parallel sessiya qarz-to'lovi ishini (yangi Prisma modeli + migratsiya) **commit qilinmagan**
+> holda ushlab turibdi ⇒ bu deploy'ga TUSHMADI. API to'liq to'plamidagi 3 yiqilish o'shaniki.
+>
+> ---
+>
 > **🕒 2026-08-12f (KASSA — qidiruv setkadan tanlaganda ham tozalanadi · ✅ DEPLOYED) —**
 > **`786e2557` prodda** (`Deploy done: 11f94b49… → 786e2557…`; site 200 · `:4001/health` 200 ·
 > chunk `page-4d0c22f1…js` 17:20 da qayta qurildi).
