@@ -146,10 +146,10 @@ kod/proddan dalillangan; **[XOTIRA]** — avvalgi sessiyalarda o'lchangan (xotir
 
 | # | Uzilish | Dalil | Faza |
 |---|---|---|---|
-| H1 | **Qaytarish → mijoz balansi YO'Q.** `sales-return` faqat stock yozadi; demand/invoice-out/supply/invoice-in balans yozadi, return **YOZMAYDI** — tovar qaytargan mijozning qarzi kamaymaydi | [O'LCHANGAN] `sales-return.service.ts` da `counterpartyBalance/applyDelta` 0 marta; qo'shni 4 hujjatda bor | **P14** |
+| H1 | ⚠️ **KOD-TOMON YOPILDI (P14, 2026-08-12) — jonli verify YO'Q.** `sales-return.post` endi `−sumMinor`, unpost/cancel simmetrik. 🔴 **Rejaning premise'i xato edi:** `demand` balansga UMUMAN yozmaydi va `invoice-in` ham yozmaydi (QAROR-B) — savdo tomonida qarzni `InvoiceOut` tug'diradi. Shu sababli hisob-fakturasiz sotuvning qaytarilishi balansni manfiyga suradi — **ochiq xavf, egasi qarori kerak** | [O'LCHANGAN kod + 6 test, mutant bilan] | **P14 ⚠️** |
 | H2 | **POS smena ↔ davomat/soatlik KPI.** `worked_minutes` FAQAT `HrAttendance` (GPS check-in) dan; kassirda davomat yozuvi 0 → «soatiga tushum» KPI hech qachon o'lchanmaydi; POS smena vaqti davomatga oqmaydi | [O'LCHANGAN] `employee-daily-kpi.service.ts:446` (faqat hrAttendance) + prod `HrAttendance=0` (kassirlar) | **P9** (siyosat: POS smena vaqti davomat bo'lib yozilsinmi — egasi qaror qiladi) |
-| H3 | **POS xarajat (RKO) → P&L ko'rmaydi** — kassadan chiqqan xarajat foyda-zarar hisobotiga tushmaydi (MK41 qarzi) | [XOTIRA] `expense-budget-fact-sources` | **P14** |
-| H4 | **Pul daftari backfill yo'q** — `/money` va bank-balans faqat 2026-08-08 dan keyingi hujjatlarni ko'radi | [XOTIRA] `money-ledger-writers-faza11` | **P14** |
+| H3 | ⚠️ **KOD-TOMON YOPILDI (P14, 2026-08-12) — jonli verify YO'Q.** P&L endi `retail_drawer_cash_out` ni ham o'qiydi; `kind='expense'` chegarasi byudjet moduli bilan BIR manbadan (инкассация sanalmaydi). Ilgari sof foyda doimo yuqori chiqardi | [O'LCHANGAN kod + 5 test (RED 4/5)] | **P14 ⚠️** |
+| H4 | ⚠️ **SKRIPT TAYYOR, PROD DRY YUGURTIRILMADI.** `ops-backfill-money-ledger.ts` (DRY sukut, farq-asosli, manifest, `runId` muhrli rollback, FAQAT jurnalga INSERT). Lokal DRY = **0 qator** (lokal bazada hujjat yo'q) ⇒ **haqiqiy raqam HAMON noma'lum**. Yashiq turlari va `retailsale` qamrovdan ataylab tashqarida | [XOTIRA] `money-ledger-writers-faza11` | **P14 ⚠️** (prod DRY + APPLY egasi ruxsati bilan) |
 | H5 | ✅ **YOPILDI (P3, 2026-08-12).** Tasdiqlandi: `sendToPicking` rezerv qilmasdi (`stock_reservations` prodda 0 qator). Endi `reserve` → `release_cancel`/`release_consume` zanjiri bor; yetishmovchilik savat bosilganda chiqadi | [O'LCHANGAN + jonli verify: reservedQty 0→1→0] | **P3 ✅** |
 | H6 | ✅ **YOPILDI (P5, 2026-08-12).** Shubha rad etildi — xulq TO'G'RI: qarzli chek qaytarilganda balansdan AYNAN qarz ulushi yechiladi (jonli: −100 so'm) va o'sha ulush naqd bo'lib CHIQMAYDI. Yo'l-yo'lakay **boshqa, real teshik topildi (R1)**: karta/terminal cheki NAQD qaytarilib yashiq olmagan pulni chiqarardi — `cashMaxMinor` kanal cap'i bilan yopildi va prodda qayta sinaldi | [O'LCHANGAN + jonli verify] | **P5 ✅** |
 | H7 | ✅ **YOPILDI (P4, 2026-08-12).** Shubha tasdiqlandi va sabab boshqa edi: xabar `toSelf` bilan yozilardi, u MTProto **slot 0** ni talab qiladi, prodda esa faqat slot 1 ulangan ⇒ `to_self=true` ning 4/4 tasi `failed`, `to_self=false` ning 32/32 tasi `sent`. Endi xabar `cashiersession.approve` ruxsatlilarning telefoniga ketadi va **jonli yetib bordi** (`sent`, slot 1) | [O'LCHANGAN prod + jonli verify] | **P4 ✅** |
@@ -183,7 +183,7 @@ rezerv bo'shaydi (`page 997–1014`) · smena farqi → farq akti → menejer na
 | **P11** | Xodim/kassir hayot sikli — UI'dan, skriptsiz | web settings/hr + api | ✅ | ✅ `08604bec` (prodda jonli; brauzer-QA bajarildi) |
 | **P12** | Katalog/narx: POL (minimal=tan, qulf) · 0-narx himoyasi | api/web product + POS | ✅ | ⚠️ `a50563f3` (server prodda jonli tasdiqlandi; **brauzer-QA yo'q**) |
 | **P13** | Go-live tozalash: test ma'lumotlardan realga | prod-op + kichik fix | kerak bo'lsa | ☐ |
-| **P14** | Daftar-simmetriya: qaytarish→balans · xarajat→P&L · money backfill | api + backfill | ✅ | ☐ |
+| **P14** | Daftar-simmetriya: qaytarish→balans · xarajat→P&L · money backfill | api + backfill | ✅ | ⚠️ `8b878673` (H1+H3 kod-tomon; **deploy YO'Q · jonli verify YO'Q · prod DRY YO'Q**) |
 | **P15** | Kunlik kassa hisoboti: har kassa 100% + jamlama, admin panelda | api `report` + web | ✅ | ☐ |
 
 Tartib sababi: P1–P2 — egasi ko'rgan jonli xatolar (eng ustuvor). P3 — realda savdo shu yerda
@@ -2093,5 +2093,175 @@ Tovar «Karaba 16x25», pol 3 737 so'm, ochiq smena `fc9a42ae`:
   (mahsulot bug'i emas, so'rov shakli) — skript tuzatildi, lekin boshqa klient shu tuzoqqa
   tushishi mumkin.
 ### P13 — ☐ hali bajarilmagan
-### P14 — ☐ hali bajarilmagan
+
+### P14 — Daftar-simmetriya: qaytarish→balans · xarajat→P&L · money backfill · 2026-08-12 · `8b878673` + `b8e1df5`
+
+**Holat:** ⚠️ **Phase-1: strukturaviy, browser-smoke YO'Q · DEPLOY QILINMADI · PROD BACKFILL
+YUGURTIRILMADI.** H1 va H3 kod-tomondan yopildi va testlar bilan qulflandi; H4 uchun DRY skript
+yozildi, lekin prod DRY egasining ruxsatini kutmoqda (sessiya prod'ga yozmaslik va deploy
+qilmaslik sharti bilan ishladi — deploy umumiy resurs, asosiy sessiya ketma-ketlikda qiladi).
+
+**Bu sessiya prodga UMUMAN tegmadi** — na o'lchov, na yozuv. Barcha raqamlar koddan va lokal
+`climart_adopt` bazasidan.
+
+#### 1. SIMMETRIYA AUDITI — o'lchangan jadval (grep emas, funksiya tanasi o'qildi)
+
+Ishora shartnomasi (`counterparty-balance.service.ts:49-62`): **musbat = mijoz BIZGA qarzdor**,
+manfiy = biz unga qarzdormiz.
+
+| Hujjat | Balans yozadimi | post → unpost/cancel | `docType` | Hukm |
+|---|---|---|---|---|
+| **demand** (Отгрузка) | ❌ **YO'Q** | — | — | 🔴 **O'LCHANGAN BO'SHLIQ** — izoh ham, test ham yo'q (pastda) |
+| **invoice-out** | ✅ `post +sumMinor` (:1267) | `−sumMinor` (:1338 / :1410) simmetrik | `invoiceOut` | to'g'ri; `update()` ham qayta yozadi |
+| **sales-return** | ✅ **P14 da QO'SHILDI** `post −sumMinor` | `+sumMinor` simmetrik | `salesReturn` | **H1 yopildi** |
+| **supply** (Qabul) | ✅ `post −sumMinor` (:1407) | `+sumMinor` (:1563 / :1690) | `supply` | to'g'ri |
+| **invoice-in** | ❌ YO'Q | — | (`invoiceIn` faqat tarixiy) | ✅ **yozmasligi TO'G'RI** — Faza 13 QAROR-B «Supply-only», 3 joyda qulflangan |
+| **purchase-return** | ✅ `post +sumMinor` (:1148) | `−sumMinor` (:1247 / :1341) | `purchaseReturn` | to'g'ri (PP-02) |
+| **prepayment** | ✅ `create/post −sumMinor` | `+sumMinor` (softDelete/unpost/cancel) | `prepayment` | to'g'ri |
+| **prepayment-return** | ✅ `create/post +sumMinor` | `−sumMinor` | `prepaymentReturn` | to'g'ri; `assertWithinPrepaymentCap` cheklaydi |
+| **retail-sale** (kam to'lov) | ✅ `post +debtAmount` (:1203) | `refund −debtReturn` (:1778) | `retailsale` | to'g'ri; `cancel` tegmaydi (post'gacha) |
+| **payment-in** | ✅ `−sumMinor` | `+sumMinor` | `paymentIn` | to'g'ri |
+| **payment-out** | ✅ `+sumMinor` | `−sumMinor` | `paymentOut` | to'g'ri |
+| **cash-in** | ✅ `−sumMinor` | `+sumMinor` | `cashIn` | to'g'ri |
+| **cash-out** | ✅ `+sumMinor` | `−sumMinor` | `cashOut` | to'g'ri |
+| **debt** (QRZ reyestri) | ✅ `create +totalMinor` · `recalc −paidDelta` | `remove −totalMinor` (adopsiya qatoriga TEGMAYDI) | `debt` / `debtpayment` | to'g'ri (P1 shartnomasi) |
+| **counterparty-adjustment** | ✅ `±sumMinor` (`direction`) | teskari | `adjustment` | to'g'ri |
+| **work-order · processing** | ❌ YO'Q | — | — | ✅ to'g'ri — kontragent oyog'i yo'q |
+
+**Yakun: 12 hujjat turi yozadi · 2 tasi ataylab yozmaydi (invoice-in, work-order/processing) ·
+1 tasi (sales-return) P14 da qo'shildi · 1 tasi (demand) o'lchanmagan bo'shliq bo'lib qoldi.**
+
+🔴 **Rejaning H1 qatoridagi premise NOTO'G'RI edi** («demand/invoice-out/supply/invoice-in balans
+yozadi»). O'lchov ikkita xatoni ko'rsatdi: **demand yozMAYDI** va **invoice-in ham yozMAYDI**
+(Faza 13 QAROR-B). Ya'ni savdo tomonida qarzni GOODS hujjati emas, MOLIYAVIY hujjat
+(`InvoiceOut`) tug'diradi — xarid tomonida esa aksincha (`Supply`). Bu asimmetriya H1 ning
+qo'llanish chegarasini belgilaydi (pastdagi «Ochiq xavf» 1).
+
+#### 2. H1 — qaytarish → mijoz balansi ✅ (TDD)
+
+`SalesReturn.post` endi `−sumMinor`, `unpost`/`cancel` (faqat `applicable` bo'lganda) `+sumMinor`
+yozadi — `purchase-return` (PP-02) ning mijoz tomonidagi ko'zgusi. `update()` ga tegilmadi: u
+`applicable` hujjatni allaqachon rad etadi (invoice-out'dan farqli — u yerda qayta yozish kerak edi).
+
+Yon-ta'sirlar (unutilsa jimgina pul yo'qotardi):
+- `BALANCE_DOC_TYPE` ga `salesReturn` qo'shildi (compile-time qulf).
+- Doc-resolver `GOODS_TYPES` ga qo'shildi ⇒ akt/statement qatorida **ВП- raqami ko'rinadi**
+  (aks holda qator raqamsiz chiqardi — saldo emas, yorliq degradatsiyasi).
+- 🔴 `DECLARED_BALANCE_WRITERS` + `recompute-counterparty-balances.ts` (`salesReturn`, **−1n**)
+  yangilandi. Busiz DUP-02 qo'riqchisi commit'ni bloklardi va, undan ham yomoni, `APPLY=1`
+  qaytarish deltalarini **jimgina 0 ga tushirardi**.
+
+#### 3. H3 — POS RKO → P&L ✅ (TDD)
+
+O'lchov: `pnl.service.ts` xarajat qatorini FAQAT `payments_out` + `cash_out` dan yig'ardi; POS
+yashiq xarajati esa `retail_drawer_cash_out` ga yoziladi ⇒ kassadan to'langan ijara P&L da
+ko'rinmasdi, sof foyda doimo **yuqori** chiqardi. (Bu qarz `expense-fact.ts:34-39` da ataylab
+yozib qo'yilgan edi — endi o'sha izoh «yopildi» ga yangilandi.)
+
+Uchinchi manba `computeTotals` ga ham, `computeGroups` ga ham qo'shildi.
+🔴 **Ikki-karra sanoq chegarasi:** `kind = 'expense'` sharti **`drawerExpenseWhereKind()`** sof
+funksiyasidan olinadi — byudjet moduli bilan **BIR manba**, ikkinchi literal yozilmadi.
+Инкассация xarajat emas (kassa→bank ko'chirish) va u bankdan `PaymentOut` bo'lib chiqqanda
+P&L allaqachon sanaydi. Chegara testda parametr qiymati darajasida qulflangan.
+
+#### 4. H4 — money-ledger backfill ⚠️ FAQAT DRY
+
+- Sof reja moduli `money-backfill-plan.ts` + DRY-sukutli `ops-backfill-money-ledger.ts`.
+- **FARQ asosida** (jami emas): daftarda bor hujjat qayta yozilmaydi ⇒ ikkinchi yugurtirish 0.
+- **Manifest** DRY'da ham yoziladi; **rollback** har yugurtirishning `runId` muhri bo'yicha
+  (🔴 `money_operations` da `created_at` ustuni YO'Q — vaqt bo'yicha rollback jonli qatorlarni
+  ham yeb yuborardi, shuning uchun muhr).
+- 🔴 **FAQAT `money_operations` ga INSERT** — `CashDesk.balanceMinor` /
+  `OrganizationAccount.balanceMinor` ustunlariga TEGMAYDI. Kutilayotgan siljish SON bo'lib
+  chiqariladi (egasining alohida qarori uchun o'lchov). Sabab: `cash_in`/`cash_out` o'z vaqtida
+  qoldiqni allaqachon siljitgan bo'lishi mumkin ⇒ ko'r-ko'rona qo'shish ikki-karra hisob.
+  Eng yomon oqibat «tarix ko'rinmaydi» bo'lsin, «qoldiq buzildi» EMAS (P2 sabog'i).
+- Qamrovdan **ATAYLAB tashqarida**: `drawer_cash_in|out` (alohida skript
+  `ops-backfill-drawer-money.ts` bilan yopilgan — ikki backfill bir pulni ikki marta yozardi) va
+  `retailsale` (delta tender qatorlaridan yig'iladi; qayta qurish pul mantiqining ikkinchi
+  nusxasi bo'lardi).
+- POS qarz-to'lovi `batchId` bilan yozilishi hisobga olindi — aks holda bitta jismoniy to'lov
+  ikki marta yozilardi.
+
+**DRY natijasi (LOKAL `climart_adopt`, prod EMAS):**
+
+| O'lchov | Qiymat |
+|---|---|
+| O'qilgan hujjat | **0** |
+| Daftarda mavjud kalit | **5** |
+| Rejalashtirilgan qator | **0** (barcha tur bo'yicha) |
+| Chetga qo'yilgan | 0 |
+
+Lokal bazada `CashIn` 0 · `CashOut` 0 · `PaymentIn` 0 · `PaymentOut` 0 · `DebtPayment` 7 (naqd
++ kassali + storno emas filtriga BIRORTASI tushmadi) ⇒ **skript zanjiri uchdan-uchgacha
+yugurdi, lekin raqam bermadi**. Ma'noli DRY faqat prodda bo'ladi.
+
+**Fayllar:** `sales-return.service.ts` · `sales-return.module.ts` ·
+`counterparty-balance-doc-types.ts` · `counterparty-balance-doc-resolver.ts` ·
+`counterparty-balance-sources.ts` · `recompute-counterparty-balances.ts` ·
+`report/pnl.service.ts` · `expense-budget/expense-fact.ts` (izoh) ·
+`scripts/money-backfill-plan.ts` (yangi) · `scripts/ops-backfill-money-ledger.ts` (yangi)
+· 3 test fayli.
+
+**Testlar (TDD — RED o'lchandi):**
+- `customer-debt-return-symmetry.test.ts` (**6**) — RED: butun fayl yiqildi (`applyDelta` 0 marta;
+  konstruktor 7-argumentni jim tashlardi; `salesReturn` docType union'da yo'q edi).
+  **MUTANT bilan tekshirildi:** post ishorasini `−` → `+` qilinganda **5/6 yiqildi**
+  (6-tasi — draft-cancel no-op'i — to'g'ri mustaqil). Ya'ni test vakuum emas.
+- `pnl-pos-expense.test.ts` (**5**) — RED: **4/5 yiqildi** (drawer so'rovi umuman yuborilmasdi).
+  5-tasi («yashiq bo'sh bo'lsa jami o'zgarmasin») ataylab yashil edi — regressiya qulfi.
+- `money-backfill-plan.test.ts` (**15**) — idempotentlik · qisman-yozilgan holat · valyuta mos
+  emasligi · manbasiz hujjat · nol delta · `at` = hujjat oni · rollback muhri izolyatsiyasi.
+- Mavjud qo'riqchilar yashil qoldi: `counterparty-balance-sources.test.ts` (15, DUP-02 qamrovi) ·
+  `supplier-debt-supply-only.test.ts` (9) · `pnl.service.test.ts` (7).
+
+**Gate:** typecheck **10/10 paket, 0 xato** · lint:product **0 error** (1042 warning, siyosat
+ruxsat beradi) · i18n:gate **9/9** · **api vitest 8236 passed / 594 fayl** (1 fayl · 2 test
+skipped — oldindan shunday). Web'ga TEGILMADI (`git show --stat` bilan tasdiqlangan), shuning
+uchun web suite yugurtirilmadi.
+
+⚠️ **Commit gigienasi:** `git show --stat HEAD` da 13 o'rniga **14 fayl** chiqdi — pre-commit hook
+`docs/progress.json` ni qayta generatsiya qilib, `branch` maydoniga vaqtinchalik worktree nomini
+yozib qo'ygan edi. Ikkinchi commit (`b8e1df5`, hook'siz) uni `climart-adoption` holiga qaytardi.
+Begona sessiya ishi QO'SHILMADI (izolyatsiyalangan worktree, `git stash list` bo'sh).
+
+**Deploy:** ❌ **QILINMADI** (topshiriq sharti — deploy umumiy resurs). Push ham qilinmadi.
+
+**Nima QILINMADI:**
+- 🔴 **Jonli verify YO'Q** — na sinov qaytarish (balans kamayishi), na P&L da sinov xarajati
+  prodda ko'rilmadi. Bu **ochiq qarz**: kod-tomon testlar bilan qulflangan, lekin ishlab turgan
+  tizimda O'LCHANMAGAN.
+- 🔴 **Prod DRY backfill YUGURTIRILMADI** — prodga tegish taqiqlangan edi. Lokal DRY 0 qator
+  berdi (bazada hujjat yo'q), ya'ni **H4 ning haqiqiy raqami HAMON NOMA'LUM**. APPLY esa
+  egasining alohida ruxsatidan keyin.
+- **Brauzer-QA yo'q** (P10).
+- **Tarixiy qaytarish hujjatlari uchun balans backfilli QILINMADI** — reja §P14.2 «avval o'lchab,
+  egasi bilan qaror» degan edi; prodda o'lchov qilinmagani uchun qaror ham qo'yilmadi. Lokal
+  bazada `SalesReturn` 2 ta, ikkalasi ham `posted` EMAS ⇒ lokal qarz yo'q.
+- **`Demand` → balans masalasi hal qilinmadi** (pastda, ochiq xavf 1) — bu P14 dan katta,
+  egasining qarori kerak.
+- **P&L ning eski ikki-karra sanoq muammosi tuzatilmadi** (pastda, ochiq xavf 2).
+- Migratsiya kerak emas edi (sxemaga tegilmadi), shuning uchun `prisma migrate` yugurtirilmadi.
+
+**Ochiq xavf / keyingi fazaga eslatma:**
+1. 🔴 **`Demand` balansga yozmaydi — H1 ning qo'llanish chegarasi.** Savdo tomonida qarzni
+   `InvoiceOut` tug'diradi, `Demand` esa YO'Q (o'lchandi; izoh ham, test ham yo'q — bu yagona
+   shunday «jim» hujjat). Ya'ni **hisob-fakturasiz, faqat Отгрузка bilan sotilgan tovar
+   qaytarilsa**, H1 ning `−sumMinor` deltasi balansni manfiy tomonga suradi («biz qarzdormiz»),
+   vaholanki dastlab hech qanday qarz yozilmagan edi. `SalesReturn` da `invoiceOutId` FK **YO'Q**
+   (faqat `demandId`/`customerOrderId`) ⇒ deltani manbaga bog'lab gate qilishning ishonchli yo'li
+   yo'q. Shartli variant («invoice bo'lsa yoz») ATAYLAB rad etildi — jimgina yarim-qo'llanish
+   bo'lardi. **Kerak:** savdo tomoni uchun QAROR-B ga o'xshash egasi qarori (qarz kanali
+   `Demand` mi yoki `InvoiceOut` mi). Prodda qaysi oqim ishlatilayotgani ham O'LCHANMAGAN.
+2. 🟠 **P&L xarajat qatorida oldindan mavjud ikki-karra sanoq** (P14 yomonlashtirmadi, lekin
+   endi yozib qo'yildi): `cash_out` + `payments_out` ning HAMMASI xarajat deb sanaladi — shu
+   jumladan `Supply`/`InvoiceIn`/`PurchaseOrder` yaratgan **taminotchi to'lovlari**, vaholanki
+   o'sha tovar puli COGS'da (`demands.cost_sum_minor`) allaqachon turibdi. «P&L xarajat
+   to'g'riligi» fazasi buni alohida hal qilsin.
+3. 🟠 **Ma'lumot kiritish darajasidagi dublikat:** POS xarajatini P&L da ko'rish uchun uni
+   qo'lda `CashOut` qilib qayta kiritayotgan menejer endi uni **ikki marta** ko'radi. Deploy
+   xabarida ogohlantirilsin.
+4. **`ops-p1-live-verify.ts` va `ops-p2-live-verify.ts` (ikkalasi READ-ONLY) P14 dan keyin
+   qayta yugurtirilsin** — balans yo'liga yangi yozuvchi qo'shildi, regressiya tekshiruvi arzon.
+
 ### P15 — ☐ hali bajarilmagan
