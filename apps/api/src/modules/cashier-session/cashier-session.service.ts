@@ -1057,6 +1057,10 @@ export class CashierSessionService {
         closingCashMinor: true,
         openingCashUsdMinor: true,
         closingCashUsdMinor: true,
+        // `close()` MUZLATGAN qiymatlar — yopilgan smenada hisobot manbai
+        // (pastdagi `isClosed` izohi).
+        expectedCashMinor: true,
+        expectedCashUsdMinor: true,
         cashier: { select: { id: true, name: true } },
         cashDesk: { select: { id: true, name: true, currency: true } },
         store: { select: { name: true } },
@@ -1185,6 +1189,34 @@ export class CashierSessionService {
       session.openingCashUsdMinor,
     );
 
+    // 🔴 YOPILGAN SMENA — MUZLATILGAN RAQAM (Faza 6, 2026-08-12 auditi).
+    //
+    // `close()` `expectedCashMinor`/`discrepancyMinor` ni Serializable
+    // tranzaksiyada hisoblab MUZLATADI va farq aktini yozadi — kassir AYNAN
+    // o'shanga imzo qo'yadi. Bu yerda qayta hisoblash ikki oqibat berardi:
+    //  (1) yopilgandan keyin manba o'zgarsa (qarz to'lovi stornosi, chek
+    //      holati, qo'lda tuzatish) farqsiz yopilgan smena keyin «ortiqcha»
+    //      ko'rsatardi;
+    //  (2) bitta javob ichida ikki avlod raqam turardi — `variances[]` akt
+    //      qiymatini, `expectedCashMinor` esa jonli qiymatni bosardi.
+    // Ochiq smenada esa jonli hisob AYNAN kerak: u yopish formasi preview'i.
+    //
+    // `expectedCashMinor !== null` sharti MAJBURIY: ustun muzlatish
+    // joriy qilinishidan OLDIN yopilgan qatorlarda `null`. `null` ni 0 deb
+    // o'qish soxta KAMOMAD berardi (`NULL` ≠ `0`) — bunday smenada jonli
+    // hisob ishlatiladi va `basis: 'live'` buni halol aytadi.
+    const isClosed = session.state === 'closed' && session.expectedCashMinor !== null;
+    const basis: 'frozen' | 'live' = isClosed ? 'frozen' : 'live';
+    const expectedCash = isClosed
+      ? (session.expectedCashMinor as bigint)
+      : expectedCashMinor(cashInputs);
+    // Dollar tomoni mustaqil: `close()` dollarga UMUMAN tegilmagan smenada
+    // USD ustunlarini NULL qoldiradi (`usdTouched`), ya'ni so'm muzlatilgan
+    // bo'lsa ham USD muzlatilmagan bo'lishi mumkin.
+    const expectedCashUsd = isClosed
+      ? (session.expectedCashUsdMinor ?? expectedUsdCashMinor(usdInputs))
+      : expectedUsdCashMinor(usdInputs);
+
     const z = buildZReport({
       salesCount: realSalesCount,
       revenueByMethod: [
@@ -1210,11 +1242,13 @@ export class CashierSessionService {
       returnsMinor: refundAgg._sum.sumMinor ?? 0n,
       expenseMinor: BigInt(cashOut.expenseMinor),
       collectionMinor: BigInt(cashOut.collectionMinor),
-      expectedCashMinor: expectedCashMinor(cashInputs),
+      // `varianceMinor` ni sof modul AYNAN shu qiymatdan hisoblaydi — aks
+      // holda farq ikki avlod raqam aralashmasi bo'lib qolardi.
+      expectedCashMinor: expectedCash,
       countedCashMinor: session.closingCashMinor,
       // MK31 (§8.5) — dollar qatori. Sentda; `null` sanoq = «hali
       // sanalmagan», shu holatda farq ham `null` bo'lib qoladi.
-      expectedUsdCashMinor: expectedUsdCashMinor(usdInputs),
+      expectedUsdCashMinor: expectedCashUsd,
       countedUsdCashMinor: session.closingCashUsdMinor,
     });
 
@@ -1253,6 +1287,10 @@ export class CashierSessionService {
       expenseMinor: z.expenseMinor.toString(),
       collectionMinor: z.collectionMinor.toString(),
       expenseByItem: cashOut.byExpenseItem,
+      // Kutilgan naqd/farq qaysi avloddan — `'frozen'` = yopishda muzlatilgan
+      // (kassir imzolagan hujjat), `'live'` = shu so'rovda qayta hisoblangan
+      // (ochiq smena preview'i yoki muzlatilmagan eski qator).
+      basis,
       openingCashMinor: session.openingCashMinor.toString(),
       expectedCashMinor: z.expectedCashMinor.toString(),
       countedCashMinor: z.countedCashMinor?.toString() ?? null,
