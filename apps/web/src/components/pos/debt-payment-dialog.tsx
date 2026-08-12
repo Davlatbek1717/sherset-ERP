@@ -61,6 +61,13 @@ interface PayResult {
     outstandingAfterMinor: string;
   };
   closedCount: number;
+  /**
+   * `true` — bu javob TAKROR (server oldingi chekni qaytardi, yangi pul
+   * YOZILMADI). Tarmoq uzilgan urinishdan keyingi qayta bosishda shunday
+   * bo'ladi. Ekran ikki holatni farqlamaydi — chek AYNI; bayroq faqat
+   * diagnostika/kelajakdagi bildirishnoma uchun.
+   */
+  replayed: boolean;
 }
 
 /** `GET /exchange-rates/rate?currency=USD` javobi (kerakli qismi). */
@@ -94,6 +101,38 @@ interface Props {
 }
 
 const NUMPAD_KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '000', '0', '⌫'];
+
+/**
+ * Idempotentlik kaliti uchun uuid v4.
+ *
+ * 🔴 NEGA BARE `crypto.randomUUID()` EMAS: u FAQAT secure-context'da (HTTPS
+ * yoki localhost) mavjud. Kassa qobig'i server manzili sifatida `http://` ni
+ * ATAYLAB qabul qiladi (`desktop/device-store.js` — `normalizeServerUrl`
+ * `http:` va `https:` ikkalasiga ham ruxsat beradi), ya'ni LAN IP orqali
+ * ochilgan monoblokda `crypto.randomUUID` `undefined` bo'ladi. Bare chaqiruv
+ * `useState` initsializatorida OTILARDI va butun «Qarz to'lovi» oynasi
+ * yiqilardi — bu takroriy to'lovdan ham YOMON natija: kassir qarz to'lovini
+ * umuman qabul qila olmasdi.
+ *
+ * Zaxira yo'l HAQIQIY v4 yasaydi (versiya/variant bitlari bilan): server
+ * `z.string().uuid()` bilan tekshiradi, ya'ni «taxminan uuid» ko'rinishdagi
+ * satr 400 bilan rad etilardi va himoya jimgina o'chib qolardi.
+ */
+function newRequestId(): string {
+  const c = typeof crypto !== 'undefined' ? crypto : undefined;
+  if (typeof c?.randomUUID === 'function') return c.randomUUID();
+
+  const bytes = Array.from({ length: 16 }, () => Math.floor(Math.random() * 256));
+  if (typeof c?.getRandomValues === 'function') {
+    const buf = new Uint8Array(16);
+    c.getRandomValues(buf);
+    for (let i = 0; i < 16; i += 1) bytes[i] = buf[i] ?? 0;
+  }
+  bytes[6] = ((bytes[6] ?? 0) & 0x0f) | 0x40; // versiya 4
+  bytes[8] = ((bytes[8] ?? 0) & 0x3f) | 0x80; // variant 10x
+  const hex = bytes.map((b) => b.toString(16).padStart(2, '0')).join('');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
 
 function fmtDate(iso: string | null): string {
   if (!iso) return '—';
@@ -145,6 +184,20 @@ export function DebtPaymentDialog({
   /** F6 — mijoz qaysi valyutada to'layapti. Kassa valyutasidan MUSTAQIL. */
   const [payCurrency, setPayCurrency] = useState<PayCurrency>('UZS');
   const [error, setError] = useState<string | null>(null);
+  /**
+   * 🔴 IDEMPOTENTLIK kaliti — shu to'lov urinishi davomida O'ZGARMAYDI.
+   *
+   * Monoblokda tranzaksiya commit bo'lib javob tarmoqda yo'qolsa, kassir
+   * «Failed to fetch» ko'rib tugmani qayta bosadi. AYNI kalit bilan kelgan
+   * ikkinchi so'rovga server yangi to'lov YOZMAYDI — birinchi chekni
+   * qaytaradi. Kalitsiz esa yashiqqa ikkinchi kirim tushib, smenaning
+   * «kutilgan naqd»i ikki barobar oshardi (yopishda soxta kamomad).
+   *
+   * `useState` initsializatori LAZY (`() => …`) — har render'da yangi uuid
+   * tug'ilsa retry butun ma'nosini yo'qotardi. `reset()` uni yangilaydi, ya'ni
+   * keyingi to'lov o'z kalitini oladi.
+   */
+  const [requestId, setRequestId] = useState(() => newRequestId());
 
   const { data: cpData, isLoading: cpLoading } = useQuery<{ items: CounterpartyRow[] }>({
     queryKey: ['cp-debt-search', search],
@@ -241,6 +294,9 @@ export function DebtPaymentDialog({
         method,
         cashDeskId: cashDeskId ?? null,
         retailShiftId: sessionId,
+        // Takroriy bosishda AYNI qiymat ketadi — server ikkinchi to'lovni
+        // yozmaydi (`pos_debt_payment_requests` unique qulfi).
+        clientRequestId: requestId,
       }),
     onSuccess: (result) => {
       // Smena yig'indilari o'zgardi: naqd to'lov «kutilgan naqd»ga kiradi.
@@ -261,6 +317,10 @@ export function DebtPaymentDialog({
     setMethod('cash');
     setPayCurrency('UZS');
     setError(null);
+    // Yangi urinish = YANGI kalit. Aks holda keyingi (haqiqiy, boshqa) to'lov
+    // eski kalit bilan ketib, server uni «takror» deb rad etardi va pul
+    // JIMGINA yozilmasdan qolardi.
+    setRequestId(newRequestId());
   }, []);
 
   /**

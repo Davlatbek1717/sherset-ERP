@@ -461,6 +461,20 @@ export const PosDebtPaymentSchema = z
     /** Qaysi smenaga tushgani — naqd bo'lsa «kutilgan naqd» ga kiradi (§8.4). */
     retailShiftId: z.string().uuid().nullish(),
     comment: z.string().trim().max(4000).nullish(),
+    /**
+     * Klient so'rovining YAGONA identifikatori (IDEMPOTENTLIK kaliti).
+     *
+     * Kassir tugmani bosganda oyna bir marta generatsiya qiladi va tarmoq
+     * uzilishida AYNI qiymat bilan qayta yuboradi. Server ikkinchi urinishda
+     * yangi to'lov YOZMAYDI — birinchi chekni qaytaradi
+     * (`pos_debt_payment_requests`, `@@unique([accountId, clientRequestId])`).
+     *
+     * Berilmasa (eski klient) — himoya YO'Q, lekin xulq o'zgarmaydi. Ataylab
+     * `optional()`: majburiy qilinsa hozirgi klientlar darhol 400 olardi.
+     * `uuid()` — buzuq qiymat JIM tashlanmasin (kalitsiz o'tib ketish =
+     * himoyasiz to'lov).
+     */
+    clientRequestId: z.string().uuid().optional(),
   })
   // TZ §6.2 / F6: kurs topilmasa to'lov BLOKLANADI — sentni tiyin deb jim
   // qabul qilish qarzni haqiqiy summaning ~1/12 000 iga kamaytirardi.

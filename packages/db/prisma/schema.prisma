@@ -28,29 +28,30 @@ datasource db {
 // Tenant. Everything else scopes to this.
 model Account {
   // Sherset KEEP (debts) back-relations — B2
-  debts                Debt[]
-  debtPayments         DebtPayment[]
-  debtNotes            DebtNote[]
+  debts                  Debt[]
+  debtPayments           DebtPayment[]
+  debtNotes              DebtNote[]
+  posDebtPaymentRequests PosDebtPaymentRequest[]
   // Sherset KEEP (telegram) back-relations — B3
-  telegramChats        TelegramChat[]
-  telegramChatMessages TelegramChatMessage[]
-  telegramBackfillJobs TelegramBackfillJob[]
+  telegramChats          TelegramChat[]
+  telegramChatMessages   TelegramChatMessage[]
+  telegramBackfillJobs   TelegramBackfillJob[]
   // Sherset KEEP (message templates) back-relation — B3
-  messageTemplates     MessageTemplate[]
-  id                   String                @id @default(uuid()) @db.Uuid
-  name                 String                @db.VarChar(255)
-  country              String                @default("UZ") @db.VarChar(2)
-  currency             String                @default("UZS") @db.VarChar(3)
-  locale               String                @default("uz-Latn") @db.VarChar(10)
-  timezone             String                @default("Asia/Tashkent") @db.VarChar(50)
-  plan                 String                @default("trial") @db.VarChar(20)
+  messageTemplates       MessageTemplate[]
+  id                     String                  @id @default(uuid()) @db.Uuid
+  name                   String                  @db.VarChar(255)
+  country                String                  @default("UZ") @db.VarChar(2)
+  currency               String                  @default("UZS") @db.VarChar(3)
+  locale                 String                  @default("uz-Latn") @db.VarChar(10)
+  timezone               String                  @default("Asia/Tashkent") @db.VarChar(50)
+  plan                   String                  @default("trial") @db.VarChar(20)
   // H4 record-scope (RFC _H4-OWN-GROUP-SCOPE-RFC.md, W4). Per-account opt-in for
   // OWN/OWN_GROUP per-record visibility enforcement. Default OFF — when false the
   // read-path adds no scope filter (today's behaviour). Flip per account only after
   // the cohort's groupId is backfilled + the manager-visibility test passes.
-  recordScopeEnforced  Boolean               @default(false) @map("record_scope_enforced")
-  createdAt            DateTime              @default(now()) @map("created_at") @db.Timestamptz()
-  updatedAt            DateTime              @updatedAt @map("updated_at") @db.Timestamptz()
+  recordScopeEnforced    Boolean                 @default(false) @map("record_scope_enforced")
+  createdAt              DateTime                @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt              DateTime                @updatedAt @map("updated_at") @db.Timestamptz()
 
   employees                      Employee[]
   organizations                  Organization[]
@@ -11474,6 +11475,36 @@ model DebtNote {
   @@index([accountId, debtId, createdAt(sort: Desc)])
   @@index([accountId, authorId, createdAt])
   @@map("debt_notes")
+}
+
+/// POS qarz to'lovi IDEMPOTENTLIK reyestri (Faza 3, 2026-08-12).
+///
+/// NEGA ALOHIDA JADVAL: bitta jismoniy to'lov FIFO bo'yicha N ta `DebtPayment`
+/// qatoriga bo'linadi, ya'ni kalitni o'sha qatorlarga qo'yib bo'lmaydi (unique
+/// buzilardi). Bu jadval «bitta klient so'rovi = bitta chek (batch)» degan
+/// shartnomani saqlaydi.
+///
+/// MUAMMO: kassa monoblokida tranzaksiya COMMIT bo'lib javob tarmoqda
+/// yo'qolsa, kassir «Failed to fetch» ko'rib tugmani qayta bosadi ⇒ ikkinchi
+/// to'lov to'plami yozilardi: yashiqqa ikkinchi kirim, smenaning «kutilgan
+/// naqd»i ikki barobar, yopishda SOXTA KAMOMAD.
+///
+/// Klient tarmoq uzilishida AYNI `clientRequestId` bilan qayta yuboradi;
+/// ikkinchi urinish unique konfliktga uchraydi va server BIRINCHI chekni
+/// qaytaradi — pul ikki marta yozilmaydi.
+model PosDebtPaymentRequest {
+  id              String   @id @default(uuid()) @db.Uuid
+  accountId       String   @map("account_id") @db.Uuid
+  clientRequestId String   @map("client_request_id") @db.Uuid
+  /// Shu so'rov yaratgan PKO cheki (`DebtPayment.batchId`).
+  batchId         String   @map("batch_id") @db.Uuid
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@unique([accountId, clientRequestId])
+  @@index([accountId, batchId])
+  @@map("pos_debt_payment_requests")
 }
 
 // ===== Sherset KEEP: Telegram chat/backfill models (B3 closure) =====

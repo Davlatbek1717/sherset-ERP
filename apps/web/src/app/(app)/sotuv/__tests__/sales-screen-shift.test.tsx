@@ -232,6 +232,13 @@ describe('Qarz to‘lovi oynasi (kassa TZ §7.2)', () => {
       method: 'cash',
       cashDeskId: CASH_DESK_ID,
       retailShiftId: SESSION_ID,
+      // IDEMPOTENTLIK kaliti (Faza 3) — har urinishda YANGI uuid, shuning
+      // uchun qiymat emas, SHAKLI pinlanadi. Kalitning o'zi bo'lmasa takroriy
+      // bosish ikkinchi to'lovni yozardi, shuning uchun `expect.any(String)`
+      // emas — aynan uuid shakli talab qilinadi.
+      clientRequestId: expect.stringMatching(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+      ),
     });
   });
 

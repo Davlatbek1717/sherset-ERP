@@ -1,5 +1,15 @@
 import { randomUUID } from 'node:crypto';
 import type { Prisma } from '@moysklad/db';
+/**
+ * 🔴 QIYMAT importi — yuqoridagi `import type` dan ALOHIDA va ATAYLAB.
+ *
+ * `import type` TypeScript tomonidan butunlay O'CHIRILADI, ya'ni undan olingan
+ * `Prisma.PrismaClientKnownRequestError` runtime'da `undefined` bo'lardi va
+ * `instanceof` «Right-hand side is not callable» bilan yiqilardi — aynan
+ * takroriy to'lovni to'sadigan shoxda. Yuqoridagi type-import esa fayl
+ * oxiridagi `export type { Prisma }` ga kerak, shuning uchun o'chirilmaydi.
+ */
+import { Prisma as PrismaRuntime } from '@moysklad/db';
 import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { allocateDocumentNumber } from '../../prisma/document-number.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
@@ -286,169 +296,226 @@ export class PosDebtPaymentService {
     // taxmin qilish moliyaviy hujjatda yaramaydi).
     const batchId = randomUUID();
 
-    const result = await this.prisma.client.$transaction(async (tx) => {
-      // `cashDeskId` KLIENTDAN keladi. Mavjudligi va tenant tegishliligi shu
-      // yerda tekshiriladi (`retailShiftId` uchun yuqorida allaqachon shunday
-      // qilingan — ilgari yashiq id'si ko'r-ko'rona qabul qilinardi); valyutasi
-      // esa yashiq deltasi qoidasiga kerak (`debt-cash-ledger.deskCurrency`).
-      // QULFDAN OLDIN: bu shunchaki o'qish, qulf ushlab turishga hojat yo'q.
-      // Kassa ko'rsatilmagan bo'lsa sentinel qoladi — u solishtirishga yetib
-      // bormaydi (`DEBT_LEDGER_CURRENCY` bu yerda semantik XATO bo'lardi:
-      // qarz daftari valyutasi ≠ yashiq valyutasi).
-      let deskCurrency: string = NO_CASH_DESK_CURRENCY;
-      if (input.cashDeskId) {
-        const desk = await tx.cashDesk.findFirst({
-          where: { id: input.cashDeskId, accountId },
-          select: { currency: true },
-        });
-        if (!desk) throw new BadRequestException('Kassa topilmadi');
-        deskCurrency = desk.currency;
-      }
-
-      // ⚠️ QULF TARTIBI: BALANS → QARZLAR (P1). Ikkalasi ham shu tranzaksiya
-      // oxirigacha ushlanadi.
-      //
-      // Nega balans BIRINCHI: (1) adopsiya qarori aynan balansdan olinadi va
-      // reyestr bo'sh bo'lganda `debts … FOR UPDATE` hech nimani ushlamaydi —
-      // ikki parallel to'lov bir xil qoldiqni ko'rib balansdan ORTIQ yozardi;
-      // (2) `debt.service.addCashPayment` yo'li ham amalda shu tartibda
-      // qulflaydi (recalc → applyDelta → debt.update), ya'ni ikki yo'l bir xil
-      // tartibda yuradi va o'zaro deadlock qilmaydi.
-      const balanceMinor = await this.lockBalance(tx, accountId, input.counterpartyId);
-
-      // ⚠️ FIFO REJA TRANZAKSIYA ICHIDA, QULFLANGAN qatorlardan hisoblanadi
-      // (2026-08-08 `M-10`). Ilgari qarzlar tx'dan TASHQARIDA o'qilardi: bir
-      // mijozga ikki parallel to'lov bir xil eski `paidMinor`ni ko'rib, bir
-      // qarzga jami qarzdan ortiq allokatsiya yozardi.
-      const rows = await this.lockOpenDebts(tx, accountId, input.counterpartyId);
-      const registryOutstandingMinor = rows.reduce((acc, r) => acc + outstandingOf(r), 0n);
-
-      // P1 — «to'lanadigan qarz» = max(reyestr, balans). Shu bitta son
-      // ekranda ham, bu yerda ham AYNAN bir formuladan chiqadi.
-      const { payableMinor } = debtPayable(balanceMinor, registryOutstandingMinor);
-      if (payableMinor <= 0n) {
-        throw new BadRequestException('Mijozda ochiq qarz yo`q');
-      }
-      if (amountMinor > payableMinor) {
-        // Ortiqcha to'lovni jimgina «avans» qilib yozib qo'ymaymiz: kassa
-        // TZ §6.2 bo'yicha qaytim FAQAT naqddan beriladi va bu qaror
-        // kassirniki. Shuning uchun aniq xato — qancha ortiqcha ekani bilan.
-        throw new BadRequestException(
-          `To\`lov qarzdan ${(amountMinor - payableMinor).toString()} tiyinga ko\`p. Qaytimni kassadan bering yoki summani kamaytiring.`,
-        );
-      }
-
-      // Reyestrdan ortiq qism — balansdan reyestrga OLIB KIRILADI (adopsiya).
-      // Qator shu yerda tug'iladi va pastdagi FIFO uni oxirgi bo'lib yopadi
-      // (`createdAt` = hozir ⇒ eng yangi). Shartnoma: `pos-customer-debt.ts`.
-      const { adoptMinor } = planAdoption({
-        amountMinor,
-        registryOutstandingMinor,
-        balanceMinor,
+    // ── TEZ YO'L: bu so'rov allaqachon bajarilganmi? ────────────────────────
+    // Takroriy so'rov ODATDA birinchisi COMMIT bo'lgandan keyin keladi (javob
+    // tarmoqda yo'qoldi, kassir qayta bosdi) — ya'ni kalit reyestrda bor.
+    // Shunda tranzaksiya umuman ochilmaydi: qulf ham, rollback ham qimmat.
+    // 🔴 Bu FAQAT optimizatsiya, yagona himoya EMAS — haqiqiy poygada
+    // (ikkala so'rov bir vaqtda) bu o'qish hech nimani ko'rmaydi va pastdagi
+    // unique konflikt ushlaydi.
+    if (input.clientRequestId) {
+      const prior = await this.prisma.client.posDebtPaymentRequest.findFirst({
+        where: { accountId, clientRequestId: input.clientRequestId },
+        select: { batchId: true },
       });
-      const fifoRows =
-        adoptMinor > 0n
-          ? [...rows, await this.adoptBalanceDebt(tx, accountId, userId, input, adoptMinor)]
-          : rows;
+      if (prior) return this.replayReceipt(accountId, prior.batchId);
+    }
 
-      const plan = allocateFifo(fifoRows.map(toFifo), amountMinor);
-      if (plan.leftoverMinor > 0n) {
-        // Yetib bo'lmaydigan shox: yuqoridagi `payableMinor` tekshiruvi va
-        // adopsiya birgalikda butun summaga joy topadi. Baribir turadi —
-        // FIFO qoidasi kelajakda o'zgarsa pul jimgina yo'qolmasin.
-        throw new BadRequestException(
-          `To\`lov qarzdan ${plan.leftoverMinor.toString()} tiyinga ko\`p. Qaytimni kassadan bering yoki summani kamaytiring.`,
-        );
-      }
+    let result: {
+      receipts: Array<{ debtName: string; amountMinor: bigint; closed: boolean }>;
+      appliedMinor: bigint;
+      currency: string;
+    };
+    try {
+      result = await this.prisma.client.$transaction(async (tx) => {
+        // 🔴 IDEMPOTENTLIK QULFI — tranzaksiyaning BIRINCHI yozuvi, ATAYLAB.
+        //
+        // Ikki parallel (yoki retry) so'rov bir xil kalit bilan kelsa,
+        // ikkinchisi AYNAN shu yerda unique konfliktga uchraydi va butun
+        // tranzaksiya orqaga qaytadi — hech qanday to'lov qatori, yashiq
+        // kirimi yoki balans deltasi qolmaydi. Agar bu yozuv oxirida bo'lsa,
+        // konflikt paytida yuqoridagi yozuvlar allaqachon bajarilgan bo'lardi
+        // va faqat rollbackka umid qilinardi.
+        if (input.clientRequestId) {
+          await tx.posDebtPaymentRequest.create({
+            data: { accountId, clientRequestId: input.clientRequestId, batchId },
+          });
+        }
 
-      const currency = input.currency;
-      const receipts: Array<{ debtName: string; amountMinor: bigint; closed: boolean }> = [];
+        // `cashDeskId` KLIENTDAN keladi. Mavjudligi va tenant tegishliligi shu
+        // yerda tekshiriladi (`retailShiftId` uchun yuqorida allaqachon shunday
+        // qilingan — ilgari yashiq id'si ko'r-ko'rona qabul qilinardi); valyutasi
+        // esa yashiq deltasi qoidasiga kerak (`debt-cash-ledger.deskCurrency`).
+        // QULFDAN OLDIN: bu shunchaki o'qish, qulf ushlab turishga hojat yo'q.
+        // Kassa ko'rsatilmagan bo'lsa sentinel qoladi — u solishtirishga yetib
+        // bormaydi (`DEBT_LEDGER_CURRENCY` bu yerda semantik XATO bo'lardi:
+        // qarz daftari valyutasi ≠ yashiq valyutasi).
+        let deskCurrency: string = NO_CASH_DESK_CURRENCY;
+        if (input.cashDeskId) {
+          const desk = await tx.cashDesk.findFirst({
+            where: { id: input.cashDeskId, accountId },
+            select: { currency: true },
+          });
+          if (!desk) throw new BadRequestException('Kassa topilmadi');
+          deskCurrency = desk.currency;
+        }
 
-      // F6: mijoz bergan ASL summa (sent) FIFO qatorlariga bo'linadi — har
-      // qator o'z `amountOriginalMinor` ini oladi, chunki STORNO qatordan-
-      // qatorga ishlaydi va yashiqdan aynan o'sha jismoniy summani chiqaradi.
-      // Bo'lish qoldig'i oxirgi qatorga: Σ bo'laklar = asl summa (invariant).
-      const originalParts =
-        originalTotalMinor == null
-          ? null
-          : splitOriginalMinor(
-              plan.allocations.map((a) => a.amountMinor),
-              originalTotalMinor,
-            );
+        // ⚠️ QULF TARTIBI: BALANS → QARZLAR (P1). Ikkalasi ham shu tranzaksiya
+        // oxirigacha ushlanadi.
+        //
+        // Nega balans BIRINCHI: (1) adopsiya qarori aynan balansdan olinadi va
+        // reyestr bo'sh bo'lganda `debts … FOR UPDATE` hech nimani ushlamaydi —
+        // ikki parallel to'lov bir xil qoldiqni ko'rib balansdan ORTIQ yozardi;
+        // (2) `debt.service.addCashPayment` yo'li ham amalda shu tartibda
+        // qulflaydi (recalc → applyDelta → debt.update), ya'ni ikki yo'l bir xil
+        // tartibda yuradi va o'zaro deadlock qilmaydi.
+        const balanceMinor = await this.lockBalance(tx, accountId, input.counterpartyId);
 
-      for (const [index, alloc] of plan.allocations.entries()) {
-        // `fifoRows` — reyestr + (bo'lsa) adopsiya qatori. `rows` bo'lsa
-        // adopsiya qatorining cheki jimgina tushib qolardi.
-        const debt = fifoRows.find((r) => r.id === alloc.debtId);
-        if (!debt) continue;
+        // ⚠️ FIFO REJA TRANZAKSIYA ICHIDA, QULFLANGAN qatorlardan hisoblanadi
+        // (2026-08-08 `M-10`). Ilgari qarzlar tx'dan TASHQARIDA o'qilardi: bir
+        // mijozga ikki parallel to'lov bir xil eski `paidMinor`ni ko'rib, bir
+        // qarzga jami qarzdan ortiq allokatsiya yozardi.
+        const rows = await this.lockOpenDebts(tx, accountId, input.counterpartyId);
+        const registryOutstandingMinor = rows.reduce((acc, r) => acc + outstandingOf(r), 0n);
 
-        await tx.debtPayment.create({
-          data: {
+        // P1 — «to'lanadigan qarz» = max(reyestr, balans). Shu bitta son
+        // ekranda ham, bu yerda ham AYNAN bir formuladan chiqadi.
+        const { payableMinor } = debtPayable(balanceMinor, registryOutstandingMinor);
+        if (payableMinor <= 0n) {
+          throw new BadRequestException('Mijozda ochiq qarz yo`q');
+        }
+        if (amountMinor > payableMinor) {
+          // Ortiqcha to'lovni jimgina «avans» qilib yozib qo'ymaymiz: kassa
+          // TZ §6.2 bo'yicha qaytim FAQAT naqddan beriladi va bu qaror
+          // kassirniki. Shuning uchun aniq xato — qancha ortiqcha ekani bilan.
+          throw new BadRequestException(
+            `To\`lov qarzdan ${(amountMinor - payableMinor).toString()} tiyinga ko\`p. Qaytimni kassadan bering yoki summani kamaytiring.`,
+          );
+        }
+
+        // Reyestrdan ortiq qism — balansdan reyestrga OLIB KIRILADI (adopsiya).
+        // Qator shu yerda tug'iladi va pastdagi FIFO uni oxirgi bo'lib yopadi
+        // (`createdAt` = hozir ⇒ eng yangi). Shartnoma: `pos-customer-debt.ts`.
+        const { adoptMinor } = planAdoption({
+          amountMinor,
+          registryOutstandingMinor,
+          balanceMinor,
+        });
+        const fifoRows =
+          adoptMinor > 0n
+            ? [...rows, await this.adoptBalanceDebt(tx, accountId, userId, input, adoptMinor)]
+            : rows;
+
+        const plan = allocateFifo(fifoRows.map(toFifo), amountMinor);
+        if (plan.leftoverMinor > 0n) {
+          // Yetib bo'lmaydigan shox: yuqoridagi `payableMinor` tekshiruvi va
+          // adopsiya birgalikda butun summaga joy topadi. Baribir turadi —
+          // FIFO qoidasi kelajakda o'zgarsa pul jimgina yo'qolmasin.
+          throw new BadRequestException(
+            `To\`lov qarzdan ${plan.leftoverMinor.toString()} tiyinga ko\`p. Qaytimni kassadan bering yoki summani kamaytiring.`,
+          );
+        }
+
+        const currency = input.currency;
+        const receipts: Array<{ debtName: string; amountMinor: bigint; closed: boolean }> = [];
+
+        // F6: mijoz bergan ASL summa (sent) FIFO qatorlariga bo'linadi — har
+        // qator o'z `amountOriginalMinor` ini oladi, chunki STORNO qatordan-
+        // qatorga ishlaydi va yashiqdan aynan o'sha jismoniy summani chiqaradi.
+        // Bo'lish qoldig'i oxirgi qatorga: Σ bo'laklar = asl summa (invariant).
+        const originalParts =
+          originalTotalMinor == null
+            ? null
+            : splitOriginalMinor(
+                plan.allocations.map((a) => a.amountMinor),
+                originalTotalMinor,
+              );
+
+        for (const [index, alloc] of plan.allocations.entries()) {
+          // `fifoRows` — reyestr + (bo'lsa) adopsiya qatori. `rows` bo'lsa
+          // adopsiya qatorining cheki jimgina tushib qolardi.
+          const debt = fifoRows.find((r) => r.id === alloc.debtId);
+          if (!debt) continue;
+
+          await tx.debtPayment.create({
+            data: {
+              accountId,
+              debtId: alloc.debtId,
+              // HAR DOIM so'mda — qarz hisobi shu ustundan yuriladi.
+              amountMinor: alloc.amountMinor,
+              method: input.method,
+              currency,
+              // Kurs CHEKKA MUZLATILADI: ertangi kurs bilan qayta baholanmaydi.
+              exchangeRate: rateE8,
+              amountOriginalMinor: originalParts?.[index] ?? null,
+              cashDeskId: input.cashDeskId ?? null,
+              retailShiftId: input.retailShiftId ?? null,
+              batchId,
+              receivedById: userId,
+              comment: input.comment ?? null,
+            },
+          });
+
+          // KANONIK yo'l (`DUP-07`): `paidMinor` to'lovlardan qayta o'qiladi,
+          // `status`/`closedAt`/`nextContactAt` va kontragent balansi shu yerda
+          // yopiladi. Ilgari bu yerda increment + `closedAt`siz o'z nusxasi bor edi.
+          // docId = BATCH: buxgalter jurnaldan chekka boradi, ixtiyoriy qarz
+          // qatoriga emas.
+          const updated = await recalcDebt(tx, this.balances, {
             accountId,
             debtId: alloc.debtId,
-            // HAR DOIM so'mda — qarz hisobi shu ustundan yuriladi.
+            // `Debt`da organizatsiya o'lchovi yo'q ⇒ jurnalda `organizationId` null.
+            meta: { docType: 'debtpayment', docId: batchId, organizationId: null },
+          });
+
+          receipts.push({
+            debtName: debt.name,
             amountMinor: alloc.amountMinor,
-            method: input.method,
-            currency,
-            // Kurs CHEKKA MUZLATILADI: ertangi kurs bilan qayta baholanmaydi.
-            exchangeRate: rateE8,
-            amountOriginalMinor: originalParts?.[index] ?? null,
-            cashDeskId: input.cashDeskId ?? null,
-            retailShiftId: input.retailShiftId ?? null,
-            batchId,
-            receivedById: userId,
-            comment: input.comment ?? null,
-          },
-        });
+            // Yopilganini REJA emas, qayta hisoblangan HOLAT aytadi.
+            closed: updated.status === 'paid',
+          });
+        }
 
-        // KANONIK yo'l (`DUP-07`): `paidMinor` to'lovlardan qayta o'qiladi,
-        // `status`/`closedAt`/`nextContactAt` va kontragent balansi shu yerda
-        // yopiladi. Ilgari bu yerda increment + `closedAt`siz o'z nusxasi bor edi.
-        // docId = BATCH: buxgalter jurnaldan chekka boradi, ixtiyoriy qarz
-        // qatoriga emas.
-        const updated = await recalcDebt(tx, this.balances, {
+        // Kassa daftari (`M-05`) — TRANZAKSIYA ICHIDA va BIR MARTA: mijoz bitta
+        // summa berdi, FIFO uni nechta qarzga bo'lgani yashiqqa aloqasiz.
+        // Havola PKO cheki (`batchId`) — buxgalter daftardan chekka boradi.
+        // Naqd bo'lmasa yoki kassa ko'rsatilmagan bo'lsa — bo'sh ro'yxat.
+        await this.money.applyDeltas(
+          tx,
           accountId,
-          debtId: alloc.debtId,
-          // `Debt`da organizatsiya o'lchovi yo'q ⇒ jurnalda `organizationId` null.
-          meta: { docType: 'debtpayment', docId: batchId, organizationId: null },
-        });
+          debtCashDeskDeltas(
+            {
+              method: input.method,
+              cashDeskId: input.cashDeskId ?? null,
+              currency,
+              amountMinor: plan.appliedMinor,
+              // F6: yashiqda mijoz bergan JISMONIY pul yotadi — dollar bo'lsa
+              // sent, so'm ekvivalenti emas (`debt-cash-ledger.ts` qoidasi).
+              amountOriginalMinor: originalTotalMinor,
+            },
+            {
+              sign: 1n,
+              documentId: batchId,
+              deskCurrency,
+              counterpartyId: input.counterpartyId,
+            },
+          ),
+        );
 
-        receipts.push({
-          debtName: debt.name,
-          amountMinor: alloc.amountMinor,
-          // Yopilganini REJA emas, qayta hisoblangan HOLAT aytadi.
-          closed: updated.status === 'paid',
+        return { receipts, appliedMinor: plan.appliedMinor, currency };
+      });
+    } catch (e) {
+      // Poygada YUTQAZGAN takroriy so'rov: tez yo'l kalitni ko'rmadi (ikkala
+      // so'rov bir vaqtda keldi), tranzaksiya esa unique konfliktga urildi va
+      // TO'LIQ orqaga qaytdi — hech qanday to'lov qatori, yashiq kirimi yoki
+      // balans deltasi qolmadi. Kassirga xato EMAS, BIRINCHI chek qaytariladi:
+      // u ikki holatni farqlamasligi kerak va farqlamasligi ham shart.
+      if (
+        input.clientRequestId &&
+        e instanceof PrismaRuntime.PrismaClientKnownRequestError &&
+        e.code === 'P2002'
+      ) {
+        const prior = await this.prisma.client.posDebtPaymentRequest.findFirst({
+          where: { accountId, clientRequestId: input.clientRequestId },
+          select: { batchId: true },
         });
+        if (prior) return this.replayReceipt(accountId, prior.batchId);
       }
-
-      // Kassa daftari (`M-05`) — TRANZAKSIYA ICHIDA va BIR MARTA: mijoz bitta
-      // summa berdi, FIFO uni nechta qarzga bo'lgani yashiqqa aloqasiz.
-      // Havola PKO cheki (`batchId`) — buxgalter daftardan chekka boradi.
-      // Naqd bo'lmasa yoki kassa ko'rsatilmagan bo'lsa — bo'sh ro'yxat.
-      await this.money.applyDeltas(
-        tx,
-        accountId,
-        debtCashDeskDeltas(
-          {
-            method: input.method,
-            cashDeskId: input.cashDeskId ?? null,
-            currency,
-            amountMinor: plan.appliedMinor,
-            // F6: yashiqda mijoz bergan JISMONIY pul yotadi — dollar bo'lsa
-            // sent, so'm ekvivalenti emas (`debt-cash-ledger.ts` qoidasi).
-            amountOriginalMinor: originalTotalMinor,
-          },
-          {
-            sign: 1n,
-            documentId: batchId,
-            deskCurrency,
-            counterpartyId: input.counterpartyId,
-          },
-        ),
-      );
-
-      return { receipts, appliedMinor: plan.appliedMinor, currency };
-    });
+      // Boshqa har qanday xato yuqoriga O'ZGARISHSIZ ketadi. P2002 boshqa
+      // unique indeksdan ham kelishi mumkin — kalit qatori topilmasa uni
+      // «takror» deb yutib yuborish haqiqiy xatoni YASHIRARDI.
+      throw e;
+    }
 
     const rest = await this.loadOpenDebts(accountId, input.counterpartyId);
     const after = summarize(rest.map(toFifo));
@@ -475,6 +542,53 @@ export class PosDebtPaymentService {
         outstandingAfterMinor: after.outstandingMinor.toString(),
       },
       closedCount: result.receipts.filter((r) => r.closed).length,
+      /**
+       * Bu javob YANGI to'lov (pul haqiqatan yozildi). Bayroq ikkala shoxda
+       * ham BOR — kalitlar to'plami bir xil bo'lsin (`replayReceipt` bilan
+       * solishtir): iste'molchi `'replayed' in res` kabi shakl-tekshiruvga
+       * tayanmasin, qiymatni o'qisin.
+       */
+      replayed: false,
+    };
+  }
+
+  /**
+   * TAKRORIY so'rov javobi — AYNI chek, QAYTA HISOBLANMAYDI.
+   *
+   * Manba `receipt()` — chekni `batchId` bo'yicha yig'adigan YAGONA joy.
+   * Bu yerda summa ikkinchi marta hisoblanmaydi: ikkinchi manba muqarrar
+   * birinchisidan uzoqlashardi va kassir ikki xil chek ko'rardi.
+   *
+   * Javob `pay()` ning odatiy shakli bilan bir xil (kalitlar to'plami AYNAN
+   * bir xil) — kassir ekrani ikki holatni farqlamaydi va farqlamasligi kerak.
+   *
+   * ⚠️ `closed`/`closedCount` bu yerda `false`/`0`: `receipt()` qator-darajali
+   * «yopildi» belgisini saqlamaydi (u chekdagi summalarni ko'rsatadi, qarz
+   * holatini emas). Takror javobda chekning «qarz yopildi» bezagi tushib
+   * qoladi — summalar esa AYNAN to'g'ri. Bu ataylab qabul qilingan cheklov:
+   * qarz statusini bu yerda qayta o'qish ikkinchi hisob manbaini ochardi.
+   */
+  private async replayReceipt(accountId: string, batchId: string) {
+    const r = await this.receipt(accountId, batchId);
+    return {
+      batchId,
+      receipt: {
+        batchId,
+        paidMinor: r.paidMinor,
+        currency: r.currency,
+        originalMinor: r.originalMinor,
+        exchangeRate: r.exchangeRate,
+        method: r.method,
+        lines: r.lines.map((l) => ({
+          debtName: l.debtName,
+          amountMinor: l.amountMinor,
+          closed: false,
+        })),
+        outstandingAfterMinor: r.outstandingAfterMinor,
+      },
+      closedCount: 0,
+      /** 🔴 Bu javob TAKROR — yangi pul YOZILMADI. */
+      replayed: true,
     };
   }
 

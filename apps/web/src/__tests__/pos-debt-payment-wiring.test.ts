@@ -97,8 +97,62 @@ describe('POS qarz to`lovi — ulanish', () => {
 
   it('so`m ekvivalenti payload`ga QO`SHILMAYDI (yagona manba — server)', () => {
     const body = DIALOG.slice(DIALOG.indexOf("api.post<PayResult>('/debts/pos/pay'"));
-    const call = body.slice(0, body.indexOf('}),'));
+    // ⚠️ Ilgari bu yerda `indexOf('}),')` turardi va chaqiruvni payload
+    // ichidagi `...(isUsd ? { … } : {}),` spread'ida KESIB tashlardi: tekshiruv
+    // faqat birinchi bir necha qatorni ko'rar, spread'dan KEYIN qo'shilgan
+    // `somMinor` ni jimgina o'tkazib yuborardi (2026-08-12 da topildi).
+    const call = body.slice(0, body.indexOf('\n      }),'));
     expect(call).toContain('amountMinor: amountMinor.toString()');
     expect(call).not.toContain('somMinor');
+  });
+
+  /**
+   * IDEMPOTENTLIK ulanishi (Faza 3). Serverdagi qulf FAQAT klient AYNI kalitni
+   * qayta yuborganda ishlaydi — bu uch qatorning har biri jimgina yo'qolishi
+   * mumkin va hech bir gate shikoyat qilmaydi:
+   *  · kalit payload'ga qo'shilmasa — himoya umuman yo'q (server ixtiyoriy
+   *    maydonni ko'rmaydi va eski xulqda qoladi);
+   *  · initsializator lazy bo'lmasa — har render'da yangi uuid, retry ma'nosiz;
+   *  · `reset()` da yangilanmasa — keyingi HAQIQIY to'lov «takror» deb
+   *    hisoblanib pul JIMGINA yozilmasdan qolardi.
+   */
+  it('payload IDEMPOTENTLIK kalitini olib ketadi', () => {
+    const body = DIALOG.slice(DIALOG.indexOf("api.post<PayResult>('/debts/pos/pay'"));
+    // ⚠️ `indexOf('}),')` BU YERDA YARAMAYDI: payload ichidagi
+    // `...(isUsd ? { exchangeRate } : {}),` spread'i aynan shu ketma-ketlikni
+    // o'zidan oldin beradi va chaqiruv KESILIB qolardi (test jimgina yashil
+    // bo'lardi). Chaqiruvning haqiqiy yopilishi — qator boshidagi `}),`.
+    const call = body.slice(0, body.indexOf('\n      }),'));
+    expect(call).toMatch(/clientRequestId:\s*requestId/);
+  });
+
+  it('kalit LAZY tug`iladi (har render`da yangilanmaydi)', () => {
+    // `useState(newRequestId())` (lazy EMAS) ham kompilyatsiya bo'ladi,
+    // lekin qiymat har render'da qayta hisoblanardi.
+    expect(DIALOG).toMatch(/useState\(\(\)\s*=>\s*newRequestId\(\)\)/);
+  });
+
+  it('`reset()` yangi kalit beradi (keyingi to`lov takror deb hisoblanmasin)', () => {
+    const reset = DIALOG.slice(DIALOG.indexOf('const reset = useCallback('));
+    const bodyEnd = reset.indexOf('}, []);');
+    expect(reset.slice(0, bodyEnd)).toMatch(/setRequestId\(newRequestId\(\)\)/);
+  });
+
+  /**
+   * 🔴 SECURE-CONTEXT tuzog'i. `crypto.randomUUID()` faqat HTTPS/localhost'da
+   * mavjud, kassa qobig'i esa server manzili sifatida `http://` ni ATAYLAB
+   * qabul qiladi (`desktop/device-store.js#normalizeServerUrl`). LAN IP orqali
+   * ochilgan monoblokda bare chaqiruv `useState` initsializatorida OTILIB butun
+   * oynani yiqitardi — kassir qarz to'lovini umuman qabul qila olmasdi.
+   */
+  it('kalit generatori secure-context BO`LMASA ham ishlaydi', () => {
+    const fn = DIALOG.slice(DIALOG.indexOf('function newRequestId('));
+    const body = fn.slice(0, fn.indexOf('\n}\n'));
+    // Mavjudlik tekshiruvisiz bare chaqiruv qolmasin.
+    expect(body).toMatch(/typeof c\?\.randomUUID === 'function'/);
+    // Zaxira yo'l bor va u HAQIQIY v4 yasaydi (server `z.string().uuid()`).
+    expect(body).toMatch(/getRandomValues/);
+    expect(body).toMatch(/0x40/);
+    expect(body).toMatch(/0x80/);
   });
 });
