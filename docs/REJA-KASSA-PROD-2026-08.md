@@ -2128,8 +2128,10 @@ manfiy = biz unga qarzdormiz.
 | **counterparty-adjustment** | ✅ `±sumMinor` (`direction`) | teskari | `adjustment` | to'g'ri |
 | **work-order · processing** | ❌ YO'Q | — | — | ✅ to'g'ri — kontragent oyog'i yo'q |
 
-**Yakun: 12 hujjat turi yozadi · 2 tasi ataylab yozmaydi (invoice-in, work-order/processing) ·
-1 tasi (sales-return) P14 da qo'shildi · 1 tasi (demand) o'lchanmagan bo'shliq bo'lib qoldi.**
+**Yakun (16 qator o'lchandi):** P14 dan keyin **13 hujjat turi balansga YOZADI** (shundan
+`sales-return` — shu fazada qo'shilgani) · **3 tasi ataylab YOZMAYDI va bu to'g'ri**
+(`invoice-in` QAROR-B bo'yicha · `work-order`/`processing` — kontragent oyog'i yo'q) ·
+**1 tasi (`demand`) — izohsiz, testsiz BO'SHLIQ**, P14 dan tashqarida qoldi.
 
 🔴 **Rejaning H1 qatoridagi premise NOTO'G'RI edi** («demand/invoice-out/supply/invoice-in balans
 yozadi»). O'lchov ikkita xatoni ko'rsatdi: **demand yozMAYDI** va **invoice-in ham yozMAYDI**
