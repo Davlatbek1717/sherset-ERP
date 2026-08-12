@@ -24,11 +24,22 @@ const LABELS = {
   closed: 'Yopildi',
 } as unknown as Parameters<typeof printZReportViaAgent>[1];
 
-/** Qobiq (Electron) ko'prigini o'rnatadi — `printSheet` jim chop qiladi. */
-function installShell(printSheet = vi.fn(async () => ({ ok: true }))) {
+/**
+ * Qobiq (Electron) ko'prigini o'rnatadi — `printSheet` jim chop qiladi.
+ *
+ * `version` sukut bo'yicha ESKI (`1.3.0`): B2 versiya darvozasi shu qiymatda
+ * yopiq qoladi, ya'ni bu yordamchini argumentsiz chaqiradigan MAVJUD testlar
+ * aynan hozirgi yo'lni (sozlamani o'qish) tekshirishda davom etadi.
+ */
+function installShell(
+  version = '1.3.0',
+  // Parametrlar ataylab tiplangan: `printSheet.mock.calls[0][0]` (qaysi printer
+  // nomi uzatildi) shusiz tipsiz bo'sh kortej bo'lib qoladi.
+  printSheet = vi.fn(async (_printerName: string, _html: string) => ({ ok: true })),
+) {
   (window as unknown as { electronAPI?: unknown }).electronAPI = {
     isSherset: true,
-    version: '1.3.0',
+    version,
     listPrinters: async () => ['XP-80C'],
     printSheet,
   };
@@ -104,6 +115,49 @@ describe('printReceiptViaAgent — uzilish sababi', () => {
     expect(r).toMatchObject({ handled: true, ok: true });
     expect(r.reason).toBeUndefined();
     expect(printSheet).toHaveBeenCalledWith('XP-80C', expect.stringContaining('CHEK-1'));
+  });
+
+  it('B2 — yangi qobiq (1.4.0): sozlama O`QILMAYDI, bo`sh nom bilan bosiladi', async () => {
+    const printSheet = installShell('1.4.0');
+    vi.mocked(api.get).mockImplementation(async (url: string) => {
+      // 🔴 `/sklad-keepers` bu yo'lda umuman chaqirilmasligi kerak.
+      if (url.startsWith('/sklad-keepers')) throw new Error('sklad-keepers chaqirildi');
+      return {
+        name: 'CHEK-1',
+        moment: '2026-08-11T10:00:00.000Z',
+        sumMinor: '1000',
+        cashAmountMinor: '1000',
+        cardAmountMinor: '0',
+        changeMinor: '0',
+        description: null,
+        agent: null,
+        session: {
+          cashDesk: { name: 'Kassa' },
+          cashier: { name: 'Kassir' },
+          store: null,
+          organization: { name: 'Org', legalTitle: null },
+        },
+        positions: [],
+      };
+    });
+
+    const r = await printReceiptViaAgent('s-1');
+
+    expect(r.handled).toBe(true);
+    expect(printSheet).toHaveBeenCalledTimes(1);
+    expect(printSheet.mock.calls[0]?.[0]).toBe('');
+  });
+
+  it('B2 — eski qobiq (1.3.0): eski yo`l AYNAN saqlanadi', async () => {
+    installShell('1.3.0');
+    vi.mocked(api.get).mockImplementation(async (url: string) =>
+      url.startsWith('/sklad-keepers') ? { receiptPrinterName: null } : { name: 'CHEK-1' },
+    );
+
+    const r = await printReceiptViaAgent('s-1');
+
+    expect(r.handled).toBe(false);
+    expect(r.reason).toBe('printer-not-set');
   });
 });
 

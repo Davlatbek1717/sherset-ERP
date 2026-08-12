@@ -18,6 +18,7 @@ import {
   buildReceiptModel,
   wrapText,
 } from './pos/receipt-model';
+import { SHELL_DEFAULT_PRINTER_MIN, shellAtLeast } from './pos/shell-version';
 import {
   type ZReceiptLabels,
   type ZReportPayload,
@@ -616,23 +617,32 @@ export async function printReceiptViaAgent(saleId: string): Promise<ReceiptPrint
   });
   if (!(await checkPrintAgent())) return idle('no-agent');
 
-  let printer: string | null;
+  const el = electron();
+  // v1.4.0+ qobiq bo'sh nomni «Windows sukut printeri» deb tushunadi ⇒ hech
+  // qanday sozlama kerak emas. Eski exe'da bo'sh nom XATO, shuning uchun u
+  // yerda sozlamani o'qish yo'li AYNAN saqlanadi (darvoza: shell-version.ts).
+  const useDefaultPrinter = el != null && shellAtLeast(el.version, SHELL_DEFAULT_PRINTER_MIN);
+
+  let printer = '';
   let sale: ReceiptSale;
   try {
-    const [settings, saleDetail] = await Promise.all([
-      api.get<{ receiptPrinterName: string | null }>('/sklad-keepers'),
-      api.get<ReceiptSale>(`/retail-sales/${saleId}`),
-    ]);
-    printer = settings.receiptPrinterName ?? null;
-    sale = saleDetail;
+    if (useDefaultPrinter) {
+      sale = await api.get<ReceiptSale>(`/retail-sales/${saleId}`);
+    } else {
+      const [settings, saleDetail] = await Promise.all([
+        api.get<{ receiptPrinterName: string | null }>('/sklad-keepers'),
+        api.get<ReceiptSale>(`/retail-sales/${saleId}`),
+      ]);
+      printer = settings.receiptPrinterName ?? '';
+      sale = saleDetail;
+    }
   } catch {
     return idle('load-failed');
   }
-  // Sozlanmagan: qobiqda — manzilli ogohlantirish, brauzerda — popup
-  // (`printFollowUp`). Ilgari ikkalasi ham popup edi ⇒ tasdiq oynasi.
-  if (!printer) return idle('printer-not-set');
+  // Sozlanmagan holat FAQAT eski qobiqda qoladi: qobiqda — manzilli
+  // ogohlantirish, brauzerda — popup (`printFollowUp`).
+  if (!useDefaultPrinter && !printer) return idle('printer-not-set');
 
-  const el = electron();
   const r = el
     ? await el.printSheet(printer, buildReceiptHtml(sale))
     : await agentPrint(printer, { text: buildReceiptText(sale) });

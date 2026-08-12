@@ -323,14 +323,19 @@ function usePrintOutcome() {
   const { toast } = useToast();
   return useCallback(
     async (
-      outcome: { handled: boolean; ok: boolean; reason?: PrintIdleReason },
+      outcome: { handled: boolean; ok: boolean; reason?: PrintIdleReason; error?: string },
       popup: { url: string; features?: string },
     ) => {
       switch (printFollowUp(outcome, { inShell: hasNativePrinting() })) {
         case 'none':
           return;
         case 'error':
-          toast.error(t('print_error'));
+          // Qobiq aniq sababni qaytaradi («Printer javob bermadi (vaqt tugadi)»,
+          // «Bo'sh hujjat», «Chek shakli yuklanmadi»), lekin ilgari u shu yerda
+          // TASHLAB YUBORILARDI va kassir doim bir xil umumiy matnni ko'rardi.
+          // Sukut printerga o'tgach qolgan yagona nosozlik sinfi aynan shular —
+          // sabab ko'rinmasa keyingi nosozlik yana taxminga aylanadi.
+          toast.error(t('print_error'), outcome.error ? { description: outcome.error } : undefined);
           return;
         case 'configure-printer': {
           const printers = await fetchAgentPrinters();
