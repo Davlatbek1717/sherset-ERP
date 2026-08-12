@@ -331,6 +331,38 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-08-12d (HR — «xodimni o'chirish» endi haqiqatan o'chiradi · ✅ DEPLOYED) —**
+> **`7412f4ae` prodda** (`Deploy done: 5e0948e0… → 7412f4ae…`). Egasining shikoyati: «eski
+> xodimlarni o'chirdim, lekin arxivda qolib ketgan». Sabab: `DELETE /hr/employees/:id`
+> **`softDelete`** edi (`archived = true`) — qator bazada qolib login/e-mail/ism-familiyani
+> BAND qilardi (`err_login_taken_archived` xatosi shundan), tasdiq oynasi esa «qaytarib
+> bo'lmaydi» der edi.
+>
+> **Chegara JONLI BAZADAN o'lchandi:** `employees.id` ga `ON DELETE RESTRICT` bilan
+> qaraydigan aynan **12 ta FK**. Ikkiga bo'lindi — 🔴 **pul va kassa izi** (oylik · kassa
+> smenasi · kassa farqi · kassa audit · publikatsiya) o'chirishni **RAD etadi** va sababni
+> nom+son bilan aytadi; HR ning **hosila loglari** (davomat · bonus/jarima · kunlik va oylik
+> KPI · vazifa jurnali · savdo rejasi · yorliq navbati) xodim bilan birga **bitta
+> tranzaksiyada** o'chadi. Nega hosila loglar sanaladi: prodda 15 arxivlangan xodimning
+> **har birida 17 tadan `hr_kpi_daily_log`** bor va YAGONA to'siq shu edi.
+>
+> Yangi `GET /hr/employees/:id/delete-preflight` — oyna nima o'chishini/nima to'sayotganini
+> **oldindan** ko'rsatadi (409 kutmaydi); ekran **fail-closed**. Arxivlash yo'qolmadi —
+> alohida amal (bulk «Arxivga», xodim kartasi, offboarding).
+>
+> **Gate:** typecheck 10/10 · i18n:gate 9/9 · web vitest **3744 passed** (263 fayl, 0 failed) ·
+> api vitest **8159 passed / 1 failed** — yiqilgani `publication.service` (argon2) yuklama
+> ostidagi 5s timeout, yakka holda **21/21 yashil**. `lint:product` da 1 xato bor, u
+> **parallel sessiyaning commit qilinmagan faylida** (`retail-refund-validation.ts`) —
+> tegilmadi; bu commitning 11 faylida 0 xato (shu sabab push `CHECK_LINT=0` bilan).
+> **Jonli verify:** box HEAD = `7412f4ae` · erp.sherset.uz 200 · `/api/v1/health` 200 ·
+> `…/delete-preflight` → **401** (bor + qo'riqlangan, 404 EMAS) · `delete_blocked_title`
+> ikkala HR chunk'ida · pm2 ikkalasi online · `api.err.log` toza.
+>
+> ⚠️ **Prodda 15 ta arxivlangan xodim HAMON turibdi** — tuzatish xulqni to'g'rilaydi, mavjud
+> qatorlarni o'zi o'chirmaydi. Ularni endi ❌ tugmasi bilan o'chirsa bo'ladi (pul izi yo'q —
+> o'lchangan). 🔴 **BROWSER-QA YO'Q.**
+
 > **🕒 2026-08-12c (REJA-KASSA-PROD **FAZA P4** — smena: unutilgan smena himoyasi + jonli
 > yopish sinovi · ✅ DEPLOYED + JONLI VERIFY 17/18 + H7 YOPILDI) — `5f1f0253` prodda**
 > (`Deploy done: 3680d104… → 5f1f0253…`, chunk-grep `sotuv-shift-stale` →
