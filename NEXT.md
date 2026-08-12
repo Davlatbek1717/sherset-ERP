@@ -331,6 +331,63 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-08-12c (REJA-KASSA-PROD **FAZA P4** — smena: unutilgan smena himoyasi + jonli
+> yopish sinovi · ✅ DEPLOYED + JONLI VERIFY 17/18 + H7 YOPILDI) — `5f1f0253` prodda**
+> (`Deploy done: 3680d104… → 5f1f0253…`, chunk-grep `sotuv-shift-stale` →
+> `page-b67bb1ce12a59944.js`). Commitlar: `5f1f0253` (kod+41 test) · `cde85f32` (prod-op
+> skriptlari). To'liq hisobot: `docs/REJA-KASSA-PROD-2026-08.md` → HISOBOTLAR → P4.
+>
+> **🔴 H7 «SHUBHA» EMAS, HAQIQIY UZILISH EDI.** Smena farqi xabari `toSelf: true` bilan
+> yozilardi — u MTProto **slot 0** (direktorning «Saved Messages») ni talab qiladi, prodda
+> esa `hr_telegram_account` da **faqat slot 1** bor. O'lchov: `to_self=true` → **4/4
+> failed** (`mtproto_self_no_client`), `to_self=false` → **32/32 sent** (hammasi slot 1).
+> Ya'ni kod «yubordim» deb hisoblardi, egasi hech qachon olmasdi. Endi xabar
+> `cashiersession.approve` ruxsatlilarning **telefoniga** ketadi va jonli sinovda
+> **HAQIQATAN yetib bordi** (`+998880803717`, `sent`, slot 1, 02:37:20).
+> Xotira: `variance-telegram-toself-dead-in-prod`.
+>
+> **Egasi qarorlari (3 savol, fazada berildi):** eski 3 smena **hammasi farqsiz yopilsin**
+> (jonli sinov uchun yangi smena) · ogohlantirish chegarasining raqami **farqi yo'q**, lekin
+> yosh «ochildi degandan yopildi qilguncha» ko'rinsin · farq xabari **ruxsatli xodimlarning
+> telefoniga**.
+>
+> **Nima qilindi:** (1) POS'da smena yoshi **doim** ko'rinadi, chegaradan oshsa
+> ogohlantirish paneli; **avto-yopish YO'Q** (sanoqsiz yopilgan smena kassa hisobini
+> yolg'onlashtiradi). (2) Bayroqni **server** qo'yadi — `current` endi `openMinutes` ·
+> `staleWarnHours` · `stale` qaytaradi; chegara MK13 registrida
+> (`SHIFT_OPEN_WARN_HOURS`, sukut 12 soat, birlik `hours`), noto'g'ri birlikdagi qator
+> jimgina qo'llanmaydi. (3) «Allaqachon ochiq smena» xabari ikki yo'lda ham bitta va
+> ma'lumotli (qaysi smena · qachondan beri · nima qilish kerak). (4) Farq xabari telefonga,
+> qamrov (`ALL`/`OWN_GROUP`/`OWN`) va MK26 override kanonik `resolveEffective` orqali;
+> qabul qiluvchi topilmasa `toSelf` **zaxira** + jurnalga ochiq warn.
+>
+> **Prod-op:** `ops-p4-close-open-shifts --live` → **3/3 smena yopildi** (farq 0, izohda
+> «real naqd SANALMAGAN» ochiq yozilgan) · `ops-p4-live-verify --live` → **17/18**: ikkinchi
+> ochish 400 + ma'lumotli matn · farq **AYNAN −5 000 so'm** · akt `UZS shortage` · navbat
+> `pending` · Telegram **sent** · egasi `accept` → jurnal ikki qator. Yiqilgan `E3` —
+> **skriptning o'z xatosi** (navbat javobi `{count, rows}`, skript `items` o'qigan); alohida
+> read-only probe: `queue → 200, count=3`. Skript tuzatildi.
+>
+> **Gate:** tc 10/10 · lint 0 · i18n 9 · api **8129** · web **3647** (to'liq suite).
+>
+> **Prod holati:** `open = 0` (edi 3) · `closed = 4` · `pending = 3` (egasi UI'dan qabul
+> qiladi) · `accepted = 1` (sinov) · farq akti 1 · farq xabari 1 `sent`.
+>
+> **Nima QILINMADI:** brauzer-QA yo'q (→P10) · `stale=true` shoxi **jonli ko'rsatilmadi**
+> (sinov smenasi 0 daqiqalik edi; chegarani prodda vaqtincha tushirmadim — unutilib qolish
+> xavfi) · `/retail` sahifasiga tegilmadi · farq akti `acknowledge` qilinmadi (→P10) ·
+> sinov cheklari **qaytarilmadi**: 2×200 so'm posted qoldi, ombor 998 (→P13).
+>
+> **🔴 Yangi ochiq xavf:** **yopilgan smenadagi chekni qaytarib bo'lmaydi**
+> (`retail-sale.service.ts:1439` — «Session is closed. Cannot refund.»). Real savdoda mijoz
+> ertasi kuni tovar qaytarishi odatiy hol; hozir POS'dan buni umuman qilib bo'lmaydi →
+> **P5** da H6 bilan birga o'lchansin. Ikkinchisi: `toSelf` yo'li prodda **hamon o'lik**
+> (`menejer.haftalik_xulosa` 4 qator failed) — ular ham telefonga ko'chirilishi yoki slot 0
+> ulanishi kerak.
+>
+> **Keyingi faza:** **P5 — to'lov turlari jonli sinovi** (`docs/REJA-KASSA-PROD-2026-08.md`
+> → «FAZA P5», sessiya promptini o'sha yerdan oling).
+
 > **🕒 2026-08-12b (REJA-KASSA-PROD **FAZA P3** — chek hayot sikli · ✅ DEPLOYED + JONLI
 > VERIFY 18/18 + PROD ROL TOP-UP) — `3680d104` prodda** (`Deploy done: c6dc0566… →
 > 3680d104…`, BUILD_ID `DdCLPoRfW7DsCwvOiCxZM`). Commitlar: `2a1a2fb6` (kod+testlar) ·

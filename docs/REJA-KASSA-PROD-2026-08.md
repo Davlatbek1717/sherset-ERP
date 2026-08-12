@@ -84,10 +84,14 @@ g'alatilik: posted chekda `payments=[CASH_UZS:8460000]` bor, lekin `payedSumMino
 > olardi (jonli probe: `POST …/post` → 403). Omborchi yo'qligi ikkinchi darajali sabab.
 > Batafsil — `## HISOBOTLAR` → P3.
 
-### 🔴 C. SMENA — hech qachon yopilmagan
+### ✅ C. SMENA — hech qachon yopilmagan *(P4 da YOPILDI, 2026-08-12)*
 
-3 smena, hammasi `open`; bittasi (Admin User) **2026-08-01 dan beri ochiq**. Farq akti 0,
-qabul hodisasi 0. «Unutilgan smena» himoyasi yo'q. (Yopish oqimining o'zi kodda to'liq bor:
+3 smena, hammasi `open`; bittasi (Admin User) **2026-08-01 dan beri ochiq** (249 soat). Farq akti 0,
+qabul hodisasi 0. «Unutilgan smena» himoyasi yo'q.
+
+> **P4 dan keyin:** `open = 0` · POS smena yoshini doim ko'rsatadi, chegaradan (MK13
+> `SHIFT_OPEN_WARN_HOURS`, sukut 12 soat) oshsa ogohlantiradi · yopish→farq→navbat→qabul
+> zanjiri prodda uchdan-uchgacha yugurdi. Batafsil — `## HISOBOTLAR` → P4. (Yopish oqimining o'zi kodda to'liq bor:
 kutilgan naqd → sanoq → farq → izoh → akt → menejer navbati FSM — `REJA-KASSA-KPI-2026-08.md` §1.)
 
 ### D. KPI — dvigatel tirik, profil yo'q
@@ -148,7 +152,7 @@ kod/proddan dalillangan; **[XOTIRA]** — avvalgi sessiyalarda o'lchangan (xotir
 | H4 | **Pul daftari backfill yo'q** — `/money` va bank-balans faqat 2026-08-08 dan keyingi hujjatlarni ko'radi | [XOTIRA] `money-ledger-writers-faza11` | **P14** |
 | H5 | ✅ **YOPILDI (P3, 2026-08-12).** Tasdiqlandi: `sendToPicking` rezerv qilmasdi (`stock_reservations` prodda 0 qator). Endi `reserve` → `release_cancel`/`release_consume` zanjiri bor; yetishmovchilik savat bosilganda chiqadi | [O'LCHANGAN + jonli verify: reservedQty 0→1→0] | **P3 ✅** |
 | H6 | **Qaytarish ↔ qarz:** kam to'lov bilan sotilgan (qarz yozilgan) chek qaytarilsa qarz nima bo'ladi — o'lchanmagan (`retail-sale.service.ts:1319` atrofida ishlov bor, jonli sinalmagan) | [SHUBHA] | **P5** |
-| H7 | **Smena farqi → Telegram egaga:** wiring BOR (`cashier-session.service.ts:731` variance → `hrTelegramOutbox`, `toSelf`) — lekin jonli yetkazish sinalmagan va prod webhook-secret muammosi ma'lum | [O'LCHANGAN wiring + XOTIRA `telegram-webhook-fail-closed-deploy-blocker`] | **P4** |
+| H7 | ✅ **YOPILDI (P4, 2026-08-12).** Shubha tasdiqlandi va sabab boshqa edi: xabar `toSelf` bilan yozilardi, u MTProto **slot 0** ni talab qiladi, prodda esa faqat slot 1 ulangan ⇒ `to_self=true` ning 4/4 tasi `failed`, `to_self=false` ning 32/32 tasi `sent`. Endi xabar `cashiersession.approve` ruxsatlilarning telefoniga ketadi va **jonli yetib bordi** (`sent`, slot 1) | [O'LCHANGAN prod + jonli verify] | **P4 ✅** |
 | H8 | **Payme/Click to'lovi → PaymentIn DRAFT** — gateway to'lovi hujjat yaratadi lekin post qilmaydi, balans o'zgarmaydi; POS QR shu gateway'ga ulansa qarz «to'langan-u to'lanmagan» bo'lib qoladi | [XOTIRA] `gateway-capture-payment-in-draft` | **P5** (QR yo'lini aniqlashda tekshiriladi) |
 | H9 | **SalesPlan: 2 plan-turida fakt manbai yo'q** — kassa tushumi rejaga oqmasligi mumkin | [XOTIRA] `sales-plan-fact-single-source` | **P9** (KPI bilan birga o'lchanadi) |
 | H10 | **KPI kunlik sana bir kun orqada** (`hr-kpi.service.ts:55` yorliq bug'i, ataylab qoldirilgan qarz) — kassir «kecha»gi balli noto'g'ri kunga tushishi mumkin | [XOTIRA] `hr-kpi-daily-date-off-by-one` | **P9** |
@@ -169,7 +173,7 @@ rezerv bo'shaydi (`page 997–1014`) · smena farqi → farq akti → menejer na
 | **P1** | Qarz: POS to'lovi BALANS bo'yicha ishlaydi | api `debt`/`retail-sale` + web POS | ✅ | ✅ `bf1483da` (jonli tasdiq; brauzer-QA yo'q) |
 | **P2** | Qarz: mijoz kartasi bitta halol raqam + tarix | api + web + backfill | ✅ | ✅ `160cdcbc` (backfill 203; brauzer-QA prodda bajarildi) |
 | **P3** | Chek hayot sikli: picking-qotish + to'g'ri yo'l | api + web POS | ✅ | ✅ `3680d104` (jonli 18/18; brauzer-QA yo'q) |
-| **P4** | Smena: unutilgan smena himoyasi + jonli yopish sinovi | api + prod-op | ✅ | ☐ |
+| **P4** | Smena: unutilgan smena himoyasi + jonli yopish sinovi | api + prod-op | ✅ | ✅ `5f1f0253` (jonli 17/18 · H7 xabari yetib bordi; brauzer-QA yo'q) |
 | **P5** | To'lov turlari jonli sinovi (naqd·karta·QR·aralash·valyuta) | o'lchov + fix | kerak bo'lsa | ☐ |
 | **P6** | exe: 1.3.0 jonli o'tish · kirill · ikki-numpad | desktop + qurilma | kanal | ⚠️ kod-tomon yopildi, **qurilma sinovi yo'q** |
 | **P7** | Chop etish o'lchovi (chek · Z · pick-list, real printer) | o'lchov + fix | kerak bo'lsa | ☐ |
@@ -1212,7 +1216,145 @@ rezerv jurnali net `0` · `reserved_qty <> 0` qatorlar `0` · Kassir 1 smenasi
    yugurtirilmagan** (omborchi hisobi yo'q): `sklad_keepers` to'ldirilgan holatda
    topshiriq yaratish → omborchi paneli → «Tayyor» yo'li **sinalmagan** → **P10**.
 
-### P4 — ☐ hali bajarilmagan
+### P4 — Smena: unutilgan smena himoyasi + jonli yopish sinovi · 2026-08-12 · `5f1f0253` + `cde85f32`
+
+**Holat:** ✅ tugadi — **prodda jonli tasdiqlangan** (17/18 tekshiruv o'tdi; yiqilgan 1 tasi
+skriptning o'z xatosi bo'lib chiqdi va alohida read-only probe bilan yopildi). Brauzer-QA
+(real Chrome/sensorli monoblok) **bajarilmadi** → **P10**.
+
+**🔴 H7 YOPILDI VA U «SHUBHA» EMAS, HAQIQIY UZILISH EDI.** Reja H7 ni «wiring bor, jonli
+yetkazish sinalmagan» degan edi. O'lchov sababni ko'rsatdi: farq xabari `toSelf: true` bilan
+yozilardi, `toSelf` esa MTProto **slot 0** (direktorning o'z akkaunti, «Saved Messages») ni
+talab qiladi — prodda esa `hr_telegram_account` da **faqat slot 1** bor:
+
+```
+to_self=true  → 4 qator, 4 tasi ham `failed`  (mtproto_self_no_client: slot=0, oxirgisi 10-avgust)
+to_self=false → 32 qator, 32 tasi ham `sent`  (hammasi sent_by_slot=1)
+```
+
+Ya'ni kod «xabar yubordim» deb hisoblardi, egasi hech qachon olmasdi — `orphan-module-dead-feature`
+bilan bir klass: ulanish ko'rinadi, oqim yo'q. **Endi xabar telefonga ketadi va jonli sinovda
+HAQIQATAN yetib bordi** (`+998880803717`, `sent`, slot 1, 02:37:20).
+
+**O'lchov (avval, reja §0.6):** 3 smena, hammasi `open`; Admin User'niki **249 soat** (11 kun)
+ochiq. Farq akti 0 · qabul hodisasi 0 · `sales_count` 2/2/0. Uchalasining ichida ham faqat sinov
+ma'lumoti: Admin 116 600 so'm (P3/P13 sinov cheklari), Kassir 1 sof 0 (2 sotuv + 2 qaytarish),
+Kassir 2 bo'sh.
+
+**Egasi qarorlari (2026-08-12, savol fazada berildi):**
+| Savol | Qaror |
+|---|---|
+| Eski ochiq smenalar | **Uchalasi ham hozir farqsiz yopilsin**, jonli sinov uchun YANGI smena |
+| Ogohlantirish chegarasi | «Farqi yo'q — ochildi degandan yopildi qilguncha [ko'rinsin]» ⇒ **yosh doim ko'rinadi**, chegara (12 soat) sozlanadigan |
+| Farq xabari kimga | **`cashiersession.approve` ruxsatli xodimlarning telefoniga**; `toSelf` zaxira bo'lib qoladi |
+
+**Nima o'zgardi:**
+1. **POS'da smena yoshi HAR DOIM ko'rinadi** (`2 soat 5 daq.` uslubida), chegaradan oshsa —
+   ogohlantirish paneli («Smena juda uzoq ochiq — 11 kun · Naqdni qayta sanang va yoping»).
+   Sotuvni **bloklamaydi**. **Avto-yopish YO'Q** — sanoqsiz yopilgan smena kassa hisobini
+   yolg'onlashtirardi.
+2. **Bayroqni SERVER qo'yadi.** `GET /cashier-sessions/current` endi `openMinutes` ·
+   `staleWarnHours` · `stale` qaytaradi. Ekran chegarani o'zi hisoblamaydi — aks holda chegara
+   ikki joyda ikki xil bo'lardi (narx-poli bug-klassi).
+3. **Chegara MK13 registrida:** `SHIFT_OPEN_WARN_HOURS`, sukut **12 soat**, birlik `hours`
+   (`SLA_*` bilan ayni lug'at), oraliq 1–720. Ikkinchi sozlama manbai yaratilmadi. Noto'g'ri
+   birlikdagi qator **jimgina qo'llanmaydi** — registr sukutiga qaytadi.
+4. **«Allaqachon ochiq smena» xabari ikki yo'lda ham bitta va ma'lumotli.** Ilgari:
+   `Cashier already has an open session: <uuid>. Close it first.` va `Allaqachon ochiq smena
+   mavjud`. Endi: qaysi smena · qachondan beri · nima qilish kerak.
+5. **Farq xabari telefonga** (yuqorida). Qamrov hurmat qilinadi (`ALL` / `OWN_GROUP` = smena
+   guruhi / `OWN` = o'z kassiri), MK26 override kanonik `resolveEffective` orqali — override
+   ruxsatni **tushirsa** xabar bormaydi, **ko'tarsa** boradi. Qabul qiluvchi topilmasa eski
+   `toSelf` yo'li zaxira sifatida qoladi va jurnalga **ochiq** yoziladi.
+
+**Fayllar:**
+- `apps/api/src/modules/cashier-session/stale-shift.ts` (yangi) — yosh + xabar, sof modul
+- `apps/api/src/modules/cashier-session/variance-recipients.ts` (yangi) — kim xabar oladi, sof
+- `apps/api/src/modules/cashier-session/cashier-session.service.ts` — `findCurrentForCashier`
+  yosh qo'shadi · `open()` konflikt xabari · `recordVariance` telefonga yozadi ·
+  `resolveShiftWarnHours` / `resolveVarianceRecipients` (yangi)
+- `apps/api/src/modules/smena/smena.service.ts` — POS'ning HAQIQIY ochish yo'lidagi xabar
+- `apps/api/src/modules/manager/thresholds/manager-thresholds.ts` — `SHIFT_OPEN_WARN_HOURS` + `hours`
+- `packages/contracts/src/{cashier-session,provenance}.ts` — uch yangi maydon + provenance
+- `apps/web/src/lib/shift-age.ts` (yangi) · `app/(app)/sotuv/page.tsx` · `messages/{ru,uz}.json`
+- `apps/api/src/scripts/ops-p4-{close-open-shifts,live-verify}.ts` (yangi, DRY sukut)
+
+**Testlar (yangi 41 ta):**
+- `stale-shift.test.ts` (11) — chegara ATROFI, manfiy/buzuq sana, chegara `null`/0.
+  **Mutant bilan tekshirildi:** `>=` → `>` qilinganda test AYNAN chegara qadamida qizil bo'ldi.
+- `variance-recipients.test.ts` (9) — qamrov qoidalari, telefonsiz/takror telefon
+- `stale-shift-wiring.test.ts` (8) — `current` javobi · registrdan o'qish · **noto'g'ri birlik
+  jimgina qo'llanmasligi** · sozlama o'qilmasa POS yiqilmasligi · `open()` 409 matni
+- `variance-telegram-wiring.test.ts` (6) — telefonga yoziladi · `toSelf` zaxirasi ·
+  nomzodlar `approve` bo'yicha (`update` EMAS) · MK26 override ikki yo'nalishda
+- `smena.service.test.ts` +1 · `shift-age.test.ts` (3) · `sales-screen-stale-shift.test.tsx` (4,
+  banner mutatsiyasi bilan tekshirildi)
+
+**Gate:** typecheck 10/10 ✅ · lint:product 0 error ✅ · i18n:gate 9 ✅ ·
+api `vitest run` **8129 passed** ✅ · web `vitest run` **3647 passed** ✅ (to'liq suite —
+yangi `.tsx` qo'shilgani uchun, `changed-tests-gate-misses-convention-guards` saboqi)
+
+**Deploy:** ✅ `5f1f0253` → box HEAD = lokal HEAD · sayt 200 · api health 200 ·
+chunk-grep `sotuv-shift-stale` yangi bundle'da (`page-b67bb1ce12a59944.js`).
+
+**Prod-op (hammasi DRY dan keyin):**
+1. `ops-p4-close-open-shifts.ts --apply` → **3/3 smena yopildi**, farq 0, qabul holati `pending`.
+   Admin smenasida dollar oqimi bor edi (269 sent) — sanoq majburiy, kutilganga teng yozildi.
+   🔴 Izohda ochiq: «real naqd SANALMAGAN, sanoq kutilganga teng qilib yozildi» — bu qator
+   kelajakda «kassir sanadi» deb o'qilmasin.
+2. `ops-p4-live-verify.ts --live` → **17/18**:
+   `A` smena ochildi · `B1` `openMinutes=0 · staleWarnHours=12 · stale=false` ·
+   `B3` ikkinchi ochish **400** va matn: *«Sizda allaqachon ochiq smena bor: 391546ff… (0 daqiqa
+   dan beri ochiq). Yangi smena ochishdan oldin uni yoping — naqdni sanab, farq bo'lsa izoh
+   yozib.»* · `C` 2 chek posted · `D2` farq **AYNAN −5 000 so'm** (kutilgan 10 400 → sanoq 5 400) ·
+   `E1` akt `UZS −5 000 shortage` · `E2` `pending` · `F1` xabar **telefonga** yozildi ·
+   **`F2` xabar HAQIQATAN yuborildi (`sent`, slot 1, 02:37:20)** · `G1` egasi qabul qildi
+   (`accepted`) · `G2` jurnal: `open→pending (open_for_review/system)` · `pending→accepted (accept/owner)`.
+3. **Yiqilgan `E3` — skriptning o'z xatosi edi, mahsulotniki emas.** Qabul navbati javobi
+   `{count, rows}` shaklida, skript esa `items` o'qigan ⇒ «navbat bo'sh» degan SOXTA signal.
+   Alohida read-only probe bilan tekshirildi: `GET /acceptance/queue` → **200, count=3**,
+   uchala `pending` smena ro'yxatda. Skript tuzatildi (`cde85f32`).
+
+**Prod holati (P4 dan keyin, o'lchangan):** `open = 0` (edi 3) · `closed = 4` ·
+`pending = 3` (farq 0, egasi UI'dan qabul qiladi) · `accepted = 1` (sinov, −5 000) ·
+farq akti **1** (UZS −5 000 shortage, hali `acknowledged` emas) ·
+farq xabari **1**, `sent` → `+998880803717`.
+
+**Nima QILINMADI:**
+- **Brauzer-QA yo'q.** Butun verify HTTP + DB darajasida. Ogohlantirish paneli va yosh yorlig'i
+  real Chrome/sensorli monoblokda **ko'z bilan ko'rilmagan** → **P10**.
+- **`stale` holati jonli KO'RSATILMADI.** Sinov smenasi 0 daqiqalik edi, ya'ni jonli o'lchangani
+  `stale=false` shoxi. `stale=true` shoxi unit + web testlarda qulflangan, prodda esa faqat
+  eski 249 soatlik smena orqali ko'rinishi mumkin edi — u yopilgandan keyin ko'rsatib bo'lmadi.
+  Chegarani vaqtincha 1 soatga tushirib jonli ko'rsatish mumkin edi; **qilmadim** — prod
+  sozlamasini sinov uchun o'zgartirish keyin unutilib qolishi mumkin bo'lgan xavf.
+- **`/retail` sahifasiga tegilmadi** — ogohlantirish faqat `/sotuv` (kassir POS'i) da.
+  `/retail` MS-parity registri, u yerda ham kerak bo'lsa alohida ish.
+- **Sinov cheklari QAYTARILMADI (qoldiq).** 2 chek × 200 so'm = **400 so'm** posted holatda
+  qoldi, ombor bir tovarda **998** (1000 emas). Sabab pastda — bu tuzatilishi kerak bo'lgan
+  narsa emas, **o'lchangan cheklov** → **P13**.
+- Farq akti `acknowledged` qilinmadi (`acknowledgeVariance` yo'li sinalmagan) → **P10**.
+- 3 ta `pending` smenani egasi hali qabul qilmagan — bu ATAYLAB UI ishi (menejer navbati
+  ekranining o'zi shu bilan jonli sinaladi).
+
+**Ochiq xavf / keyingi fazaga eslatma:**
+1. 🔴 **YOPILGAN SMENADAGI CHEKNI QAYTARIB BO'LMAYDI.** `retail-sale.service.ts:1439`:
+   `refund` asl chekning smenasi `open` bo'lishini talab qiladi, aks holda
+   *«Session is closed. Cannot refund.»*. Real savdoda mijoz ertasi kuni tovar qaytarishi —
+   **odatiy hol**, hozir esa POS'dan buni umuman qilib bo'lmaydi. Bu P4 doirasidan tashqari,
+   lekin **real-savdo blokeri bo'lishi mumkin** → **P5** (H6 bilan birga o'lchansin: kam
+   to'lovli chek qaytarilganda qarz nima bo'ladi).
+2. **`toSelf` yo'li prodda HAMON o'lik** (slot 0 ulanmagan). P4 faqat smena-farqi xabarini
+   telefonga ko'chirdi; `menejer.haftalik_xulosa` va boshqa `toSelf` yozuvchilar hamon
+   `mtproto_self_no_client` bilan yiqiladi (4 qator). Ular ham telefonga ko'chirilishi yoki
+   slot 0 ulanishi kerak → alohida qaror.
+3. **VPS zaxirasi hamon o'tkazib yuborilmoqda** (P3 dan meros): disk 90% (11G bo'sh), 10 GB
+   chegarasi. Zaxira fayllarini o'chirish — egasining qarori, tegmadim.
+4. `CashDesk` prodda hamon **2 ta va ikkalasi «Asosiy kassa»** (§1.G) — P4 tegmadi.
+5. `ops-p4-live-verify.ts --live` **qayta yugurtirilsa yana bitta sinov smenasi va 2 ta
+   qaytarib bo'lmaydigan chek yaratadi** — regressiya tekshiruvi sifatida ishlatishdan oldin
+   shuni hisobga oling (DRY rejimi xavfsiz, read-only).
+
 ### P5 — ☐ hali bajarilmagan
 ### P6 — exe: 1.3.0 jonli o'tish · kirill · ikki-numpad · 2026-08-11 · `33730b2f`
 
