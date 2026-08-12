@@ -83,14 +83,11 @@ function permissionOf(handler: unknown): RequiredPermission | undefined {
 
 /** [nom, handler, kutilgan entity, kutilgan action] */
 const CLOSED: Array<[string, unknown, string, string]> = [
-  // ── Kompaniya sozlamasi: sklad→omborchi + chek printeri (`/settings/sklad-keepers`)
+  // ── Kompaniya sozlamasi: sklad→omborchi (`/settings/sklad-keepers`)
+  // `PUT /sklad-keepers/receipt-printer` olib tashlandi (B3): akkaunt-darajali
+  // mijoz cheki printeri sozlamasi yo'q — chek qurilmaning Windows sukut
+  // printeriga bosiladi.
   ['PUT /sklad-keepers', SkladKeeperController.prototype.upsert, 'settings', 'update'],
-  [
-    'PUT /sklad-keepers/receipt-printer',
-    SkladKeeperController.prototype.setReceiptPrinter,
-    'settings',
-    'update',
-  ],
   ['DELETE /sklad-keepers/:skladNo', SkladKeeperController.prototype.remove, 'settings', 'delete'],
 
   // ── Ish jadvali (`/settings/shift-schedules`) — davomat/kechikish hisobiga asos

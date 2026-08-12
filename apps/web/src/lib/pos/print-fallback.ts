@@ -15,7 +15,7 @@ export type PrintFollowUp =
   | 'error'
   /** Brauzer chop sahifasi (`?auto=1`) ochiladi. */
   | 'popup'
-  /** Printer sozlanmagan — kassirga manzilli ogohlantirish (popup EMAS). */
+  /** Omborga printer biriktirilmagan — kassirga manzilli ogohlantirish (popup EMAS). */
   | 'configure-printer';
 
 /**
@@ -26,16 +26,20 @@ export type PrintFollowUp =
  * 🔴 Qobiq ichida popup — CHALG'ITUVCHI: `?auto=1` sahifasi `window.print()`
  * chaqiradi va Chromium TASDIQ oynasini chiqaradi, ya'ni «exe chekni o'zi
  * chiqarsin» maqsadining teskarisi. Shuning uchun sozlama muammosi bo'lsa
- * (printer tanlanmagan / biriktirilmagan) qobiqda popup o'rniga ogohlantirish
- * beriladi. Oddiy brauzerda esa popup — YAGONA chop yo'li, o'zgarmaydi.
+ * qobiqda popup o'rniga ogohlantirish beriladi. Oddiy brauzerda esa popup —
+ * YAGONA chop yo'li, o'zgarmaydi.
+ *
+ * Sozlama bo'shlig'i endi YAGONA: `no-printer-mapped` (ombor→printer, yig'ish
+ * varag'i). Mijoz cheki va Z-hisobotda «printer sozlanmagan» holati YO'Q — ular
+ * qurilmaning Windows sukut printeriga bosiladi (desktop v1.4.0+), ya'ni ular
+ * uzilsa bu haqiqiy xato (`error`) yoki yuklash muammosi (`popup`), sozlama
+ * emas.
  */
 export function printFollowUp(
   outcome: { handled: boolean; ok: boolean; reason?: PrintIdleReason },
   opts: { inShell: boolean },
 ): PrintFollowUp {
   if (outcome.handled) return outcome.ok ? 'none' : 'error';
-  const settingsGap =
-    outcome.reason === 'printer-not-set' || outcome.reason === 'no-printer-mapped';
-  if (opts.inShell && settingsGap) return 'configure-printer';
+  if (opts.inShell && outcome.reason === 'no-printer-mapped') return 'configure-printer';
   return 'popup';
 }

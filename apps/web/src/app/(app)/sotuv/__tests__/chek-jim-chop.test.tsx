@@ -9,6 +9,11 @@
  *
  * Endi: qobiqda «printer sozlanmagan» ⇒ popup OCHILMAYDI, kassirga manzilli
  * ogohlantirish chiqadi. Oddiy brauzerda popup — yagona chop yo'li, qoladi.
+ *
+ * B3 (2026-08-12): chekda «printer sozlanmagan» holati BUTUNLAY yo'qoldi —
+ * chek qurilmaning Windows sukut printeriga bosiladi. Qolgan nosozlik sinfi:
+ * qobiq chop qildi-yu drayver rad etdi (`handled:true, ok:false`) ⇒ SABABI
+ * ko'rsatilgan xato toast'i, popup EMAS.
  */
 
 import { api } from '@/lib/api-client';
@@ -72,13 +77,13 @@ beforeEach(() => {
   window.open = vi.fn();
 });
 
-describe('Chek chop etish — printer sozlanmagan shoxi', () => {
-  it('qobiqda: brauzer tasdiq-popup‘i OCHILMAYDI, manzilli ogohlantirish chiqadi', async () => {
+describe('Chek chop etish — qobiq shoxi', () => {
+  it('qobiqda drayver rad etdi: popup OCHILMAYDI, xato SABABI ko‘rsatiladi', async () => {
     vi.mocked(hasNativePrinting).mockReturnValue(true);
     vi.mocked(printReceiptViaAgent).mockResolvedValue({
-      handled: false,
+      handled: true,
       ok: false,
-      reason: 'printer-not-set',
+      error: 'Printer javob bermadi (vaqt tugadi)',
     });
     const user = userEvent.setup();
     renderWithProviders(<SotuvPage />);
@@ -86,9 +91,10 @@ describe('Chek chop etish — printer sozlanmagan shoxi', () => {
     await pressPrint(user);
 
     await waitFor(() => expect(printReceiptViaAgent).toHaveBeenCalledWith('s-1'));
-    expect(await screen.findByText(/Chek printeri tanlanmagan/)).toBeInTheDocument();
-    // Ogohlantirish kassirga QAYERDA tanlashni ham aytadi.
-    expect(screen.getByText(/Omborchilar/)).toBeInTheDocument();
+    expect(await screen.findByText(/Chek chiqmadi/)).toBeInTheDocument();
+    // 🔴 Qobiq qaytargan aniq sabab ilgari TASHLAB YUBORILARDI — har nosozlik
+    // bir xil umumiy matn berardi va keyingi nosozlik yana taxminga aylanardi.
+    expect(screen.getByText(/vaqt tugadi/)).toBeInTheDocument();
     expect(window.open).not.toHaveBeenCalled();
   });
 
@@ -97,7 +103,7 @@ describe('Chek chop etish — printer sozlanmagan shoxi', () => {
     vi.mocked(printReceiptViaAgent).mockResolvedValue({
       handled: false,
       ok: false,
-      reason: 'printer-not-set',
+      reason: 'load-failed',
     });
     const user = userEvent.setup();
     renderWithProviders(<SotuvPage />);

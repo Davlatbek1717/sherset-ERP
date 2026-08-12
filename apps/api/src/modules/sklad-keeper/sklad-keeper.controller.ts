@@ -11,8 +11,9 @@ import { SkladKeeperService } from './sklad-keeper.service.js';
  *
  * Faza Q10 (AUTH-07): mutatsiyalar `settings` entity'si bilan yopildi — ilgari
  * `JwtAuthGuard` yolg'iz turardi, ya'ni HAR xodim kompaniya bo'yicha omborchi
- * biriktirmasini va chek printerini almashtira olardi. GET ATAYLAB ochiq:
- * omborchi ekrani (`/omborchi`) o'z zonasini shundan aniqlaydi.
+ * biriktirmasini almashtira olardi. GET ATAYLAB ochiq: omborchi ekrani
+ * (`/omborchi`) o'z zonasini shundan aniqlaydi, kassa esa yig'ish varag'ining
+ * ombor→printer marshrutini.
  */
 @Controller('sklad-keepers')
 @UseGuards(JwtAuthGuard)
@@ -29,13 +30,6 @@ export class SkladKeeperController {
   @RequirePermission({ entity: 'settings', action: 'update' })
   async upsert(@CurrentUser() user: AuthenticatedUser, @Body() body: unknown) {
     return this.svc.upsert(user.accountId, body);
-  }
-
-  /** Set (or clear) the account-wide customer-receipt printer. */
-  @Put('receipt-printer')
-  @RequirePermission({ entity: 'settings', action: 'update' })
-  async setReceiptPrinter(@CurrentUser() user: AuthenticatedUser, @Body() body: unknown) {
-    return this.svc.setReceiptPrinter(user.accountId, body);
   }
 
   @Delete(':skladNo')

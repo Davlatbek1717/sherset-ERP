@@ -18,7 +18,6 @@ import {
   buildReceiptModel,
   wrapText,
 } from './pos/receipt-model';
-import { SHELL_DEFAULT_PRINTER_MIN, shellAtLeast } from './pos/shell-version';
 import {
   type ZReceiptLabels,
   type ZReportPayload,
@@ -179,8 +178,10 @@ export interface PrintResult {
 export type PrintIdleReason =
   /** Qobiq ham, HTTP print-agent ham yo'q — oddiy brauzer. */
   | 'no-agent'
-  /** Chek printeri sozlanmagan (`CompanySettings.receiptPrinterName` = null). */
-  | 'printer-not-set'
+  // `'printer-not-set'` olib tashlandi: mijoz cheki va Z-hisobot endi
+  // qurilmaning Windows sukut printeriga bosiladi (desktop v1.4.0+), ya'ni
+  // «sozlanmagan» holat ularda YO'Q. Quyidagisi — yig'ish varag'iniki, u
+  // ombor→printer biriktirmasiga tayanadi va saqlanadi.
   /** Hech bir sklad'ga printer biriktirilmagan (yacheykali chek). */
   | 'no-printer-mapped'
   /** Sozlama yoki hujjat yuklanmadi (tarmoq/server xatosi). */
@@ -604,10 +605,10 @@ export interface ReceiptPrintOutcome {
 }
 
 /**
- * Print the customer sales receipt straight to the configured receipt printer
- * via the local agent (or Electron native). Returns handled=false — so the
- * caller falls back to the browser popup — when the agent is down, the printer
- * isn't configured, or the sale can't be loaded.
+ * Print the customer sales receipt straight to the device's default printer via
+ * the local agent (or Electron native). Returns handled=false — so the caller
+ * falls back to the browser popup — when the agent is down or the sale can't be
+ * loaded.
  */
 export async function printReceiptViaAgent(saleId: string): Promise<ReceiptPrintOutcome> {
   const idle = (reason: PrintIdleReason): ReceiptPrintOutcome => ({
@@ -617,49 +618,35 @@ export async function printReceiptViaAgent(saleId: string): Promise<ReceiptPrint
   });
   if (!(await checkPrintAgent())) return idle('no-agent');
 
-  const el = electron();
-  // v1.4.0+ qobiq bo'sh nomni «Windows sukut printeri» deb tushunadi ⇒ hech
-  // qanday sozlama kerak emas. Eski exe'da bo'sh nom XATO, shuning uchun u
-  // yerda sozlamani o'qish yo'li AYNAN saqlanadi (darvoza: shell-version.ts).
-  const useDefaultPrinter = el != null && shellAtLeast(el.version, SHELL_DEFAULT_PRINTER_MIN);
-
-  let printer = '';
   let sale: ReceiptSale;
   try {
-    if (useDefaultPrinter) {
-      sale = await api.get<ReceiptSale>(`/retail-sales/${saleId}`);
-    } else {
-      const [settings, saleDetail] = await Promise.all([
-        api.get<{ receiptPrinterName: string | null }>('/sklad-keepers'),
-        api.get<ReceiptSale>(`/retail-sales/${saleId}`),
-      ]);
-      printer = settings.receiptPrinterName ?? '';
-      sale = saleDetail;
-    }
+    sale = await api.get<ReceiptSale>(`/retail-sales/${saleId}`);
   } catch {
     return idle('load-failed');
   }
-  // Sozlanmagan holat FAQAT eski qobiqda qoladi: qobiqda — manzilli
-  // ogohlantirish, brauzerda — popup (`printFollowUp`).
-  if (!useDefaultPrinter && !printer) return idle('printer-not-set');
 
+  // Printer TANLANMAYDI: qobiq bo'sh nomni Windows sukut printeri deb tushunadi
+  // (desktop v1.4.0+). Akkaunt-darajali sozlama butunlay olib tashlandi — u
+  // ikki kassada bir vaqtda to'g'ri bo'la olmasdi va kiosk kassirda uni
+  // sozlaydigan sahifa umuman yo'q edi.
+  const el = electron();
   const r = el
-    ? await el.printSheet(printer, buildReceiptHtml(sale))
-    : await agentPrint(printer, { text: buildReceiptText(sale) });
+    ? await el.printSheet('', buildReceiptHtml(sale))
+    : await agentPrint('', { text: buildReceiptText(sale) });
   return { handled: true, ok: r.ok, error: r.error };
 }
 
 // ─── Z-hisobot («Z-отчёт») chop etish ────────────────────────────────────────
-// Chek bilan AYNI yo'l: agent/Electron tirik va chek printeri sozlangan bo'lsa
-// qog'oz to'g'ridan-to'g'ri chiqadi, aks holda chaqiruvchi brauzer popup'iga
-// (`/print/z-report/<id>?auto=1`) tushadi.
+// Chek bilan AYNI yo'l: agent/Electron tirik bo'lsa qog'oz to'g'ridan-to'g'ri
+// qurilmaning sukut printeridan chiqadi, aks holda chaqiruvchi brauzer
+// popup'iga (`/print/z-report/<id>?auto=1`) tushadi.
 //
 // 🔴 Raqamlar bu yerda ham HISOBLANMAYDI — server javobi to'g'ridan-to'g'ri
 // `buildZReceipt` ga beriladi, ya'ni qog'oz, Electron-HTML va ekran bitta
 // modeldan chiziladi (xotira: «Ombor cheki uch renderer»).
 
 /**
- * Z-hisobotni chek printeriga yuboradi.
+ * Z-hisobotni qurilmaning sukut printeriga yuboradi.
  *
  * `labels` chaqiruvchidan keladi (`useZReceiptLabels()`) — print-agent
  * React kontekstida emas, i18n'ni o'zi o'qiy olmaydi.
@@ -675,19 +662,15 @@ export async function printZReportViaAgent(
   });
   if (!(await checkPrintAgent())) return idle('no-agent');
 
-  let printer: string | null;
+  // Ilgari bu yerda `/sklad-keepers` dan `receiptPrinterName` o'qilardi va
+  // bo'sh bo'lsa `printer-not-set` qaytarilardi. Chek bilan bir xil yo'l:
+  // sozlama olib tashlandi, printerni qobiq (Windows sukuti) tanlaydi.
   let z: ZReportPayload;
   try {
-    const [settings, report] = await Promise.all([
-      api.get<{ receiptPrinterName: string | null }>('/sklad-keepers'),
-      api.get<ZReportPayload>(`/cashier-sessions/${sessionId}/z-report`),
-    ]);
-    printer = settings.receiptPrinterName ?? null;
-    z = report;
+    z = await api.get<ZReportPayload>(`/cashier-sessions/${sessionId}/z-report`);
   } catch {
     return idle('load-failed');
   }
-  if (!printer) return idle('printer-not-set'); // sozlanmagan → chek bilan bir xil yo'l
 
   // Qaytarishlar SONI — eski endpointda. Yiqilsa chek baribir chiqadi,
   // faqat son o'rnida «—» turadi (NOL EMAS).
@@ -704,7 +687,7 @@ export async function printZReportViaAgent(
   const view = buildZReceipt(z, { labels, returnsCount });
   const el = electron();
   const r = el
-    ? await el.printSheet(printer, renderZReceiptHtml(view))
-    : await agentPrint(printer, { text: renderZReceiptText(view) });
+    ? await el.printSheet('', renderZReceiptHtml(view))
+    : await agentPrint('', { text: renderZReceiptText(view) });
   return { handled: true, ok: r.ok, error: r.error };
 }

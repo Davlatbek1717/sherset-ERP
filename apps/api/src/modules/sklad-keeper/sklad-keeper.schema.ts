@@ -19,12 +19,7 @@ export const UpsertSkladKeeperSchema = z.object({
 });
 export type UpsertSkladKeeperInput = z.infer<typeof UpsertSkladKeeperSchema>;
 
-/**
- * Account-wide customer-receipt printer («mijoz cheki») — the receipt
- * counterpart of SkladKeeper.printerName. Empty/null ⇒ clear it (falls back to
- * the browser popup print). Stored on CompanySettings.
- */
-export const SetReceiptPrinterSchema = z.object({
-  printerName: z.string().max(255).nullable(),
-});
-export type SetReceiptPrinterInput = z.infer<typeof SetReceiptPrinterSchema>;
+// `SetReceiptPrinterSchema` olib tashlandi: akkaunt-darajali mijoz cheki
+// printeri sozlamasi yo'q — chek qurilmaning Windows sukut printeriga bosiladi
+// (desktop v1.4.0+). Yuqoridagi `printerName` — ombor→printer marshruti, u
+// yig'ish varag'iniki va joyida qoladi.

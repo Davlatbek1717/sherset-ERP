@@ -14,6 +14,10 @@ import { printFollowUp } from './print-fallback';
  * Qaror: QOBIQ ichida «printer sozlanmagan» shoxi popup OCHMAYDI —
  * kassirga aniq ogohlantirish chiqadi. Oddiy brauzerda popup — YAGONA
  * chop yo'li, shuning uchun u yerda o'zgarmaydi.
+ *
+ * B3 (2026-08-12): chek va Z-hisobotdagi `printer-not-set` sababi butunlay
+ * yo'qoldi — ular qurilmaning Windows sukut printeriga bosiladi. Sozlama
+ * bo'shlig'i endi YAGONA: `no-printer-mapped` (ombor→printer, yig'ish varag'i).
  */
 describe('printFollowUp — chop natijasi → keyingi qadam', () => {
   it('chop bo‘ldi ⇒ hech narsa', () => {
@@ -21,20 +25,14 @@ describe('printFollowUp — chop natijasi → keyingi qadam', () => {
     expect(printFollowUp({ handled: true, ok: false }, { inShell: true })).toBe('error');
   });
 
-  it('qobiqda printer sozlanmagan ⇒ ogohlantirish (popup EMAS)', () => {
-    expect(
-      printFollowUp({ handled: false, ok: false, reason: 'printer-not-set' }, { inShell: true }),
-    ).toBe('configure-printer');
-    // Yacheykali chek — ayni sinf: hech bir sklad'ga printer biriktirilmagan.
+  it('qobiqda omborga printer biriktirilmagan ⇒ ogohlantirish (popup EMAS)', () => {
+    // Yacheykali chek (yig'ish varag'i) — B3'dan keyin YAGONA sozlama shoxi.
     expect(
       printFollowUp({ handled: false, ok: false, reason: 'no-printer-mapped' }, { inShell: true }),
     ).toBe('configure-printer');
   });
 
-  it('oddiy brauzerda printer sozlanmagan ⇒ popup (yagona chop yo‘li)', () => {
-    expect(
-      printFollowUp({ handled: false, ok: false, reason: 'printer-not-set' }, { inShell: false }),
-    ).toBe('popup');
+  it('oddiy brauzerda biriktirilmagan ⇒ popup (yagona chop yo‘li)', () => {
     expect(
       printFollowUp({ handled: false, ok: false, reason: 'no-printer-mapped' }, { inShell: false }),
     ).toBe('popup');

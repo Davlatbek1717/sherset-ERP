@@ -1,6 +1,6 @@
 import { BadRequestException, Inject, Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service.js';
-import { SetReceiptPrinterSchema, UpsertSkladKeeperSchema } from './sklad-keeper.schema.js';
+import { UpsertSkladKeeperSchema } from './sklad-keeper.schema.js';
 
 /**
  * SkladKeeperService — manage the sklad(zone)→omborchi assignment table.
@@ -11,32 +11,17 @@ import { SetReceiptPrinterSchema, UpsertSkladKeeperSchema } from './sklad-keeper
 export class SkladKeeperService {
   constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
+  // Ilgari bu yerda `CompanySettings.receiptPrinterName` ham o'qilardi va
+  // javobga qo'shib yuborilardi (mijoz cheki printeri). Akkaunt-darajali chek
+  // printeri butunlay olib tashlandi — chek endi qurilmaning Windows sukut
+  // printeriga bosiladi (desktop v1.4.0+). Bu yerda faqat ombor→omborchi
+  // (va ombor→printer) biriktirmasi qoladi: u yig'ish varag'iniki.
   async list(accountId: string) {
-    const [items, settings] = await Promise.all([
-      this.prisma.client.skladKeeper.findMany({
-        where: { accountId },
-        orderBy: { skladNo: 'asc' },
-      }),
-      this.prisma.client.companySettings.findUnique({
-        where: { accountId },
-        select: { receiptPrinterName: true },
-      }),
-    ]);
-    // receiptPrinterName rides along on the settings list so the sotuv receipt
-    // flow and the settings page both read it in one call.
-    return { items, receiptPrinterName: settings?.receiptPrinterName ?? null };
-  }
-
-  /** Set (or clear) the account-wide customer-receipt printer on CompanySettings. */
-  async setReceiptPrinter(accountId: string, raw: unknown) {
-    const { printerName } = SetReceiptPrinterSchema.parse(raw);
-    const value = printerName?.trim() || null;
-    await this.prisma.client.companySettings.upsert({
+    const items = await this.prisma.client.skladKeeper.findMany({
       where: { accountId },
-      create: { accountId, receiptPrinterName: value },
-      update: { receiptPrinterName: value },
+      orderBy: { skladNo: 'asc' },
     });
-    return { ok: true, receiptPrinterName: value };
+    return { items };
   }
 
   /** Upsert (or clear, when employeeId is null) one sklad→keeper mapping. */
