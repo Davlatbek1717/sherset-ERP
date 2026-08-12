@@ -331,6 +331,23 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-08-12f (KASSA — qidiruv setkadan tanlaganda ham tozalanadi · ✅ DEPLOYED) —**
+> **`786e2557` prodda** (`Deploy done: 11f94b49… → 786e2557…`; site 200 · `:4001/health` 200 ·
+> chunk `page-4d0c22f1…js` 17:20 da qayta qurildi).
+>
+> Egasining jonli sinovi: qidirib topilgan tovarni **setkadan bosganda** qidiruv maydoni eski
+> so'rov bilan qolardi (ikkinchi tovar nomi birinchisining ustiga yozilardi). Sabab: tozalash
+> faqat **Enter** ishlovchisida turgan edi. Endi `setSearch('')` + fokus qaytarish `addToCart`
+> ichida — barcha yo'llar uchun (Enter · bosish · skaner). Test: `sales-screen-cart.test.tsx`
+> 34/34 (yangi 🔴 «setkadan bosilganda ham maydon tozalanadi va fokus qaytadi»).
+> **Phase-1: browser-smoke YO'Q** (prodda kassir sinovi kutilmoqda).
+> ⚠️ Bu deploy parallel sessiyaning 4 ta **qarz/storno** commit'ini ham olib chiqdi
+> (`4ee55b00`…`a3bbcf04`) — ular alohida verify qilinmagan.
+> ⚠️ To'liq web typecheck yugurtirilmadi: parallel sessiya `pin-keypad.tsx` ni yarim-tahrirda
+> ushlab turgan edi (`MIN_PIN` topilmaydi) — commit'ga kirmagan, lekin daraxt hamon qizil.
+>
+> ---
+>
 > **🕒 2026-08-12e (KASSA — chek qurilmaning SUKUT printeriga chiqadi · B1+B2+B3 · ✅ DEPLOYED
 > + exe 1.4.0 NASHR ETILDI) — `11f94b49` prodda** (`Deploy done: 7412f4ae… → 11f94b49…`).
 >
