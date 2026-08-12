@@ -332,9 +332,7 @@ export function computeRefundSettlementCaps(i: RefundSettlementInput): RefundSet
 
   const moneyMaxMinor = moneyCapTotal - i.priorMoneyReturnedMinor;
   const cashMaxMinor =
-    i.originalCashLikeMinor == null
-      ? moneyMaxMinor
-      : cashCapTotal - i.priorCashReturnedMinor;
+    i.originalCashLikeMinor == null ? moneyMaxMinor : cashCapTotal - i.priorCashReturnedMinor;
   const debtMaxMinor = debtCapTotal - i.priorDebtReturnedMinor;
   return {
     moneyMaxMinor: moneyMaxMinor > 0n ? moneyMaxMinor : 0n,
