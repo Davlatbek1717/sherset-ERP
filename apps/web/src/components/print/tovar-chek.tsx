@@ -21,8 +21,14 @@
  * ishlatiladi: 80mm default, `?w=58` bilan 58mm.
  */
 
+import type { ReceiptPaymentEntry } from '@/lib/pos/receipt-model';
+// Formatlash SHU YERDA takrorlanmaydi — kassa cheki (ESC/POS · Electron HTML)
+// bilan AYNI funksiyalar. Ilgari bu fayl o'z nusxasini saqlardi va ikkitasi
+// jimgina ajralib ketishi mumkin edi (xotira: `ombor-chek-uch-renderer`).
+import { fmtQty, fmtReceiptDate, fmtSom } from '@/lib/pos/receipt-model';
 import { amountInWords } from '@moysklad/money';
 import { useLocale, useTranslations } from 'next-intl';
+import React from 'react';
 
 export interface ChekPosition {
   position: number;
@@ -55,35 +61,17 @@ export interface TovarChekProps {
   totalMinor: string;
   /** Chegirmasiz oraliq jami — farq bo'lsa «Chegirma» qatori chiqadi. */
   subtotalMinor?: string | null;
+  /**
+   * To'lov qatorlari (naqd · karta · terminal · qarz · qaytim · valyuta).
+   *
+   * 🔴 Egasining namunasida (chek.png) bu blok YO'Q — u faqat KASSA chekida
+   * chiqadi va ataylab: qaytim va qarz qog'ozda ko'rinmasa, nizoni hal
+   * qiladigan dalil qolmaydi. Buyurtma/jo'natma cheklari uni bermaydi
+   * (`undefined`) ⇒ ular namunaga 1:1 mos qoladi.
+   */
+  payments?: ReceiptPaymentEntry[];
   /** Qog'oz eni (mm) — shrift shunga qarab moslashadi. */
   widthMm: number;
-}
-
-/** Tiyin → «15 600» ko'rinishidagi so'm (butun bo'lsa kasrsiz — namuna kabi). */
-function fmtSom(minor: string): string {
-  const v = BigInt(minor);
-  const neg = v < 0n;
-  const abs = neg ? -v : v;
-  const som = abs / 100n;
-  const tiyin = abs % 100n;
-  const grouped = som.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
-  const body = tiyin === 0n ? grouped : `${grouped},${tiyin.toString().padStart(2, '0')}`;
-  return neg ? `-${body}` : body;
-}
-
-/** "10.000" / "10" → «10», "2.5" → «2,5» (namuna: Кол-во ustuni butun). */
-function fmtQty(q: string): string {
-  const n = Number(q);
-  if (!Number.isFinite(n)) return q;
-  return n.toLocaleString('ru-RU', { maximumFractionDigits: 3 });
-}
-
-function fmtDate(iso: string): string {
-  return new Date(iso).toLocaleDateString('ru-RU', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-  });
 }
 
 export function TovarChek({
@@ -100,6 +88,7 @@ export function TovarChek({
   positions,
   totalMinor,
   subtotalMinor,
+  payments,
   widthMm,
 }: TovarChekProps) {
   const t = useTranslations('pages.print');
@@ -148,7 +137,7 @@ export function TovarChek({
             xabar ichida <b> teg turadi va rich-render bilan chiqadi. */}
         <div>
           {t.rich('chek_dated', {
-            date: fmtDate(docDate),
+            date: fmtReceiptDate(docDate),
             b: (chunks) => <b>{chunks}</b>,
           })}
         </div>
@@ -237,6 +226,28 @@ export function TovarChek({
             </td>
             <td style={num}>{fmtSom(totalMinor)}</td>
           </tr>
+          {/* 🔴 KASSA cheki uchun qo'shimcha: to'lov turlari. Namunada yo'q —
+              lekin qaytim va qarz qog'ozda ko'rinmasa, mijoz bilan nizoni hal
+              qiladigan dalil qolmaydi (izohi `receipt-model.ts` da). Buyurtma/
+              jo'natma cheklari `payments` bermaydi ⇒ ular namunaga 1:1 mos. */}
+          {(payments ?? []).map((p) => (
+            <React.Fragment key={`${p.label}-${p.value}`}>
+              <tr data-test-id="chek-payment">
+                <td colSpan={5} style={{ ...cell, textAlign: 'center' }}>
+                  {p.label}:
+                </td>
+                <td style={num}>{p.value}</td>
+              </tr>
+              {p.note && (
+                <tr style={{ fontSize: fs - 1 }}>
+                  <td colSpan={5} style={{ ...cell, textAlign: 'center' }}>
+                    {p.note.left}
+                  </td>
+                  <td style={num}>{p.note.right}</td>
+                </tr>
+              )}
+            </React.Fragment>
+          ))}
         </tfoot>
       </table>
 

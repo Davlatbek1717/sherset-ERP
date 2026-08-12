@@ -11,12 +11,13 @@
  */
 
 import { api } from './api-client';
+// Chek modeli — uchala renderer uchun YAGONA manba (qaror + formatlash).
 import {
-  type ReceiptPaymentRow,
-  formatForeignMajor,
-  formatFrozenRate,
-  receiptPaymentLines,
-} from './pos/receipt-payments';
+  RECEIPT_LABELS,
+  type ReceiptSaleInput,
+  buildReceiptModel,
+  wrapText,
+} from './pos/receipt-model';
 import {
   type ZReceiptLabels,
   type ZReportPayload,
@@ -416,162 +417,179 @@ export async function printPickingViaAgent(saleId: string): Promise<PickingPrint
 // thermal size — exactly like the omborchi sheet. Otherwise the caller falls
 // back to the browser popup print (/print/retail-sale/[id]).
 
-interface ReceiptPosition {
-  quantity: string;
-  priceMinor: string;
-  sumMinor: string;
-  product: { name: string } | null;
-}
-interface ReceiptSale {
-  name: string;
-  moment: string;
-  sumMinor: string;
-  /**
-   * Kassa TZ §6.1 — chekning to'lov qatlami. Ilgari bu yerda
-   * `terminalAmountMinor` va `advancePaymentSumMinor` turardi: birinchisi
-   * `RetailSale` da MAVJUD BO'LMAGAN ustun (terminal puli «Karta» bo'lib
-   * ko'rinardi), ikkinchisiga esa hech kim yozmaydi (qarz qatori o'lik edi).
-   * Endi manba bitta — `receiptPaymentLines()`.
-   */
-  payments?: ReceiptPaymentRow[] | null;
-  /** Legacy fallback — to'lov qatorlaridan oldingi arxiv cheklari. */
-  cashAmountMinor: string;
-  cardAmountMinor: string;
-  changeMinor: string;
-  description: string | null;
-  agent: { name: string; legalTitle: string | null } | null;
-  session: {
-    cashDesk: { name: string } | null;
-    cashier: { name: string };
-    store: { name: string } | null;
-    organization: { name: string; legalTitle: string | null };
-  };
-  positions: ReceiptPosition[];
-}
+/**
+ * Chek modeli — `lib/pos/receipt-model.ts` da (sof, uchala renderer uchun
+ * bitta manba). Bu yerdagi tiplar shunchaki uning kirishi.
+ */
+type ReceiptSale = ReceiptSaleInput;
 
-/** Whole sums grouped by thousands with a plain ASCII space (ESC/POS-safe). */
-function sumStr(minorStr: string): string {
-  const whole = Math.round(Number(minorStr || '0') / 100);
-  return String(whole).replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
-}
-
-/** ESC/POS plain-text receipt. 32-char columns — matches the picking sheet the
- *  cashier's printer already renders nicely.
+/**
+ * ESC/POS oddiy matn cheki — 32 ustun.
  *
- *  Eksport qilingan — chek renderer'lari sinaladigan yagona narsa (uchalasi bir
- *  xil qatorlarni chiqarishi `lib/__tests__/receipt-renderers.test.ts` da). */
+ * Egasi bergan namuna (`chek.png`) tuzilishi tor lentaga MOSLASHTIRILGAN
+ * holda saqlanadi: 6 ustunli chiziqli jadval 32 belgiga sig'maydi, shuning
+ * uchun har pozitsiya ikki qatorda chiqadi — barcha OLTI maydon bilan
+ * (№/nom · soni × o'lchov birligi × narx · summa). Yorliqlar, tartib va
+ * pastki bloklar namunadagidek.
+ *
+ * Eksport qilingan — uchala renderer bir xil qatorlarni chiqarishi
+ * `lib/__tests__/receipt-renderers.test.ts` da qulflangan.
+ */
 export function buildReceiptText(sale: ReceiptSale): string {
   const W = 32;
+  const m = buildReceiptModel(sale);
   const bar = '-'.repeat(W);
-  const center = (s: string) => {
-    if (s.length >= W) return s;
-    const pad = Math.floor((W - s.length) / 2);
-    return ' '.repeat(pad) + s;
+  const center = (v: string) => {
+    if (v.length >= W) return v;
+    return ' '.repeat(Math.floor((W - v.length) / 2)) + v;
   };
-  const row = (l: string, r: string) => {
-    const space = W - l.length - r.length;
-    return space > 0 ? l + ' '.repeat(space) + r : `${l} ${r}`;
+  /** Uzun matnni lenta enida o'raydi — printer o'ng chetini qirqmasin. */
+  const push = (dst: string[], text: string, centered = false) => {
+    for (const line of wrapText(text, W)) dst.push(centered ? center(line) : line);
+  };
+  /**
+   * Chap yorliq + o'ngga tekislangan qiymat.
+   *
+   * 🔴 Sig'masa qator UZAYMAYDI: yorliq o'z qator(lar)iga o'raladi, qiymat esa
+   * keyingi qatorda o'ngga tekislanadi. Ilgari `l + ' ' + r` qaytarardi va
+   * «Chek bo'yicha umumiy summa: 150 000» 35 belgi bo'lib chiqib, termal
+   * printer o'ng chetini QIRQIB tashlardi — ya'ni summa yo'qolardi.
+   */
+  const pushRow = (dst: string[], l: string, r: string) => {
+    if (l.length + 1 + r.length <= W) {
+      dst.push(l + ' '.repeat(W - l.length - r.length) + r);
+      return;
+    }
+    for (const line of wrapText(l, W)) dst.push(line);
+    dst.push(' '.repeat(Math.max(0, W - r.length)) + r);
   };
 
   const L: string[] = [];
-  L.push(center(sale.session.organization.legalTitle ?? sale.session.organization.name));
-  if (sale.session.cashDesk) L.push(center(sale.session.cashDesk.name));
-  if (sale.session.store) L.push(center(sale.session.store.name));
+  // ── Shapka (namunadagi tartib) ──
+  push(L, m.orgName, true);
+  if (m.orgPhone) L.push(center(m.orgPhone));
+  L.push(center(`${m.title} № ${m.docNumber}`));
+  L.push(center(`${RECEIPT_LABELS.date}: ${m.dateLabel}`));
+  L.push('');
+  // ── Rekvizitlar ──
+  push(L, `${RECEIPT_LABELS.seller}: ${m.sellerName}`);
+  push(L, `${RECEIPT_LABELS.buyer}: ${m.buyerName}`);
+  push(L, `${RECEIPT_LABELS.comment}: ${m.comment}`);
   L.push(bar);
-  L.push(row('Chek', sale.name));
-  L.push(row('Sana', fmtReceiptDate(sale.moment)));
-  L.push(row('Kassir', sale.session.cashier.name));
-  if (sale.agent) L.push(row('Mijoz', sale.agent.legalTitle ?? sale.agent.name));
+  // ── Ustun sarlavhalari. Namunadagi 6 ustun 32 belgiga sig'maydi, shuning
+  //    uchun ular ikki qatorli «legenda» bo'lib chiqadi — nomlar YO'QOLMAYDI,
+  //    kassir va mijoz qaysi raqam nima ekanini o'qiy oladi.
+  // `wrapText` bo'sh joyni yeydi, shuning uchun legenda QO'LDA tekislanadi —
+  // uning chekinishi pastdagi ma'lumot qatoriga aynan to'g'ri kelishi kerak.
+  L.push(`№ ${RECEIPT_LABELS.colName}`);
+  L.push(
+    `   ${RECEIPT_LABELS.colQty} ${RECEIPT_LABELS.colUom} x ${RECEIPT_LABELS.colPrice}`.slice(0, W),
+  );
+  L.push(' '.repeat(Math.max(0, W - RECEIPT_LABELS.colSum.length)) + RECEIPT_LABELS.colSum);
   L.push(bar);
-  for (const p of sale.positions) {
-    L.push(p.product?.name ?? '—');
-    L.push(row(`${Number(p.quantity)} x ${sumStr(p.priceMinor)}`, sumStr(p.sumMinor)));
+  // ── Pozitsiyalar: nom alohida qatorda, keyin soni×birlik×narx → summa ──
+  for (const r of m.rows) {
+    push(L, `${r.index}. ${r.name}`);
+    pushRow(L, `   ${r.qty} ${r.uom} x ${r.price}`, r.sum);
   }
   L.push(bar);
-  L.push(row('JAMI', `${sumStr(sale.sumMinor)} so'm`));
-  L.push(bar);
-  for (const p of receiptPaymentLines(sale)) {
-    if (p.foreign) {
-      // Chet valyuta: birinchi qatorda mijoz BERGAN asl summa, ikkinchisida
-      // chekka MUZLATILGAN kurs va so'mdagi ekvivalenti (serverning raqami).
-      L.push(row(p.label, formatForeignMajor(p.foreign.amountMinor, p.foreign.currency)));
-      L.push(
-        row(
-          `  1${p.foreign.currency} = ${formatFrozenRate(p.foreign.rateMinor)}`,
-          sumStr(p.baseMinor.toString()),
-        ),
-      );
-    } else {
-      L.push(row(p.label, sumStr(p.baseMinor.toString())));
+  // ── Jamilar: namunada uchalasi ham DOIM chiqadi (chegirma 0 bo'lsa ham) ──
+  pushRow(L, `${RECEIPT_LABELS.subtotal}:`, m.subtotal);
+  pushRow(L, `${RECEIPT_LABELS.discount}:`, m.discount);
+  pushRow(L, `${RECEIPT_LABELS.total}:`, m.total);
+  // ── To'lov turlari (namunadan tashqari — izohi `receipt-model.ts` da) ──
+  if (m.payments.length > 0) {
+    L.push(bar);
+    for (const p of m.payments) {
+      pushRow(L, `${p.label}:`, p.value);
+      if (p.note) pushRow(L, `  ${p.note.left}`, p.note.right);
     }
   }
-  if (sale.description) L.push(sale.description);
-  L.push('');
-  L.push(center('Xarid uchun rahmat!'));
+  L.push(bar);
+  push(L, `${RECEIPT_LABELS.itemsCount}: ${m.itemsCount} ${RECEIPT_LABELS.itemsUnit}`);
+  push(L, `${RECEIPT_LABELS.inWords}: ${m.inWords}`);
+  L.push(bar);
+  push(L, RECEIPT_LABELS.footerLegal, true);
+  push(L, RECEIPT_LABELS.footerThanks, true);
   return L.join('\n');
 }
 
-function fmtReceiptDate(iso: string): string {
-  return new Date(iso).toLocaleString('ru-RU', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-}
-
-/** 80mm-thermal HTML receipt for Electron native printing (driver renders it).
- *  Eksport qilingan — matnli renderer bilan bir xil qatorlarni chiqarishi
- *  testda qulflangan. */
+/**
+ * 80mm-termal HTML cheki — Electron `printSheet` uchun (drayver chizadi).
+ * Namunadagi CHIZIQLI jadval shu yerda 1:1 saqlanadi (matnli renderer'da
+ * u 32 ustunga sig'maydi). Eksport qilingan — test bilan qulflangan.
+ */
 export function buildReceiptHtml(sale: ReceiptSale): string {
-  const org = escapeHtml(sale.session.organization.legalTitle ?? sale.session.organization.name);
-  const rowsHtml = sale.positions
+  const m = buildReceiptModel(sale);
+  const e = escapeHtml;
+
+  const rowsHtml = m.rows
+    .map(
+      (r) =>
+        `<tr><td class="c">${r.index}</td><td class="c nm">${e(r.name)}</td>` +
+        `<td class="c">${e(r.uom)}</td><td class="c">${e(r.qty)}</td>` +
+        `<td class="r">${e(r.price)}</td><td class="r">${e(r.sum)}</td></tr>`,
+    )
+    .join('');
+
+  const totalsHtml =
+    `<tr><td colspan="5" class="c">${e(RECEIPT_LABELS.subtotal)}:</td><td class="r">${e(m.subtotal)}</td></tr>` +
+    `<tr><td colspan="5" class="c">${e(RECEIPT_LABELS.discount)}:</td><td class="r">${e(m.discount)}</td></tr>` +
+    `<tr class="tot"><td colspan="5" class="c">${e(RECEIPT_LABELS.total)}:</td><td class="r">${e(m.total)}</td></tr>`;
+
+  const payHtml = m.payments
     .map(
       (p) =>
-        `<div class="ln"><div class="nm">${escapeHtml(p.product?.name ?? '—')}</div><div class="mt"><span>${Number(p.quantity)} x ${sumStr(p.priceMinor)}</span><span class="b">${sumStr(p.sumMinor)}</span></div></div>`,
+        `<tr><td colspan="5" class="c">${e(p.label)}:</td><td class="r">${e(p.value)}</td></tr>` +
+        (p.note
+          ? `<tr class="sub"><td colspan="5" class="c">${e(p.note.left)}</td><td class="r">${e(p.note.right)}</td></tr>`
+          : ''),
     )
     .join('');
-  // To'lov qatlami — matnli renderer bilan AYNAN bir manbadan.
-  const payHtml = receiptPaymentLines(sale)
-    .map((p) =>
-      p.foreign
-        ? `<div class="mt"><span>${escapeHtml(p.label)}</span><span>${escapeHtml(formatForeignMajor(p.foreign.amountMinor, p.foreign.currency))}</span></div>` +
-          `<div class="mt sub"><span>1${escapeHtml(p.foreign.currency)} = ${escapeHtml(formatFrozenRate(p.foreign.rateMinor))}</span><span>${sumStr(p.baseMinor.toString())}</span></div>`
-        : `<div class="mt"><span>${escapeHtml(p.label)}</span><span>${sumStr(p.baseMinor.toString())}</span></div>`,
-    )
-    .join('');
+
   return `<!doctype html><html><head><meta charset="utf-8"><style>
 @page{margin:0}
 *{box-sizing:border-box}
-body{width:72mm;margin:0 auto;padding:2mm 1mm;font-family:'Segoe UI',Arial,sans-serif;font-size:12px;color:#000}
+body{width:72mm;margin:0 auto;padding:2mm 1mm;font-family:'Times New Roman',Times,serif;font-size:11px;line-height:1.3;color:#000}
 .h{text-align:center}
-.org{font-weight:700;font-size:15px}
-.sep{border-top:1px dashed #000;margin:4px 0}
-.ln{margin-bottom:4px}
-.nm{font-weight:600}
-.mt{display:flex;justify-content:space-between;gap:6px}
-.sub{font-size:10px;color:#333}
-.b{font-weight:700}
-.tot{font-weight:700;font-size:15px}
-.thanks{text-align:center;margin-top:8px}
+.org{font-weight:700;font-size:16px}
+.ttl{font-weight:700;font-size:15px;margin-top:2px}
+.req{margin-top:4px}
+table{width:100%;border-collapse:collapse;margin-top:4px;font-size:11px}
+td{border:1px solid #000;padding:2px 3px;vertical-align:middle;overflow-wrap:anywhere}
+.c{text-align:center}
+.r{text-align:right;white-space:nowrap}
+.nm{text-align:center}
+.tot{font-weight:700;font-size:13px}
+.sub{font-size:10px}
+.foot{margin-top:8px;overflow-wrap:anywhere}
+.sep{border-top:1px solid #000;margin:14px 0 8px}
+.thanks{text-align:center;line-height:1.5}
 </style></head><body>
-<div class="h org">${org}</div>
-${sale.session.cashDesk ? `<div class="h">${escapeHtml(sale.session.cashDesk.name)}</div>` : ''}
-${sale.session.store ? `<div class="h">${escapeHtml(sale.session.store.name)}</div>` : ''}
-<div class="sep"></div>
-<div class="mt"><span>Chek</span><span class="b">${escapeHtml(sale.name)}</span></div>
-<div class="mt"><span>Sana</span><span>${escapeHtml(fmtReceiptDate(sale.moment))}</span></div>
-<div class="mt"><span>Kassir</span><span>${escapeHtml(sale.session.cashier.name)}</span></div>
-${sale.agent ? `<div class="mt"><span>Mijoz</span><span>${escapeHtml(sale.agent.legalTitle ?? sale.agent.name)}</span></div>` : ''}
-<div class="sep"></div>
+<div class="h org">${e(m.orgName)}</div>
+${m.orgPhone ? `<div class="h">${e(m.orgPhone)}</div>` : ''}
+<div class="h ttl">${e(m.title)} № ${e(m.docNumber)}</div>
+<div class="h"><b>${e(RECEIPT_LABELS.date)}:</b> ${e(m.dateLabel)}</div>
+<div class="req">
+<div>${e(RECEIPT_LABELS.seller)}: ${e(m.sellerName)}</div>
+<div>${e(RECEIPT_LABELS.buyer)}: ${e(m.buyerName)}</div>
+<div>${e(RECEIPT_LABELS.comment)}: ${e(m.comment)}</div>
+</div>
+<table>
+<tr><td class="c">№</td><td class="c">${e(RECEIPT_LABELS.colName)}</td><td class="c">${e(RECEIPT_LABELS.colUom)}</td><td class="c">${e(RECEIPT_LABELS.colQty)}</td><td class="c">${e(RECEIPT_LABELS.colPrice)}</td><td class="c">${e(RECEIPT_LABELS.colSum)}</td></tr>
 ${rowsHtml}
-<div class="sep"></div>
-<div class="mt tot"><span>JAMI</span><span>${sumStr(sale.sumMinor)} so'm</span></div>
-<div class="sep"></div>
+${totalsHtml}
 ${payHtml}
-${sale.description ? `<div>${escapeHtml(sale.description)}</div>` : ''}
-<div class="thanks">Xarid uchun rahmat!</div>
+</table>
+<div class="foot">
+<div>${e(RECEIPT_LABELS.itemsCount)}: <b>${m.itemsCount} ${e(RECEIPT_LABELS.itemsUnit)}</b></div>
+<div>${e(RECEIPT_LABELS.inWords)}: <b>${e(m.inWords)}</b></div>
+</div>
+<div class="sep"></div>
+<div class="thanks">
+<div>${e(RECEIPT_LABELS.footerLegal)}</div>
+<div>${e(RECEIPT_LABELS.footerThanks)}</div>
+</div>
 </body></html>`;
 }
 

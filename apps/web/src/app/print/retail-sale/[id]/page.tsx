@@ -1,14 +1,29 @@
 'use client';
 
-import { PrintShell } from '@/components/print/print-shell';
+/**
+ * KASSA CHEKI — mijozga beriladigan qog'oz (brauzer popup'i).
+ *
+ * 2026-08-12: egasi bergan namunaga (`chek.png`) o'tkazildi. Ilgari bu sahifa
+ * o'zining `monospace` «termal tasma» ko'rinishini chizardi — buyurtma/
+ * jo'natma cheklaridan butunlay boshqacha edi va namunadagi bloklar
+ * (o'lchov birligi ustuni, chegirma qatori, nomenklatura soni, summa so'z
+ * bilan, huquqiy izoh) YO'Q edi.
+ *
+ * Endi shablon YAGONA: `TovarChek` — xuddi `customer-order` / `demand` /
+ * `sales-return` chekiday. Farqi bitta: kassa chekida to'lov qatorlari ham
+ * bosiladi (sabab `receipt-model.ts` da).
+ *
+ * 🔴 Bu sahifa — ZAXIRA yo'l. Haqiqiy chop odatda agent (ESC/POS matn) yoki
+ * Electron (HTML) orqali ketadi; uchalasi ham `buildReceiptModel` dan
+ * oziqlanadi, ya'ni bir joyda o'zgartirish qolganini eskirtirmaydi
+ * (xotira: `ombor-chek-uch-renderer`).
+ */
+
+import { ThermalShell } from '@/components/print/thermal-shell';
+import { type ChekPosition, TovarChek } from '@/components/print/tovar-chek';
 import { api } from '@/lib/api-client';
-import {
-  type ReceiptPaymentRow,
-  formatForeignMajor,
-  formatFrozenRate,
-  receiptPaymentLines,
-} from '@/lib/pos/receipt-payments';
-import { formatMoney } from '@moysklad/ui';
+import { buildReceiptModel } from '@/lib/pos/receipt-model';
+import type { ReceiptPaymentRow } from '@/lib/pos/receipt-payments';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { useParams, useSearchParams } from 'next/navigation';
@@ -29,12 +44,7 @@ interface RetailSaleDetail {
   state: string;
   moment: string;
   sumMinor: string;
-  /**
-   * Kassa TZ §6.1 — chekning to'lov qatlami (`RetailSalePayment`). Ilgari bu
-   * sahifa faqat quyidagi ikki legacy ustunni chizardi, ya'ni terminal · qarz ·
-   * dollar chekda UMUMAN ko'rinmasdi. Endi matnli/HTML renderer'lar bilan bir
-   * manbadan (`receiptPaymentLines`).
-   */
+  /** Kassa TZ §6.1 — chekning to'lov qatlami (`RetailSalePayment`). */
   payments?: ReceiptPaymentRow[] | null;
   cashAmountMinor: string;
   cardAmountMinor: string;
@@ -45,26 +55,18 @@ interface RetailSaleDetail {
     cashDesk: { name: string; currency: string };
     cashier: { name: string };
     store: { name: string };
-    organization: { name: string; legalTitle: string | null };
+    organization: { name: string; legalTitle: string | null; phone: string | null };
   };
   positions: PositionDetail[];
-}
-
-function fmtDate(iso: string): string {
-  return new Date(iso).toLocaleString('uz-UZ', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
 }
 
 export default function PrintRetailSalePage() {
   const { id } = useParams<{ id: string }>();
   const searchParams = useSearchParams();
   const auto = searchParams.get('auto') === '1';
-  const _t = useTranslations('pages.print');
+  // Boshqa chek sahifalari bilan bir xil: `?w=58` tor lenta.
+  const widthMm = searchParams.get('w') === '58' ? 58 : 80;
+  const t = useTranslations('pages.print');
 
   const { data, isLoading } = useQuery<RetailSaleDetail>({
     queryKey: ['retail-sale-print', id],
@@ -74,147 +76,42 @@ export default function PrintRetailSalePage() {
   if (isLoading) return <div style={{ padding: 24 }}>Loading...</div>;
   if (!data) return <div style={{ padding: 24 }}>Not found</div>;
 
-  const paymentLines = receiptPaymentLines(data);
+  // Qarorlar va formatlash SOF modulda — bu sahifa faqat chizadi.
+  const model = buildReceiptModel(data);
+
+  const positions: ChekPosition[] = data.positions.map((p) => ({
+    position: p.position,
+    name: p.product?.name ?? '—',
+    code: p.product?.code ?? null,
+    uom: p.product?.uom ?? null,
+    quantity: p.quantity,
+    priceMinor: p.priceMinor,
+    sumMinor: p.sumMinor,
+  }));
+
+  // «Chek bo'yicha umumiy summa» — pozitsiyalar yalpisi (chegirmasiz);
+  // «Jami summa» — hujjat summasi. Ikkisining farqi «Chegirma» qatori.
+  const grossMinor = data.positions
+    .reduce((acc, p) => acc + BigInt(p.sumMinor || '0'), 0n)
+    .toString();
 
   return (
-    <PrintShell autoPrint={auto}>
-      {/* Thermal-style receipt — narrow 58mm / 80mm style */}
-      <div
-        style={{
-          maxWidth: 320,
-          margin: '0 auto',
-          fontFamily: 'monospace',
-          fontSize: 13,
-        }}
-      >
-        {/* Header */}
-        <div style={{ textAlign: 'center', marginBottom: 12 }}>
-          <div style={{ fontWeight: 700, fontSize: 16 }}>
-            {data.session.organization.legalTitle ?? data.session.organization.name}
-          </div>
-          <div style={{ fontSize: 12 }}>{data.session.cashDesk.name}</div>
-          <div style={{ fontSize: 11, color: '#666' }}>{data.session.store.name}</div>
-        </div>
-
-        <div
-          style={{
-            borderTop: '1px dashed #999',
-            borderBottom: '1px dashed #999',
-            paddingTop: 6,
-            paddingBottom: 6,
-            marginBottom: 8,
-          }}
-        >
-          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-            <span>Chek №</span>
-            <span style={{ fontWeight: 700 }}>{data.name}</span>
-          </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-            <span>Sana</span>
-            <span>{fmtDate(data.moment)}</span>
-          </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-            <span>Kassir</span>
-            <span>{data.session.cashier.name}</span>
-          </div>
-          {data.agent && (
-            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <span>Mijoz</span>
-              <span>{data.agent.legalTitle ?? data.agent.name}</span>
-            </div>
-          )}
-        </div>
-
-        {/* Positions */}
-        <div style={{ marginBottom: 8 }}>
-          {data.positions.map((pos) => (
-            <div key={pos.id} style={{ marginBottom: 4 }}>
-              <div style={{ fontWeight: 500 }}>{pos.product?.name ?? '—'}</div>
-              <div
-                style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  fontSize: 12,
-                  color: '#444',
-                }}
-              >
-                <span>
-                  {pos.quantity} × {formatMoney(BigInt(pos.priceMinor))}
-                </span>
-                <span style={{ fontWeight: 600 }}>{formatMoney(BigInt(pos.sumMinor))}</span>
-              </div>
-            </div>
-          ))}
-        </div>
-
-        <div
-          style={{
-            borderTop: '1px dashed #999',
-            paddingTop: 8,
-            marginBottom: 8,
-          }}
-        >
-          <div
-            style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              fontWeight: 700,
-              fontSize: 16,
-            }}
-          >
-            <span>JAMI</span>
-            <span>{formatMoney(BigInt(data.sumMinor))}</span>
-          </div>
-        </div>
-
-        {/* Payment split */}
-        <div style={{ marginBottom: 8, fontSize: 12 }}>
-          {paymentLines.map((p) => (
-            <div key={p.kind === 'other' ? `other-${p.label}` : p.kind}>
-              <div
-                style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  fontWeight: p.kind === 'change' ? 700 : 400,
-                }}
-              >
-                <span>{p.label}</span>
-                {/* Chet valyutada — mijoz BERGAN asl summa turadi. */}
-                <span>
-                  {p.foreign
-                    ? formatForeignMajor(p.foreign.amountMinor, p.foreign.currency)
-                    : formatMoney(p.baseMinor)}
-                </span>
-              </div>
-              {p.foreign && (
-                // Chekka MUZLATILGAN kurs + so'mdagi ekvivalenti (serverning
-                // raqami, FE uni qayta hisoblamaydi).
-                <div
-                  style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    fontSize: 11,
-                    color: '#666',
-                  }}
-                >
-                  <span>
-                    1{p.foreign.currency} = {formatFrozenRate(p.foreign.rateMinor)}
-                  </span>
-                  <span>{formatMoney(p.baseMinor)}</span>
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
-
-        {data.description && (
-          <div style={{ fontSize: 11, color: '#666', marginBottom: 8 }}>{data.description}</div>
-        )}
-
-        <div style={{ textAlign: 'center', fontSize: 11, color: '#999', marginTop: 12 }}>
-          Xarid uchun rahmat!
-        </div>
-      </div>
-    </PrintShell>
+    <ThermalShell widthMm={widthMm} autoPrint={auto}>
+      <TovarChek
+        title={t('chek_title_sale')}
+        docNumber={model.docNumber}
+        docDate={data.moment}
+        orgName={model.orgName}
+        orgPhone={model.orgPhone}
+        sellerName={model.sellerName}
+        buyerName={model.buyerName}
+        comment={data.description}
+        positions={positions}
+        totalMinor={data.sumMinor}
+        subtotalMinor={grossMinor}
+        payments={model.payments}
+        widthMm={widthMm}
+      />
+    </ThermalShell>
   );
 }

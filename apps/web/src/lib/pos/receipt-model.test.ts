@@ -1,0 +1,239 @@
+import uz from '@/messages/uz.json';
+import { describe, expect, it } from 'vitest';
+import {
+  RECEIPT_LABELS,
+  type ReceiptSaleInput,
+  buildReceiptModel,
+  fmtQty,
+  fmtReceiptDate,
+  fmtSom,
+  wrapText,
+} from './receipt-model';
+
+/**
+ * KASSA CHEKI MODELI — egasining namunasi (`chek.png`, 2026-08-12) shartnomasi.
+ *
+ * Bu yerda qulflanadigan narsa — chekning MA'NOSI: qaysi maydon qayerdan
+ * keladi, qaysi qator DOIM chiqadi va yorliqlar i18n bilan bir xilmi.
+ * Ko'rinishning o'zi (jadval chiziqlari, shrift) renderer testlarida.
+ */
+
+const SALE = (over: Partial<ReceiptSaleInput> = {}): ReceiptSaleInput => ({
+  name: '00025',
+  moment: '2026-07-22T09:15:00.000Z',
+  // 310 250 + 20 000 = 330 250 so'm
+  sumMinor: '33025000',
+  payments: [],
+  cashAmountMinor: '0',
+  cardAmountMinor: '0',
+  changeMinor: '0',
+  description: null,
+  agent: { name: '1покупатель', legalTitle: null },
+  session: {
+    cashier: { name: 'Admin User' },
+    organization: {
+      name: 'Sherset elektro tovarlar',
+      legalTitle: 'MCHJ Sherset',
+      phone: '+998908769900',
+    },
+  },
+  positions: [
+    {
+      quantity: '36.5',
+      priceMinor: '850000',
+      sumMinor: '31025000',
+      product: { name: "Led shlang lupa 3 ko'z oq", uom: 'm' },
+    },
+    {
+      quantity: '2',
+      priceMinor: '1000000',
+      sumMinor: '2000000',
+      product: { name: "Evert led shteker 3 ko'z lupa", uom: 'dona' },
+    },
+  ],
+  ...over,
+});
+
+describe('yorliqlar i18n bilan bir xil (ikki manba ajralib ketmasin)', () => {
+  const print = (uz as unknown as { pages: { print: Record<string, string> } }).pages.print;
+  const PAIRS: Array<[keyof typeof RECEIPT_LABELS, string]> = [
+    ['titleSale', 'chek_title_sale'],
+    ['titleReturn', 'chek_title_return'],
+    ['date', 'date'],
+    ['seller', 'chek_seller'],
+    ['buyer', 'chek_buyer'],
+    ['comment', 'chek_comment'],
+    ['colName', 'chek_col_name'],
+    ['colUom', 'chek_col_uom'],
+    ['colQty', 'chek_col_qty'],
+    ['colPrice', 'chek_col_price'],
+    ['colSum', 'chek_col_sum'],
+    ['subtotal', 'chek_subtotal'],
+    ['discount', 'chek_discount'],
+    ['total', 'chek_total'],
+    ['itemsCount', 'chek_items_count'],
+    ['itemsUnit', 'chek_items_unit'],
+    ['inWords', 'chek_in_words'],
+    ['footerLegal', 'chek_footer_legal'],
+    ['footerThanks', 'chek_footer_thanks'],
+  ];
+
+  it.each(PAIRS)('%s = uz.json → pages.print.%s', (labelKey, msgKey) => {
+    expect(print[msgKey], `uz.json da ${msgKey} yo'q`).toBeDefined();
+    expect(RECEIPT_LABELS[labelKey]).toBe(print[msgKey]);
+  });
+});
+
+describe('buildReceiptModel — namunadagi maydonlar', () => {
+  it('shapka: DO`KON nomi (yuridik nom EMAS) va telefon', () => {
+    const m = buildReceiptModel(SALE());
+    // 🔴 Mijoz qo'lidagi qog'ozda «MCHJ …» emas, do'kon nomi turishi kerak.
+    expect(m.orgName).toBe('Sherset elektro tovarlar');
+    expect(m.orgPhone).toBe('+998908769900');
+    expect(m.title).toBe('SAVDO CHEKI');
+    expect(m.docNumber).toBe('00025');
+  });
+
+  it('sana — FAQAT kun (namunada soat yo`q)', () => {
+    expect(buildReceiptModel(SALE()).dateLabel).toBe('22.07.2026');
+  });
+
+  it('sotuvchi = kassir, xaridor = kontragent', () => {
+    const m = buildReceiptModel(SALE());
+    expect(m.sellerName).toBe('Admin User');
+    expect(m.buyerName).toBe('1покупатель');
+  });
+
+  it('kontragentsiz chekda xaridor bo`sh emas, tire', () => {
+    expect(buildReceiptModel(SALE({ agent: null })).buyerName).toBe('—');
+  });
+
+  it('qatorlar: №, nom, o`lchov birligi, soni, narxi, summa', () => {
+    const [first, second] = buildReceiptModel(SALE()).rows;
+    expect(first).toEqual({
+      index: 1,
+      name: "Led shlang lupa 3 ko'z oq",
+      uom: 'm',
+      qty: '36,5',
+      price: '8 500',
+      sum: '310 250',
+    });
+    expect(second?.index).toBe(2);
+    expect(second?.uom).toBe('dona');
+  });
+
+  it('o`lchov birligi yo`q tovarda tire (ustun bo`sh qolmaydi)', () => {
+    const m = buildReceiptModel(
+      SALE({
+        positions: [
+          {
+            quantity: '1',
+            priceMinor: '100',
+            sumMinor: '100',
+            product: { name: 'Nomsiz birlik' },
+          },
+        ],
+      }),
+    );
+    expect(m.rows[0]?.uom).toBe('—');
+  });
+
+  it('jamilar: yalpi · chegirma · jami (uchalasi ham DOIM)', () => {
+    const m = buildReceiptModel(SALE());
+    expect(m.subtotal).toBe('330 250');
+    expect(m.discount).toBe('0');
+    expect(m.total).toBe('330 250');
+  });
+
+  it('chegirma = yalpi − hujjat summasi', () => {
+    // Hujjat summasi 300 000 so'm ⇒ chegirma 30 250 so'm.
+    const m = buildReceiptModel(SALE({ sumMinor: '30000000' }));
+    expect(m.subtotal).toBe('330 250');
+    expect(m.discount).toBe('30 250');
+    expect(m.total).toBe('300 000');
+  });
+
+  it('🔴 chegirma MANFIY bo`lmaydi (jami yalpidan katta bo`lsa 0)', () => {
+    // Aks holda chekda «Chegirma: -5 000» chiqib, mijozni chalg'itardi.
+    const m = buildReceiptModel(SALE({ sumMinor: '40000000' }));
+    expect(m.discount).toBe('0');
+  });
+
+  it('nomenklatura soni va summa SO`Z bilan', () => {
+    const m = buildReceiptModel(SALE());
+    expect(m.itemsCount).toBe(2);
+    expect(m.inWords.toLowerCase()).toContain('ming');
+    expect(m.inWords.toLowerCase()).toContain('tiyin');
+  });
+
+  it('to`lov qatorlari modelda bor (namunadan tashqari, ataylab)', () => {
+    const m = buildReceiptModel(
+      SALE({
+        payments: [
+          {
+            method: 'CASH_UZS',
+            amountMinor: '33025000',
+            currency: 'UZS',
+            rateMinor: null,
+            amountBaseMinor: '33025000',
+          },
+        ],
+        changeMinor: '500000',
+      }),
+    );
+    const labels = m.payments.map((p) => p.label);
+    expect(labels).toContain('Naqd');
+    // Qaytim — chekdagi eng nizoli raqam, u YO'QOLMASLIGI shart.
+    expect(labels).toContain('Qaytim');
+  });
+
+  it('🔴 dollar qatorida kurs ×10^8 shkalasida formatlanadi', () => {
+    // `fmtSom` bilan formatlansa 12 450,27 o'rniga 12 450 270 000 chiqardi.
+    const m = buildReceiptModel(
+      SALE({
+        payments: [
+          {
+            method: 'CASH_USD',
+            amountMinor: '1250',
+            currency: 'USD',
+            rateMinor: '1245027000000',
+            amountBaseMinor: '15562837',
+          },
+        ],
+      }),
+    );
+    const usd = m.payments.find((p) => p.note);
+    expect(usd?.value).toBe('$12.50');
+    expect(usd?.note?.left).toBe('1USD = 12450.27');
+  });
+});
+
+describe('formatlash yordamchilari', () => {
+  it('fmtSom — mingliklar bo`sh joy bilan, butun bo`lsa kasrsiz', () => {
+    expect(fmtSom('33025000')).toBe('330 250');
+    expect(fmtSom('100')).toBe('1');
+    expect(fmtSom('150')).toBe('1,50');
+    expect(fmtSom(-500000n)).toBe('-5 000');
+  });
+
+  it('fmtQty — kasr vergul bilan', () => {
+    expect(fmtQty('36.5')).toBe('36,5');
+    expect(fmtQty('2')).toBe('2');
+  });
+
+  it('fmtReceiptDate — buzuq sanada tire (chek yiqilmasin)', () => {
+    expect(fmtReceiptDate('buzuq')).toBe('—');
+  });
+
+  it('wrapText — lenta enidan oshmaydi', () => {
+    const lines = wrapText('Ushbu chek to`lovni tasdiqlovchi hujjat hisoblanadi.', 32);
+    expect(lines.length).toBeGreaterThan(1);
+    for (const l of lines) expect(l.length).toBeLessThanOrEqual(32);
+  });
+
+  it('wrapText — 32 belgidan uzun SO`Z ham qirqilmaydi, bo`linadi', () => {
+    const lines = wrapText('A'.repeat(70), 32);
+    expect(lines.join('')).toBe('A'.repeat(70));
+    for (const l of lines) expect(l.length).toBeLessThanOrEqual(32);
+  });
+});

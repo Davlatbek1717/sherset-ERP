@@ -207,3 +207,72 @@ describe('TovarChek — restored receipt template', () => {
     expect(nameCell.style.verticalAlign).toBe('middle');
   });
 });
+
+/**
+ * KASSA CHEKI qo'shimchasi (2026-08-12) — to'lov qatorlari.
+ *
+ * Namunada (`chek.png`) bu blok YO'Q va buyurtma/jo'natma cheklari uni
+ * BERMAYDI — ular namunaga 1:1 mos qolishi kerak. Kassa chekida esa qaytim
+ * va qarz qog'ozda ko'rinishi SHART: ular bo'lmasa mijoz bilan nizoni hal
+ * qiladigan dalil qolmaydi.
+ */
+describe('TovarChek — to`lov bloki (faqat kassa cheki)', () => {
+  it('`payments` berilmasa BITTA ham to`lov qatori chizilmaydi', () => {
+    const { container } = renderChek();
+    expect(container.querySelectorAll('[data-test-id="chek-payment"]')).toHaveLength(0);
+  });
+
+  it('berilganda har qatori (yorliq + summa) chiqadi', () => {
+    const { container } = renderWithProviders(
+      <TovarChek
+        title="SAVDO CHEKI"
+        docNumber="00025"
+        docDate="2026-07-22T09:15:00.000Z"
+        orgName="Sherset elektro tovarlar"
+        orgPhone="+998908769900"
+        sellerName="Admin User"
+        buyerName="1pokupatel"
+        positions={POSITIONS}
+        totalMinor="109000000"
+        subtotalMinor="109000000"
+        payments={[
+          { label: 'Naqd', value: '1 200 000', note: null },
+          { label: 'Qaytim', value: '5 000', note: null },
+        ]}
+        widthMm={80}
+      />,
+    );
+    const rows = container.querySelectorAll('[data-test-id="chek-payment"]');
+    expect(rows).toHaveLength(2);
+    const text = container.textContent ?? '';
+    expect(text).toContain('Naqd');
+    // Qaytim — chekdagi eng nizoli raqam.
+    expect(text).toContain('Qaytim');
+  });
+
+  it('valyuta qatorida kurs izohi ikkinchi qator bo`lib chiqadi', () => {
+    const { container } = renderWithProviders(
+      <TovarChek
+        title="SAVDO CHEKI"
+        docNumber="00025"
+        docDate="2026-07-22T09:15:00.000Z"
+        orgName="Sherset"
+        buyerName="—"
+        positions={POSITIONS}
+        totalMinor="109000000"
+        payments={[
+          {
+            label: 'Dollar',
+            value: '$12.50',
+            note: { left: '1USD = 12450.27', right: '155 628' },
+          },
+        ]}
+        widthMm={80}
+      />,
+    );
+    const text = container.textContent ?? '';
+    expect(text).toContain('$12.50');
+    // 🔴 Kurs ×10^8 shkalada — bu yerda o'nlik ko'rinishda bo'lishi shart.
+    expect(text).toContain('12450.27');
+  });
+});

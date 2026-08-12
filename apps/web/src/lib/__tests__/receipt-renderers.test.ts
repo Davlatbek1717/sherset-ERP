@@ -27,10 +27,15 @@ const SALE = (over: Record<string, unknown> = {}) => ({
     cashDesk: { name: 'Asosiy kassa' },
     cashier: { name: 'Kassir Aliyev' },
     store: { name: 'Markaziy dokon' },
-    organization: { name: 'Sherset MChJ', legalTitle: null },
+    organization: { name: 'Sherset MChJ', legalTitle: null, phone: '+998908769900' },
   },
   positions: [
-    { quantity: '1', priceMinor: '15000000', sumMinor: '15000000', product: { name: 'Kabel' } },
+    {
+      quantity: '1',
+      priceMinor: '15000000',
+      sumMinor: '15000000',
+      product: { name: 'Kabel', uom: 'm' },
+    },
   ],
   payments: [],
   ...over,
@@ -129,5 +134,74 @@ describe('buildReceiptHtml — Electron native chek', () => {
     );
     expect(html).toContain('Naqd');
     expect(html).toContain('Karta');
+  });
+});
+
+/**
+ * 🔴 SHABLON QULFI (2026-08-12, egasining namunasi `chek.png`).
+ *
+ * Kassa cheki ilgari o'zining «termal tasma» ko'rinishida edi: o'lchov
+ * birligi ustuni, chegirma qatori, nomenklatura soni, summa so'z bilan va
+ * huquqiy izoh UMUMAN yo'q edi. Uchala renderer bir vaqtda o'zgardi —
+ * bu blok ularning har birida shablon bloklari borligini tekshiradi, ya'ni
+ * bittasi keyinchalik jimgina eskirsa test qizil bo'ladi.
+ */
+const TEMPLATE_BLOCKS = [
+  'SAVDO CHEKI',
+  'Sana',
+  'Sotuvchi',
+  'Xaridor',
+  'Izoh',
+  "O'lch. birligi",
+  'Soni',
+  'Narxi',
+  'Summa',
+  "Chek bo'yicha umumiy summa",
+  'Chegirma',
+  'Jami summa',
+  'Jami nomenklaturalar soni',
+  'Raqam bilan',
+  "Ushbu chek to'lovni tasdiqlovchi hujjat hisoblanadi.",
+  'Rahmat, bizni tanlaganingiz uchun!',
+];
+
+/**
+ * 32 ustunli lentada uzun matn O'RALADI, ya'ni «…hujjat hisoblanadi.» ikki
+ * qatorga bo'linadi. Tekshiruv MAZMUN ustida bo'lishi kerak, joylashuv
+ * ustida emas — shuning uchun bo'shliqlar tekislanadi.
+ */
+const flat = (s: string) => s.replace(/\s+/g, ' ');
+
+describe('chek shabloni — uchala renderer bir xil bloklarni chiqaradi', () => {
+  it.each(TEMPLATE_BLOCKS)('ESC/POS matnida «%s» bor', (block) => {
+    expect(flat(buildReceiptText(MIXED as never))).toContain(flat(block));
+  });
+
+  it.each(TEMPLATE_BLOCKS)('Electron HTML da «%s» bor', (block) => {
+    expect(flat(buildReceiptHtml(MIXED as never))).toContain(flat(block));
+  });
+
+  it('shapkada do`kon nomi va TELEFON bor', () => {
+    const txt = buildReceiptText(MIXED as never);
+    expect(txt).toContain('Sherset MChJ');
+    expect(txt).toContain('+998908769900');
+    expect(buildReceiptHtml(MIXED as never)).toContain('+998908769900');
+  });
+
+  it('pozitsiya qatorida o`lchov birligi ham bor', () => {
+    expect(buildReceiptText(MIXED as never)).toContain('m x');
+    expect(buildReceiptHtml(MIXED as never)).toContain('>m<');
+  });
+
+  it('🔴 matn cheki 32 ustundan oshmaydi (printer o`ng chetini qirqmasin)', () => {
+    for (const line of buildReceiptText(MIXED as never).split('\n')) {
+      expect(line.length, `uzun qator: «${line}»`).toBeLessThanOrEqual(32);
+    }
+  });
+
+  it('eski «JAMI»/«Xarid uchun rahmat!» matnlari qaytib kelmaydi', () => {
+    const txt = buildReceiptText(MIXED as never);
+    expect(txt).not.toContain('Xarid uchun rahmat!');
+    expect(buildReceiptHtml(MIXED as never)).not.toContain('Xarid uchun rahmat!');
   });
 });
