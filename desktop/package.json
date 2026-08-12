@@ -1,6 +1,6 @@
 {
   "name": "@moysklad/desktop",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "private": true,
   "description": "Sherset Kassa — Electron kiosk shell (thin wrapper around the web POS)",
   "main": "main.js",
@@ -37,7 +37,7 @@
     },
     "nsis": {
       "oneClick": false,
-      "perMachine": true,
+      "perMachine": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,

@@ -10,8 +10,11 @@
  *      `location`, ichida `latest.yml` + `.exe`).
  *   2. Yangi versiya FONDA yuklab olinadi (`autoDownload = true`), lekin
  *      🔴 SAVDO O'RTASIDA O'RNATILMAYDI. `autoInstallOnAppQuit = false` —
- *      ya'ni Electron o'zi hech qachon o'rnatmaydi; o'rnatish faqat kassir
- *      «Chiqish» bosganda (`main.js` → `quitShell()` → `installOnQuit()`).
+ *      ya'ni Electron o'zi hech qachon o'rnatmaydi; o'rnatish ikki yo'lda,
+ *      ikkalasi ham `runInstaller` orqali: (a) BOOT — ilova endi ochilib,
+ *      oyna hamon kirish ekranida turganda (`main.js` → `installOnBoot()`,
+ *      o'rnatgach ilova O'ZI qaytadi); (b) kassir «Chiqish» bosganda
+ *      (`main.js` → `quitShell()` → `installOnQuit()`, ilova qaytmaydi).
  *   3. Har qanday nosozlik — JIM. Kassir kassada yangilanish xatosi bilan
  *      nima qilishni bilmaydi; log yoziladi, savdo davom etadi.
  *
@@ -65,7 +68,9 @@ function getUpdater() {
     // Faqat bayroq qo'yiladi. Bu yerda o'rnatish boshlansa kassa savdo
     // o'rtasida qayta ishga tushardi — aynan shu taqiqlangan.
     ready = true;
-    log(`yangi versiya yuklab olindi: ${info?.version}; «Chiqish» da o'rnatiladi`);
+    log(
+      `yangi versiya yuklab olindi: ${info?.version}; keyingi boot yoki «Chiqish» da o'rnatiladi`,
+    );
   });
   updater.on('update-not-available', () => log('yangilanish yo`q'));
   updater.on('error', (err) => log(`xato (jim o'tkazildi): ${err?.message || err}`));
@@ -137,20 +142,20 @@ function isUpdateReady() {
 }
 
 /**
- * Kassir «Chiqish» bosganda chaqiriladi (`main.js` → `quitShell()`).
+ * YAGONA o'rnatish nuqtasi. Ikkala yo'l ham shu yerdan o'tadi — bayroqlar
+ * bir joyda, biri jimgina eskirmaydi.
  *
- * @returns {boolean} `true` — o'rnatuvchi ishga tushdi va jarayonni O'ZI
- *   yopadi (chaqiruvchi `app.quit()` qilmasligi kerak); `false` — o'rnatiladigan
- *   narsa yo'q, odatdagidek chiqiladi.
+ * @param {boolean} relaunchAfter `true` — o'rnatgandan keyin ilova QAYTADI
+ *   (boot yo'li: qurilma yolg'iz turadi, uni hech kim qo'lda ochmaydi).
+ *   `false` — «Chiqish» yo'li: kassir yopishni so'radi.
+ * @returns {boolean} `true` — o'rnatuvchi ishga tushdi va jarayonni O'ZI yopadi.
  */
-function installOnQuit() {
+function runInstaller(relaunchAfter) {
   stop();
   if (!ready) return false;
   try {
-    // (isSilent = true) — kassir NSIS oynasini ko'rmaydi; `perMachine: true`
-    // bo'lgani uchun Windows baribir UAC so'raydi (README da yozilgan).
-    // (isForceRunAfter = false) — «Chiqish» bosilgan, ilova qaytadan ochilmaydi.
-    getUpdater().quitAndInstall(true, false);
+    // (isSilent = true) — kassir NSIS oynasini ko'rmaydi.
+    getUpdater().quitAndInstall(true, relaunchAfter);
     return true;
   } catch (err) {
     log(`o'rnatib bo'lmadi: ${err?.message || err}`);
@@ -158,4 +163,57 @@ function installOnQuit() {
   }
 }
 
-module.exports = { start, stop, installOnQuit, isUpdateReady, UPDATE_PATH, CHECK_INTERVAL_MS };
+/** Kassir «Chiqish» bosganda (`main.js` → `quitShell()`). Ilova QAYTMAYDI. */
+function installOnQuit() {
+  return runInstaller(false);
+}
+
+/** Ishga tushish oynasi: savdo yo'q, o'rnatamiz va ilova QAYTADI. */
+function installOnBoot() {
+  return runInstaller(true);
+}
+
+/**
+ * Yuklab olingan yangilanish bor-yo'qligini `ms` gacha kutadi.
+ *
+ * 🔴 NEGA KUTISH KERAK: `checkForUpdates()` tarmoqqa chiqadi va oldingi
+ * sessiyada yuklab olingan fayl keshdan topilsa ham `update-downloaded`
+ * bir necha yuz millisekunddan keyin otiladi. Darhol so'ralsa javob doim
+ * «yo'q» bo'lardi va boot yo'li HECH QACHON ishlamasdi.
+ */
+function waitForPending(ms) {
+  if (!started) return Promise.resolve(false);
+  if (ready) return Promise.resolve(true);
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (v) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      try {
+        getUpdater().removeListener('update-downloaded', onDone);
+      } catch {
+        // Updater hali yaratilmagan — tozalash kerak emas.
+      }
+      resolve(v);
+    };
+    const onDone = () => finish(true);
+    const timer = setTimeout(() => finish(ready), ms);
+    try {
+      getUpdater().once('update-downloaded', onDone);
+    } catch {
+      finish(false);
+    }
+  });
+}
+
+module.exports = {
+  start,
+  stop,
+  installOnQuit,
+  installOnBoot,
+  waitForPending,
+  isUpdateReady,
+  UPDATE_PATH,
+  CHECK_INTERVAL_MS,
+};

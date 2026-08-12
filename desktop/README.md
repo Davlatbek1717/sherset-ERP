@@ -1,7 +1,8 @@
 # Sherset Kassa — Electron o'rami (`desktop/`)
 
-> Holat: **manbada `1.4.0` — HALI YIG'ILMAGAN va kanalda YO'Q** (2026-08-12).
-> Kanaldagi oxirgi reliz hamon **`1.3.0` (2026-08-11)**, o'rnatish oqimi Phase-1.
+> Holat: **manbada `1.5.0` — per-user o'rnatma, boot'da yangilanadi; HALI
+> YIG'ILMAGAN va kanalda YO'Q** (2026-08-13). Kanaldagi oxirgi reliz **`1.4.0`
+> (2026-08-12)**, o'rnatish oqimi Phase-1.
 > `.exe` **yig'iladi va kanalga chiqadi** (o'lchangan, pastga qarang), lekin
 > qobiqning O'ZI bu repo'da hech qachon ishga tushirilmagan: chop etish, mijoz-ekran
 > va ekran klaviaturasi **hech bir printerda, hech bir 2-monitorda va hech bir
@@ -29,6 +30,7 @@ Yupqa kiosk o'ram (spec §3.1): savdo mantiqi web ilovasida qoladi, bu jarayon f
 | `device-store.js` | `%APPDATA%/<app>/kassa-config.json` — server manzili (ochiq) + qurilma kaliti (DPAPI) |
 | `setup.html` | birinchi ishga tushish: server manzili so'raladi |
 | `offline.html` | aloqa yo'q ekrani + qayta urinish |
+| `updating.html` | boot'da yangilanish o'rnatilayotganda ko'rinadigan «yangilanmoqda» ekrani |
 | `tools/kbd-probe/` | ekran klaviaturasini HAQIQIY Electron'da o'lchaydigan skript (P6) |
 
 ## Ishga tushirish (dasturchi)
@@ -300,11 +302,11 @@ pnpm install            # bir marta (electron + electron-builder ≈ 200 MB)
 pnpm run dist           # = node check-build-assets.js && electron-builder --win nsis
 ```
 
-Natija (hozirgi `version: 1.4.0` uchun):
+Natija (hozirgi `version: 1.5.0` uchun):
 
 ```
-desktop/dist/Sherset-Kassa-Setup-1.4.0.exe
-desktop/dist/Sherset-Kassa-Setup-1.4.0.exe.blockmap
+desktop/dist/Sherset-Kassa-Setup-1.5.0.exe
+desktop/dist/Sherset-Kassa-Setup-1.5.0.exe.blockmap
 desktop/dist/latest.yml
 ```
 
@@ -331,14 +333,28 @@ Bu normal, viruz emas — bir marta ruxsat berilgach qaytarilmaydi.
 2. **«Windows защитил ваш компьютер»** (SmartScreen) ko'k oynasi chiqadi.
 3. **«Подробнее»** (Дополнительно / More info) ni bosing — yashirin tugma ochiladi.
 4. **«Выполнить в любом случае»** (Все равно запустить / Run anyway) ni bosing.
-5. UAC («Разрешить приложению вносить изменения?») → **«Да»**.
-   Ilova **hamma foydalanuvchilar uchun** o'rnatiladi (`perMachine: true`),
-   shuning uchun administrator huquqi kerak.
+5. UAC **so'ralmaydi** (1.5.0 dan boshlab per-user o'rnatma, `perMachine: false`):
+   ilova **shu foydalanuvchi profiliga** (`%LOCALAPPDATA%`) o'rnatiladi, admin
+   huquqi kerak emas. Kassa monoblokida profil bitta — bu yetarli.
 6. O'rnatish yo'lini o'zgartirish mumkin (`oneClick: false`), default yetarli.
 7. Tugagach ish stoli va «Пуск» da **Sherset Kassa** yorlig'i paydo bo'ladi.
 
 > Agar SmartScreen oynasida «Подробнее» ko'rinmasa — antivirus faylni
 > karantinga olgan. Faylni oq ro'yxatga qo'shing yoki qaytadan yuklab oling.
+
+## 1.4.0 → 1.5.0 — bir martalik QO'LDA o'tish (har qurilmada)
+
+🔴 Bu o'tish **avtomatik BO'LMAYDI**: 1.4.0 «hamma uchun» (per-machine, `Program Files`),
+1.5.0 esa «shu foydalanuvchi uchun» (per-user, `%LOCALAPPDATA%`) o'rnatiladi. NSIS biri
+o'rnida ikkinchisini qo'ya olmaydi — ikki nusxa bo'lib qolardi.
+
+Har qurilmada bir marta, admin huquqi bilan:
+1. «Приложения и возможности» → **Sherset Kassa** → «Удалить» (1.4.0 ni o'chirish).
+2. `Sherset-Kassa-Setup-1.5.0.exe` ni ishga tushirish (UAC **so'ralmaydi**).
+3. Ochilgach kirish ekranining burchagida **1.5.0** turganini tasdiqlash.
+
+Shundan KEYIN keyingi barcha versiyalar o'zi keladi: ilova ishga tushganda yangilanishni
+tekshiradi, topsa o'rnatadi va **o'zi qaytadi**. UAC yo'q, kassirdan hech narsa talab qilinmaydi.
 
 ---
 
@@ -350,17 +366,20 @@ Bu normal, viruz emas — bir marta ruxsat berilgach qaytarilmaydi.
 | Nimani so'raydi? | avval `latest.yml`, keyin undagi `.exe` |
 | Qachon tekshiradi? | ishga tushganda va **har 4 soatda** |
 | Qachon yuklaydi? | topilishi bilan, **fonda** (kassir sezmaydi) |
-| 🔴 Qachon o'rnatadi? | **faqat kassir «Chiqish» (`Ctrl+Alt+Shift+Q`) bosganda** |
+| 🔴 Qachon o'rnatadi? | **(a) BOOT'da** — ilova ochilib, 25 s ichida yangilanish topilsa va oyna hamon kirish ekranida tursa (o'rnatgach **o'zi qaytadi**); **(b)** kassir «Chiqish» (`Ctrl+Alt+Shift+Q`) bosganda (qaytmaydi) |
 | Xato bo'lsa? | jim — logga yoziladi, savdo to'xtamaydi |
 
 Yangilanish **savdo o'rtasida hech qachon o'rnatilmaydi**: `electron-updater`
 ning o'z `autoInstallOnAppQuit` xulqi ataylab **o'chirilgan**
-(`desktop/updater.js`), o'rnatish faqat `main.js` → `quitShell()` yo'lida
-boshlanadi. Shu shartnoma qo'riqchi test bilan qulflangan.
+(`desktop/updater.js`), o'rnatish faqat ikki nazoratli yo'lda boshlanadi —
+boot'da (`installOnBoot`, faqat kirish ekranida; kassir PIN kiritib savdoga
+o'tgan bo'lsa keyingi bootga qoladi) va `main.js` → `quitShell()` yo'lida
+(`installOnQuit`). Ikkalasi ham yagona `runInstaller` nuqtasidan o'tadi.
+Shu shartnoma qo'riqchi test bilan qulflangan.
 
-O'rnatish paytida Windows yana bir marta **UAC** so'raydi (`perMachine: true`
-o'rnatishni «jim» qilib bo'lmaydi) — kassani yopayotgan xodim «Да» bosishi
-kerak, aks holda yangilanish keyingi «Chiqish» ga qoladi.
+O'rnatish paytida UAC **so'ralmaydi** (1.5.0 dan per-user o'rnatma) — boot
+yo'lida kassirdan umuman hech narsa talab qilinmaydi: «yangilanmoqda» ekrani
+chiqadi va kassa o'zi qaytadi.
 
 ### Server tomoni (bir marta, admin)
 
@@ -419,7 +438,8 @@ qolganlarini to'xtatadi).
 | `1.1.0` | 2026-08-11 | birinchi yig'ilgan `.exe` (prerelease EMAS — `electron-updater` ning prerelease→reliz o'tishi bu loyihada tekshirilmagan) |
 | `1.2.0` | 2026-08-11 | chiqish imosi, chop etish, mijoz-ekran; kanalga birinchi bo'lib qo'yilgan reliz |
 | `1.3.0` | 2026-08-11 | qobiq klaviaturasi: **numpad layout** (`type=number|tel`, `inputMode=decimal|numeric|tel`) + **kirill/РУС** almashtirgichi |
-| `1.4.0` | — (yig'ilmagan) | chek: bo'sh printer nomi = **Windows sukut printeri** (`deviceName` berilmaydi). 🔴 `.exe` HALI yig'ilmagan va kanalga qo'yilmagan — B1-D qadami |
+| `1.4.0` | 2026-08-12 | chek: bo'sh printer nomi = **Windows sukut printeri** (`deviceName` berilmaydi); kanalga chiqqan oxirgi per-machine reliz |
+| `1.5.0` | — (yig'ilmagan) | **per-user o'rnatma** (UAC yo'q) + **boot'da o'rnatish** (`installOnBoot`, kirish ekranida; o'rnatgach o'zi qaytadi). 🔴 `.exe` HALI yig'ilmagan; 1.4.0 → 1.5.0 o'tish QO'LDA (yuqoridagi bo'lim) |
 
 **Kanal tomoni — o'lchangan (2026-08-11, `1.3.0`):**
 `https://erp.sherset.uz/downloads/desktop/latest.yml` → **200**, ichida
@@ -437,6 +457,7 @@ javob berishi bu zanjirni isbotlamaydi.
 ko'rsatmaydi** — «1.3.0 bo'ldimi?» savoliga javob «Приложения и возможности» →
 «Sherset Kassa» dan olinadi. `[updater]` yozuvlari `console.warn` ga chiqadi va
 paketlangan ilovada terminalsiz **ko'rinmaydi** (fayl-log yo'q).
-- Yangilanish o'rnatilgach ilova **qaytadan ochilmaydi** (`isForceRunAfter: false`) —
-  kassir «Chiqish» bosgan edi, demak ish tugagan.
+- Yangilanish o'rnatilgach: **boot yo'lida ilova O'ZI qaytadi**
+  (`isForceRunAfter: true` — qurilma yolg'iz turadi, uni hech kim qo'lda
+  ochmaydi); «Chiqish» yo'lida qaytmaydi (kassir yopishni so'ragan edi).
 - **Pul yashigi impulsi** — yuqoridagi qarz (Electron API'sida yo'l yo'q).

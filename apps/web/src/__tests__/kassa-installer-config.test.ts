@@ -125,12 +125,14 @@ describe('electron-builder — NSIS (spec §8.1)', () => {
     expect(JSON.stringify(build.win?.target ?? [])).toContain('nsis');
   });
 
-  it('NSIS: oneClick=false, perMachine=true (spec §8.1)', () => {
-    // `oneClick: true` — kassa PC'sida jimgina foydalanuvchi profiliga o'rnatiladi
-    // va admin o'rnatish yo'lini ko'rmaydi; `perMachine: false` — boshqa Windows
-    // profilida ilova YO'Q bo'lib qoladi.
+  it('NSIS: oneClick=false, perMachine=FALSE (per-user — UAC yo`q)', () => {
+    // 🔴 NIYAT O'ZGARDI (2026-08-13). Eski niyat: «perMachine:false — boshqa
+    // Windows profilida ilova YO'Q bo'lib qoladi». Kassa monoblokida profil
+    // BITTA, eski niyat esa har yangilanishda UAC so'rardi va kassirda admin
+    // huquqi yo'q ⇒ avtoyangilanish AMALDA HECH QACHON o'rnatilmasdi (K03).
+    // Per-user o'rnatma UAC'ni butunlay olib tashlaydi.
     expect(build.nsis?.oneClick).toBe(false);
-    expect(build.nsis?.perMachine).toBe(true);
+    expect(build.nsis?.perMachine).toBe(false);
   });
 
   it('artifact nomi — spec dagi shablon, `${version}` LITERAL', () => {
@@ -252,12 +254,25 @@ describe('avtoyangilanish xulqi (spec §8.3)', () => {
     expect(handler, 'yangilanish savdo o`rtasida o`rnatiladi!').not.toContain('quitAndInstall');
   });
 
-  it('quitAndInstall FAQAT installOnQuit ichida', () => {
+  it('🔴 quitAndInstall manbada AYNAN BIR MARTA (yagona o`rnatish nuqtasi)', () => {
+    // Ikki chaqiruv = ikki xil bayroq to'plami = biri jimgina eskiradi.
     const calls = updaterCode.match(/quitAndInstall/g) ?? [];
     expect(calls.length, 'quitAndInstall chaqiruvi soni').toBe(1);
-    const fnAt = updaterCode.indexOf('function installOnQuit');
-    expect(fnAt).toBeGreaterThan(0);
+    const fnAt = updaterCode.indexOf('function runInstaller');
+    expect(fnAt, 'runInstaller topilmadi').toBeGreaterThan(0);
     expect(updaterCode.indexOf('quitAndInstall')).toBeGreaterThan(fnAt);
+  });
+
+  it('ikkala yo`l ham runInstaller orqali o`tadi (chiqish + boot)', () => {
+    expect(updaterCode).toMatch(/function installOnQuit\(\)\s*\{\s*return runInstaller\(false\)/);
+    expect(updaterCode).toMatch(/function installOnBoot\(\)\s*\{\s*return runInstaller\(true\)/);
+  });
+
+  it('🔴 boot yo`li ilovani QAYTA OCHADI, chiqish yo`li yo`q', () => {
+    // isForceRunAfter=false bo'lsa yangilangan kassa o'chiq qoladi va kimdir
+    // yorliqni bosishi kerak (K02).
+    expect(updaterCode).toContain('installOnBoot');
+    expect(updaterCode).not.toMatch(/quitAndInstall\(true,\s*false\)/);
   });
 
   it('main.js «Chiqish» yo`lida o`rnatishni chaqiradi', () => {
@@ -268,6 +283,17 @@ describe('avtoyangilanish xulqi (spec §8.3)', () => {
     // O'rnatish `app.quit()` dan OLDIN — aks holda jarayon yopilib, installer
     // hech qachon ishga tushmaydi.
     expect(body.indexOf('installOnQuit()')).toBeLessThan(body.indexOf('app.quit()'));
+  });
+
+  it('🔴 boot`da o`rnatish FAQAT kirish ekranida (savdo o`rtasida emas)', () => {
+    // Kassir PIN kiritib savdoga o'tgan bo'lsa yangilanish keyingi bootga qoladi.
+    expect(mainCode).toContain('waitForPending');
+    expect(mainCode).toContain('installOnBoot');
+    const at = mainCode.indexOf('installOnBoot');
+    const around = mainCode.slice(Math.max(0, at - 500), at);
+    expect(around, 'boot o`rnatish kirish-ekrani sharti bilan qo`riqlanmagan').toMatch(
+      /onEntryScreen\(\)/,
+    );
   });
 
   it('har 4 soatda tekshiriladi', () => {

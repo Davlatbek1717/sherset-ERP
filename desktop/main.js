@@ -27,6 +27,8 @@ const DEFAULT_SERVER_URL = store.normalizeServerUrl(process.env.SHERSET_SERVER_U
 
 const HEALTH_PATH = '/api/v1/health'; // apps/api: setGlobalPrefix('api/v1') + HealthController
 const ENTRY_PATH = '/kassa-kirish'; // kassir har doim shu ekrandan boshlaydi
+/** Boot'da yangilanishni shuncha kutamiz — undan keyin savdo boshlanadi. */
+const BOOT_UPDATE_WAIT_MS = 25000;
 const CFD_PATH = '/customer-display'; // mijoz-ekran sahifasi (apps/web)
 const HEALTH_POLL_MS = 5000;
 
@@ -130,6 +132,16 @@ function loadApp() {
   }
   stopHealthPolling();
   win.loadURL(`${base}${ENTRY_PATH}`);
+}
+
+/**
+ * Oyna hamon KIRISH ekranidami? Kassir PIN kiritgach web `/sotuv` ga o'tadi va
+ * URL o'zgaradi — ya'ni bu shart «savdo hali boshlanmagan» ning deterministik
+ * o'lchovi. Yangilanish faqat shu holatda o'rnatiladi.
+ */
+function onEntryScreen() {
+  if (!win || win.isDestroyed()) return false;
+  return win.webContents.getURL().endsWith(ENTRY_PATH);
 }
 
 // ─── Kiosk oyna ─────────────────────────────────────────────────────────────
@@ -668,11 +680,30 @@ if (!app.requestSingleInstanceLock()) {
     win.focus();
   });
 
-  app.whenReady().then(() => {
+  app.whenReady().then(async () => {
     Menu.setApplicationMenu(null);
     registerIpc();
+    // Oyna DARHOL ochiladi — kassir 25 soniya qora ekran ko'rmasin.
     createWindow();
-    updater.start(serverBase); // manzil hali yo'q bo'lsa o'zi kutadi (updater.js)
+
+    const res = updater.start(serverBase);
+    if (!res.started) return;
+
+    // 🔴 Yangilanish AYNAN shu yerda o'rnatiladi: ilova endi ochildi, kassir
+    // hali kirmagan. Oldingi yagona yo'l — «Chiqish» tugmasi edi, uni esa
+    // kassir hech qachon bosmaydi (monoblok tugmadan o'chiriladi) ⇒
+    // yangilanish qurilmaga HECH QACHON yetmasdi.
+    const pending = await updater.waitForPending(BOOT_UPDATE_WAIT_MS);
+    if (!pending) return;
+    if (!onEntryScreen()) return; // savdo boshlanib ketdi — keyingi bootga qoladi
+
+    win?.loadFile(localPage('updating.html'));
+    // Ekran chizilishiga ulguradi, keyin o'rnatuvchi jarayonni yopadi.
+    setTimeout(() => {
+      allowQuit = true;
+      closeCustomerDisplay();
+      updater.installOnBoot();
+    }, 1200);
   });
 
   app.on('window-all-closed', () => app.quit());

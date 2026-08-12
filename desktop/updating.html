@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="uz">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'" />
+    <title>Sherset Kassa — yangilanmoqda</title>
+    <style>
+      body {
+        margin: 0; height: 100vh; display: flex; flex-direction: column;
+        align-items: center; justify-content: center; gap: 18px;
+        background: #0f172a; color: #e2e8f0;
+        font-family: Segoe UI, system-ui, sans-serif;
+      }
+      h1 { margin: 0; font-size: 30px; }
+      p { margin: 0; color: #94a3b8; font-size: 18px; }
+      .bar { width: 320px; height: 6px; border-radius: 3px; background: #1e293b; overflow: hidden; }
+      .bar i { display: block; width: 40%; height: 100%; background: #38bdf8; animation: run 1.2s infinite; }
+      @keyframes run { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
+    </style>
+  </head>
+  <body>
+    <h1>Yangilanish o'rnatilmoqda</h1>
+    <p>Kassa bir daqiqada o'zi qaytadi. Kompyuterni o'chirmang.</p>
+    <div class="bar"><i></i></div>
+  </body>
+</html>
