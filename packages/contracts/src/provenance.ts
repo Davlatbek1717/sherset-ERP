@@ -114,6 +114,12 @@ export const CONTRACT_PROVENANCE: ContractProvenance[] = [
         method: 'findCurrentForCashier',
         why: 'The four relation includes. Dropping `cashier` here is precisely what crashed the POS register in 2026-06-08k.',
       },
+      {
+        kind: 'method',
+        service: CASHIER_SESSION_SERVICE,
+        method: 'findCurrentForCashier',
+        why: 'P4 — `openMinutes`/`staleWarnHours`/`stale` are computed in the return literal, not columns. The POS forgotten-shift banner renders them; the threshold itself lives in the MK13 registry, so the screen cannot derive them on its own.',
+      },
     ],
   },
   {

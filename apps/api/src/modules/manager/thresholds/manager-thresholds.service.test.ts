@@ -34,7 +34,13 @@ describe('ManagerThresholdsService', () => {
       'KPI_SCORE_CAP',
       'LOST_CUSTOMER_DAYS',
       'OWNERSHIP_RELEASE_DAYS',
+      'SHIFT_OPEN_WARN_HOURS',
     ]);
+    // P4 — «unutilgan smena» chegarasi shu registrda yashaydi (ikkinchi
+    // sozlama manbai yaratilmadi).
+    const shift = list.find((t) => t.key === 'SHIFT_OPEN_WARN_HOURS');
+    expect(shift?.value).toBe(12);
+    expect(shift?.unit).toBe('hours');
   });
 
   it('birlik REGISTRDAN yoziladi, mijoz yuborgan qiymatdan emas', async () => {

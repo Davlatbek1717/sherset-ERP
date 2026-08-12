@@ -47,6 +47,18 @@ export const CurrentSessionSchema = z.object({
   salesSumMinor: MinorAmount,
   /** `BigInt` column → string on the wire. */
   openingCashMinor: MinorAmount,
+
+  // ── P4 (2026-08-12) — «unutilgan smena» himoyasi ────────────────────────
+  // Yosh SERVERDA hisoblanadi, ekranda emas: chegara MK13 registrida
+  // (`SHIFT_OPEN_WARN_HOURS`) yashaydi va POS uni bilmaydi. Ekran o'zi
+  // hisoblasa, chegara ikki joyda ikki xil bo'lardi — bu repo shu bug-klassni
+  // allaqachon ko'rgan (narx poli: «ekran + server bitta manbadan»).
+  /** Smena ochilganidan beri o'tgan daqiqa (manfiy emas). */
+  openMinutes: z.number().int().nonnegative(),
+  /** Amaldagi ogohlantirish chegarasi (soat). `null` = chegara o'chirilgan. */
+  staleWarnHours: z.number().nullable(),
+  /** `openMinutes >= staleWarnHours × 60` — POS ogohlantirish ko'rsatadi. */
+  stale: z.boolean(),
 });
 export type CurrentSession = z.infer<typeof CurrentSessionSchema>;
 

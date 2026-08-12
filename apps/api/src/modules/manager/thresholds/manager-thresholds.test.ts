@@ -54,7 +54,10 @@ describe('resolveManagerThresholds — registr va sukut qiymatlar', () => {
   it('registrdagi har chegara tanilgan birlikda va oralig`i mantiqiy', () => {
     for (const def of Object.values(MANAGER_THRESHOLDS)) {
       // `manager_rule_configs.threshold_unit` da ruxsat etilgan lug'at.
-      expect(['percent', 'days']).toContain(def.unit);
+      // `hours` — P4 da qo'shildi; `SLA_*` qatorlari allaqachon shu birlikni
+      // ishlatadi (`stuck-sla.ts` → `SLA_THRESHOLD_UNIT`), ya'ni jadvalga
+      // yangi lug'at kiritilmadi.
+      expect(['percent', 'days', 'hours']).toContain(def.unit);
       expect(def.min).toBeLessThanOrEqual(def.defaultValue);
       expect(def.defaultValue).toBeLessThanOrEqual(def.max);
     }

@@ -121,6 +121,13 @@ export function SESSION(over: Partial<CurrentSession> = {}): CurrentSession {
     salesCount: 3,
     salesSumMinor: '150000',
     openingCashMinor: '0',
+    // P4 — «unutilgan smena» maydonlari SERVERDAN keladi (yosh + chegara +
+    // bayroq). Fixture ularni o'zi to'qib chiqarmasin: shakl
+    // `CurrentSessionSchema` bilan bir xil, sukut holat = yangi ochilgan
+    // smena (`fe-fixture-invents-server-field` saboqi).
+    openMinutes: 120,
+    staleWarnHours: 12,
+    stale: false,
     ...over,
   } as CurrentSession;
 }

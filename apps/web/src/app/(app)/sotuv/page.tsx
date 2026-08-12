@@ -51,6 +51,8 @@ import {
   resolveWholesaleSalePrice,
   usePriceTypeIds,
 } from '@/lib/sale-price';
+// P4 — smena yoshini matnga aylantirish (chegara mantiqi SERVERDA).
+import { formatShiftAge } from '@/lib/shift-age';
 import { useZReceiptLabels } from '@/lib/use-z-receipt-labels';
 import type {
   CurrentSession,
@@ -66,7 +68,7 @@ import {
   priceFloorMinor,
 } from '@moysklad/money';
 import { isCurrencyCode } from '@moysklad/money/currencies';
-import { Badge, Button, Input, formatMoney, useConfirm, useToast } from '@moysklad/ui';
+import { Alert, Badge, Button, Input, formatMoney, useConfirm, useToast } from '@moysklad/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   CheckCircle,
@@ -914,6 +916,9 @@ function SalesScreen({
   // F9 — mijoz kartasi yorliqlari POS komponentlari bilan bir joyda
   // (`pages.pos`), chunki panelning o'zi shu namespace'ni o'qiydi.
   const tPos = useTranslations('pages.pos');
+  // P4 — smena yoshi. `openMinutes` ni SERVER beradi (chegara MK13
+  // registrida), ekran faqat matnga aylantiradi.
+  const shiftAge = formatShiftAge(session.openMinutes, t);
   const qc = useQueryClient();
   const { toast } = useToast();
   const { confirm } = useConfirm();
@@ -1786,12 +1791,31 @@ function SalesScreen({
     <div className="flex flex-1 min-h-0 gap-0 bg-[var(--ms-bg-app)]">
       {/* Left — search + product grid */}
       <div className="flex flex-1 flex-col gap-3 overflow-hidden p-4">
+        {/* P4 — «unutilgan smena» ogohlantirishi.
+            Bayroqni SERVER qo'yadi (`stale`): chegara MK13 registrida turadi,
+            ekran uni bilmaydi. Avto-yopish YO'Q — sanoqsiz yopilgan smena
+            kassa hisobini yolg'onlashtiradi (egasi qarori, 2026-08-12). */}
+        {session.stale && (
+          <Alert
+            tone="warning"
+            title={t('shift_stale_title', { age: shiftAge })}
+            data-test-id="sotuv-shift-stale"
+          >
+            {t('shift_stale_action')}
+          </Alert>
+        )}
+
         {/* Session strip */}
         <div className="flex items-center gap-3 rounded-xl border border-[var(--ms-border)] bg-[var(--ms-bg-surface)] px-3 py-2 text-sm">
-          <Badge tone="success">{t('shift_open')}</Badge>
+          <Badge tone={session.stale ? 'warning' : 'success'}>{t('shift_open')}</Badge>
           <span className="text-[var(--ms-text-muted)]">
             {session.cashier.name}
             {session.store ? ` · ${session.store.name}` : ''}
+          </span>
+          {/* Yosh HAR DOIM ko'rinadi — chegaragacha ham. Egasi shuni so'radi:
+              «ochildi degandan yopildi qilguncha» ko'rinib tursin. */}
+          <span data-test-id="sotuv-shift-age" className="text-[var(--ms-text-muted)]">
+            · {t('shift_open_age', { age: shiftAge })}
           </span>
           <span className="ml-auto font-medium">
             {session.salesCount} · {formatMoney(BigInt(session.salesSumMinor))}

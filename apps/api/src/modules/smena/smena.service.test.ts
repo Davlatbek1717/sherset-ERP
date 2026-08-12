@@ -130,6 +130,33 @@ describe('openSessionFromSmena — a`zolik tekshiruvi', () => {
   });
 });
 
+describe('openSessionFromSmena — «allaqachon ochiq smena» xabari (P4)', () => {
+  it('qaysi smena, QACHONDAN BERI va nima qilish kerakligini aytadi', async () => {
+    const { service, client } = makeService({ member: true });
+    client.cashierSession.findFirst.mockResolvedValue({
+      id: 'sess-eski',
+      name: 'Смена-0003',
+      openedAt: new Date('2026-08-01T00:00:00Z'),
+    });
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-08-12T00:00:00Z'));
+    try {
+      const err = await service
+        .openSessionFromSmena(ACC, CASHIER, OPEN_INPUT)
+        .then(() => null)
+        .catch((e: Error) => e);
+      expect(err).toBeInstanceOf(BadRequestException);
+      expect(err?.message).toContain('Смена-0003');
+      expect(err?.message).toContain('11 kun');
+      expect(err?.message).toMatch(/yoping/i);
+      // 🔴 Eski ma'lumotsiz matn qaytib kelmasin.
+      expect(err?.message).not.toBe('Allaqachon ochiq smena mavjud');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
 describe('openSessionFromSmena — parallel ochilish (P2002)', () => {
   it('unique-indeks poygasi ConflictException bo`lib chiqadi, 500 emas', async () => {
     // DB'dagi `cashier_sessions_open_per_cashier_idx` pre-check'dan o'tgan

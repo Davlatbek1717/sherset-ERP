@@ -9,6 +9,8 @@ import {
 import { PrismaService } from '../../prisma/prisma.service.js';
 // Kassa TZ §9 — the audit-event shapes live with the rest of the cashier
 // journal so every writer agrees on the payload.
+// P4 — «allaqachon ochiq smena» xabari ikki yo'lda ham BITTA matn.
+import { describeShiftAge, formatOpenShiftConflict } from '../cashier-session/stale-shift.js';
 import { planOutOfScheduleAuditEvent } from '../retail-sale/cashier-audit.js';
 import {
   type CreateSmenaInput,
@@ -251,7 +253,28 @@ export class SmenaService {
     const existing = await this.prisma.client.cashierSession.findFirst({
       where: { accountId, cashierId, state: 'open' },
     });
-    if (existing) throw new BadRequestException('Allaqachon ochiq smena mavjud');
+    // P4 — bu POS'ning HAQIQIY smena ochish yo'li (`/sotuv` shu yerga
+    // yozadi), shuning uchun «unutilgan smena» xabari birinchi navbatda shu
+    // yerda ko'rinadi. Ilgari matn shunchaki «Allaqachon ochiq smena mavjud»
+    // edi: kassir qaysi smena, qachondan beri ochiqligini bilmasdi va
+    // ekranda hech qanday keyingi qadam ko'rsatilmasdi.
+    if (existing) {
+      throw new BadRequestException(
+        formatOpenShiftConflict({
+          age: describeShiftAge({
+            openedAt: existing.openedAt,
+            now: new Date(),
+            // Chegara bu yerda o'qilmaydi: xabar YOSHNI baribir aytadi,
+            // «juda uzoq» qo'shimchasi esa POS bannerida (server hisoblagan
+            // `stale` bilan) ko'rinadi. Ikkinchi baza so'rovi ochilish
+            // yo'lini sekinlashtirardi.
+            warnHours: null,
+          }),
+          sessionId: existing.id,
+          sessionName: existing.name,
+        }),
+      );
+    }
 
     // ── Kassa/ombor: climart sxemasi bilan ko'prik ────────────────────────────
     // Sherset'ning asl sxemasida `CashierSession` da `cashDeskId`/`storeId`

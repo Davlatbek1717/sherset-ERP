@@ -36,6 +36,8 @@ export const MANAGER_THRESHOLD = {
   lostCustomerDays: 'LOST_CUSTOMER_DAYS',
   /** Faolliksiz mijoz shuncha kundan keyin egalikdan chiqadi (F005 taymeri). */
   ownershipReleaseDays: 'OWNERSHIP_RELEASE_DAYS',
+  /** Kassa smenasi shuncha soatdan ortiq ochiq tursa — «unutilgan» (P4). */
+  shiftOpenWarnHours: 'SHIFT_OPEN_WARN_HOURS',
 } as const;
 
 export type ManagerThresholdKey = (typeof MANAGER_THRESHOLD)[keyof typeof MANAGER_THRESHOLD];
@@ -44,7 +46,7 @@ export type ManagerThresholdKey = (typeof MANAGER_THRESHOLD)[keyof typeof MANAGE
  * `manager_rule_configs.threshold_unit` dagi lug'at. **Birlik hech qachon
  * talqin qilinmaydi** — mos kelmasa qator rad etiladi (pastga qara).
  */
-export type ManagerThresholdUnit = 'percent' | 'days';
+export type ManagerThresholdUnit = 'percent' | 'days' | 'hours';
 
 export interface ManagerThresholdDefinition {
   readonly key: ManagerThresholdKey;
@@ -114,6 +116,26 @@ export const MANAGER_THRESHOLDS: Readonly<Record<ManagerThresholdKey, ManagerThr
         'Faolliksiz mijoz shuncha kundan keyin egalikdan chiqadi (F005 taymeri). ' +
         "MK17 buni faqat O'QIYDI: yo'qolish davri bundan uzun bo'lsa, «yo'qolgan» " +
         "ro'yxatida egasi bo'lgan mijoz qolmaydi.",
+    },
+    [MANAGER_THRESHOLD.shiftOpenWarnHours]: {
+      key: MANAGER_THRESHOLD.shiftOpenWarnHours,
+      ruleType: MANAGER_THRESHOLD.shiftOpenWarnHours,
+      // P4 (2026-08-12). Prodda uchta smena ochiq qolgan, bittasi 11 kun.
+      // 12 soat — bir ish kunidan uzun har qanday smenani belgilaydi, lekin
+      // uzun kunni (09:00–21:00) tugagan zahoti signalga aylantirmaydi.
+      // Egasi «raqamning farqi yo'q» dedi (2026-08-12) — shuning uchun
+      // sukut shu yerda, sozlash esa MK13 ekranidan.
+      defaultValue: 12,
+      // `hours` — `SLA_*` qatorlari bilan AYNI lug'at (`stuck-sla.ts`).
+      unit: 'hours',
+      // 1 soatdan qisqa chegara har tanaffusni ogohlantirishga aylantirardi.
+      min: 1,
+      // 30 kun — undan uzun «ogohlantirish» amalda o'chirilgan bilan bir xil
+      // (buning uchun `enabled=false` bor).
+      max: 720,
+      rationale:
+        'Kassa smenasi shuncha soatdan ortiq ochiq tursa POS ogohlantiradi. ' +
+        "🔴 Hech nima AVTO-YOPILMAYDI — sanoqsiz yopilgan smena kassa hisobini yolg'onlashtiradi.",
     },
   };
 

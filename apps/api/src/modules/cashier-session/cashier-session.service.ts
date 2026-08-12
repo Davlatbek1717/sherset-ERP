@@ -11,6 +11,23 @@ import {
 } from '@nestjs/common';
 import { allocateDocumentNumber } from '../../prisma/document-number.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
+// P4 — «unutilgan smena» chegarasi MK13 registrida (ikkinchi sozlama manbai
+// yaratilmaydi — `sla-thresholds-in-rule-config-table` intizomi).
+//
+// 🔴 Qator tipi `manager/queue` dan IMPORT QILINMAYDI: `queue-does-not-block`
+// arxitektura qulfi navbat modulini faqat `manager.module.ts` ga ochadi
+// (MK06 §5.1 — «navbat hech narsani bloklamaydi» YO'Q-xususiyatining
+// yagona isboti shu). Shuning uchun tip registr funksiyasining O'ZIDAN
+// olinadi.
+import {
+  MANAGER_THRESHOLD,
+  MANAGER_THRESHOLDS,
+  effectiveThreshold,
+  resolveManagerThresholds,
+} from '../manager/thresholds/manager-thresholds.js';
+// Amaldagi ruxsat KANONIK hal qiluvchisi (rollar MAX'i + MK26 override).
+import { type RoleGrant, resolveEffective } from '../permissions/employee-permission.js';
+import type { PermissionScope } from '../permissions/permissions.types.js';
 // Faza Q1 (SALES-08): «to'lovgacha bo'lgan holatlar» ro'yxati YAGONA manbadan.
 // `close()` qo'lda `['draft','picking','ready']` yozsa, FSM'ga yangi oraliq
 // holat qo'shilgan kuni u jimgina yopilgan smenada osilib qolardi.
@@ -57,11 +74,28 @@ import {
   formatVarianceMessage,
   planVarianceActs,
 } from './shift-variance.js';
+// P4 — smena yoshi va «allaqachon ochiq» xabari (sof modul).
+import { describeShiftAge, formatOpenShiftConflict } from './stale-shift.js';
 // P3 — yopilishni bloklovchi yakunlanmagan cheklar xabari (sof modul).
 import { describeUnresolvedSales } from './unresolved-sales.js';
+// H7 (P4) — farq xabari kimga boradi (sof modul).
+import {
+  type VarianceCandidate,
+  type VarianceRecipient,
+  type VarianceScope,
+  type VarianceSessionRef,
+  selectVarianceRecipients,
+} from './variance-recipients.js';
 
 /** Hisob valyutasi — Z-hisobotdagi jamilar shu valyutada (MK31). */
 const BASE_CURRENCY = 'UZS';
+
+/**
+ * Farq xabarini oladigan ruxsat (H7). `update` EMAS — sabab
+ * `resolveVarianceRecipients` izohida.
+ */
+const VARIANCE_ENTITY = 'cashiersession';
+const VARIANCE_ACTION = 'approve';
 
 /**
  * CashierSessionService — manages cashier shift lifecycle.
@@ -140,9 +174,17 @@ export class CashierSessionService {
     return session;
   }
 
-  /** Returns the active (open) session for a specific cashier, or null. */
+  /**
+   * Returns the active (open) session for a specific cashier, or null.
+   *
+   * P4 — javobga smena YOSHI qo'shiladi (`openMinutes` · `staleWarnHours` ·
+   * `stale`). Yoshni SERVER hisoblaydi, ekran emas: chegara MK13 registrida
+   * yashaydi va POS uni bilmaydi. «Ekran va server bitta manbadan» intizomi
+   * (`price-floor-min-cost-or-card` saboqi) — aks holda ogohlantirish
+   * chegarasi ikki joyda ikki xil bo'lardi.
+   */
   async findCurrentForCashier(accountId: string, cashierId: string) {
-    return this.prisma.client.cashierSession.findFirst({
+    const session = await this.prisma.client.cashierSession.findFirst({
       where: { accountId, cashierId, state: 'open' },
       include: {
         // `cashier` MUST be included — the /retail POS register renders
@@ -155,6 +197,49 @@ export class CashierSessionService {
         organization: { select: { id: true, name: true } },
       },
     });
+    if (!session) return null;
+    const age = describeShiftAge({
+      openedAt: session.openedAt,
+      now: new Date(),
+      warnHours: await this.resolveShiftWarnHours(accountId),
+    });
+    return {
+      ...session,
+      openMinutes: age.openMinutes,
+      staleWarnHours: age.warnHours,
+      stale: age.stale,
+    };
+  }
+
+  /**
+   * «Unutilgan smena» chegarasi (soat) — MK13 registridan, `null` = o'chirilgan.
+   *
+   * Sozlama o'qib bo'lmasa registr SUKUTIGA qaytadi: chegarani o'qiy
+   * olmaganimiz uchun butun POS ekranini yiqitish mutlaqo o'rinsiz bo'lardi.
+   */
+  private async resolveShiftWarnHours(accountId: string): Promise<number | null> {
+    try {
+      const rows = await this.prisma.client.managerRuleConfig.findMany({
+        where: { accountId, ruleType: MANAGER_THRESHOLD.shiftOpenWarnHours },
+        select: {
+          ruleType: true,
+          enabled: true,
+          thresholdValue: true,
+          thresholdUnit: true,
+          mode: true,
+          severity: true,
+        },
+      });
+      const resolved = resolveManagerThresholds(
+        rows as unknown as Parameters<typeof resolveManagerThresholds>[0],
+      ).get(MANAGER_THRESHOLD.shiftOpenWarnHours);
+      return resolved
+        ? effectiveThreshold(resolved)
+        : MANAGER_THRESHOLDS[MANAGER_THRESHOLD.shiftOpenWarnHours].defaultValue;
+    } catch (err) {
+      this.logger.warn(`Smena chegarasi o'qilmadi, sukut qo'llanadi: ${(err as Error).message}`);
+      return MANAGER_THRESHOLDS[MANAGER_THRESHOLD.shiftOpenWarnHours].defaultValue;
+    }
   }
 
   async open(accountId: string, cashierId: string, raw: unknown) {
@@ -171,8 +256,18 @@ export class CashierSessionService {
       where: { accountId, cashierId, state: 'open' },
     });
     if (existing) {
+      // P4 — xabar endi MA'LUMOTLI: qaysi smena, qachondan beri, nima
+      // qilish kerak. Ilgari kassir faqat inglizcha UUID ko'rardi.
       throw new ConflictException(
-        `Cashier already has an open session: ${existing.id}. Close it first.`,
+        formatOpenShiftConflict({
+          age: describeShiftAge({
+            openedAt: existing.openedAt,
+            now: new Date(),
+            warnHours: await this.resolveShiftWarnHours(accountId),
+          }),
+          sessionId: existing.id,
+          sessionName: existing.name,
+        }),
       );
     }
 
@@ -735,31 +830,66 @@ export class CashierSessionService {
         where: { id: args.sessionId, accountId: args.accountId },
         select: {
           closedAt: true,
+          groupId: true,
           cashier: { select: { name: true } },
           cashDesk: { select: { name: true } },
         },
       });
 
-      await this.prisma.client.hrTelegramOutbox.create({
-        data: {
-          accountId: args.accountId,
-          toPhone: '',
-          toSelf: true,
-          messageText: formatVarianceMessage({
-            cashierName: session?.cashier?.name ?? '—',
-            cashDeskName: session?.cashDesk?.name ?? null,
-            closedAtLabel: (session?.closedAt ?? new Date())
-              .toISOString()
-              .slice(0, 16)
-              .replace('T', ' '),
-            acts,
-            cashierNote: args.varianceNote,
-          }),
-          sourceEventType: 'kassa.smena_farqi',
-          sourceDocId: args.sessionId,
-          status: 'pending',
-        },
+      const messageText = formatVarianceMessage({
+        cashierName: session?.cashier?.name ?? '—',
+        cashDeskName: session?.cashDesk?.name ?? null,
+        closedAtLabel: (session?.closedAt ?? new Date())
+          .toISOString()
+          .slice(0, 16)
+          .replace('T', ' '),
+        acts,
+        cashierNote: args.varianceNote,
       });
+
+      // 🔴 H7 (P4, 2026-08-12) — xabar TELEFON orqali ketadi.
+      // Ilgari faqat `toSelf: true` yozilardi: u direktorning O'Z akkaunti
+      // (MTProto slot 0) orqali «Saved Messages» ga boradi, prodda esa slot 0
+      // umuman ULANMAGAN ⇒ har `toSelf` xabar `mtproto_self_no_client` bilan
+      // yiqilardi (o'lchandi: 4/4 failed, oxirgisi 10-avgust). Telefonli
+      // yo'l esa ishlaydi (32/32 sent, slot 1). Kim oladi — `variance-recipients`.
+      const recipients = await this.resolveVarianceRecipients(args.accountId, {
+        cashierId: args.cashierId,
+        groupId: session?.groupId ?? null,
+      });
+
+      if (recipients.length === 0) {
+        // Zaxira: qabul qiluvchi topilmasa eski yo'l saqlanadi — xabar
+        // yo'qolib ketmasin, hech bo'lmasa outbox'da o'lchanadigan joyda
+        // qolsin. Jurnalga ochiq yoziladi (jim degradatsiya emas).
+        this.logger.warn(
+          'Smena farqi xabari uchun telefonli qabul qiluvchi topilmadi ' +
+            `(session=${args.sessionId}) — toSelf zaxirasiga yozildi`,
+        );
+        await this.prisma.client.hrTelegramOutbox.create({
+          data: {
+            accountId: args.accountId,
+            toPhone: '',
+            toSelf: true,
+            messageText,
+            sourceEventType: 'kassa.smena_farqi',
+            sourceDocId: args.sessionId,
+            status: 'pending',
+          },
+        });
+      } else {
+        await this.prisma.client.hrTelegramOutbox.createMany({
+          data: recipients.map((r) => ({
+            accountId: args.accountId,
+            employeeId: r.employeeId,
+            toPhone: r.phone,
+            messageText,
+            sourceEventType: 'kassa.smena_farqi',
+            sourceDocId: args.sessionId,
+            status: 'pending',
+          })),
+        });
+      }
     } catch (err) {
       // Yopish bajarildi — akt/xabar nosozligi uni bekor qilmaydi.
       this.logger.warn(
@@ -767,6 +897,98 @@ export class CashierSessionService {
       );
     }
     return acts;
+  }
+
+  /**
+   * H7 (P4) — farq xabarini kim oladi.
+   *
+   * Mezon: `cashiersession.approve` (smenani QABUL QILISH huquqi) — ataylab
+   * `update` EMAS, chunki `update` kassirning o'zida ham `ALL` va xabar
+   * kassirlarga tarqab ketardi (prod matritsasi: `Kassir` rolida `approve`
+   * yo'q, `update` bor).
+   *
+   * Amaldagi qamrov KANONIK hal qiluvchi bilan hisoblanadi
+   * (`resolveEffective`): rollar MAX'i + MK26 xodim-override. Override rol
+   * natijasini TUSHIRA ham oladi — shuning uchun uni takrorlab «MAX»
+   * yozish cheklangan xodimga begona smenaning farqini yuborardi.
+   */
+  private async resolveVarianceRecipients(
+    accountId: string,
+    session: VarianceSessionRef,
+  ): Promise<VarianceRecipient[]> {
+    const emps = await this.prisma.client.employee.findMany({
+      where: {
+        accountId,
+        archived: false,
+        telegramPhone: { not: null },
+        OR: [
+          {
+            roles: {
+              some: {
+                role: {
+                  permissions: {
+                    some: {
+                      entity: VARIANCE_ENTITY,
+                      action: VARIANCE_ACTION,
+                      scope: { not: 'NO' },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          // Rolda umuman ruxsat bermagan, lekin override bilan berilgan
+          // xodim ham qabul qiluvchi (override rolni KO'TARADI ham).
+          { permissionOverrides: { some: { entity: VARIANCE_ENTITY, action: VARIANCE_ACTION } } },
+        ],
+      },
+      select: {
+        id: true,
+        telegramPhone: true,
+        groupId: true,
+        roles: {
+          select: {
+            role: {
+              select: {
+                name: true,
+                permissions: {
+                  where: { entity: VARIANCE_ENTITY, action: VARIANCE_ACTION },
+                  select: { scope: true },
+                },
+              },
+            },
+          },
+        },
+        permissionOverrides: {
+          where: { entity: VARIANCE_ENTITY, action: VARIANCE_ACTION },
+          select: { scope: true },
+        },
+      },
+    });
+
+    const candidates: VarianceCandidate[] = emps.map((e) => {
+      const grants: RoleGrant[] = e.roles.flatMap((r) =>
+        r.role.permissions.map((p) => ({
+          roleName: r.role.name,
+          scope: p.scope as PermissionScope,
+        })),
+      );
+      const override = e.permissionOverrides[0];
+      const effective = resolveEffective(
+        grants,
+        override
+          ? { scope: override.scope as PermissionScope, grantedAt: null, grantedByName: null }
+          : null,
+      );
+      return {
+        employeeId: e.id,
+        telegramPhone: e.telegramPhone,
+        scope: effective.scope as VarianceScope,
+        groupId: e.groupId,
+      };
+    });
+
+    return selectVarianceRecipients(candidates, session);
   }
 
   /**
