@@ -10,6 +10,14 @@ import { describe, expect, it } from 'vitest';
  * va o'sha soxta qatlam aynan tekshirilayotgan atomiklikni «to'g'ri» qilib
  * ko'rsatardi. Shuning uchun SHART kodda borligini qulflaymiz — `remove()`
  * uchun ishlatilgan naqshning aynan o'zi.
+ *
+ * IKKI KIRISH NUQTASI (fix-round I-1). To'lovni storno qiladigan yo'l ikkita:
+ * `reversePayment` (kassir/rahbar stornosi) va `cancelCallNote` (qo'ng'iroq
+ * natijasi bekor qilinganda bog'langan to'lov ham qaytadi). Ikkalasi ham
+ * `reverseCashDeskDelta` ni chaqiradi, ya'ni qulf FAQAT bittasiga qo'yilsa
+ * yashiqdan pul hamon ikki marta chiqishi mumkin (`cancelCallNote` +
+ * `reversePayment` yonma-yon). Shu sababli qoida BITTA joyda —
+ * `claimPaymentForReversal` — va bu test ikkala chaqiruvchini ham qulflaydi.
  */
 const SRC = readFileSync(join(import.meta.dirname, 'debt.service.ts'), 'utf8');
 
@@ -20,8 +28,8 @@ function methodBody(name: string): string {
   return SRC.slice(start, end === -1 ? SRC.length : end);
 }
 
-describe('reversePayment — atomik claim', () => {
-  const body = methodBody('reversePayment');
+describe('storno qulfi — atomik claim (yagona qoida)', () => {
+  const body = methodBody('claimPaymentForReversal');
 
   it('`reversedAt` ni SHARTLI updateMany bilan da`vo qiladi', () => {
     expect(body).toMatch(/debtPayment\.updateMany\(/);
@@ -34,12 +42,30 @@ describe('reversePayment — atomik claim', () => {
     expect(body).toMatch(/count === 0/);
   });
 
-  it('shartsiz `debtPayment.update(` QOLMAGAN (eski yo`l)', () => {
-    expect(body).not.toMatch(/tx\.debtPayment\.update\(/);
-  });
-
   it('yopilgan smenadagi to`lov stornosi BLOKLANADI', () => {
     expect(body).toMatch(/cashierSession/);
     expect(body).toMatch(/state: 'open'|state !== 'open'/);
   });
+});
+
+describe('storno qulfi — IKKALA kirish nuqtasi bir qoidadan yuradi', () => {
+  // `reverseCashDeskDelta` ni chaqiradigan har yo'l qulfdan ham o'tishi shart.
+  for (const entry of ['reversePayment', 'cancelCallNote']) {
+    it(`${entry} qulfni chaqiradi va shartsiz \`debtPayment.update(\` QOLMAGAN`, () => {
+      const entryBody = methodBody(entry);
+      expect(entryBody, entry).toMatch(/this\.claimPaymentForReversal\(/);
+      expect(entryBody, entry).not.toMatch(/tx\.debtPayment\.update\(/);
+      // Qoida NUSXALANMAGAN: claim faqat helper ichida bo'lsin.
+      expect(entryBody, entry).not.toMatch(/debtPayment\.updateMany\(/);
+    });
+
+    it(`${entry} pulga tegishdan OLDIN qulflaydi`, () => {
+      const entryBody = methodBody(entry);
+      const claimAt = entryBody.indexOf('this.claimPaymentForReversal(');
+      const cashAt = entryBody.indexOf('this.reverseCashDeskDelta(');
+      expect(claimAt, `${entry}: claim topilmadi`).toBeGreaterThan(-1);
+      expect(cashAt, `${entry}: kassa harakati topilmadi`).toBeGreaterThan(-1);
+      expect(claimAt, `${entry}: qulf yashiq harakatidan KEYIN`).toBeLessThan(cashAt);
+    });
+  }
 });

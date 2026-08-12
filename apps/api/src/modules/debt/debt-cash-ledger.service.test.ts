@@ -75,6 +75,11 @@ function makeSvc(
      * va faqat tranzaksiya ichidagi shartli claim to'xtatishi mumkin.
      */
     staleUnreversedSnapshot?: true;
+    /**
+     * `cancelCallNote` uchun ayni poyga: yozuv bazada ALLAQACHON bekor
+     * qilingan, tashqi o'qish esa `canceledAt: null` ko'radi.
+     */
+    staleUncanceledNoteSnapshot?: true;
   } = {},
 ) {
   const deskCurrency = opts.deskCurrency ?? 'UZS';
@@ -113,6 +118,15 @@ function makeSvc(
     });
     debtRow.paidMinor = payments[0]?.amountMinor ?? 0n;
     debtRow.status = 'partial';
+  }
+
+  /**
+   * `cancelCallNote` bekor qiladigan qo'ng'iroq natijasi. `canceledAt` REAL
+   * holat: yozuv-claim shu qiymatga qaraydi (poyga testi shuni ishlatadi).
+   */
+  const noteRow = { id: 'note-1', canceledAt: null as Date | null };
+  if (opts.staleUncanceledNoteSnapshot) {
+    noteRow.canceledAt = new Date('2026-08-12T09:00:00Z');
   }
 
   // Kassa daftari — yozilgan qatorlar shu yerda «saqlanadi», storno esa
@@ -222,9 +236,26 @@ function makeSvc(
     },
     debtPayment: paymentDelegate,
     debtNote: {
-      create: async () => ({ id: 'note-1' }),
+      create: async () => ({ id: 'note-2' }),
       update: async () => ({ id: 'note-1' }),
-      updateMany: async () => ({ count: 0 }),
+      /**
+       * Ikki xil chaqiruv shu delegatga tushadi va ular FARQLANADI:
+       *  · `where.id` — `cancelCallNote` ning yozuv-claim'i (bitta «note-1»
+       *    qatori bor, `canceledAt` sharti haqiqatan tekshiriladi);
+       *  · `where.paymentId` — `reversePayment` ning ommaviy bekor qilishi
+       *    (bu harness'da bog'langan natija-yozuv yo'q ⇒ 0).
+       */
+      updateMany: async (args: {
+        where: { id?: string; paymentId?: string; canceledAt?: null };
+        data: Record<string, unknown>;
+      }) => {
+        if (args.where.id !== 'note-1') return { count: 0 };
+        if ('canceledAt' in args.where && noteRow.canceledAt !== args.where.canceledAt) {
+          return { count: 0 };
+        }
+        Object.assign(noteRow, args.data);
+        return { count: 1 };
+      },
       findFirst: async () => null,
     },
     debt: {
@@ -245,17 +276,21 @@ function makeSvc(
     cashDesk: { findFirst: async () => ({ name: 'Kassa 1', currency: deskCurrency }) },
     debtPayment: paymentDelegate,
     debtNote: {
-      findFirst: async (args: { where: { id?: string } }) =>
-        args.where.id === 'note-1'
-          ? {
-              id: 'note-1',
-              kind: 'call',
-              outcome: 'paid_partial',
-              canceledAt: null,
-              authorId: 'u1',
-              payment: payments[0] ? { ...payments[0] } : null,
-            }
-          : null,
+      findFirst: async (args: { where: { id?: string } }) => {
+        if (args.where.id !== 'note-1') return null;
+        const seed = payments[0];
+        return {
+          id: 'note-1',
+          kind: 'call',
+          outcome: 'paid_partial',
+          // Tashqi o'qish — poyga rejimida «hali bekor qilinmagan» ko'rinadi.
+          canceledAt: opts.staleUncanceledNoteSnapshot ? null : noteRow.canceledAt,
+          authorId: 'u1',
+          payment: seed
+            ? { ...seed, ...(opts.staleUnreversedSnapshot ? { reversedAt: null } : {}) }
+            : null,
+        };
+      },
     },
     $transaction: async <T>(fn: (t: unknown) => Promise<T>) => fn(tx),
   };
@@ -405,16 +440,93 @@ describe('DebtService storno — yashiqdan qaytarish (M-05 simmetriyasi)', () =>
   });
 
   it("cancelCallNote bog'langan naqd to'lovni ham yashiqdan chiqaradi", async () => {
-    const { svc, cashDeltas } = makeSvc({ seedPayment: {} });
+    const { svc, cashDeltas, payments } = makeSvc({ seedPayment: {} });
 
     await svc.cancelCallNote(ACC, 'u1', 'operator', DEBT, 'note-1', { reason: 'xato natija' });
 
     expect(cashDeltas).toHaveLength(1);
     expect(cashDeltas[0]).toMatchObject({ deltaMinor: -30_000n, documentId: 'pay-seed' });
+    // Storno muhri AYNI qulf orqali qo'yiladi (shartsiz `update` emas).
+    expect(payments[0]?.reversedAt).not.toBeNull();
   });
 
   /**
-   * 🔴 «KREDIT BOR, DEBET CHIQMADI» — jim o'tmaydi (fix-round I-1).
+   * 🔴 IKKINCHI KIRISH NUQTASI HAM QULFLANGAN (fix-round I-1).
+   *
+   * `cancelCallNote` ham `reverseCashDeskDelta` ni chaqiradi, ya'ni qulf faqat
+   * `reversePayment` ga qo'yilsa yashiqdan pul HAMON ikki marta chiqishi
+   * mumkin edi: `reversePayment` yutadi, `cancelCallNote` esa o'zining tashqi
+   * `!note.payment.reversedAt` tekshiruvidan o'tib ikkinchi debetni yozardi.
+   *
+   * MUTANT: `cancelCallNote` helper chaqirig'i o'rniga eski shartsiz
+   * `tx.debtPayment.update` qaytarilsa, yoki helper'ning O'ZI no-op qilinsa —
+   * shu test QIZIL.
+   */
+  it('🔴 cancelCallNote: raqib storno ulgurgan bo`lsa xato otiladi, delta TUSHMAYDI', async () => {
+    const { svc, cashDeltas, payments } = makeSvc({
+      seedPayment: { reversedAt: new Date('2026-08-12T09:00:00Z') },
+      staleUnreversedSnapshot: true,
+    });
+
+    await expect(
+      svc.cancelCallNote(ACC, 'u1', 'operator', DEBT, 'note-1', { reason: 'xato natija' }),
+    ).rejects.toThrow(BadRequestException);
+
+    expect(cashDeltas).toHaveLength(0);
+    expect(payments[0]?.reversedAt).toEqual(new Date('2026-08-12T09:00:00Z'));
+  });
+
+  /**
+   * 🔴 `cancelCallNote` ham yopilgan smenani buzmaydi (fix-round I-1).
+   *
+   * Bu yo'l ham yashiqqa tegadi, ya'ni yopilgan smenaning muzlatilgan farq
+   * aktini xuddi shunday yolg'onga chiqarardi. Qo'riqchi bitta joyda
+   * (`claimPaymentForReversal`) turgani uchun ikkala yo'l bir xil rad etadi.
+   */
+  it('🔴 cancelCallNote: yopilgan smenadagi to`lov stornosi BLOKLANADI', async () => {
+    const { svc, cashDeltas } = makeSvc({
+      seedPayment: { retailShiftId: 'shift-1' },
+      shiftState: 'closed',
+    });
+
+    await expect(
+      svc.cancelCallNote(ACC, 'u1', 'operator', DEBT, 'note-1', { reason: 'xato natija' }),
+    ).rejects.toThrow(/Smena yopilgan/);
+
+    expect(cashDeltas).toHaveLength(0);
+  });
+
+  it('cancelCallNote: OCHIQ smenada normal o`tadi', async () => {
+    const { svc, cashDeltas } = makeSvc({
+      seedPayment: { retailShiftId: 'shift-1' },
+      shiftState: 'open',
+    });
+
+    await svc.cancelCallNote(ACC, 'u1', 'operator', DEBT, 'note-1', { reason: 'xato natija' });
+
+    expect(cashDeltas).toHaveLength(1);
+  });
+
+  /**
+   * Yozuvning O'ZI ham atomik da'vo bilan bekor qilinadi: ikki parallel bekor
+   * qilish ikki «QO'NG'IROQ NATIJASI BEKOR QILINDI» yozuvini tug'dirmasin va
+   * `cancelReason` raqibning sababi ustiga yozilmasin.
+   */
+  it('cancelCallNote: yozuv allaqachon bekor qilingan bo`lsa (poyga) xato otiladi', async () => {
+    const { svc, cashDeltas } = makeSvc({
+      seedPayment: {},
+      staleUncanceledNoteSnapshot: true,
+    });
+
+    await expect(
+      svc.cancelCallNote(ACC, 'u1', 'operator', DEBT, 'note-1', { reason: 'ikkinchi urinish' }),
+    ).rejects.toThrow(BadRequestException);
+
+    expect(cashDeltas).toHaveLength(0);
+  });
+
+  /**
+   * 🔴 «KREDIT BOR, DEBET CHIQMADI» — jim o'tmaydi (fix-round I-1 dan oldingi round).
    *
    * `CashDesk.currency` keyinchalik o'zgartirilishi mumkin (`cash-desk.service`
    * da «qoldiq nolmi» degan qo'riqchi YO'Q). Shunda UZS kredit kirgan yashiq

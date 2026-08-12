@@ -391,6 +391,70 @@ export class DebtService {
     return { queued, skipped };
   }
 
+  /**
+   * 🔴 STORNO'NING QULF TOMONI — IKKALA qaytarish yo'li (`reversePayment`,
+   * `cancelCallNote`) shu yerdan o'tadi. `reverseCashDeskDelta` bilan bir
+   * tamoyil: ikki kirish nuqtasi bir xil qoidadan yurishi SHART. 2026-08-12
+   * fix-round I-1 aynan shu bo'shliq edi — qulf `reversePayment` ga qo'yilib,
+   * `cancelCallNote` qo'riqsiz qolgan, ya'ni ikkovi yonma-yon ketganda pul
+   * yashiqdan HAMON ikki marta chiqishi mumkin edi.
+   *
+   * (1) ATOMIK DA'VO (`remove()` naqshi). Chaqiruvchilar `reversedAt` ni
+   *     tranzaksiyadan TASHQARIDA o'qilgan nusxada ko'radi — ikki parallel
+   *     storno (ikki tab / timeout keyin retry / ikki xil kirish nuqtasi)
+   *     ikkalasi ham undan o'tib, `reverseCashDeskDelta` orqali yashiqdan
+   *     pulni IKKI MARTA chiqarardi. Shart `reversedAt: null` — g'olib bitta.
+   *     Tashqi tekshiruvlar o'chirilmaydi: ular arzon tez-yo'l (400 ni
+   *     tranzaksiyasiz qaytaradi), qo'riqchining O'ZI esa shu claim.
+   *
+   * (2) YOPILGAN SMENA. `collectCashInputs` (`cashier-session.service.ts`)
+   *     `reversedAt: null` filtrlaydi, ya'ni storno yopilgan smenaning QAYTA
+   *     HISOBLANGAN kutilgan naqdini o'zgartiradi, muzlatilgan farq akti esa
+   *     turaveradi — farqsiz yopilgan smena keyin «ortiqcha» ko'rsatardi. Chek
+   *     qaytarish yo'li aynan shu sababdan bloklangan
+   *     (`retail-sale.service.ts`); qarz stornosi ham shu qoidaga bo'ysunadi.
+   *
+   *     Smena qatori TOPILMASA storno BLOKLANMAYDI: `retailShiftId` eski/o'chib
+   *     ketgan sessiyaga ishora qilishi mumkin va «o'lchanmagan» holat
+   *     operatorning xato to'lovni qaytarish huquqini olib qo'ymaydi.
+   *
+   * Chaqiruvchi shuni KASSA HARAKATIDAN OLDIN chaqirishi shart (tartib
+   * `debt-reverse-atomic.test.ts` da qulflangan).
+   */
+  private async claimPaymentForReversal(
+    tx: Prisma.TransactionClient,
+    accountId: string,
+    payment: { id: string; retailShiftId: string | null },
+    userId: string,
+    reason: string,
+  ): Promise<void> {
+    const claimed = await tx.debtPayment.updateMany({
+      where: { id: payment.id, accountId, reversedAt: null },
+      data: {
+        reversedAt: new Date(),
+        reversedById: userId,
+        reverseReason: reason,
+      },
+    });
+    if (claimed.count === 0) {
+      // Raqib tranzaksiya ulgurdi — jimgina davom etsak yashiqdan ikkinchi
+      // marta pul chiqardik.
+      throw new BadRequestException('Bu to’lov allaqachon qaytarilgan');
+    }
+
+    if (payment.retailShiftId) {
+      const shift = await tx.cashierSession.findFirst({
+        where: { id: payment.retailShiftId, accountId },
+        select: { state: true },
+      });
+      if (shift && shift.state !== 'open') {
+        throw new BadRequestException(
+          'Smena yopilgan — bu to’lovni qaytarib bo’lmaydi. Menejerga murojaat qiling (farq akti orqali tuzatiladi).',
+        );
+      }
+    }
+  }
+
   /** Qarzni oladi yoki 404. */
   /**
    * Storno'ning kassa tomoni (Faza 11, `M-05`) — IKKALA qaytarish yo'li
@@ -1315,48 +1379,10 @@ export class DebtService {
       (minor / 100n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
 
     const updated = await this.prisma.client.$transaction(async (tx) => {
-      // 🔴 ATOMIK DA'VO (`remove()` naqshi, quyida). Yuqoridagi `reversedAt`
-      // tekshiruvi tranzaksiyadan TASHQARIDA o'qilgan nusxa ustida ishlaydi —
-      // ikki parallel storno (ikki tab / timeout keyin retry) ikkalasi ham
-      // undan o'tib, `reverseCashDeskDelta` orqali yashiqdan pulni IKKI MARTA
-      // chiqarardi. Shart `reversedAt: null` — g'olib bitta bo'ladi. Tashqi
-      // tekshiruv o'chirilmaydi: u arzon tez-yo'l (400 ni tranzaksiyasiz
-      // qaytaradi), qo'riqchining O'ZI esa shu claim.
-      const claimed = await tx.debtPayment.updateMany({
-        where: { id: payment.id, accountId, reversedAt: null },
-        data: {
-          reversedAt: new Date(),
-          reversedById: userId,
-          reverseReason: input.reason,
-        },
-      });
-      if (claimed.count === 0) {
-        // Raqib tranzaksiya ulgurdi — jimgina davom etsak yashiqdan ikkinchi
-        // marta pul chiqardik.
-        throw new BadRequestException('Bu to’lov allaqachon qaytarilgan');
-      }
-
-      // YOPILGAN SMENA (2026-08-12). `collectCashInputs` `reversedAt: null`
-      // filtrlaydi, ya'ni storno yopilgan smenaning QAYTA HISOBLANGAN kutilgan
-      // naqdini o'zgartirib yuboradi, muzlatilgan farq akti esa turaveradi —
-      // farqsiz yopilgan smena keyin «ortiqcha» ko'rsatardi. Chek qaytarish
-      // yo'li aynan shu sababdan bloklangan (`retail-sale.service.ts`); qarz
-      // stornosi ham shu qoidaga bo'ysunadi.
-      //
-      // Smena qatori TOPILMASA storno BLOKLANMAYDI: `retailShiftId` eski/o'chib
-      // ketgan sessiyaga ishora qilishi mumkin, va «o'lchanmagan» holat
-      // operatorning xato to'lovni qaytarish huquqini olib qo'ymaydi.
-      if (payment.retailShiftId) {
-        const shift = await tx.cashierSession.findFirst({
-          where: { id: payment.retailShiftId, accountId },
-          select: { state: true },
-        });
-        if (shift && shift.state !== 'open') {
-          throw new BadRequestException(
-            'Smena yopilgan — bu to’lovni qaytarib bo’lmaydi. Menejerga murojaat qiling (farq akti orqali tuzatiladi).',
-          );
-        }
-      }
+      // 🔴 ATOMIK DA'VO + yopilgan smena qo'riqchisi — yagona qoida
+      // (`claimPaymentForReversal`). Tranzaksiyaning BIRINCHI yozuvi: pulga
+      // tegishdan oldin qator da'vo qilinadi.
+      await this.claimPaymentForReversal(tx, accountId, payment, userId, input.reason);
 
       // Kassa daftari (`M-05`): qaytarilgan naqd yashiqdan CHIQADI.
       await this.reverseCashDeskDelta(tx, accountId, payment, debt.counterpartyId, input.reason);
@@ -1499,24 +1525,29 @@ export class DebtService {
     };
 
     const updated = await this.prisma.client.$transaction(async (tx) => {
-      await tx.debtNote.update({
-        where: { id: note.id },
+      // ATOMIK DA'VO — yozuv tomoni. Yuqoridagi `note.canceledAt` tekshiruvi
+      // tranzaksiyadan tashqarida o'qilgan nusxada ishlaydi, ya'ni ikki
+      // parallel bekor qilish ikkita «BEKOR QILINDI» yozuvini tug'dirib,
+      // raqibning `cancelReason` ini ham ustidan yozardi.
+      const claimedNote = await tx.debtNote.updateMany({
+        where: { id: note.id, accountId, canceledAt: null },
         data: {
           canceledAt: new Date(),
           canceledById: userId,
           cancelReason: input.reason,
         },
       });
+      if (claimedNote.count === 0) {
+        throw new BadRequestException('Bu yozuv allaqachon bekor qilingan');
+      }
 
       if (payment) {
-        await tx.debtPayment.update({
-          where: { id: payment.id },
-          data: {
-            reversedAt: new Date(),
-            reversedById: userId,
-            reverseReason: input.reason,
-          },
-        });
+        // 🔴 PUL tomoni AYNI qulfdan o'tadi (fix-round I-1). Ilgari bu yerda
+        // shartsiz `update` turgan edi: `reversePayment` bilan yonma-yon
+        // ketganda ikkalasi ham `reverseCashDeskDelta` chaqirib, yashiqdan
+        // pulni IKKI MARTA chiqarardi. Yopilgan smena qo'riqchisi ham shu
+        // helper ichida — bu yo'l ham hisobotni retroaktiv buzmaydi.
+        await this.claimPaymentForReversal(tx, accountId, payment, userId, input.reason);
 
         // Storno bo'lgan naqd — yashiqdan chiqadi (`M-05`). `reversePayment`
         // bilan AYNAN bir yo'l: ikki kirish nuqtasi bir xil daftar harakatini
