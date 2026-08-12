@@ -1,6 +1,7 @@
 # Sherset Kassa — Electron o'rami (`desktop/`)
 
-> Holat: **joriy reliz `1.3.0` (2026-08-11) — kanalda, o'rnatish oqimi Phase-1.**
+> Holat: **manbada `1.4.0` — HALI YIG'ILMAGAN va kanalda YO'Q** (2026-08-12).
+> Kanaldagi oxirgi reliz hamon **`1.3.0` (2026-08-11)**, o'rnatish oqimi Phase-1.
 > `.exe` **yig'iladi va kanalga chiqadi** (o'lchangan, pastga qarang), lekin
 > qobiqning O'ZI bu repo'da hech qachon ishga tushirilmagan: chop etish, mijoz-ekran
 > va ekran klaviaturasi **hech bir printerda, hech bir 2-monitorda va hech bir
@@ -285,11 +286,11 @@ pnpm install            # bir marta (electron + electron-builder ≈ 200 MB)
 pnpm run dist           # = node check-build-assets.js && electron-builder --win nsis
 ```
 
-Natija (hozirgi `version: 1.3.0` uchun):
+Natija (hozirgi `version: 1.4.0` uchun):
 
 ```
-desktop/dist/Sherset-Kassa-Setup-1.3.0.exe
-desktop/dist/Sherset-Kassa-Setup-1.3.0.exe.blockmap
+desktop/dist/Sherset-Kassa-Setup-1.4.0.exe
+desktop/dist/Sherset-Kassa-Setup-1.4.0.exe.blockmap
 desktop/dist/latest.yml
 ```
 
@@ -404,6 +405,7 @@ qolganlarini to'xtatadi).
 | `1.1.0` | 2026-08-11 | birinchi yig'ilgan `.exe` (prerelease EMAS — `electron-updater` ning prerelease→reliz o'tishi bu loyihada tekshirilmagan) |
 | `1.2.0` | 2026-08-11 | chiqish imosi, chop etish, mijoz-ekran; kanalga birinchi bo'lib qo'yilgan reliz |
 | `1.3.0` | 2026-08-11 | qobiq klaviaturasi: **numpad layout** (`type=number|tel`, `inputMode=decimal|numeric|tel`) + **kirill/РУС** almashtirgichi |
+| `1.4.0` | — (yig'ilmagan) | chek: bo'sh printer nomi = **Windows sukut printeri** (`deviceName` berilmaydi). 🔴 `.exe` HALI yig'ilmagan va kanalga qo'yilmagan — B1-D qadami |
 
 **Kanal tomoni — o'lchangan (2026-08-11, `1.3.0`):**
 `https://erp.sherset.uz/downloads/desktop/latest.yml` → **200**, ichida

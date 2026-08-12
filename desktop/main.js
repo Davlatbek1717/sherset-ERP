@@ -359,16 +359,24 @@ async function resolvePageSize(jobWin, requested) {
 }
 
 /**
- * Tayyor HTML → tanlangan printer, dialogsiz.
+ * Tayyor HTML → printer, dialogsiz.
+ * `printerName` bo'sh (yoki berilmagan) bo'lsa — **Windows sukut printeri**.
  * Har qanday yo'lda `{ ok, error? }` qaytaradi: web `ok:false` ni ko'rsa
  * kassirga xato ko'rsatadi, jim yo'qolgan chek bo'lmaydi.
  */
 async function printHtml(payload) {
-  const printerName = payload?.printerName;
+  // 🔴 Bo'sh nom = «Windows sukut printeri», XATO emas.
+  //
+  // Ilgari bu yerda `{ok:false, 'Printer tanlanmagan…'}` turardi va chekni
+  // butunlay to'xtatardi. Sozlama esa faqat `/settings/sklad-keepers` dan
+  // qo'yilardi — kiosk kassirda u sahifa umuman yo'q (kassa TZ §3.1), ya'ni
+  // kassa qurilmasining o'zidan tuzatib bo'lmasdi. Prodda o'sha qator bo'sh
+  // edi va 2026-08-12 da chek butunlay chiqmay qoldi.
+  //
+  // Endi printer TANLANMAYDI: `deviceName` berilmasa Electron Windows'ning
+  // sukut printeriga bosadi. Sozlash qadami yo'qoladi.
+  const printerName = typeof payload?.printerName === 'string' ? payload.printerName.trim() : '';
   const html = payload?.html;
-  if (typeof printerName !== 'string' || printerName === '') {
-    return { ok: false, error: 'Printer tanlanmagan (sozlamalarda chek printerini belgilang).' };
-  }
   if (typeof html !== 'string' || html.trim() === '') {
     return { ok: false, error: "Bo'sh hujjat — chop etilmadi." };
   }
@@ -419,7 +427,10 @@ async function printHtml(payload) {
         target.webContents.print(
           {
             silent: true, // dialogsiz — kassir hech narsa bosmaydi
-            deviceName: printerName,
+            // `deviceName` FAQAT nom bo'lganda beriladi. Bo'sh string uzatilsa
+            // Electron uni printer NOMI deb qabul qiladi va «printer topilmadi»
+            // xatosini beradi — ya'ni sukut printerga tushmaydi.
+            ...(printerName ? { deviceName: printerName } : {}),
             printBackground: true,
             margins: { marginType: 'none' }, // HTML'da @page{margin:0}
             pageSize,
