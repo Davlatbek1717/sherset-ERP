@@ -985,6 +985,9 @@ function SalesScreen({
     'savat' | 'jarayonda' | 'tayyor' | 'zakazlar' | 'cheklar' | 'smena'
   >('savat');
   const [search, setSearch] = useState('');
+  // Qidiruv maydoni savatga qo'shilgandan keyin tozalanadi VA fokusni
+  // qaytaradi (`addToCart`) — shu ref o'sha fokus uchun.
+  const searchRef = useRef<HTMLInputElement>(null);
   const [cart, setCart] = useState<CartLine[]>([]);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [discountPct, setDiscountPct] = useState(0);
@@ -1318,6 +1321,15 @@ function SalesScreen({
           },
         ];
       });
+      // Qidiruv HAR DOIM shu yerda tozalanadi — qaysi yo'l bilan qo'shilganidan
+      // qat'i nazar (Enter · setkadan bosish · kelajakdagi skaner yo'li).
+      // Ilgari tozalash faqat Enter ishlovchisida turardi va kassir setkadan
+      // bosganda eski so'rov maydonda qolib ketardi: ikkinchi tovar nomi
+      // birinchisining ustiga yozilardi (egasining jonli sinovi, 2026-08-12).
+      // Fokus ham qaytariladi — bosishdan keyin u tovar tugmasida qoladi,
+      // ya'ni tozalangan maydonga yozib bo'lmasdi (skaner ham «yozolmasdi»).
+      setSearch('');
+      searchRef.current?.focus();
     },
     [cardPrices, defaultPriceTypeId],
   );
@@ -1862,16 +1874,15 @@ function SalesScreen({
 
         {/* Search / barcode */}
         <Input
+          ref={searchRef}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === 'Enter') {
               e.preventDefault();
+              // Maydonni `addToCart` o'zi tozalaydi — bu yerda takrorlanmaydi.
               const first = products?.items?.[0];
-              if (first) {
-                addToCart(first);
-                setSearch('');
-              }
+              if (first) addToCart(first);
             }
           }}
           placeholder={t('search_placeholder')}

@@ -140,6 +140,32 @@ describe('SalesScreen — tovar setkasi', () => {
     expect(norm(line.textContent)).toContain('Kabel 2×2.5');
     expect(search).toHaveValue('');
   });
+
+  /**
+   * 🔴 Egasining jonli sinovi (2026-08-12): kassir qidirib topgan tovarni
+   * SETKADAN bosadi — Enter bosmaydi. Enter yo'li maydonni tozalardi, bosish
+   * yo'li esa yo'q: ikkinchi tovarni yozmoqchi bo'lganda eski so'rov turardi
+   * (va yangi harflar eskisining ustiga qo'shilardi).
+   *
+   * Fokus ham qaytariladi — aks holda tozalangan maydonga yozish uchun
+   * kassir yana sichqoncha bilan bosishi kerak bo'lardi, skaner esa
+   * tugmada qolgan fokusga «yozib» hech narsa qidirmasdi.
+   */
+  it('🔴 setkadan bosilganda ham maydon tozalanadi va fokus qaytadi', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<SotuvPage />);
+    await screen.findAllByTestId('sotuv-product');
+
+    const search = screen.getByTestId('sotuv-search');
+    await user.type(search, 'kab');
+    await waitFor(() => expect(screen.getAllByTestId('sotuv-product')).toHaveLength(2));
+
+    await user.click(at(screen.getAllByTestId('sotuv-product'), 0));
+
+    expect(await screen.findByTestId('sotuv-cart-line')).toBeInTheDocument();
+    expect(search).toHaveValue('');
+    expect(search).toHaveFocus();
+  });
 });
 
 describe('SalesScreen — savat qatorlari', () => {
