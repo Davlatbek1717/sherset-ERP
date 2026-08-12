@@ -1820,7 +1820,150 @@ Ogohlantirish matni deploy bo'lmaguncha kassirga ko'rinmaydi.
    cheki)»** ga o'sha nomni AYNAN yozing → Saqlang.
 3. Yana sinov savdo — chek **tasdiqsiz** chiqishi kerak. Chiqmasa: xato matnini yozib oling
    (u drayver javobini o'z ichiga oladi).
-### P8 — ☐ hali bajarilmagan
+### P8 — POS i18n: o'lchov + gate'ning ko'r zonasi · 2026-08-12 · `p8-pos-i18n`
+
+**Holat:** ✅ faza tugadi — **Phase-1: strukturaviy + deterministik skaner o'lchovi,
+browser-smoke YO'Q** (bu sessiya interaktiv emas, POS ekrani brauzerda ochilmadi).
+Deploy: **asosiy sessiyaga qoldirildi** (deploy umumiy resurs, ketma-ketlikda qilinadi).
+
+#### 1. O'LCHOV (avval — reja §0.6; «~88 hardcoded» raqami ESKIRGAN bo'lib chiqdi)
+
+Deterministik AST skaner yozildi (TypeScript parseri; grep emas — grep tailwind
+`className` larini matn deb ko'radi). Hudud: `components/pos/**` (8 komponent) +
+`app/(app)/sotuv/page.tsx` (3293 qator) + `app/kassa-kirish/page.tsx` = **10 fayl, ~6700 qator**.
+
+| O'lchov | Natija |
+|---|---|
+| `useTranslations` bor fayllar | **10/10** (23 hook chaqiruvi) |
+| Statik `t()` kalitlari (POS hududi) | **134** — ru+uz da **0 ta yetishmayapti** |
+| **Foydalanuvchiga chiqadigan qotib yozilgan matn** | **1 ta** (pastda) |
+| Ataylab i18n QILINMAYDIGAN (sabab bilan) | **1 ta** |
+| BE/server qaytargan tayyor matn (FE i18n qila olmaydi) | **16 chaqiruv joyi** |
+| Yolg'on-pozitiv (skaner tailwind/enum/URL ni matn deb ko'rsatgani) | **0** |
+
+Ya'ni reja yozgan «POS'da 88 hardcoded matn» **bugun mavjud emas** — POS avvalgi
+to'lqinlarda i18n qilingan, reja punkti eskirgan holatni tasvirlagan. Qolgan yagona
+haqiqiy yorig'i:
+
+- `components/pos/customer-card-panel.tsx:229` — `new Error('mijoz tanlanmagan')`.
+  Bu matn `onError` → `setError` orqali **aynan kassir ekraniga** chiqadi (jim
+  texnik xato emas), shuning uchun i18n talab qiladi.
+
+**i18n QILINMAYDIGAN, ataylab (hujjatlandi, allow-list'da sabab bilan yozilgan):**
+- `app/(app)/sotuv/page.tsx:422` — `description: 'POS qaytarish'`. Bu **DB'da saqlanadigan
+  hujjat izohi**, ekran matni emas. Kassirning tiliga bog'lansa bir xil hujjat kim
+  yaratganiga qarab turlicha yozilib qolardi ⇒ hisobot/qidiruv buzilardi.
+
+**BE qaytargan tayyor matnlar (i18n EMAS — sabab):** POS'da 16 joyda server xatosi
+o'zi ko'rsatiladi (`toast.error(e.message)` ×11 sotuv sahifasida, `setError(e.message)`
+customer-card / debt-payment / cash-out / kassa-kirish / pos-pin-lock da). Matnni server
+yozadi (`apps/api`), FE uni faqat uzatadi — kalitga o'girish serverni ham o'zgartirishni
+talab qiladi va bu **P8 hududidan tashqarida** (`apps/api` ga tegilmadi, P14 parallel ketmoqda).
+
+**Qog'oz chek yorliqlari (i18n EMAS — boshqa sabab):** `lib/pos/receipt-model.ts`
+`RECEIPT_LABELS` (19 yorliq) va `receipt-payments.ts` (6 yorliq) konstanta bo'lib qoladi:
+chek renderer'lari React'dan TASHQARIDA ishlaydi (ESC/POS matn + Electron HTML), u yerda
+next-intl hook'i yo'q. Ular allaqachon `receipt-model.test.ts` orqali `uz.json` dagi
+`chek_*` kalitlariga qulflangan — ikki manba jimgina ajralib ketmaydi.
+
+#### 2. Nima o'zgardi
+
+1. **Yagona hardcoded matn tuzatildi** — `customer-card-panel.tsx` endi
+   `t('customer_card_not_selected')` ishlatadi (izoh bilan: nega bu matn t() dan olinadi).
+2. **Kalit qo'shildi ikkala tilga** (qo'shimcha qator, mavjud tartib buzilmadi):
+   `pages.pos.customer_card_not_selected` → ru «Клиент не выбран» · uz «Mijoz tanlanmagan».
+3. 🔴 **Gate'ning ko'r zonasi yopildi — `i18n-key-existence` skan ildizi
+   `app/(app)` → butun `src`.** Xotira `i18n-gate-blind-to-components` aytgan teshik
+   **o'lchandi**: eski qamrov **444 fayl / 13040 kalit**, yangisi **1025 fayl / 15470 kalit**
+   ⇒ **~2400 `t()` kaliti hech qachon tekshirilmagan edi** (shu jumladan BUTUN
+   `components/pos/**`, `app/kassa-kirish`, `hooks/**`, `lib/**`). Baxtga, kengaytirilgandan
+   keyin ham yetishmayotgan kalit **0** chiqdi — ya'ni bu tuzatish emas, **qulf**.
+4. **Qamrov qulfi qo'shildi** — kimdir skan ildizini yana toraytirsa,
+   «covers files OUTSIDE the (app) route tree» testi qizaradi (aks holda qamrov jimgina
+   qisqarardi va `>500 kalit` sharti hamon yashil qolaverardi).
+5. 🔴 **Yangi POS no-hardcoded guard** (`i18n-no-hardcoded.test.ts` ga QO'SHILDI, fayl
+   ustidan yozilmadi). Mavjud qator-skaner POS uchun **yolg'on qo'riqchi** bo'lardi: u
+   kirill harflar + 9 ta UZ-marker so'zni qidiradi, POS esa o'zbek-lotinda yozilgan ⇒ u
+   POS'ni ko'rgan taqdirda ham hech nima topmasdi. Shuning uchun **sintaksis bo'yicha**
+   ishlaydigan AST skaner: JSX matn tugunlari · foydalanuvchi ko'radigan atributlar
+   (`placeholder`/`title`/`label`…) · xabar chaqiruvlari (`new Error`/`toast.error`/
+   `setError`/`alert`) · har qanday kirill. `className` sintaktik jihatdan bu
+   pozitsiyalarga tushmaydi ⇒ tailwind yolg'on-pozitiv bermaydi (o'lchandi: 0).
+6. **Reyestr teshigi ham qulflandi** — `components/pos/` ga yangi `.tsx` qo'shilsa va u
+   `POS_DONE_FILES` ga kiritilmasa, gate qizaradi (aks holda yangi kod skanerdan jimgina
+   chetda qolardi).
+
+#### 3. Fayllar
+
+| Fayl | O'zgarish |
+|---|---|
+| `apps/web/src/components/pos/customer-card-panel.tsx` | `new Error('mijoz tanlanmagan')` → `t('customer_card_not_selected')` |
+| `apps/web/src/messages/ru.json` · `uz.json` | +1 kalit har birida (qo'shimcha qator) |
+| `apps/web/src/__tests__/i18n-key-existence.test.ts` | skan ildizi `app/(app)` → `src`; qamrov qulfi testi |
+| `apps/web/src/__tests__/i18n-no-hardcoded.test.ts` | +POS AST guard, +6 mutant self-test, +reyestr qulfi (Edit bilan qo'shildi) |
+
+#### 4. Testlar va gate (raqam bilan, commitdan oldin)
+
+| Gate | Natija |
+|---|---|
+| `pnpm typecheck` | **10/10 paket muvaffaqiyatli, 0 xato** |
+| `pnpm lint:product` | **0 error** (1020 warning — siyosat bo'yicha ruxsat) |
+| `pnpm i18n:gate` | **19/19 test yashil** (key-existence 4 · no-hardcoded 15); skan: 1025 fayl / 15470 kalit |
+| `pnpm --filter @moysklad/web exec vitest run` (TO'LIQ suite) | **267 fayl · 3788 test yashil · 26 skipped · 0 yiqilish** |
+
+**Guard MUTANT bilan tekshirildi (yolg'on qo'riqchi emasligi isbotlandi) — 3 mutant:**
+
+| # | Mutant | Kutilgan | Natija |
+|---|---|---|---|
+| 1 | `payment-dialog.tsx` ga `<p>Naqd pul kiriting</p>` + `placeholder="Summani yozing"` qo'shildi | qizil | ✅ qizil — `[jsx-text] …:112` va `[attr:placeholder] …:113` aniq fayl:qator bilan |
+| 2 | `payment-dialog.tsx` ga `t('bunday_kalit_yoq')` qo'shildi | qizil | ✅ qizil — `pages.payment_dialog.bunday_kalit_yoq (missing in ru+uz)`. **Xuddi shu mutant eski qamrov (`app/(app)`) bilan YASHIL o'tdi** — ko'r zona shu bilan dalillandi |
+| 3 | `POS_DONE_FILES` dan bitta fayl olib tashlandi | qizil | ✅ qizil — «Unregistered POS components» |
+
+Uchala mutant ham qaytarildi; qaytarilgandan keyin gate qayta yashil (`git status` toza).
+Bundan tashqari guard ichida **6 ta sof-funksiya self-test** bor (JSX matn · atribut ·
+xabar argumenti · kirill · tailwind/enum/`t()` yolg'on-pozitiv bermasligi · allow-list
+faqat o'z matnini o'tkazishi).
+
+#### 5. Deploy
+
+**QILINMADI — asosiy sessiyaga qoldirildi.** Deploy umumiy resurs (VPS + `pm2 restart`),
+parallel sessiyalar bilan ketma-ketlikda bajarilishi kerak (`CLAUDE.md` §6.4). Bu fazada
+prod xulqi o'zgarmaydi: bitta xato matni tarjima qilindi, qolgani test/gate.
+
+#### 6. Nima QILINMADI (ataylab / hudud tashqarisi)
+
+- **Brauzer smoke YO'Q.** POS ekrani ochilib, «Mijoz tanlanmagan» xatosi real ko'rinishi
+  ko'rilmadi. Yorliq: Phase-1.
+- **`apps/api` ga UMUMAN tegilmadi** (P14 parallel ketmoqda) ⇒ server qaytaradigan
+  16 ta xato matni hamon serverning tilida keladi. Kassir ru interfeysda o'zbekcha
+  server xatosini ko'rishi mumkin — bu **ochiq qarz**, pastda.
+- **`/settings/smena` va `/settings/shift-schedules` i18n QILINMADI.** P11 hisoboti ularni
+  «P8 hududi» degan edi, lekin bu sessiyaning vazifasi POS (kassa ekrani) deb aniq
+  chegaralangan; ular butunlay hardcoded o'zbekcha va admin sahifalari, kassir ko'rmaydi.
+  Ular **hamon hech qanday gate ostida emas** (no-hardcoded reyestriga kiritilmadi —
+  kiritilsa gate darhol qizarardi va bu faza bloklanardi).
+- **`lib/print-agent.ts` HTML shablonlaridagi kirill matn** (`Товарный чек`, `Продавец`…)
+  tegilmadi — bu qog'oz hujjat, ekran emas; uch renderer'ni birga o'zgartirish alohida ish
+  (xotira `ombor-chek-uch-renderer`).
+- **`retail/`, `omborchi/`, `menejer/` ekranlari o'lchanmadi** — POS hududiga kirmaydi.
+- POS guard'i faqat `components/pos/**` papkasi uchun reyestr-qulfiga ega; `sotuv/` va
+  `kassa-kirish/` da yangi fayl paydo bo'lsa u avtomatik qo'shilmaydi (qo'lda ro'yxatga).
+
+#### 7. Ochiq xavf / keyingi fazaga eslatma
+
+1. 🟠 **Aralash til POS'da hamon mumkin** — FE endi to'liq `t()` dan o'tadi, lekin server
+   xatolari (16 joy) tarjima qilinmaydi. Ru tanlagan kassir o'zbekcha server xabarini
+   ko'radi. Yechim `apps/api` da kod-asosli xato (`errorCode` + FE tarjima) — alohida ish.
+2. 🟡 **Dinamik kalitlar gate'dan tashqarida qolaveradi** — skan 398 dinamik + 43
+   noaniq-o'zgaruvchi chaqiruvni **atayin o'tkazib yuboradi** (statik hal qilib bo'lmaydi).
+   Reja §11 da qayd etilgan `MISSING_MESSAGE` klassi (dinamik kalit) shu sabab hamon
+   ochiq — u faqat runtime'da (brauzer-QA, P10) ko'rinadi.
+3. 🟡 **Guard hududi = 10 fayl.** POS mantiqi `lib/pos/**` ga ko'chirilsa (masalan yangi
+   sof modul foydalanuvchi matni bilan), u guard ostida BO'LMAYDI. Reyestrga qo'shish
+   qo'lda qadam bo'lib qoladi.
+4. 🟢 `i18n-key-existence` endi butun `src` ni skanerlaydi va bu **testlar faylini ham**
+   o'z ichiga oladi — testdagi `t('kalit')` ham shartnomaga bo'ysunadi (bugun 0 yiqilish,
+   lekin yangi test yozganda buni bilish kerak).
 ### P9 — ☐ hali bajarilmagan
 ### P10 — ☐ hali bajarilmagan
 ### P11 — Xodim/kassir hayot sikli: UI'dan, skriptsiz · 2026-08-11 · `08604bec`

@@ -226,7 +226,9 @@ export function CustomerCardPanel({
 
   const saveMut = useMutation({
     mutationFn: () => {
-      if (!agent) throw new Error('mijoz tanlanmagan');
+      // Bu xato `onError` orqali AYNAN shu ekranga chiqadi (`setError`), ya'ni
+      // kassir ko'radigan matn — shuning uchun t() dan olinadi, literal emas.
+      if (!agent) throw new Error(t('customer_card_not_selected'));
       // 🔴 TOR yo'l. Umumiy `PATCH /counterparties/:id` kiosk'da YOPIQ va
       // bu ekran unga hech qachon murojaat qilmasligi kerak.
       return api.patch<CustomerCardRow>(`/counterparties/${agent.id}/pos-contact`, {

@@ -9043,6 +9043,7 @@
       "usd_rate_hint": "Курс 1$ = {rate} ({date})",
       "usd_rate_missing": "Курс доллара не найден — оплата в долларах недоступна",
       "customer_card_title": "Карточка клиента",
+      "customer_card_not_selected": "Клиент не выбран",
       "customer_card_search_placeholder": "Телефон или имя…",
       "customer_card_payable": "Долг к оплате",
       "customer_card_payable_hint": "Касса принимает до этой суммы",
