@@ -239,6 +239,8 @@ function makeDb(rows: DebtRow[], balances: Record<string, bigint>) {
         createMany: async () => ({ count: 1 }),
       },
       cashierSession: { findFirst: async () => ({ id: SHIFT }) },
+      // `pay()` yashiqni tx ICHIDA o'qiydi (mavjudlik/tenant + valyuta).
+      cashDesk: { findFirst: async () => ({ currency: 'UZS' }) },
     };
   }
 

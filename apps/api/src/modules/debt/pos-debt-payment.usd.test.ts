@@ -14,8 +14,12 @@ import { PosDebtPaymentService } from './pos-debt-payment.service.js';
  *  2. **Qarz daftari simmetriyasi** — qarz yaratishda `+total`, to'lovda
  *     `−paid`; to'lov MANFIY delta va u SO'MDA (qarz valyutasida), sentda emas.
  *     (Xotira: «debt daftari simmetriya yopildi».)
- *  3. **Yashiqqa JISMONIY pul tushadi** — mijoz dollar bergan bo'lsa daftar
- *     harakati `currency: 'USD'` va SENTDA; so'm ekvivalenti yashiqda yo'q.
+ *  3. **Yashiq BITTA valyutali** — daftar harakati faqat to'lov valyutasi
+ *     KASSA valyutasiga teng bo'lganda yoziladi va JISMONIY summada (USD →
+ *     sent), so'm ekvivalentida emas. Dollar so'm kassasiga tushmaydi: u smena
+ *     hisobida (`CashierSession.*CashUsdMinor`) yuriladi. 2026-08-12'gacha bu
+ *     yerga `currency: 'USD'` deltasi yozilardi va `MoneyService` uni
+ *     «Currency mismatch» bilan rad etib butun to'lovni yiqitardi.
  *  4. **Kurs MUZLATILADI** — `DebtPayment.exchangeRate` ga yoziladi va chek
  *     uni qaytaradi (ertangi kurs bilan qayta baholanmaydi).
  *  5. **Har qator o'z sentini oladi** — storno qatordan-qatorga ishlaydi.
@@ -84,7 +88,7 @@ interface Where {
   batchId?: string;
 }
 
-function makeDb(rows: DebtRow[]) {
+function makeDb(rows: DebtRow[], deskCurrency = 'UZS') {
   const debts = rows;
   const payments: PaymentRow[] = [];
   const balanceDeltas: Array<{ currency: string; deltaMinor: bigint }> = [];
@@ -174,6 +178,9 @@ function makeDb(rows: DebtRow[]) {
     // «qator yo'q» (adopsiya yo'q, reyestr qoldig'i yagona chegara).
     $queryRaw: async (s: TemplateStringsArray) =>
       s.join(' ').includes('counterparty_balances') ? [] : openOf().map((d) => ({ id: d.id })),
+    // `pay()` yashiqni tx ICHIDA o'qiydi: mavjudligi/tenant tekshiruvi + BITTA
+    // valyutali qoldiq qoidasi (`debt-cash-ledger.deskCurrency`).
+    cashDesk: { findFirst: async () => ({ currency: deskCurrency }) },
     debt: debtModel,
     debtPayment: paymentModel,
   };
@@ -241,8 +248,30 @@ describe("PosDebtPaymentService.pay — F6 dollar qarz to'lovi", () => {
     expect(balanceDeltas).toEqual([{ currency: 'UZS', deltaMinor: -128_000_000n }]);
   });
 
-  it('🔴 yashiqqa DOLLAR tushadi (sentda), so`m ekvivalenti EMAS', async () => {
-    const { svc, cashDeltas } = makeDb([debt({ id: 'd1', totalMinor: 200_000_000n })]);
+  it('🔴 DOLLAR to`lovi SO`M yashiqqa TUSHMAYDI — to`lov esa o`tadi', async () => {
+    // Ilgari bu yerda {currency:'USD'} deltasi yozilardi, `MoneyService` esa
+    // uni «Currency mismatch: cash-desk UZS vs delta USD» bilan rad etib BUTUN
+    // tranzaksiyani orqaga qaytarardi — kassir dollarni umuman qabul qila
+    // olmasdi. Qaror `retail-sale.service.ts` bilan bir xil: chet valyutadagi
+    // naqd bu daftarga tushmaydi, u smena hisobida yuriladi.
+    const { svc, debts, cashDeltas } = makeDb([debt({ id: 'd1', totalMinor: 200_000_000n })]);
+
+    await svc.pay(ACC, 'u1', {
+      counterpartyId: CP,
+      amountMinor: '10000',
+      currency: 'USD',
+      exchangeRate: RATE_E8,
+      method: 'cash',
+      cashDeskId: DESK,
+    });
+
+    expect(cashDeltas).toEqual([]);
+    // To'lovning O'ZI o'tdi — qarz kamaydi (rollback yo'q).
+    expect((debts[0] as DebtRow).paidMinor).toBe(128_000_000n);
+  });
+
+  it('DOLLAR yashiq (USD kassa) bo`lsa — tushadi, SENTDA', async () => {
+    const { svc, cashDeltas } = makeDb([debt({ id: 'd1', totalMinor: 200_000_000n })], 'USD');
 
     const res = await svc.pay(ACC, 'u1', {
       counterpartyId: CP,

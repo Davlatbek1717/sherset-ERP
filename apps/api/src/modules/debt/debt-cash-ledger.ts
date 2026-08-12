@@ -31,6 +31,20 @@ export interface DebtCashDeltaOptions {
   sign: 1n | -1n;
   /** `debtLedgerDocumentId` bergan qiymat. */
   documentId: string;
+  /**
+   * 🔴 YASHIQNING valyutasi (`CashDesk.currency`). MAJBURIY.
+   *
+   * `CashDesk.balanceMinor` — BITTA valyutadagi qoldiq va
+   * `MoneyService.applyDeltas` boshqa valyutali deltani «Currency mismatch»
+   * bilan RAD ETADI. Ilgari bu yerda to'lov valyutasi ko'r-ko'rona uzatilardi
+   * ⇒ dollar qarz to'lovi HAR DOIM 400 bilan yiqilardi va butun tranzaksiya
+   * orqaga qaytardi (kassir dollarni qabul qila olmasdi).
+   *
+   * Qaror `retail-sale.service.ts:1165-1172` bilan AYNI: chet valyutadagi naqd
+   * bu daftarga TUSHMAYDI — u smena hisobida (`CashierSession.*CashUsdMinor`,
+   * `collectUsdCashInputs`) yuritiladi.
+   */
+  deskCurrency: string;
   counterpartyId?: string;
   description?: string;
 }
@@ -82,9 +96,11 @@ export async function debtCashLedgerWasWritten(
 
 export function debtCashDeskDeltas(
   payment: DebtCashPaymentRow,
-  { sign, documentId, counterpartyId, description }: DebtCashDeltaOptions,
+  { sign, documentId, deskCurrency, counterpartyId, description }: DebtCashDeltaOptions,
 ): MoneyDelta[] {
   if (payment.method !== 'cash' || !payment.cashDeskId) return [];
+  // Yashiq bitta valyutali — mos kelmasa bu daftar bu pulni umuman ko'rmaydi.
+  if (payment.currency !== deskCurrency) return [];
 
   // Tortmaga tushgan JISMONIY pul: mijoz dollar bergan bo'lsa yashiqda dollar
   // yotadi, so'm ekvivalenti emas (`amountMinor` — qarz hisobi uchun).

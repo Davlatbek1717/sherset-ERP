@@ -203,6 +203,8 @@ function makeDb(rows: DebtRow[]) {
         // Qulf olingandan KEYIN qayta baholash (EvalPlanQual).
         return openOf(accountId, counterpartyId).map((d) => ({ id: d.id }));
       },
+      // `pay()` yashiqni tx ICHIDA o'qiydi (mavjudlik/tenant + valyuta).
+      cashDesk: { findFirst: async () => ({ currency: 'UZS' }) },
       debt: debtModel(owned),
       debtPayment: paymentModel,
     };

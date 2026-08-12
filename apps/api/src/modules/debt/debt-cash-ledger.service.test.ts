@@ -162,6 +162,9 @@ function makeSvc(
             (r.deltaMinor as bigint) > args.where.deltaMinor.gt,
         ) ?? null,
     },
+    // Storno endi yashiq VALYUTASINI o'qiydi (`debt-cash-ledger.deskCurrency`):
+    // kassa boshqa valyutada bo'lsa teskari harakat ham yozilmaydi.
+    cashDesk: { findFirst: async () => ({ currency: 'UZS' }) },
     debtPayment: paymentDelegate,
     debtNote: {
       create: async () => ({ id: 'note-1' }),
@@ -184,7 +187,7 @@ function makeSvc(
 
   const client = {
     debt: { findFirst: async () => ({ ...debtRow }) },
-    cashDesk: { findFirst: async () => ({ name: 'Kassa 1' }) },
+    cashDesk: { findFirst: async () => ({ name: 'Kassa 1', currency: 'UZS' }) },
     debtPayment: paymentDelegate,
     debtNote: {
       findFirst: async (args: { where: { id?: string } }) =>

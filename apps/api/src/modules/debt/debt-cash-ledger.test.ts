@@ -33,6 +33,7 @@ describe('debtCashDeskDeltas — what counts as drawer cash', () => {
     const deltas = debtCashDeskDeltas(BASE, {
       sign: 1n,
       documentId: 'batch-1',
+      deskCurrency: 'UZS',
       counterpartyId: 'cp-1',
     });
 
@@ -49,34 +50,46 @@ describe('debtCashDeskDeltas — what counts as drawer cash', () => {
   });
 
   it('the storno sign is the exact mirror', () => {
-    const [credit] = debtCashDeskDeltas(BASE, { sign: 1n, documentId: 'b' });
-    const [debit] = debtCashDeskDeltas(BASE, { sign: -1n, documentId: 'b' });
+    const [credit] = debtCashDeskDeltas(BASE, { sign: 1n, documentId: 'b', deskCurrency: 'UZS' });
+    const [debit] = debtCashDeskDeltas(BASE, { sign: -1n, documentId: 'b', deskCurrency: 'UZS' });
 
     expect((credit?.deltaMinor ?? 0n) + (debit?.deltaMinor ?? 0n)).toBe(0n);
   });
 
   it('terminal payment ⇒ nothing (the money lands at the acquirer, not the drawer)', () => {
     expect(
-      debtCashDeskDeltas({ ...BASE, method: 'terminal' }, { sign: 1n, documentId: 'b' }),
+      debtCashDeskDeltas(
+        { ...BASE, method: 'terminal' },
+        { sign: 1n, documentId: 'b', deskCurrency: 'UZS' },
+      ),
     ).toEqual([]);
   });
 
   it('card screenshot ⇒ nothing', () => {
     expect(
-      debtCashDeskDeltas({ ...BASE, method: 'card_screenshot' }, { sign: 1n, documentId: 'b' }),
+      debtCashDeskDeltas(
+        { ...BASE, method: 'card_screenshot' },
+        { sign: 1n, documentId: 'b', deskCurrency: 'UZS' },
+      ),
     ).toEqual([]);
   });
 
   it('cash with NO desk ⇒ nothing (operator logged what the client claims to have paid)', () => {
     expect(
-      debtCashDeskDeltas({ ...BASE, cashDeskId: null }, { sign: 1n, documentId: 'b' }),
+      debtCashDeskDeltas(
+        { ...BASE, cashDeskId: null },
+        { sign: 1n, documentId: 'b', deskCurrency: 'UZS' },
+      ),
     ).toEqual([]);
   });
 
   it('zero amount ⇒ nothing (no empty ledger rows)', () => {
-    expect(debtCashDeskDeltas({ ...BASE, amountMinor: 0n }, { sign: 1n, documentId: 'b' })).toEqual(
-      [],
-    );
+    expect(
+      debtCashDeskDeltas(
+        { ...BASE, amountMinor: 0n },
+        { sign: 1n, documentId: 'b', deskCurrency: 'UZS' },
+      ),
+    ).toEqual([]);
   });
 
   it('foreign-currency cash uses the ORIGINAL banknotes, not the som equivalent', () => {
@@ -84,6 +97,10 @@ describe('debtCashDeskDeltas — what counts as drawer cash', () => {
     // `currency`/`amountOriginalMinor` hold what the client actually handed
     // over. Crediting a desk with the som equivalent under a 'USD' label would
     // be wrong twice over.
+    //
+    // This is the USD-DESK case (`deskCurrency: 'USD'`): the drawer itself is
+    // kept in dollars, so the banknotes do belong in this ledger. A USD payment
+    // into a UZS desk is a different rule — `debt-usd-desk-currency.test.ts`.
     const deltas = debtCashDeskDeltas(
       {
         method: 'cash',
@@ -92,14 +109,14 @@ describe('debtCashDeskDeltas — what counts as drawer cash', () => {
         amountMinor: 1_280_000n,
         amountOriginalMinor: 10_000n,
       },
-      { sign: 1n, documentId: 'b' },
+      { sign: 1n, documentId: 'b', deskCurrency: 'USD' },
     );
 
     expect(deltas[0]).toMatchObject({ deltaMinor: 10_000n, currency: 'USD' });
   });
 
   it('never sets allowNegative — a till cannot pay out cash it does not hold', () => {
-    const [d] = debtCashDeskDeltas(BASE, { sign: 1n, documentId: 'b' });
+    const [d] = debtCashDeskDeltas(BASE, { sign: 1n, documentId: 'b', deskCurrency: 'UZS' });
     expect(d?.allowNegative).toBeUndefined();
   });
 });

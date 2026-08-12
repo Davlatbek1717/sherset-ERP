@@ -411,9 +411,19 @@ export class DebtService {
     counterpartyId: string,
     reason: string,
   ): Promise<void> {
+    // Yashiq valyutasi deltalar qoidasiga kerak (`debt-cash-ledger.ts`
+    // `deskCurrency`). Kassa topilmasa STORNO BLOKLANMAYDI — shunchaki
+    // yashiqqa tegilmaydi (pastdagi `wasWritten` qo'riqchisi bilan bir ruh).
+    if (!payment.cashDeskId) return;
+    const desk = await tx.cashDesk.findFirst({
+      where: { id: payment.cashDeskId, accountId },
+      select: { currency: true },
+    });
+    if (!desk) return;
     const deltas = debtCashDeskDeltas(payment, {
       sign: -1n,
       documentId: debtLedgerDocumentId(payment),
+      deskCurrency: desk.currency,
       counterpartyId,
       description: `Storno: ${reason}`,
     });
@@ -1030,13 +1040,19 @@ export class DebtService {
     const amount = BigInt(input.amountMinor);
 
     let cashDeskName: string | null = null;
+    // Yashiq valyutasi ham SHU o'qishdan olinadi (`debt-cash-ledger.ts`
+    // `deskCurrency`): kassa bitta valyutali va to'lov valyutasi unga mos
+    // kelmasa, pul bu daftarga umuman tushmaydi. Kassa ko'rsatilmagan bo'lsa
+    // qiymat ishlatilmaydi — predikat `cashDeskId` yo'qligida `[]` qaytaradi.
+    let deskCurrency = 'UZS';
     if (input.cashDeskId) {
       const cd = await this.prisma.client.cashDesk.findFirst({
         where: { id: input.cashDeskId, accountId },
-        select: { name: true },
+        select: { name: true, currency: true },
       });
       if (!cd) throw new BadRequestException('Kassa topilmadi');
       cashDeskName = cd.name;
+      deskCurrency = cd.currency;
     }
 
     const updated = await this.prisma.client.$transaction(async (tx) => {
@@ -1103,6 +1119,7 @@ export class DebtService {
         debtCashDeskDeltas(payment, {
           sign: 1n,
           documentId: debtLedgerDocumentId(payment),
+          deskCurrency,
           counterpartyId: debt.counterpartyId,
         }),
       );

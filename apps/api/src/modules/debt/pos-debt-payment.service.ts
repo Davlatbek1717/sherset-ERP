@@ -287,6 +287,21 @@ export class PosDebtPaymentService {
     const batchId = randomUUID();
 
     const result = await this.prisma.client.$transaction(async (tx) => {
+      // `cashDeskId` KLIENTDAN keladi. Mavjudligi va tenant tegishliligi shu
+      // yerda tekshiriladi (`retailShiftId` uchun yuqorida allaqachon shunday
+      // qilingan — ilgari yashiq id'si ko'r-ko'rona qabul qilinardi); valyutasi
+      // esa yashiq deltasi qoidasiga kerak (`debt-cash-ledger.deskCurrency`).
+      // QULFDAN OLDIN: bu shunchaki o'qish, qulf ushlab turishga hojat yo'q.
+      let deskCurrency = DEBT_LEDGER_CURRENCY;
+      if (input.cashDeskId) {
+        const desk = await tx.cashDesk.findFirst({
+          where: { id: input.cashDeskId, accountId },
+          select: { currency: true },
+        });
+        if (!desk) throw new BadRequestException('Kassa topilmadi');
+        deskCurrency = desk.currency;
+      }
+
       // ⚠️ QULF TARTIBI: BALANS → QARZLAR (P1). Ikkalasi ham shu tranzaksiya
       // oxirigacha ushlanadi.
       //
@@ -420,7 +435,12 @@ export class PosDebtPaymentService {
             // sent, so'm ekvivalenti emas (`debt-cash-ledger.ts` qoidasi).
             amountOriginalMinor: originalTotalMinor,
           },
-          { sign: 1n, documentId: batchId, counterpartyId: input.counterpartyId },
+          {
+            sign: 1n,
+            documentId: batchId,
+            deskCurrency,
+            counterpartyId: input.counterpartyId,
+          },
         ),
       );
 
