@@ -1,5 +1,6 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
+import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 
 /**
@@ -226,5 +227,236 @@ describe('i18n no-hardcoded (completed document forms)', () => {
       (l) => `[${l.kind}] ${l.file.replace(APP, '(app)')}:${l.line}  ${l.snippet}`,
     );
     expect(report, `Hardcoded strings in completed forms:\n${report.join('\n')}`).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// POS (kassa) no-hardcoded guard — FAZA P8, 2026-08-12
+// ---------------------------------------------------------------------------
+/**
+ * Nega ALOHIDA skaner (yuqoridagi qator-skanerni qayta ishlatmasdan).
+ *
+ * Yuqoridagi guard ikki narsani qidiradi: kirill harflar va qisqa UZ-marker
+ * ro'yxati. POS ekranlari esa **o'zbek-lotin** da yozilgan edi — u yerda kirill
+ * ham, marker so'zlar ham yo'q, ya'ni qator-skaner POS'ni ko'rgan taqdirda ham
+ * hech nima topmasdi (yolg'on qo'riqchi). Shuning uchun bu yerda **sintaksis**
+ * bo'yicha ishlaydigan skaner turadi: TypeScript parseri bilan AYNAN
+ * foydalanuvchiga chiqadigan pozitsiyalar tekshiriladi —
+ *   1. JSX matn tugunlari (`<span>Matn</span>`);
+ *   2. foydalanuvchi ko'radigan atributlar (`placeholder`, `title`, `label`…);
+ *   3. xabar chaqiruvlari argumenti (`new Error(...)`, `toast.error(...)`,
+ *      `setError(...)`, `alert(...)`).
+ * `className` va boshqa uslub/texnik satrlar sintaktik jihatdan bu
+ * pozitsiyalarga tushmaydi ⇒ tailwind yolg'on-pozitiv bermaydi (o'lchandi:
+ * hozirgi POS daraxtida 0 yolg'on-pozitiv).
+ *
+ * Qamrov: `i18n-key-existence` kalit MAVJUDLIGINI tekshiradi, bu esa matn
+ * umuman `t()` dan o'tganini — ikkovi birgalikda `i18n-gate-blind-to-components`
+ * xotirasidagi ko'r zonani yopadi.
+ */
+const WEB_SRC = join(__dirname, '..');
+
+/** i18n QILINGAN POS fayllari — ro'yxatga kirgan fayl ortga qaytmaydi. */
+const POS_DONE_FILES = [
+  'components/pos/cart-line-edit-modal.tsx',
+  'components/pos/cash-out-dialog.tsx',
+  'components/pos/customer-card-panel.tsx',
+  'components/pos/debt-payment-dialog.tsx',
+  'components/pos/payment-dialog.tsx',
+  'components/pos/pin-keypad.tsx',
+  'components/pos/pos-pin-lock.tsx',
+  'components/pos/rasmilashtirish-modal.tsx',
+  'app/(app)/sotuv/page.tsx',
+  'app/kassa-kirish/page.tsx',
+];
+
+/** Foydalanuvchi ko'radigan JSX atributlari. */
+const POS_UI_ATTRS = new Set([
+  'placeholder',
+  'title',
+  'aria-label',
+  'alt',
+  'label',
+  'confirmText',
+  'cancelText',
+  'emptyText',
+  'heading',
+  'submitLabel',
+  'cancelLabel',
+  'okText',
+  'tooltip',
+  'hint',
+]);
+
+/** Argumenti ekranga chiqadigan chaqiruvlar. */
+const POS_MSG_CALLS = new Set([
+  'Error',
+  'alert',
+  'confirm',
+  'setError',
+  'setMessage',
+  'toast.error',
+  'toast.success',
+  'toast.info',
+  'toast.warning',
+]);
+
+/**
+ * ATAYLAB i18n QILINMAYDIGAN satrlar — har biri sabab bilan.
+ * Ro'yxatga qo'shish = qaror; jimgina o'tkazib yuborish emas.
+ */
+const POS_ALLOWED: Record<string, string> = {
+  // Hujjatning DB'da saqlanadigan izohi (ekran matni EMAS). Kassirning tiliga
+  // bog'lansa bir xil hujjat kim yaratganiga qarab turlicha yozilib qolardi va
+  // hisobot/qidiruv buzilardi — `sotuv/page.tsx` dagi izohga qarang.
+  'POS qaytarish': 'DB hujjat izohi, ekran matni emas',
+};
+
+interface PosLeak {
+  file: string;
+  line: number;
+  kind: string;
+  text: string;
+}
+
+function posCalleeName(node: ts.CallExpression | ts.NewExpression): string {
+  const e = node.expression;
+  if (ts.isIdentifier(e)) return e.text;
+  if (ts.isPropertyAccessExpression(e)) {
+    const obj = ts.isIdentifier(e.expression) ? e.expression.text : '';
+    return obj ? `${obj}.${e.name.text}` : e.name.text;
+  }
+  return '';
+}
+
+const hasLetter = (s: string) => /[A-Za-zА-Яа-яЁё]/.test(s);
+const cleanJsxText = (s: string) =>
+  s
+    .replace(/&[a-zA-Z]+;|&#\d+;/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+/** Sof funksiya — manba MATNI ustida ishlaydi, shuning uchun mutant-fikstura
+ *  bilan sinash mumkin (guard'ning o'zi sinaladi, ishonch bilan emas). */
+function scanPosSource(source: string, name: string): PosLeak[] {
+  const sf = ts.createSourceFile(name, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const leaks: PosLeak[] = [];
+  const lineOf = (n: ts.Node) => sf.getLineAndCharacterOfPosition(n.getStart(sf)).line + 1;
+  const push = (n: ts.Node, kind: string, raw: string) => {
+    const text = raw.trim();
+    if (!text) return;
+    if (POS_ALLOWED[text]) return;
+    leaks.push({ file: name, line: lineOf(n), kind, text: text.slice(0, 90) });
+  };
+
+  const visit = (node: ts.Node): void => {
+    if (ts.isJsxText(node)) {
+      const text = cleanJsxText(node.text);
+      if (hasLetter(text)) push(node, 'jsx-text', text);
+    } else if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) {
+      const text = node.text;
+      const p = node.parent;
+      if (/[А-Яа-яЁё]/.test(text)) {
+        push(node, 'cyrillic', text);
+      } else if (ts.isJsxAttribute(p) && POS_UI_ATTRS.has(p.name.getText(sf)) && hasLetter(text)) {
+        push(node, `attr:${p.name.getText(sf)}`, text);
+      } else if (
+        (ts.isCallExpression(p) || ts.isNewExpression(p)) &&
+        POS_MSG_CALLS.has(posCalleeName(p)) &&
+        hasLetter(text)
+      ) {
+        push(node, `msg:${posCalleeName(p)}`, text);
+      }
+    } else if (ts.isTemplateExpression(node)) {
+      const chunks = [node.head, ...node.templateSpans.map((s) => s.literal)];
+      const p = node.parent;
+      const isMsg =
+        (ts.isCallExpression(p) || ts.isNewExpression(p)) && POS_MSG_CALLS.has(posCalleeName(p));
+      for (const c of chunks) {
+        if (/[А-Яа-яЁё]/.test(c.text)) push(node, 'cyrillic', c.text);
+        else if (isMsg && hasLetter(c.text)) push(node, `msg:${posCalleeName(p)}`, c.text);
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sf);
+  return leaks;
+}
+
+describe('POS no-hardcoded scanner — the guard is itself guarded (mutants)', () => {
+  it('CATCHES a hardcoded JSX text node', () => {
+    const leaks = scanPosSource('const A = () => <span>Qarzni toʻlash</span>;', 'm.tsx');
+    expect(leaks.map((l) => l.kind)).toContain('jsx-text');
+  });
+
+  it('CATCHES a hardcoded user-facing attribute', () => {
+    const leaks = scanPosSource('const A = () => <input placeholder="Telefon raqam" />;', 'm.tsx');
+    expect(leaks.map((l) => l.kind)).toContain('attr:placeholder');
+  });
+
+  it('CATCHES a hardcoded message argument (Error / toast / setError)', () => {
+    expect(scanPosSource("throw new Error('mijoz tanlanmagan');", 'm.tsx')).toHaveLength(1);
+    expect(scanPosSource("toast.error('Chek chop etilmadi');", 'm.tsx')).toHaveLength(1);
+    expect(scanPosSource("setError('Smena yopilmagan');", 'm.tsx')).toHaveLength(1);
+  });
+
+  it('CATCHES Cyrillic anywhere', () => {
+    expect(scanPosSource("const x = 'Розничная цена';", 'm.tsx')).toHaveLength(1);
+  });
+
+  it('does NOT flag tailwind classes, enums, api paths or t() calls', () => {
+    const clean = [
+      'const A = () => <div className="flex flex-1 items-center gap-2 border-emerald-400" />;',
+      "const A = () => <span>{t('title')}</span>;",
+      "api.get('/retail-sales?limit=20');",
+      "const [f, setF] = useState<'cash' | 'card'>('cash');",
+      "const A = () => <input placeholder={t('search_placeholder')} />;",
+    ].join('\n');
+    expect(scanPosSource(clean, 'm.tsx')).toEqual([]);
+  });
+
+  it('respects the documented allow-list (and only it)', () => {
+    expect(scanPosSource("api.post('/x', { description: 'POS qaytarish' });", 'm.tsx')).toEqual([]);
+    // yonidagi, ro'yxatda BO'LMAGAN matn hamon tutiladi
+    expect(scanPosSource("toast.error('POS qaytarishda xato');", 'm.tsx')).toHaveLength(1);
+  });
+});
+
+describe('POS (kassa) i18n — zero hardcoded user-facing text', () => {
+  it('every registered POS file exists (no silent skip)', () => {
+    for (const rel of POS_DONE_FILES) {
+      expect(existsSync(join(WEB_SRC, rel)), `POS registry file missing: ${rel}`).toBe(true);
+    }
+  });
+
+  /**
+   * Reyestr TESHIGI qulfi: `components/pos/` ga YANGI fayl qo'shilsa, u
+   * ro'yxatda bo'lmagani uchun skanerdan jimgina chetda qolardi — ya'ni
+   * guard yangi kod uchun ishlamasdi. Shuning uchun papkadagi har bir
+   * komponent ro'yxatda turishi SHART (yangi fayl qo'shgan odam uni ro'yxatga
+   * ham qo'shadi yoki gate qizaradi).
+   */
+  it('no POS component escapes the registry (new files must be registered)', () => {
+    const dir = join(WEB_SRC, 'components', 'pos');
+    const onDisk = readdirSync(dir, { withFileTypes: true })
+      .filter((e) => e.isFile() && e.name.endsWith('.tsx') && !e.name.includes('.test.'))
+      .map((e) => `components/pos/${e.name}`);
+    const registry = new Set(POS_DONE_FILES);
+    const unregistered = onDisk.filter((f) => !registry.has(f));
+    expect(
+      unregistered,
+      `Unregistered POS components (add them to POS_DONE_FILES):\n${unregistered.join('\n')}`,
+    ).toEqual([]);
+  });
+
+  it('has zero hardcoded user-facing strings', () => {
+    const leaks: PosLeak[] = [];
+    for (const rel of POS_DONE_FILES) {
+      const file = join(WEB_SRC, rel);
+      if (!existsSync(file)) continue;
+      leaks.push(...scanPosSource(readFileSync(file, 'utf8'), rel));
+    }
+    const report = leaks.map((l) => `[${l.kind}] ${l.file}:${l.line}  ${l.text}`);
+    expect(report, `Hardcoded POS strings:\n${report.join('\n')}`).toEqual([]);
   });
 });

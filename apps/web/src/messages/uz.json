@@ -9043,6 +9043,7 @@
       "usd_rate_hint": "Kurs 1$ = {rate} ({date})",
       "usd_rate_missing": "Dollar kursi topilmadi — dollar qabul qilib bo'lmaydi",
       "customer_card_title": "Mijoz kartasi",
+      "customer_card_not_selected": "Mijoz tanlanmagan",
       "customer_card_search_placeholder": "Telefon yoki ism…",
       "customer_card_payable": "To'lanadigan qarz",
       "customer_card_payable_hint": "Kassa shu summagacha qabul qiladi",
