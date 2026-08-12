@@ -331,6 +331,49 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-08-12e (KASSA — chek qurilmaning SUKUT printeriga chiqadi · B1+B2+B3 · ✅ DEPLOYED
+> + exe 1.4.0 NASHR ETILDI) — `11f94b49` prodda** (`Deploy done: 7412f4ae… → 11f94b49…`).
+>
+> Reja: `docs/superpowers/plans/2026-08-12-kassa-chek-printeri-qurilmaga.md`. Muammo: chek
+> printeri **akkaunt-darajali** sozlama edi (`CompanySettings.receiptPrinterName`), prodda
+> `company_settings` **0 qator** ⇒ chek butunlay chiqmasdi. Sozlaydigan sahifa esa
+> (`/settings/sklad-keepers`) kiosk kassirda umuman ochilmaydi — ya'ni nosozlikni aynan
+> o'sha qurilmadan tuzatib bo'lmasdi. Ikki kassa har xil printer ishlatsa bitta sozlama
+> baribir yetmasdi (semantik xato).
+>
+> **Yechim — printer TANLANMAYDI.** Qobiq `webContents.print()` ga `deviceName` bermaydi ⇒
+> **Windows sukut printeri**. Uch commit: `2851efbf` (B1 qobiq + v1.4.0) · `2efe572f` (B2 web
+> versiya darvozasi) · `e73842fa`+`58c599da` (B3 — sozlamani koddan butunlay olib tashlash:
+> `PUT /sklad-keepers/receipt-printer`, servis o'qish/yozish, Zod sxemasi, sozlamalar
+> sahifasidagi qator, `printer-not-set` sababi, B2 darvozasi). `11f94b49` — begona biome
+> format xatosi (`ab574787` dan), u **pre-push hook'ni bloklardi**, sof bo'shliq tuzatildi.
+>
+> **Rejada YO'Q ikki bo'shliq topildi:** (1) `printZReportViaAgent` ham `receiptPrinterName`
+> o'qirdi — chek bilan bir xil yo'lga o'tkazildi (bo'lmasa B4 sharti hech qachon
+> bajarilmasdi); (2) `printer_not_set*` i18n kalitlari **o'chirilmadi** — `configure-printer`
+> shoxi yig'ish varag'i uchun (`no-printer-mapped`) TIRIK qoladi, matni ombor→printer
+> biriktirmasiga moslandi.
+>
+> **Gate:** typecheck 0 · web vitest **3755 passed** (265 fayl) · api vitest **8157 passed** ·
+> i18n:gate 9/9 · `lint:product` **0 xato**.
+> **Jonli verify:** box HEAD = `11f94b49` · erp.sherset.uz 200 · `/login` 200 ·
+> `/api/v1/health` ok · `PUT /sklad-keepers/receipt-printer` → **404** (olib tashlandi) ·
+> `GET`+`PUT /sklad-keepers` → **401** (tirik, 404 EMAS) · `.next` build ichida
+> `receiptPrinterName` va `printer-not-set` **YO'Q**, `no-printer-mapped` **BOR**.
+> **Kanal:** `erp.sherset.uz/downloads/desktop/latest.yml` → **1.4.0**, exe sha512+hajm
+> lokal build bilan aynan mos, HTTP 206 range OK. Eski `latest.yml.bak-1.3.0` zaxirada
+> (rollback = uni qaytarish; 1.3.0 exe hamon diskda).
+>
+> ⚠️ **Kassalar exe'ni «Chiqish» bosilganda o'rnatadi** (`autoInstallOnAppQuit=false`) —
+> ya'ni har kassa smenani yopib chiqmaguncha eski qobiqda qoladi. **Eski qobiqda chek
+> HAMON chiqmaydi** (web endi doim bo'sh nom yuboradi, eski exe uni xato deb qaytaradi) —
+> bu B3 ning ma'lum narxi, sozlash yo'li ham olib tashlangan. Qurilmada **QOG'OZDA
+> SINALMAGAN** — egasi kassani qayta ishga tushirib bitta sinov cheki chiqarsin.
+>
+> ⏭️ **Qolgan: B4 — `receiptPrinterName` ustunini DROP qilish.** DESTRUKTIV va
+> qaytarilmaydi; B3 prodda **bir necha kun barqaror ishlagach** bajarilsin. Koddan hech kim
+> o'qimasligi tekshirilgan. 🔴 **BROWSER-QA YO'Q.**
+
 > **🕒 2026-08-12d (HR — «xodimni o'chirish» endi haqiqatan o'chiradi · ✅ DEPLOYED) —**
 > **`7412f4ae` prodda** (`Deploy done: 5e0948e0… → 7412f4ae…`). Egasining shikoyati: «eski
 > xodimlarni o'chirdim, lekin arxivda qolib ketgan». Sabab: `DELETE /hr/employees/:id`
