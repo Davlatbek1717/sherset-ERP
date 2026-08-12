@@ -191,10 +191,22 @@ export function RasmiyashtirishModal({
   // bloklanib, serverda esa o'tib ketardi.
   const changeExceedsCash = change > cashMinor + cashUsdBaseMinor;
 
-  // Can confirm if fully paid OR if there's debt but agent is selected
+  // To'liq to'langan bo'lsa — bo'ldi; qarz qolsa mijoz MAJBURIY.
+  //
+  // 🔴 Ilgari bu yerda `totalPaid > 0n` turardi va TO'LIQ QARZ (0 to'lov)
+  // holatini bloklardi: kassir butun chekni mijozga yozmoqchi bo'lsa, tugma
+  // o'lik qolib, majburan 1 so'm NAQD kiritardi — kassa naqdi ham, qarz
+  // summasi ham 1 so'mga siljib ketardi. Server bu holatni ALLAQACHON qabul
+  // qiladi (`retail-tenders.ts` — `paid + debt === total`, mijoz esa
+  // `retail-sale.service.ts` da talab qilinadi), ya'ni to'siq faqat ekranda
+  // edi.
+  //
+  // Sharti «bo'sh chek»ni ochib yubormasligi uchun ikkiga bo'lindi: summasi 0
+  // chekda `totalPaid >= sumMinor` (0 >= 0) rost bo'lardi va tugma yonardi.
+  const hasSomethingToSettle = totalPaid > 0n || debtMinor > 0n;
   const canConfirm =
     !loading &&
-    totalPaid > 0n &&
+    hasSomethingToSettle &&
     !changeExceedsCash &&
     (totalPaid >= sumMinor || (debtMinor > 0n && agent !== null));
 
@@ -715,7 +727,10 @@ export function RasmiyashtirishModal({
                     {t('change_cash_only')}
                   </p>
                 )}
-                {totalPaid === 0n && !loading && (
+                {/* `!canConfirm` bilan bog'landi: to'liq qarz holatida tugma
+                    YONIQ, va o'sha payt «summani kiriting» deb turish kassirni
+                    yo'q to'siqqa ishontirardi. */}
+                {!canConfirm && totalPaid === 0n && !loading && (
                   <p className="mb-2 text-center text-[10px] text-[var(--ms-text-muted)]">
                     {t('enter_amount')}
                   </p>
