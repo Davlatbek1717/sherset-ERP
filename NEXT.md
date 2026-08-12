@@ -332,7 +332,9 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
 > **🕒 2026-08-12h (BUTUN ILOVA — oyna tasodifan yopilmaydi: Esc yo'q, fon-bosish yo'q ·
-> Phase-1, DEPLOY QILINMAGAN) —** ish daraxtida, commit `<shu sessiya>`.
+> ✅ DEPLOYED) — `9ba939d8` prodda** (`Deploy done: cb1e3879… → 9ba939d8…`; site 200 ·
+> `:4001/health` 200 · 1 migratsiya qo'llandi — u parallel sessiyaning `af39086d` qarz-idempotentlik
+> ishiniki, men bilan birga chiqdi va alohida verify QILINMAGAN).
 >
 > Egasining shikoyati ikki qismli edi: (1) «klaviatura bosganda yopilib qolyapti», (2) «modal
 > oynaning chetini bilmasdan bosib yuborganda yopilib qolyapti — o'z qo'li bilan yopmagunicha
