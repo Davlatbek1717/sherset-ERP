@@ -79,10 +79,11 @@ export const KIOSK_ALLOWED: readonly Rule[] = [
   { prefix: '/currencies', methods: ['GET'], why: 'USD naqd uchun' },
   { prefix: '/exchange-rates', methods: ['GET'], why: 'USD kursi (muzlatiladi)' },
   { prefix: '/company-settings', methods: ['GET'], why: 'chek sozlamalari' },
-  // Chek printeri nomi (`receiptPrinterName`) shu yerdan o'qiladi —
-  // `print-agent.ts` uni har chop etishdan oldin so'raydi. Ro'yxatda
-  // bo'lmagani uchun kiosk'da native chop etish jimgina popup'ga tushardi.
-  { prefix: '/sklad-keepers', methods: ['GET'], why: 'chek printeri sozlamasi' },
+  // Yig'ish varag'ining ombor→printer marshruti shu yerdan o'qiladi
+  // (`printPickingViaAgent`). Ro'yxatda bo'lmasa kiosk'da native chop etish
+  // jimgina popup'ga tushadi. (Mijoz cheki bu endpointga endi MUHTOJ EMAS —
+  // u qurilmaning Windows sukut printeriga bosiladi, desktop v1.4.0+.)
+  { prefix: '/sklad-keepers', methods: ['GET'], why: 'ombor→printer marshruti' },
 
   // ── Mijoz: o'qish + YARATISH + TOR tahrir (F9 mijoz kartasi) ─────────────
   // 🔴 To'rt AYNIQ qator — ilgari bu yerda bitta PREFIKS qoida turardi

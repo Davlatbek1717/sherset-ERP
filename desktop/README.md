@@ -188,18 +188,32 @@ Ya'ni chek **hech qachon** jim chop yo'liga tushmagan — har safar
 `window.print()` chaqiradi ⇒ Chromium tasdiq oynasi. Qobiq aybdor emas:
 `printHtml` da `silent: true` turibdi va u qavat-3 gacha yetib bormagan.
 
-**Tuzatish (P7, kod tomoni):** qobiq ichida sozlama uzilishi (`printer-not-set` /
-`no-printer-mapped`) endi popup OCHMAYDI — kassirga manzilli ogohlantirish
-chiqadi: «Chek printeri tanlanmagan → Sozlamalar → Omborchilar», ustiga
-qurilmadagi printer NOMLARI (`listPrinters()` dan) ham qo'shiladi, chunki
-sozlamadagi qiymat Windows nomi bilan **aynan** mos bo'lishi shart. Oddiy
-brauzerda popup — yagona chop yo'li, o'zgarmagan. Qaror bitta joyda:
+**Tuzatish (P7, kod tomoni):** qobiq ichida sozlama uzilishi endi popup
+OCHMAYDI — kassirga manzilli ogohlantirish chiqadi, ustiga qurilmadagi printer
+NOMLARI (`listPrinters()` dan) ham qo'shiladi. Oddiy brauzerda popup — yagona
+chop yo'li, o'zgarmagan. Qaror bitta joyda:
 `apps/web/src/lib/pos/print-fallback.ts` (`printFollowUp`).
 
-⚠️ **Ma'lum chegara:** `receiptPrinterName` — **akkaunt darajali** (bitta
-`CompanySettings` qatori). Ikkinchi kassa qurilmasi boshqa printer ishlatsa,
-bitta sozlama yetmaydi — per-qurilma sozlama alohida qaror talab qiladi
-(hujjatlangan, bajarilmagan).
+### YAKUNIY tuzatish (B1–B3, 2026-08-12) — qavat-2 BUTUNLAY olib tashlandi
+
+Yuqoridagi jadvalning **qavat-2 si endi YO'Q**. `receiptPrinterName` akkaunt
+darajali edi (bitta `CompanySettings` qatori), ya'ni ikki kassa har xil printer
+ishlatsa bitta sozlama yetmasdi — va uni sozlaydigan sahifa (`/settings/
+sklad-keepers`) kiosk kassirda umuman ochilmasdi. Ya'ni nosozlikni aynan
+o'sha qurilmadan tuzatib bo'lmasdi.
+
+Endi printer **TANLANMAYDI**: `printSheet('', html)` chaqiriladi va qobiq
+`deviceName` bermay `webContents.print()` qiladi ⇒ **Windows sukut printeri**.
+Sozlash qadami yo'q. `printer-not-set` sababi ham, `PUT /sklad-keepers/
+receipt-printer` endpointi ham, sozlamalar sahifasidagi qator ham olib
+tashlandi. Chek va Z-hisobot ikkalasi ham shu yo'ldan yuradi.
+
+⚠️ Ombor→printer biriktirmasi (`SkladKeeper.printerName`, yig'ish varag'i) —
+**o'z joyida qoladi**: u har omborga alohida printer beradi va boshqa masala.
+
+⚠️ **Ikki printerli kassa** (chek + A4): sukut printer noto'g'ri bo'lsa chek A4
+ga chiqadi. Qurilma-lokal tanlov uchun tayyor joy bor (`device-store.js`),
+lekin kerak bo'lganda alohida ish (YAGNI).
 
 ## Chop etishni o'lchash (QURILMADA HALI BAJARILMAGAN)
 
