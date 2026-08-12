@@ -266,6 +266,7 @@ const POS_DONE_FILES = [
   'components/pos/pin-keypad.tsx',
   'components/pos/pos-pin-lock.tsx',
   'components/pos/rasmilashtirish-modal.tsx',
+  'components/pos/shell-version-badge.tsx',
   'app/(app)/sotuv/page.tsx',
   'app/kassa-kirish/page.tsx',
 ];

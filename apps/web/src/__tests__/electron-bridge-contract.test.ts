@@ -523,3 +523,40 @@ describe('uch qatlamli chop-etish fallback buzilmagan (F3 shart)', () => {
     expect(branches.length).toBeGreaterThanOrEqual(3);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// F2 (K05) yordamchilari — desktop faylini o'qish (yo'q bo'lsa bo'sh satr,
+// suite collect-vaqtida qulamasin).
+const desktopFile = (name: string): string => join(REPO, 'desktop', name);
+const read = readOrEmpty;
+
+describe('desktop/logger.js — qurilma logi FAYLGA (K05)', () => {
+  const loggerSrc = read(desktopFile('logger.js'));
+
+  it('fayl mavjud', () => {
+    expect(loggerSrc.length, 'desktop/logger.js topilmadi').toBeGreaterThan(0);
+  });
+
+  it('userData ichiga yozadi (qurilmada topiladigan joy)', () => {
+    expect(loggerSrc).toContain("app.getPath('userData')");
+    expect(loggerSrc).toContain('appendFileSync');
+  });
+
+  it('rotatsiya bor — kassa diski to`lmasin', () => {
+    expect(loggerSrc).toContain('MAX_BYTES');
+    expect(loggerSrc).toContain('renameSync');
+  });
+
+  it('updater xatolari endi FAYLGA ketadi (console emas)', () => {
+    const updater = read(desktopFile('updater.js'));
+    expect(updater).toContain("require('./logger')");
+    expect(updater).toMatch(/logger\.write\(\s*'updater'/);
+  });
+
+  it('main.js chop va offline nosozliklarini yozadi', () => {
+    const main = read(desktopFile('main.js'));
+    expect(main).toContain("require('./logger')");
+    expect(main).toMatch(/logger\.write\(\s*'print'/);
+    expect(main).toMatch(/logger\.write\(\s*'shell'/);
+  });
+});

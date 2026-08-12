@@ -56,6 +56,7 @@
       <button id="retry" type="button">Hozir qayta urinish</button>
       <div class="reason" id="reason"></div>
       <div class="hint">Chiqish: Ctrl + Alt + Shift + Q</div>
+      <p id="ver" style="margin-top:24px;font-size:13px;color:#64748b"></p>
     </div>
     <script>
       const params = new URLSearchParams(window.location.search);
@@ -74,6 +75,14 @@
         button.disabled = false;
         button.textContent = 'Hozir qayta urinish';
       });
+
+      // Qobiq versiyasi offline ekranda ham ko'rinsin — aloqa yo'q paytda ham
+      // operator qaysi exe turganini so'ray oladi (K06).
+      try {
+        document.getElementById('ver').textContent = 'v' + window.electronAPI.version;
+      } catch (e) {
+        /* versiya olinmasa qator bo'sh qoladi */
+      }
     </script>
   </body>
 </html>

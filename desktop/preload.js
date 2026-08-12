@@ -33,6 +33,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   toggleCustomerDisplay: () => ipcRenderer.invoke('cfd:toggle'),
   customerDisplayStatus: () => ipcRenderer.invoke('cfd:status'),
 
+  // ── Qurilma holati (kirish ekranidagi belgi) ─────────────────────────────
+  shellStatus: () => ipcRenderer.invoke('shell:status'),
+
   // ── Qurilma kaliti (DPAPI, device-store.js) ──────────────────────────────
   getDevice: () => ipcRenderer.sendSync('device:get'),
   setDevice: (creds) => ipcRenderer.sendSync('device:set', creds),

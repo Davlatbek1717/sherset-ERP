@@ -1,6 +1,7 @@
 'use client';
 
 import { PinKeypad } from '@/components/pos/pin-keypad';
+import { ShellVersionBadge } from '@/components/pos/shell-version-badge';
 import { posLogin } from '@/lib/auth-store';
 import { readPosDevice } from '@/lib/pos-device';
 import { Alert, Container } from '@moysklad/ui';
@@ -81,6 +82,8 @@ export default function KassaKirishPage() {
           </div>
         </div>
       </Container>
+      {/* Qurilma holati (K06): versiya · sukut printer · yangilanish belgisi. */}
+      <ShellVersionBadge />
     </main>
   );
 }

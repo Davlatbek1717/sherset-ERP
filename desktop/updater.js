@@ -25,6 +25,7 @@
  */
 
 const { app } = require('electron');
+const logger = require('./logger');
 
 /** Nginx statik kanali — deploy/nginx-*.conf dagi `location` bilan BIR XIL. */
 const UPDATE_PATH = '/downloads/desktop/';
@@ -50,8 +51,8 @@ let started = false;
 let ready = false;
 
 function log(message) {
-  // console.log emas: biome `noConsoleLog`; bu yerdagi yozuv operator uchun.
-  console.warn(`[updater] ${message}`);
+  // F2 (K05): endi FAYLGA yoziladi — paketlangan ilovada konsol yo'q edi.
+  logger.write('updater', message);
 }
 
 function getUpdater() {

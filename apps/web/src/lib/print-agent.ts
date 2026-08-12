@@ -64,6 +64,13 @@ interface ElectronBridge {
   toggleCustomerDisplay?: () => Promise<{ open: boolean; error?: string }>;
   // Mijoz ekrani hozir ochiqmi (tugma holatini ko'rsatish uchun).
   customerDisplayStatus?: () => Promise<{ open: boolean }>;
+  // v1.5.0+: qurilma holati — kirish ekranidagi belgi (K06). `?` ATAYLAB:
+  // eski qobiqda (1.4.0) bu metod yo'q — web undan qulamasligi kerak.
+  shellStatus?: () => Promise<{
+    version: string;
+    updateReady: boolean;
+    defaultPrinter: string;
+  }>;
 }
 declare global {
   interface Window {

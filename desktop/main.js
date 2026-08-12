@@ -20,6 +20,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { BrowserWindow, Menu, app, dialog, ipcMain, screen, shell } = require('electron');
 const store = require('./device-store');
+const logger = require('./logger'); // F2 (K05) — qurilma logi faylga
 const updater = require('./updater'); // F4 — avtoyangilanish (spec §8.3)
 
 // Build vaqtida beriladigan default (elektron-builder `extraMetadata`/env orqali).
@@ -113,6 +114,7 @@ function stopHealthPolling() {
  */
 function showOffline(reason) {
   if (!win) return;
+  logger.write('shell', `offline: ${reason}`);
   win.loadFile(localPage('offline.html'), { query: { reason: String(reason || '') } });
   stopHealthPolling();
   healthTimer = setInterval(async () => {
@@ -456,10 +458,12 @@ async function printHtml(payload) {
         );
       } catch (e) {
         clearTimeout(timer);
+        logger.write('print', errMessage(e));
         finish({ ok: false, error: errMessage(e) });
       }
     });
   } catch (e) {
+    logger.write('print', errMessage(e));
     return { ok: false, error: errMessage(e) };
   } finally {
     if (jobWin && !jobWin.isDestroyed()) jobWin.destroy();
@@ -611,6 +615,26 @@ function registerIpc() {
   ipcMain.on('shell:quit', () => quitShell());
 
   /**
+   * Qurilma holati — kirish ekranidagi belgi uchun (K06).
+   * Uch savolga javob beradi: qaysi versiya · yangilanish kutmoqdami ·
+   * chek qaysi printerga chiqadi.
+   */
+  ipcMain.handle('shell:status', async () => {
+    let defaultPrinter = '';
+    try {
+      const printers = (await win?.webContents.getPrintersAsync()) ?? [];
+      defaultPrinter = printers.find((p) => p.isDefault)?.name ?? '';
+    } catch {
+      defaultPrinter = '';
+    }
+    return {
+      version: app.getVersion(),
+      updateReady: updater.isUpdateReady(),
+      defaultPrinter,
+    };
+  });
+
+  /**
    * Ekran klaviaturasi bosilgan kalit (`preload.js` → `installTouchKeyboard`).
    *
    * 🔴 `sendInputEvent` ATAYLAB: sahifa React bilan yozilgan va u `value` ni
@@ -681,6 +705,7 @@ if (!app.requestSingleInstanceLock()) {
   });
 
   app.whenReady().then(async () => {
+    logger.write('shell', `ishga tushdi v${app.getVersion()}`);
     Menu.setApplicationMenu(null);
     registerIpc();
     // Oyna DARHOL ochiladi — kassir 25 soniya qora ekran ko'rmasin.

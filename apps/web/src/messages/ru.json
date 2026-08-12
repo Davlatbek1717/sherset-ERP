@@ -9036,6 +9036,8 @@
       "search_placeholder": "Поиск...",
       "searching": "Поиск…",
       "select_customer_for_debt": "Выберите клиента, чтобы отпустить в долг",
+      "shell_printer_missing": "принтер не выбран",
+      "shell_update_ready": "обновление готово",
       "terminal": "Терминал",
       "type_dokon": "Магазин",
       "type_oddiy": "Обычный",
