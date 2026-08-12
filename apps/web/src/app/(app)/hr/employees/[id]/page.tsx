@@ -12,6 +12,7 @@
 
 import { driverTrackingApi, hrEmployeeApi, hrRoleApi } from '@/lib/hr-api';
 import type { HrEmployeeDetail, HrRole } from '@/lib/hr-api';
+import { describeEmployeeDelete } from '@/lib/hr/employee-delete';
 import { Avatar, Badge, Button, ErrorState, Skeleton, useConfirm, useToast } from '@moysklad/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
@@ -54,11 +55,34 @@ export default function HrEmployeeDetailPage() {
     onError: (e: Error) => toast.error(tCommon('action_failed'), { description: e.message }),
   });
 
+  /** Ro'yxatdagi ❌ bilan AYNI oqim — izohi `hr/employees/page.tsx` da. */
   const handleDelete = async () => {
     if (!data) return;
+    let preflight: Awaited<ReturnType<typeof hrEmployeeApi.deletePreflight>> | null = null;
+    try {
+      preflight = await hrEmployeeApi.deletePreflight(id);
+    } catch (e) {
+      toast.error(tCommon('action_failed'), { description: (e as Error).message });
+      return;
+    }
+    const info = describeEmployeeDelete(preflight);
+    if (info.unknown) {
+      toast.error(t('delete_preflight_failed'));
+      return;
+    }
+    if (!info.canDelete) {
+      await confirm({
+        title: t('delete_blocked_title'),
+        description: t('delete_blocked_desc', { items: info.blockerText }),
+        confirmLabel: tCommon('close'),
+      });
+      return;
+    }
+    const lines = [`${data.name} — ${t('delete_confirm_desc')}`];
+    if (info.cascadeText) lines.push(t('delete_will_erase', { items: info.cascadeText }));
     const ok = await confirm({
       title: t('delete_confirm'),
-      description: `${data.name} — ${t('delete_confirm_desc')}`,
+      description: lines.join('\n'),
       confirmLabel: tCommon('delete'),
       tone: 'destructive',
     });

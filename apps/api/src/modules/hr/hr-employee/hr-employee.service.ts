@@ -24,6 +24,96 @@ import type {
 } from './hr-employee.schema.js';
 import { summarizeSchedule } from './schedule-summary.util.js';
 
+/**
+ * Xodimni TO'LIQ o'chirishda tekshiriladigan bog'lanishlar.
+ *
+ * Ro'yxat **jonli bazadan o'lchangan** (2026-08-12): `employees.id` ga
+ * `ON DELETE RESTRICT` bilan qaraydigan aynan 12 ta FK bor. Qolgan ~130
+ * bog'lanish `SET NULL` yoki `CASCADE` — ular o'chirishni to'smaydi va bu
+ * yerda sanalmaydi.
+ *
+ * Ikkiga bo'linishi — siyosat, sxema emas:
+ *  🔴 `PROTECTED` = PUL va KASSA izi. Bu yozuvlar xodim bilan birga o'chsa,
+ *     to'langan oylik yoki chek qaysi smenada urilgani yo'qoladi — ya'ni
+ *     buxgalteriya izi uziladi. Shuning uchun o'chirish RAD etiladi va
+ *     kassirga/egaga AYNAN nima ushlab turgani aytiladi (arxiv — alternativa).
+ *  · `CASCADE_LOGS` = HR ning ichki HOSILA loglari. Ular xodimning o'zidan
+ *     kelib chiqadi va usiz ma'nosiz. Prodda o'lchandi: 15 ta arxivlangan
+ *     xodimning har birida 17 tadan `hr_kpi_daily_log` qatori bor edi va
+ *     YAGONA to'siq shu edi — ya'ni ular sanalmasa, hech bir xodimni umuman
+ *     o'chirib bo'lmasdi va «o'chirish» abadiy arxiv bo'lib qolardi.
+ */
+interface EmployeeRelation {
+  /** Ekran/preflight uchun barqaror kalit. */
+  key: string;
+  /** Xabarda ko'rinadigan nom. */
+  label: string;
+  /** Prisma client model nomi. */
+  model: string;
+  /** Shu modelda xodimga qaraydigan maydon. */
+  field: 'employeeId' | 'cashierId' | 'ownerId';
+}
+
+const PROTECTED_RELATIONS: readonly EmployeeRelation[] = [
+  { key: 'payroll', label: 'oylik', model: 'payroll', field: 'employeeId' },
+  { key: 'cashierSession', label: 'kassa smenasi', model: 'cashierSession', field: 'cashierId' },
+  {
+    key: 'cashierSessionVariance',
+    label: 'kassa farqi',
+    model: 'cashierSessionVariance',
+    field: 'cashierId',
+  },
+  {
+    key: 'cashierAuditEvent',
+    label: 'kassa audit yozuvi',
+    model: 'cashierAuditEvent',
+    field: 'employeeId',
+  },
+  { key: 'publication', label: 'publikatsiya', model: 'publication', field: 'ownerId' },
+];
+
+const CASCADE_LOGS: readonly EmployeeRelation[] = [
+  { key: 'hrAttendance', label: 'davomat', model: 'hrAttendance', field: 'employeeId' },
+  { key: 'hrBonusFineLog', label: 'bonus/jarima', model: 'hrBonusFineLog', field: 'employeeId' },
+  { key: 'hrKpiDailyLog', label: 'kunlik KPI', model: 'hrKpiDailyLog', field: 'employeeId' },
+  { key: 'hrKpiMonthlyScore', label: 'oylik KPI', model: 'hrKpiMonthlyScore', field: 'employeeId' },
+  { key: 'hrTaskLog', label: 'vazifa jurnali', model: 'hrTaskLog', field: 'employeeId' },
+  { key: 'salesPlan', label: 'savdo rejasi', model: 'salesPlan', field: 'employeeId' },
+  { key: 'labelPrintJob', label: 'yorliq chop navbati', model: 'labelPrintJob', field: 'ownerId' },
+];
+
+/** Bitta bog'lanish uchun kerakli minimal Prisma yuzasi. */
+interface RelationDelegate {
+  count(args: { where: Record<string, string> }): Promise<number>;
+  deleteMany(args: { where: Record<string, string> }): Promise<{ count: number }>;
+}
+
+/**
+ * Model nomi bo'yicha delegatni oladi.
+ *
+ * Nega dinamik: 12 ta bog'lanishni qo'lda yozish 12 ta `count` + 7 ta
+ * `deleteMany` chaqiruvi degani va yangi RESTRICT FK qo'shilganda ro'yxat
+ * jimgina eskirardi. Ro'yxat bitta joyda turgani uchun preflight va o'chirish
+ * AYNAN bir manbadan o'qiydi — ekranda ko'ringan narsa serverda bo'ladi.
+ */
+function delegate(client: unknown, model: string): RelationDelegate {
+  return (client as Record<string, RelationDelegate>)[model] as RelationDelegate;
+}
+
+/** Nol bo'lmagan bog'lanishlarni sanaydi (nol qatorlar shovqin qilmaydi). */
+async function countRelations(
+  client: unknown,
+  relations: readonly EmployeeRelation[],
+  employeeId: string,
+): Promise<Array<{ key: string; label: string; count: number }>> {
+  const out: Array<{ key: string; label: string; count: number }> = [];
+  for (const r of relations) {
+    const count = await delegate(client, r.model).count({ where: { [r.field]: employeeId } });
+    if (count > 0) out.push({ key: r.key, label: r.label, count });
+  }
+  return out;
+}
+
 function safeNormalizePhone(raw: string | null | undefined): string | null | undefined {
   if (raw === undefined) return undefined; // unchanged on update
   try {
@@ -577,28 +667,15 @@ export class HrEmployeeService {
     return emp;
   }
 
-  /** Per-row «delete» icon — soft archive (moysklad keeps the row, hides it). */
-  async softDelete(accountId: string, id: string, currentUserId?: string) {
-    await this.findRawOrThrow(accountId, id);
-    if (currentUserId && id === currentUserId) {
-      // Archiving disables login (auth filters archived=false) → self-lockout.
-      throw new BadRequestException("O'zingizni arxivlay olmaysiz");
-    }
-    await this.prisma.client.employee.update({
-      where: { id },
-      // Bump version so an open staff/HR edit-form (which can edit `archived`)
-      // 409s on a stale save instead of silently resurrecting this row.
-      data: { archived: true, version: { increment: 1 } },
-    });
-    await this.writeAudit(accountId, id, 'archive', currentUserId);
-    return { ok: true };
-  }
-
   /**
    * Bulk «Поместить в архив» (archived=true) / «Извлечь из архива»
    * (archived=false). Archiving disables the employee's login, so a user
    * may never archive themselves — that would be a self-lockout. Restore is
    * always safe.
+   *
+   * 2026-08-12 dan boshlab arxivlash — «o'chirish»ning yumshoq varianti EMAS,
+   * balki ALOHIDA amal: xodim ketdi, lekin tarixi (oylik, kassa smenasi)
+   * saqlanishi kerak bo'lgan holat uchun. To'liq o'chirish — `hardDelete`.
    */
   async setArchived(accountId: string, id: string, archived: boolean, currentUserId?: string) {
     await this.findRawOrThrow(accountId, id);
@@ -607,7 +684,8 @@ export class HrEmployeeService {
     }
     await this.prisma.client.employee.update({
       where: { id },
-      // Bump version (see softDelete) — keeps the staff/HR edit-form lock sound.
+      // Bump version so an open staff/HR edit-form (which can edit `archived`)
+      // 409s on a stale save instead of silently resurrecting this row.
       data: { archived, version: { increment: 1 } },
     });
     await this.writeAudit(accountId, id, archived ? 'archive' : 'restore', currentUserId);
@@ -615,23 +693,65 @@ export class HrEmployeeService {
   }
 
   /**
-   * Bulk «Удалить» — hard delete. Blocked by FK Restrict relations (Payroll,
-   * CashierSession, LabelPrintJob, Publication) and the required HR-log
-   * relations; Prisma surfaces those as P2003/P2014, which we translate to a
-   * clear "has linked records — archive instead" message so the partial-result
-   * toast is actionable. Cannot delete yourself (self-lockout). Tenant
-   * ownership is verified first, so deleting by unique id is safe.
+   * «O'chirish» oldidan — nima bo'lishini OLDIN aytadi.
+   *
+   * Tasdiq oynasi shu javobdan chiziladi, ya'ni ekran taxmin qilmaydi:
+   * `hardDelete` bilan AYNI ikkita ro'yxatdan o'qiladi, shuning uchun
+   * oynada ko'ringan raqam serverda bo'ladigan ish bilan bir xil.
+   */
+  async deletePreflight(accountId: string, id: string) {
+    await this.findRawOrThrow(accountId, id);
+    const client = this.prisma.client;
+    const blockers = await countRelations(client, PROTECTED_RELATIONS, id);
+    const cascade = await countRelations(client, CASCADE_LOGS, id);
+    return { canDelete: blockers.length === 0, blockers, cascade };
+  }
+
+  /**
+   * Xodimni TO'LIQ o'chiradi (baza qatori bilan).
+   *
+   * 2026-08-12 — egasining shikoyati: «o'chirdim, lekin arxivda qolib ketdi».
+   * Ilgari `DELETE /hr/employees/:id` `archived = true` qilardi va qator
+   * bazada qolib login/e-mail/ism-familiyani BAND qilib turardi
+   * (`err_login_taken_archived` xatosi aynan shundan). Endi bu **haqiqiy
+   * o'chirish**; arxivlash alohida amal bo'lib qoladi (`setArchived` —
+   * bulk «В архив», offboarding, xodim kartasidagi tugma).
+   *
+   * Tartib qat'iy:
+   *  1. tenant + mavjudlik, 2. o'zini o'chirish taqiqi (self-lockout),
+   *  3. 🔴 PUL/KASSA izini tekshirish — to'siq bo'lsa HECH NARSA o'chmaydi
+   *     va sabab aniq nomlar bilan qaytadi,
+   *  4. bitta tranzaksiyada: HR hosila loglari → keyin xodim.
+   *
+   * P2003/P2014 baribir kelsa (ro'yxatga tushmagan yangi RESTRICT FK) —
+   * 409 bilan halol aytiladi, jimgina yutilmaydi.
    */
   async hardDelete(accountId: string, id: string, currentUserId?: string) {
     await this.findRawOrThrow(accountId, id);
     if (currentUserId && id === currentUserId) {
       throw new BadRequestException("O'zingizni o'chira olmaysiz");
     }
+
+    const blockers = await countRelations(this.prisma.client, PROTECTED_RELATIONS, id);
+    if (blockers.length > 0) {
+      const detail = blockers.map((b) => `${b.label}: ${b.count}`).join(', ');
+      throw new ConflictException(
+        `Bu xodimni o'chirib bo'lmaydi — pul va kassa izi saqlanadi (${detail}). ` +
+          'Uni arxivga oling.',
+      );
+    }
+
     try {
-      // accountId in the where is defence-in-depth — ownership is already
-      // verified by findRawOrThrow above, but scoping the delete keeps it
-      // tenant-safe even if that check is ever refactored away.
-      await this.prisma.client.employee.delete({ where: { id, accountId } });
+      await this.prisma.client.$transaction(async (tx) => {
+        // HR hosila loglari — xodimsiz ma'nosiz, u bilan birga ketadi.
+        for (const r of CASCADE_LOGS) {
+          await delegate(tx, r.model).deleteMany({ where: { [r.field]: id } });
+        }
+        // accountId in the where is defence-in-depth — ownership is already
+        // verified by findRawOrThrow above, but scoping the delete keeps it
+        // tenant-safe even if that check is ever refactored away.
+        await (tx as typeof this.prisma.client).employee.delete({ where: { id, accountId } });
+      });
     } catch (e) {
       const code = (e as { code?: string }).code;
       if (code === 'P2003' || code === 'P2014') {
@@ -641,6 +761,8 @@ export class HrEmployeeService {
       }
       throw e;
     }
+    // Audit — qator o'chgandan KEYIN: o'chirish yiqilsa yolg'on yozuv qolmasin.
+    await this.writeAudit(accountId, id, 'delete', currentUserId);
     return { ok: true };
   }
 

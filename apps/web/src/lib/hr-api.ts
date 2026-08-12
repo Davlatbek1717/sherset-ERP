@@ -6,6 +6,7 @@
 
 import { api } from './api-client';
 import type { HrAccessLevel, HrPermissionRow } from './auth-store';
+import type { EmployeeDeletePreflight } from './hr/employee-delete';
 
 // ─── Types ─────────────────────────────────────────────────────────────
 
@@ -158,7 +159,16 @@ export const hrEmployeeApi = {
   update: (id: string, data: HrEmployeeUpdateInput) =>
     api.put<HrEmployeeRow>(`/hr/employees/${id}`, data),
 
+  /**
+   * 🔴 TO'LIQ o'chiradi (2026-08-12 dan). Ilgari bu arxivlash edi — xodim
+   * ro'yxatdan yo'qolardi-yu, login/e-mail/ismini band qilib turardi.
+   * Arxivlash endi faqat `bulkArchive` orqali.
+   */
   remove: (id: string) => api.delete<{ ok: true }>(`/hr/employees/${id}`),
+
+  /** O'chirishdan oldin: nima to'sib turibdi va u bilan birga nima o'chadi. */
+  deletePreflight: (id: string) =>
+    api.get<EmployeeDeletePreflight>(`/hr/employees/${id}/delete-preflight`),
 
   // moysklad «Изменить» bulk actions (employee catalog). Each returns a
   // per-id BulkResult so the UI can show a partial-success toast.

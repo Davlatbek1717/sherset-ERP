@@ -16,20 +16,63 @@ function p2002(target: string[]) {
   });
 }
 
+/**
+ * Xodimni to'liq o'chirishda tekshiriladigan bog'lanishlar (jonli bazadan
+ * o'lchangan: `employees.id` ga RESTRICT bilan qaraydigan 12 ta FK).
+ * Har biri `count` + `deleteMany` beradi; sukut bo'yicha 0 — test faqat
+ * o'zi qiziqadigan jadvalni «to'ldiradi».
+ */
+const RELATION_MODELS = [
+  'payroll',
+  'cashierSession',
+  'cashierSessionVariance',
+  'cashierAuditEvent',
+  'publication',
+  'hrAttendance',
+  'hrBonusFineLog',
+  'hrKpiDailyLog',
+  'hrKpiMonthlyScore',
+  'hrTaskLog',
+  'salesPlan',
+  'labelPrintJob',
+] as const;
+
+type RelationMock = { count: ReturnType<typeof vi.fn>; deleteMany: ReturnType<typeof vi.fn> };
+
 function makePrisma() {
-  return {
-    client: {
-      employee: {
-        findFirst: vi.fn(),
-        findMany: vi.fn(),
-        count: vi.fn(),
-        create: vi.fn(),
-        update: vi.fn(),
-        delete: vi.fn(),
-      },
-      $transaction: vi.fn(),
+  const client: Record<string, unknown> = {
+    employee: {
+      findFirst: vi.fn(),
+      findMany: vi.fn(),
+      count: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+      delete: vi.fn(),
     },
+    // Callback shaklidagi tranzaksiya — o'chirish AYNAN shu yerda bo'ladi
+    // (yarim o'chirilgan xodim qolmasin).
+    $transaction: vi.fn(async (arg: unknown) =>
+      typeof arg === 'function' ? await (arg as (tx: unknown) => Promise<unknown>)(client) : arg,
+    ),
   };
+  for (const m of RELATION_MODELS) {
+    client[m] = { count: vi.fn(async () => 0), deleteMany: vi.fn(async () => ({ count: 0 })) };
+  }
+  return { client } as {
+    client: Record<string, unknown> & {
+      employee: Record<string, ReturnType<typeof vi.fn>>;
+      $transaction: ReturnType<typeof vi.fn>;
+    };
+  };
+}
+
+/** Fikstura yordamchisi: `model` jadvalida `n` qator bordek ko'rsatadi. */
+function withRows(
+  prisma: ReturnType<typeof makePrisma>,
+  model: (typeof RELATION_MODELS)[number],
+  n: number,
+) {
+  (prisma.client[model] as RelationMock).count.mockResolvedValue(n);
 }
 
 describe('HrEmployeeService', () => {
@@ -340,12 +383,6 @@ describe('HrEmployeeService', () => {
     expect(prisma.client.employee.update).not.toHaveBeenCalled();
   });
 
-  it('softDelete: cannot archive yourself via the per-row delete icon', async () => {
-    prisma.client.employee.findFirst.mockResolvedValue({ id: 'me', archived: false } as never);
-    await expect(service.softDelete('acc1', 'me', 'me')).rejects.toThrow(BadRequestException);
-    expect(prisma.client.employee.update).not.toHaveBeenCalled();
-  });
-
   it('hardDelete: deletes scoped by id + accountId after tenant ownership check', async () => {
     prisma.client.employee.findFirst.mockResolvedValue({ id: 'e1', archived: true } as never);
     prisma.client.employee.delete.mockResolvedValue({} as never);
@@ -374,6 +411,141 @@ describe('HrEmployeeService', () => {
     prisma.client.employee.findFirst.mockResolvedValue({ id: 'e1', archived: false } as never);
     prisma.client.employee.delete.mockRejectedValue(new Error('connection lost'));
     await expect(service.hardDelete('acc1', 'e1', 'me')).rejects.toThrow('connection lost');
+  });
+});
+
+/**
+ * Xodimni TO'LIQ o'chirish (2026-08-12, egasining shikoyati bo'yicha).
+ *
+ * MUAMMO: «O'chirish» tugmasi aslida `archived = true` qilardi — xodim
+ * ro'yxatdan yo'qolardi-yu, bazada qolib, login/e-mail/ism-familiyani BAND
+ * qilib turardi (`err_login_taken_archived` xatosi shu yerdan). Tasdiq oynasi
+ * esa «bu amalni qaytarib bo'lmaydi» der edi — ya'ni matn ham yolg'on edi.
+ *
+ * YANGI SHARTNOMA (jonli bazadan o'lchangan 12 ta RESTRICT FK asosida):
+ *  🔴 PUL va KASSA izi hech qachon o'chmaydi — oylik, kassa smenasi, kassa
+ *     farqi, kassa audit yozuvi yoki publikatsiya bo'lsa o'chirish RAD etiladi
+ *     va sabab AYNAN nima ushlab turgani bilan aytiladi (arxiv — alternativa);
+ *  · HR ning ichki hosila loglari (davomat · bonus/jarima · kunlik va oylik
+ *    KPI · vazifa jurnali · savdo rejasi · yorliq chop navbati) xodim bilan
+ *    BIRGA o'chadi — aks holda hech bir xodimni umuman o'chirib bo'lmasdi
+ *    (prodda o'lchangan: 15 arxivlangan xodimning har birida 17 tadan
+ *    `hr_kpi_daily_log` qatori bor edi va YAGONA to'siq shu edi);
+ *  · hammasi BITTA tranzaksiyada — yarim o'chirilgan xodim qolmaydi.
+ */
+describe('HrEmployeeService — xodimni to‘liq o‘chirish', () => {
+  let prisma: ReturnType<typeof makePrisma>;
+  let service: HrEmployeeService;
+
+  beforeEach(() => {
+    prisma = makePrisma();
+    service = new HrEmployeeService(prisma as never);
+    prisma.client.employee.findFirst.mockResolvedValue({ id: 'e1', archived: true } as never);
+    prisma.client.employee.delete.mockResolvedValue({} as never);
+  });
+
+  it('🔴 oyligi bor xodim O‘CHMAYDI — sabab aniq aytiladi', async () => {
+    withRows(prisma, 'payroll', 3);
+    await expect(service.hardDelete('acc1', 'e1', 'me')).rejects.toThrow(ConflictException);
+    await expect(service.hardDelete('acc1', 'e1', 'me')).rejects.toThrow(/oylik/i);
+    expect(prisma.client.employee.delete).not.toHaveBeenCalled();
+  });
+
+  it('🔴 kassa smenasi bor xodim O‘CHMAYDI (chek izi uziladi)', async () => {
+    withRows(prisma, 'cashierSession', 1);
+    await expect(service.hardDelete('acc1', 'e1', 'me')).rejects.toThrow(ConflictException);
+    expect(prisma.client.employee.delete).not.toHaveBeenCalled();
+  });
+
+  it('🔴 kassa audit yozuvi ham to‘sadi', async () => {
+    withRows(prisma, 'cashierAuditEvent', 5);
+    await expect(service.hardDelete('acc1', 'e1', 'me')).rejects.toThrow(ConflictException);
+    expect(prisma.client.employee.delete).not.toHaveBeenCalled();
+  });
+
+  it('faqat HR loglari bo‘lsa — ular ham, xodim ham O‘CHADI', async () => {
+    withRows(prisma, 'hrKpiDailyLog', 17);
+    withRows(prisma, 'hrAttendance', 4);
+
+    await expect(service.hardDelete('acc1', 'e1', 'me')).resolves.toEqual({ ok: true });
+
+    const kpi = prisma.client.hrKpiDailyLog as RelationMock;
+    const att = prisma.client.hrAttendance as RelationMock;
+    expect(kpi.deleteMany).toHaveBeenCalledWith({ where: { employeeId: 'e1' } });
+    expect(att.deleteMany).toHaveBeenCalledWith({ where: { employeeId: 'e1' } });
+    expect(prisma.client.employee.delete).toHaveBeenCalledTimes(1);
+  });
+
+  it('o‘chirish BITTA tranzaksiyada bo‘ladi (yarim o‘chirilgan xodim yo‘q)', async () => {
+    withRows(prisma, 'hrKpiDailyLog', 17);
+    await service.hardDelete('acc1', 'e1', 'me');
+    expect(prisma.client.$transaction).toHaveBeenCalledTimes(1);
+  });
+
+  it('PUL izi tekshiruvi o‘chirishdan OLDIN — hech narsa o‘chmaydi', async () => {
+    withRows(prisma, 'payroll', 1);
+    withRows(prisma, 'hrKpiDailyLog', 17);
+    await expect(service.hardDelete('acc1', 'e1', 'me')).rejects.toThrow(ConflictException);
+    const kpi = prisma.client.hrKpiDailyLog as RelationMock;
+    expect(kpi.deleteMany).not.toHaveBeenCalled();
+    expect(prisma.client.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('o‘zini o‘chirish hamon TAQIQ (self-lockout)', async () => {
+    prisma.client.employee.findFirst.mockResolvedValue({ id: 'me', archived: false } as never);
+    await expect(service.hardDelete('acc1', 'me', 'me')).rejects.toThrow(BadRequestException);
+    expect(prisma.client.employee.delete).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Tasdiq oynasi «nima bo'ladi»ni OLDIN ko'rsatishi uchun — ekran taxmin
+ * qilmasin. Bu `hardDelete` bilan AYNI ro'yxatlardan o'qiydi, ya'ni oynada
+ * ko'ringan narsa serverda bo'ladigan narsa.
+ */
+describe('HrEmployeeService — o‘chirish oldidan tekshiruv (preflight)', () => {
+  let prisma: ReturnType<typeof makePrisma>;
+  let service: HrEmployeeService;
+
+  beforeEach(() => {
+    prisma = makePrisma();
+    service = new HrEmployeeService(prisma as never);
+    prisma.client.employee.findFirst.mockResolvedValue({ id: 'e1', archived: true } as never);
+  });
+
+  it('tarixsiz xodim: canDelete=true, ro‘yxatlar bo‘sh', async () => {
+    await expect(service.deletePreflight('acc1', 'e1')).resolves.toEqual({
+      canDelete: true,
+      blockers: [],
+      cascade: [],
+    });
+  });
+
+  it('HR loglari bor xodim: canDelete=true, lekin nima o‘chishi SANALADI', async () => {
+    withRows(prisma, 'hrKpiDailyLog', 17);
+    const out = await service.deletePreflight('acc1', 'e1');
+    expect(out.canDelete).toBe(true);
+    expect(out.blockers).toEqual([]);
+    expect(out.cascade).toContainEqual({ key: 'hrKpiDailyLog', label: 'kunlik KPI', count: 17 });
+  });
+
+  it('oyligi bor xodim: canDelete=false va to‘siq nomi bilan qaytadi', async () => {
+    withRows(prisma, 'payroll', 2);
+    const out = await service.deletePreflight('acc1', 'e1');
+    expect(out.canDelete).toBe(false);
+    expect(out.blockers).toContainEqual({ key: 'payroll', label: 'oylik', count: 2 });
+  });
+
+  it('nol qatorli bog‘lanish ro‘yxatga TUSHMAYDI (shovqin yo‘q)', async () => {
+    withRows(prisma, 'hrAttendance', 0);
+    withRows(prisma, 'hrTaskLog', 2);
+    const out = await service.deletePreflight('acc1', 'e1');
+    expect(out.cascade.map((c) => c.key)).toEqual(['hrTaskLog']);
+  });
+
+  it('begona/yo‘q xodim → NotFound', async () => {
+    prisma.client.employee.findFirst.mockResolvedValue(null);
+    await expect(service.deletePreflight('acc1', 'ghost')).rejects.toThrow(NotFoundException);
   });
 });
 

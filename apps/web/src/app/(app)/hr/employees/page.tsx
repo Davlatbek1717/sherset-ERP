@@ -32,6 +32,7 @@ import type {
   HrScheduleListResult,
   HrWorkLocation,
 } from '@/lib/hr-api';
+import { describeEmployeeDelete } from '@/lib/hr/employee-delete';
 import {
   Avatar,
   Badge,
@@ -152,10 +153,42 @@ export default function HrEmployeesPage() {
     onError: (e: Error) => toast.error(tCommon('action_failed'), { description: e.message }),
   });
 
+  /**
+   * ❌ — endi HAQIQIY o'chirish (2026-08-12).
+   *
+   * Ilgari bu tugma `archived = true` qilardi, lekin oyna «qaytarib
+   * bo'lmaydi» der edi: amal ham, matn ham noto'g'ri edi. Endi avval
+   * serverdan preflight so'raladi va kassir AYNAN nima bo'lishini ko'radi —
+   * nima birga o'chishini yoki nima to'sib turganini. Preflight yiqilsa
+   * o'chirish BOSHLANMAYDI (fail-closed).
+   */
   const handleDelete = async (row: HrEmployeeRow) => {
+    let preflight: Awaited<ReturnType<typeof hrEmployeeApi.deletePreflight>> | null = null;
+    try {
+      preflight = await hrEmployeeApi.deletePreflight(row.id);
+    } catch (e) {
+      toast.error(tCommon('action_failed'), { description: (e as Error).message });
+      return;
+    }
+    const info = describeEmployeeDelete(preflight);
+    if (info.unknown) {
+      toast.error(t('delete_preflight_failed'));
+      return;
+    }
+    if (!info.canDelete) {
+      // Sabab — jimgina 409 emas, oldindan va nomlar bilan.
+      await confirm({
+        title: t('delete_blocked_title'),
+        description: t('delete_blocked_desc', { items: info.blockerText }),
+        confirmLabel: tCommon('close'),
+      });
+      return;
+    }
+    const lines = [`${row.name} — ${t('delete_confirm_desc')}`];
+    if (info.cascadeText) lines.push(t('delete_will_erase', { items: info.cascadeText }));
     const ok = await confirm({
       title: t('delete_confirm'),
-      description: `${row.name} — ${t('delete_confirm_desc')}`,
+      description: lines.join('\n'),
       confirmLabel: tCommon('delete'),
       tone: 'destructive',
     });

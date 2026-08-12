@@ -234,10 +234,30 @@ export class HrEmployeeController {
     return this.svc.update(user.accountId, id, input, user.sub);
   }
 
+  /**
+   * «O'chirish» oldidan tekshiruv — tasdiq oynasi nima bo'lishini OLDIN
+   * ko'rsatishi uchun (nechta HR log o'chadi; nima to'sib turibdi).
+   * `read` yetarli: bu faqat sanoq, hech narsani o'zgartirmaydi.
+   */
+  @Get(':id/delete-preflight')
+  @RequireHrPermission('employees', 'read')
+  async deletePreflight(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    return this.svc.deletePreflight(user.accountId, id);
+  }
+
+  /**
+   * Xodimni TO'LIQ o'chiradi.
+   *
+   * 🔴 2026-08-12 da xulq O'ZGARDI: ilgari bu `softDelete` edi
+   * (`archived = true`) — ya'ni «O'chirish» tugmasi xodimni arxivga solardi va
+   * uning login/e-mail/ism-familiyasi band qolardi. Endi qator haqiqatan
+   * o'chadi. Arxivlash yo'qolmadi — u alohida amal: `bulk-archive`,
+   * xodim kartasidagi tugma va offboarding oqimi.
+   */
   @Delete(':id')
   @RequireHrPermission('employees', 'full')
   async remove(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
-    return this.svc.softDelete(user.accountId, id, user.sub);
+    return this.svc.hardDelete(user.accountId, id, user.sub);
   }
 
   // ─── Bulk «Изменить» (moysklad #employee toolbar) ────────────────────────

@@ -37,10 +37,17 @@ describe('Employee optimistic-lock — the three locked edit-form paths', () => 
 
   it('HrEmployeeService bumps version on EVERY edit-form-field writer (update + archive/restore + set-password)', () => {
     const src = read('../hr/hr-employee/hr-employee.service.ts');
-    // update + softDelete + setArchived + setPassword = 4 bumps. (`archived` and
-    // `username` are staff-form fields, so their discrete writers must bump too,
-    // unlike most entities — this is the Employee-specific specialization.)
-    expect(countVersionBumps(src)).toBeGreaterThanOrEqual(4);
+    // update + setArchived + setPassword = 3 bumps. (`archived` and `username`
+    // are staff-form fields, so their discrete writers must bump too, unlike
+    // most entities — this is the Employee-specific specialization.)
+    //
+    // 2026-08-12 da 4 dan 3 ga tushdi: `softDelete` OLIB TASHLANDI. U
+    // «o'chirish» tugmasi ostida yashiringan arxivlash edi va `archived`ni
+    // yozgani uchun bump qilardi; endi o'chirish HAQIQIY (`hardDelete`) —
+    // qator yo'qoladi, ya'ni bump qiladigan yozuvchi ham yo'q. Guard'ning
+    // niyati o'zgarmadi: `archived`/`username` ga tegadigan HAR bir yozuvchi
+    // hamon versiyani ko'taradi.
+    expect(countVersionBumps(src)).toBeGreaterThanOrEqual(3);
   });
 
   it('StaffService.update: versioned WHERE inside the tx (guards the EmployeeRole rewrite) + 409 mapping', () => {
