@@ -21,9 +21,28 @@ export const MoneyOperationFilterSchema = z.object({
    * ('debtpayment', cash side — same slug the counterparty-balance journal
    * already uses as its `docType`). Add a slug here ONLY together with its
    * writer. Locked by web money-kind-contract.test.ts.
+   *
+   * 2026-08-12 (Faza 4) added the POS drawer operations —
+   * `drawer_cash_in` / `drawer_cash_out`, written by
+   * `cashier-session/drawer-money-ledger.ts`. Before it, Внесение / Изъятие /
+   * expense (RKO) / collection touched NEITHER this ledger NOR
+   * `CashDesk.balanceMinor`, so the timeline could not show them at all.
+   *
+   * ⚠️ Keep the array body free of prose: the contract lock extracts the
+   * slugs by scanning every quoted token between the brackets, so an
+   * apostrophe inside an inline comment would register as a bogus kind.
    */
   documentKind: z
-    .enum(['cash_in', 'cash_out', 'retailsale', 'payment_in', 'payment_out', 'debtpayment'])
+    .enum([
+      'cash_in',
+      'cash_out',
+      'retailsale',
+      'payment_in',
+      'payment_out',
+      'debtpayment',
+      'drawer_cash_in',
+      'drawer_cash_out',
+    ])
     .optional(),
   organizationAccountId: z.string().uuid().optional(),
   cashDeskId: z.string().uuid().optional(),

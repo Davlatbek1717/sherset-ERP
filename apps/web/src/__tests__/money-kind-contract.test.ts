@@ -33,6 +33,11 @@ const WRITER_FILES = [
   'apps/api/src/modules/payment-in/payment-in.service.ts',
   'apps/api/src/modules/payment-out/payment-out.service.ts',
   'apps/api/src/modules/debt/debt-cash-ledger.ts',
+  // Faza 4 (2026-08-12) — POS yashiq amallari (Внесение / Изъятие / xarajat /
+  // inkassatsiya). Bularning YOZUVCHISI umuman yo'q edi: hujjat yaratilardi-yu
+  // daftarga ham, `CashDesk.balanceMinor` ga ham tegmasdi. Yozuvchi qo'shilgani
+  // uchun slug ham, marshrut ham, yorliq ham shu test orqali qulflanadi.
+  'apps/api/src/modules/cashier-session/drawer-money-ledger.ts',
 ];
 
 function writerKinds(): Set<string> {

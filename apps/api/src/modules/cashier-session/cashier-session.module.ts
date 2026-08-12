@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { PrismaModule } from '../../prisma/prisma.module.js';
 import { AuthModule } from '../auth/auth.module.js';
+import { MoneyModule } from '../money/money.module.js';
 import { CashierSessionController } from './cashier-session.controller.js';
 import { CashierSessionService } from './cashier-session.service.js';
 import { ShiftAcceptanceCron } from './shift-acceptance.cron.js';
@@ -20,9 +21,14 @@ import { ShiftAcceptanceService } from './shift-acceptance.service.js';
  * qilinsa DI grafi yiqilib API umuman ko'tarilmaydi (prod 502 klassi).
  * `ScheduleModule` bu yerda QAYTA ro'yxatdan o'tkazilmaydi: `AppModule` da
  * `forRoot()` bilan global ko'tarilgan.
+ *
+ * Faza 4 (2026-08-12) — `MoneyModule` OSHKORA import qilinadi:
+ * `CashierSessionService` endi `MoneyService` ni in'yeksiya qiladi (yashiq
+ * amallari pul daftariga yozadi). Import unutilsa DI grafi ishga tushishda
+ * yiqiladi va butun API 502 beradi — typecheck buni KO'RMAYDI.
  */
 @Module({
-  imports: [AuthModule, PrismaModule],
+  imports: [AuthModule, MoneyModule, PrismaModule],
   controllers: [CashierSessionController],
   providers: [CashierSessionService, ShiftAcceptanceService, ShiftAcceptanceCron],
   exports: [CashierSessionService, ShiftAcceptanceService],

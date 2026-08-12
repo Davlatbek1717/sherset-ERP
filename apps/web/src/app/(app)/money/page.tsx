@@ -51,6 +51,12 @@ import { useState } from 'react';
  * this page offered «+ Создать → Входящий платёж» and then never showed the
  * result, and the In/Out/Net totals silently excluded every bank movement.
  * 'debtpayment' (`M-05`) is the cash a debtor hands over at the till.
+ *
+ * Faza 4 (2026-08-12) added the POS drawer operations. Their bug was the same
+ * shape as the bank one but worse: Внесение / Изъятие / expense (RKO) /
+ * collection wrote a document and touched NEITHER this ledger NOR
+ * `CashDesk.balanceMinor`, so the till balance only ever grew and this
+ * timeline could not show a single cash withdrawal from a POS drawer.
  */
 type LedgerKind =
   | 'cash_in'
@@ -58,7 +64,9 @@ type LedgerKind =
   | 'retailsale'
   | 'payment_in'
   | 'payment_out'
-  | 'debtpayment';
+  | 'debtpayment'
+  | 'drawer_cash_in'
+  | 'drawer_cash_out';
 /** Kinds offered by the «+ Создать» dropdown — navigation targets only. */
 type CreateKind = 'cashin' | 'cashout' | 'paymentin' | 'paymentout';
 
@@ -96,7 +104,7 @@ interface ListResponse {
   nextCursor: string | null;
 }
 
-const KIND_ROUTES: Record<LedgerKind, string> = {
+const KIND_ROUTES: Record<LedgerKind, string | null> = {
   cash_in: '/cash-in',
   cash_out: '/cash-out',
   retailsale: '/retail/sales',
@@ -105,6 +113,14 @@ const KIND_ROUTES: Record<LedgerKind, string> = {
   // A POS debt payment has no editor page — its `documentId` is the PKO batch,
   // and the receipt print view is the only per-batch document there is.
   debtpayment: '/print/debt-payment',
+  // Faza 4 (2026-08-12) — POS yashiq amallari. `null` = hujjat sahifasi YO'Q,
+  // havola CHIZILMAYDI. `'/…'` yozib qo'yish o'lik havola berardi, va o'lik
+  // havola «hujjat yo'qolgan» degan xato xulosaga olib boradi.
+  //   · Внесение — alohida sahifasi yo'q, u faqat smena ichida yashaydi;
+  //   · Изъятие/xarajat/inkassatsiya — RKO cheki uchala turni ham chizadi
+  //     (`/cashier-sessions/cash-out/:docId` `kind` bo'yicha filtrlamaydi).
+  drawer_cash_in: null,
+  drawer_cash_out: '/print/cash-out',
 };
 
 /** Single source for the kind filter's options — see the select below. */
@@ -236,14 +252,18 @@ export default function MoneyPage() {
     {
       key: 'doc',
       header: t('column_doc'),
-      cell: (r: MoneyOperationRow) => (
-        <Link
-          href={`${KIND_ROUTES[r.documentKind]}/${r.documentId}`}
-          className="text-[var(--ms-text-link)] hover:underline"
-        >
-          {t('open_doc')}
-        </Link>
-      ),
+      cell: (r: MoneyOperationRow) => {
+        const route = KIND_ROUTES[r.documentKind];
+        if (!route) return <span className="text-[var(--ms-text-muted)]">—</span>;
+        return (
+          <Link
+            href={`${route}/${r.documentId}`}
+            className="text-[var(--ms-text-link)] hover:underline"
+          >
+            {t('open_doc')}
+          </Link>
+        );
+      },
       width: '110px',
     },
   ];

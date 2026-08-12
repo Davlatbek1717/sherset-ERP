@@ -25,6 +25,9 @@ import {
   effectiveThreshold,
   resolveManagerThresholds,
 } from '../manager/thresholds/manager-thresholds.js';
+// Faza 4 (2026-08-12) — yashiq amallari UMUMIY pul daftariga yozadi. Ilgari bu
+// modulda `applyDeltas` chaqirig'i UMUMAN yo'q edi (grep → 0).
+import { MoneyService } from '../money/money.service.js';
 // Amaldagi ruxsat KANONIK hal qiluvchisi (rollar MAX'i + MK26 override).
 import { type RoleGrant, resolveEffective } from '../permissions/employee-permission.js';
 import type { PermissionScope } from '../permissions/permissions.types.js';
@@ -53,9 +56,12 @@ import {
   PosCashOutSchema,
   SessionFilterSchema,
 } from './cashier-session.schema.js';
+// Yashiq amalining pul-daftari tomoni — sof modul (ishorani FAQAT u qo'yadi).
+import { drawerMoneyDeltas } from './drawer-money-ledger.js';
 // Xarajat/inkassatsiya qoidalari — sof modul (§8.2/§8.3).
 import {
   type CashOutKind,
+  cashOutLedgerLabel,
   cashOutPrefix,
   planCashOutAuditEvents,
   summarizeCashOut,
@@ -111,7 +117,10 @@ const VARIANCE_ACTION = 'approve';
 export class CashierSessionService {
   private readonly logger = new Logger(CashierSessionService.name);
 
-  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
+  constructor(
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(MoneyService) private readonly money: MoneyService,
+  ) {}
 
   async list(accountId: string, rawFilter: unknown) {
     const filter = SessionFilterSchema.parse(rawFilter);
@@ -711,22 +720,41 @@ export class CashierSessionService {
     });
     const name = `${prefix}${String(n).padStart(5, '0')}`;
     const creatorGroupId = await resolveCreatorGroupId(this.prisma.client, accountId, cashierId);
-    return this.prisma.client.retailDrawerCashIn.create({
-      data: {
+
+    // 🔴 HUJJAT VA DAFTAR BITTA TRANZAKSIYADA (Faza 4, 2026-08-12). Ilgari
+    // hujjat yolg'iz yaratilardi va yashiq qoldig'i umuman qimirlamasdi —
+    // `CashDesk.balanceMinor` faqat kirim yo'llaridan shishardi.
+    return this.prisma.client.$transaction(async (tx) => {
+      const doc = await tx.retailDrawerCashIn.create({
+        data: {
+          accountId,
+          ownerId: cashierId,
+          groupId: creatorGroupId,
+          name,
+          retailShiftId: sessionId,
+          organizationId: session.organizationId,
+          sumMinor: BigInt(parsed.sumMinor),
+          currency: session.cashDesk.currency,
+          moment: new Date(),
+          applicable: true,
+          state: 'posted',
+          postedAt: new Date(),
+          description: parsed.description ?? null,
+        },
+      });
+      await this.money.applyDeltas(
+        tx,
         accountId,
-        ownerId: cashierId,
-        groupId: creatorGroupId,
-        name,
-        retailShiftId: sessionId,
-        organizationId: session.organizationId,
-        sumMinor: BigInt(parsed.sumMinor),
-        currency: session.cashDesk.currency,
-        moment: new Date(),
-        applicable: true,
-        state: 'posted',
-        postedAt: new Date(),
-        description: parsed.description ?? null,
-      },
+        drawerMoneyDeltas({
+          kind: 'in',
+          cashDeskId: session.cashDeskId,
+          currency: session.cashDesk.currency,
+          sumMinor: doc.sumMinor,
+          documentId: doc.id,
+          description: `Внесение ${doc.name}`,
+        }),
+      );
+      return doc;
     });
   }
 
@@ -746,22 +774,41 @@ export class CashierSessionService {
     });
     const name = `${prefix}${String(n).padStart(5, '0')}`;
     const creatorGroupId = await resolveCreatorGroupId(this.prisma.client, accountId, cashierId);
-    return this.prisma.client.retailDrawerCashOut.create({
-      data: {
+
+    // 🔴 Kirim yo'li bilan AYNI naqsh — farqi faqat ishorada, uni esa sof
+    // modul qo'yadi. Bu yerdan boshlab yashiqda yo'q pulni chiqarib
+    // bo'lmaydi: `applyDeltas` overdraft qo'riqchisi tranzaksiyani qaytaradi.
+    return this.prisma.client.$transaction(async (tx) => {
+      const doc = await tx.retailDrawerCashOut.create({
+        data: {
+          accountId,
+          ownerId: cashierId,
+          groupId: creatorGroupId,
+          name,
+          retailShiftId: sessionId,
+          organizationId: session.organizationId,
+          sumMinor: BigInt(parsed.sumMinor),
+          currency: session.cashDesk.currency,
+          moment: new Date(),
+          applicable: true,
+          state: 'posted',
+          postedAt: new Date(),
+          description: parsed.description ?? null,
+        },
+      });
+      await this.money.applyDeltas(
+        tx,
         accountId,
-        ownerId: cashierId,
-        groupId: creatorGroupId,
-        name,
-        retailShiftId: sessionId,
-        organizationId: session.organizationId,
-        sumMinor: BigInt(parsed.sumMinor),
-        currency: session.cashDesk.currency,
-        moment: new Date(),
-        applicable: true,
-        state: 'posted',
-        postedAt: new Date(),
-        description: parsed.description ?? null,
-      },
+        drawerMoneyDeltas({
+          kind: 'out',
+          cashDeskId: session.cashDeskId,
+          currency: session.cashDesk.currency,
+          sumMinor: doc.sumMinor,
+          documentId: doc.id,
+          description: `Изъятие ${doc.name}`,
+        }),
+      );
+      return doc;
     });
   }
 
@@ -1491,6 +1538,27 @@ export class CashierSessionService {
           })),
         });
       }
+
+      // 🔴 Faza 4 (2026-08-12) — xarajat/inkassatsiya ham UMUMIY pul daftariga
+      // yozadi. Ilgari `CASH_OVERDRAWN` audit hodisasi yagona «to'siq» edi:
+      // u kassirni OGOHLANTIRARDI, lekin hujjatni to'xtatmasdi va yashiq
+      // qoldig'iga umuman tegmasdi. Endi haqiqiy to'siq daftarda —
+      // qoldiqdan ortiq chiqim tranzaksiyani orqaga qaytaradi (400).
+      // Ogohlantirish hodisasi QOLADI: u «kutilgan naqd» o'lchovi bo'yicha
+      // ishlaydi (opening + sotuvlar), qo'riqchi esa kassa qoldig'i
+      // bo'yicha — ikki xil savol, ikkovi ham kerak.
+      await this.money.applyDeltas(
+        tx,
+        accountId,
+        drawerMoneyDeltas({
+          kind: 'out',
+          cashDeskId: session.cashDeskId,
+          currency: session.cashDesk.currency,
+          sumMinor: doc.sumMinor,
+          documentId: doc.id,
+          description: `${cashOutLedgerLabel(kind)} ${doc.name}`,
+        }),
+      );
 
       return {
         ...doc,

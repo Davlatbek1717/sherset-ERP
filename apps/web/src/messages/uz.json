@@ -3921,7 +3921,9 @@
         "retailsale": "Chakana savdo",
         "payment_in": "Kiruvchi to'lov",
         "payment_out": "Chiquvchi to'lov",
-        "debtpayment": "Qarz to'lovi"
+        "debtpayment": "Qarz to'lovi",
+        "drawer_cash_in": "Yashiqqa kirim",
+        "drawer_cash_out": "Yashiqdan chiqim / xarajat"
       },
       "open_doc": "Ochish",
       "search_placeholder": "Izoh bo'yicha qidirish",

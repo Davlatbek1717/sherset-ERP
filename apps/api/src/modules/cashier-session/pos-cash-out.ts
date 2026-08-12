@@ -90,6 +90,21 @@ export function cashOutPrefix(kind: CashOutKind, year: number): string {
   return `ИЗ-${year}-`;
 }
 
+/**
+ * Pul daftaridagi (`MoneyOperation.description`) izoh — hujjat TURINI aytadi.
+ *
+ * `/money` lentasida uchala chiqim ham bitta `drawer_cash_out` slug'i ostida
+ * turadi (ular haqiqatan bitta jadval), shuning uchun «bu nima edi» savoliga
+ * javob beradigan yagona joy — shu izoh. Prefiks bilan bir MANBADAN
+ * chiqmaydi (biri hujjat nomi, biri lenta matni), lekin ikkalasi ham SHU
+ * faylda turadi: yangi tur qo'shilsa ikkovi ham ko'z oldida bo'ladi.
+ */
+export function cashOutLedgerLabel(kind: CashOutKind): string {
+  if (kind === CASH_OUT_KIND.expense) return 'Xarajat';
+  if (kind === CASH_OUT_KIND.collection) return 'Inkassatsiya';
+  return 'Изъятие';
+}
+
 // ── Audit hodisalari (§9) ───────────────────────────────────────────────────
 
 export const CASH_OUT_EVENT = {

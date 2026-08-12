@@ -3921,7 +3921,9 @@
         "retailsale": "Розничная продажа",
         "payment_in": "Входящий платёж",
         "payment_out": "Исходящий платёж",
-        "debtpayment": "Оплата долга"
+        "debtpayment": "Оплата долга",
+        "drawer_cash_in": "Внесение (касса)",
+        "drawer_cash_out": "Изъятие / расход (касса)"
       },
       "open_doc": "Открыть",
       "search_placeholder": "Поиск по комментарию",
