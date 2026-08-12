@@ -257,6 +257,8 @@ export default function CompanySettingsPage() {
         onOpenChange={setHistoryOpen}
         title={tAudit('history_title')}
         widthClass="w-[920px]"
+        // Faqat o'qiladigan audit tarixi — yo'qoladigan kiritma yo'q.
+        dismissible
         testId="company-settings-history-drawer"
       >
         <div className="px-4 py-4">

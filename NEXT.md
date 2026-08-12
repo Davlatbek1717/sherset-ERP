@@ -331,6 +331,43 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-08-12h (BUTUN ILOVA — oyna tasodifan yopilmaydi: Esc yo'q, fon-bosish yo'q ·
+> Phase-1, DEPLOY QILINMAGAN) —** ish daraxtida, commit `<shu sessiya>`.
+>
+> Egasining shikoyati ikki qismli edi: (1) «klaviatura bosganda yopilib qolyapti», (2) «modal
+> oynaning chetini bilmasdan bosib yuborganda yopilib qolyapti — o'z qo'li bilan yopmagunicha
+> yopilmasin». **Ildiz: hech bir oynada himoya yo'q edi** — 14 ta Radix `Dialog.Content` ning
+> BIRORTASIDA `onEscapeKeyDown`/`onInteractOutside` yo'q (ya'ni Radix sukut xulqi ishlardi), 7 ta
+> qo'lda yozilgan oynada esa fonga `onClick={onClose}` turardi.
+>
+> **Yechim — bitta shartnoma, sukut bo'yicha QULF:** `@moysklad/ui` da yangi `noAccidentalClose`
+> (+ `parkInitialFocus`), DS `<Modal>`/`<Drawer>` da `dismissible` prop (**sukut `false`**).
+> Qamrov (egasi tanladi): **barcha ma'lumotli oynalar** — 6 POS oynasi, tovar tanlash, vazifa
+> yaratish/detali, CatalogPicker, 7 qo'lda yozilgan HR/payroll/telegram/inventarizatsiya oynasi,
+> narx-kursi, modifikatsiya, 2 chop-preview. **Ataylab dismissible qoldi:** Ctrl+K palitrasi,
+> yordam paneli, mobil menyu, filtr paneli, audit-tarix panellari, rasm ko'rgichi, `ConfirmDialog`
+> (Esc = «bekor», yo'qoladigan kiritma yo'q) — har birida `dismissible-by-design:` izohi bilan.
+>
+> **Klaviaturaning IKKINCHI mexanizmi ham yopildi:** Radix boshlang'ich fokusni birinchi tugmaga —
+> bizning chrome'da ✕ ga — berardi, ya'ni ochilgach kelgan ilk Enter (skanerning oxirgi tugmasi)
+> oynani yopardi. Endi fokus kartaning o'zida turadi; ichkarida `autoFocus` maydon bo'lsa u yutadi.
+>
+> **Tuzoq tekshirildi:** qulflangan har 20+ oynada ko'rinadigan yopish yo'li borligi qatorma-qator
+> tasdiqlandi (hr/telegram `ModalShell` da ✕ YO'Q edi — qo'shildi; `hideClose` prod'da hech qayerda
+> ishlatilmaydi).
+>
+> **Qo'riqchi:** `apps/web/src/__tests__/dialog-dismissal.test.ts` — yangi `Dialog.Content` himoyasiz
+> qo'shilsa yiqiladi; fon-bosish va Esc→onClose naqshlari taqiqlangan; vakuum-qulf bilan (skaner
+> fayl topmasa test jimgina yashil bo'lmaydi). Runtime testlar: Modal/Drawer «Esc YOPMAYDI»,
+> «`dismissible` bilan yopadi», «ochilganda fokus ✕ da emas».
+>
+> **Gate:** web typecheck 0 · design-system typecheck 0 · biome 0 xato ·
+> **butun web suite 267/267 fayl, 3779 test yashil**. Hook'lar bir martaga chetlab o'tildi
+> (parallel sessiya boshqa ishni yarim holatda ushlab turgan edi — lint-staged uni stash qilmasin).
+> **Phase-1: brauzerda o'lchanmagan** — jonli sinov kutilmoqda.
+>
+> ---
+>
 > **🕒 2026-08-12g (KASSA — PIN AYNAN 4 raqam · ✅ DEPLOYED + JONLI O'LCHANDI) —**
 > **`cb1e3879` prodda** (`Deploy done: 786e2557… → cb1e3879…`; site 200 · `/kassa-kirish` 200 ·
 > `:4001/health` 200).

@@ -18,7 +18,15 @@
 
 import { api } from '@/lib/api-client';
 import { useAuth } from '@/lib/auth-store';
-import { Button, CatalogPicker, DatePicker, Icons, type PickerItem, Textarea } from '@moysklad/ui';
+import {
+  Button,
+  CatalogPicker,
+  DatePicker,
+  Icons,
+  type PickerItem,
+  Textarea,
+  noAccidentalClose,
+} from '@moysklad/ui';
 import * as Dialog from '@radix-ui/react-dialog';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
@@ -307,6 +315,7 @@ export function TaskCreateModal({
             style={{ animationDuration: '150ms' }}
           />
           <Dialog.Content
+            {...noAccidentalClose}
             data-testid="task-create-modal"
             className="data-[state=closed]:slide-out-to-right data-[state=open]:slide-in-from-right fixed top-0 right-0 z-[var(--ms-z-modal)] flex h-screen w-[min(620px,96vw)] max-w-[100vw] flex-col bg-[var(--ms-bg-app)] shadow-[var(--ms-shadow-lg)] focus:outline-none data-[state=closed]:animate-out data-[state=open]:animate-in"
             style={{ animationDuration: '200ms' }}

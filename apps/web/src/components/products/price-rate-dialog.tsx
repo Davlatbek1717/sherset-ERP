@@ -20,7 +20,6 @@
  */
 
 import { Button, Input, RadioGroup } from '@moysklad/ui';
-import { useEffect } from 'react';
 
 export interface PriceRateDialogProps {
   open: boolean;
@@ -40,14 +39,9 @@ export interface PriceRateDialogProps {
 export function PriceRateDialog(props: PriceRateDialogProps) {
   const { open, onClose, currencyCode, baseCode, referenceRate, customRate, onApply } = props;
 
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [open, onClose]);
+  // Escape ATAYLAB tinglanmaydi — kiritilgan kurs tasodifiy tugmadan
+  // yo'qolmasin. Yopish: ✕ yoki «Bekor» (2026-08-12 qarori, butun ilova
+  // bo'ylab bir xil shartnoma — `noAccidentalClose`).
 
   if (!open) return null;
 

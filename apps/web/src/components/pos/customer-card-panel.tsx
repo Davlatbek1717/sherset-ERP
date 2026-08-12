@@ -3,7 +3,7 @@
 import { api } from '@/lib/api-client';
 import type { ListEnvelope } from '@moysklad/contracts';
 import type { CurrencyCode } from '@moysklad/money/currencies';
-import { Input, formatMoney } from '@moysklad/ui';
+import { Input, formatMoney, noAccidentalClose } from '@moysklad/ui';
 import * as Dialog from '@radix-ui/react-dialog';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { X } from 'lucide-react';
@@ -262,7 +262,11 @@ export function CustomerCardPanel({
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-50 bg-black/40" />
-        <Dialog.Content className="-translate-x-1/2 -translate-y-1/2 fixed top-1/2 left-1/2 z-50 flex max-h-[90vh] w-[min(760px,95vw)] translate-x-[-50%] translate-y-[-50%] flex-col overflow-hidden rounded-2xl bg-[var(--ms-bg-surface)] shadow-xl">
+        {/* Tasodifiy yopilish yo'q — faqat ✕ / «Yopish» tugmasi. */}
+        <Dialog.Content
+          {...noAccidentalClose}
+          className="-translate-x-1/2 -translate-y-1/2 fixed top-1/2 left-1/2 z-50 flex max-h-[90vh] w-[min(760px,95vw)] translate-x-[-50%] translate-y-[-50%] flex-col overflow-hidden rounded-2xl bg-[var(--ms-bg-surface)] shadow-xl"
+        >
           <div className="flex items-center justify-between border-[var(--ms-border)] border-b px-5 py-4">
             <Dialog.Title className="font-semibold text-[var(--ms-text-primary)] text-lg">
               {t('customer_card_title')}

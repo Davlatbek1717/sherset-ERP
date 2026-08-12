@@ -4,6 +4,7 @@ import * as Dialog from '@radix-ui/react-dialog';
 import { X } from 'lucide-react';
 import * as React from 'react';
 import { cn } from '../lib/cn.ts';
+import { parkInitialFocus } from '../lib/dialog-guards.ts';
 
 /**
  * Centred modal. Slot-style API on top of Radix Dialog with the
@@ -35,6 +36,21 @@ export interface ModalProps {
   testId?: string;
   /** Allow content scroll when body exceeds viewport. Default true. */
   scrollableBody?: boolean;
+  /**
+   * Let Escape / a click outside close the modal. **Default false** — a modal
+   * closes only when the user deliberately hits ✕, Cancel, or Save.
+   *
+   * Why the default is inverted from Radix: on the shop-floor touch monoblock
+   * an accidental brush outside the card (or a stray key from the barcode
+   * scanner) wiped a half-filled payment form with no undo — the cashier had
+   * to key the whole receipt again (owner's live test, 2026-08-12). A modal
+   * here always holds work in progress, so losing it must cost a deliberate
+   * gesture.
+   *
+   * Pass `dismissible` ONLY for navigational overlays that hold no user input
+   * (command palette, help panel, nav sheet) where quick Escape is the point.
+   */
+  dismissible?: boolean;
   /** Radix Dialog close-autofocus hook — fires when the dialog unmounts (after
    *  the 150ms close animation) and Radix is about to restore focus to the
    *  previously-focused element. Call `e.preventDefault()` and focus your own
@@ -75,6 +91,7 @@ export function Modal({
   testId,
   scrollableBody = true,
   onCloseAutoFocus,
+  dismissible = false,
 }: ModalProps) {
   // Resolve: explicit prop → app-root injected default → Uzbek hard fallback.
   const labelsCtx = React.useContext(ModalLabelsContext);
@@ -96,7 +113,22 @@ export function Modal({
           // out of Radix's describedby a11y warning (dev console noise) when absent.
           {...(description ? {} : { 'aria-describedby': undefined })}
           onCloseAutoFocus={onCloseAutoFocus}
+          // Initial focus lands on the card, not on the header ✕ — otherwise
+          // the first Enter/Space (or a scanner's trailing Enter) closes the
+          // modal. An `autoFocus` field inside still wins.
+          onOpenAutoFocus={dismissible ? undefined : parkInitialFocus}
+          // Escape is a Radix default, not a designed affordance here. Unless
+          // the caller opts in, swallow it: see `dismissible` for the why.
+          onEscapeKeyDown={(e) => {
+            if (!dismissible) e.preventDefault();
+          }}
           onInteractOutside={(e) => {
+            // Locked modal (the default): no outside click, no focus-out, no
+            // scanner keystroke can close it — only ✕ / footer buttons.
+            if (!dismissible) {
+              e.preventDefault();
+              return;
+            }
             // A ConfirmDialog (useConfirm) layered ABOVE this modal — e.g. the
             // optimistic-lock conflict-reload prompt, or an in-modal delete
             // confirm — renders OUTSIDE this Radix Dialog's tree, so Radix

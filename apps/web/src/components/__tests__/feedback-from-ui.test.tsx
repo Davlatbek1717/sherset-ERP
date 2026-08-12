@@ -324,11 +324,25 @@ describe('Drawer', () => {
   });
 
   describe('a11y baseline', () => {
-    it('Escape key closes the drawer (Radix default)', async () => {
+    // `<Modal>` bilan bir xil shartnoma (2026-08-12): panel tasodifiy tugmadan
+    // yopilmaydi; faqat o'qiladigan/navigatsion panellar `dismissible` oladi.
+    it('🔴 Escape panelni YOPMAYDI (sukut xulq)', async () => {
       const onOpenChange = vi.fn();
       const user = userEvent.setup();
       renderWithProviders(
         <Drawer open onOpenChange={onOpenChange} title="x">
+          <div>Body</div>
+        </Drawer>,
+      );
+      await user.keyboard('{Escape}');
+      expect(onOpenChange).not.toHaveBeenCalled();
+    });
+
+    it('`dismissible` berilsa Escape yopadi', async () => {
+      const onOpenChange = vi.fn();
+      const user = userEvent.setup();
+      renderWithProviders(
+        <Drawer open dismissible onOpenChange={onOpenChange} title="x">
           <div>Body</div>
         </Drawer>,
       );

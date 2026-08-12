@@ -78,6 +78,7 @@ export function MobileNavSheet({ sections, title, triggerLabel, closeLabel }: Mo
         <Dialog.Content
           data-testid="mobile-nav-sheet"
           aria-describedby={undefined}
+          // dismissible-by-design: navigation sheet, nothing to lose on close.
           className={cn(
             'fixed top-0 left-0 z-[var(--ms-z-modal)] flex h-dvh w-[85vw] max-w-[320px] flex-col',
             'border-[var(--ms-border-default)] border-r bg-[var(--ms-bg-surface)] shadow-[var(--ms-shadow-lg)]',

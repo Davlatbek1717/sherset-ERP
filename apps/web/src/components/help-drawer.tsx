@@ -89,6 +89,9 @@ export function HelpDrawer({
       description={active ? null : t('subtitle')}
       widthClass="w-[440px]"
       testId="help-drawer"
+      // Yordam paneli — o'qish uchun, kiritiladigan ma'lumot yo'q: Esc bilan
+      // yopilaveradi (yuqoridagi `useHotkey('Escape')` bilan bir xil niyat).
+      dismissible
       toolbar={
         active ? (
           <Button

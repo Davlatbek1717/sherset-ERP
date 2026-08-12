@@ -3,6 +3,7 @@ export * from './tokens/index.ts';
 
 // Utility
 export { cn } from './lib/cn.ts';
+export { noAccidentalClose, parkInitialFocus } from './lib/dialog-guards.ts';
 export {
   formatMoney,
   currencyDisplayName,

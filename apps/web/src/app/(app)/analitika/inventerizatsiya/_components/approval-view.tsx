@@ -227,13 +227,10 @@ function ReasonModal({
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/30"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-      onKeyDown={(e) => {
-        if (e.key === 'Escape') onClose();
-      }}
-      // biome-ignore lint/a11y/useSemanticElements: native <dialog> breaks tanstack-query mutation flow; role=dialog + Escape/backdrop matches existing modal pattern in this codebase
+      // Tasodifiy yopilish yo'q: fonga bosish ham, Esc ham oynani yopmaydi —
+      // faqat oynaning o'z tugmalari (@moysklad/ui `noAccidentalClose` bilan
+      // bir xil shartnoma; egasining jonli sinovi, 2026-08-12).
+      // biome-ignore lint/a11y/useSemanticElements: native <dialog> breaks tanstack-query mutation flow; role=dialog; oyna faqat o‘z tugmalari bilan yopiladi (Esc/fon YO‘Q)
       role="dialog"
       aria-modal="true"
       tabIndex={-1}

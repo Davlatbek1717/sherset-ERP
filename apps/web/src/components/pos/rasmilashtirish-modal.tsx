@@ -5,7 +5,7 @@ import { formatAmountInput, parseAmountToMinor } from '@/lib/pos/parse-amount';
 import { formatForeignMajor } from '@/lib/pos/receipt-payments';
 import { RATE_SCALE, convertByRateE8 } from '@moysklad/money';
 import type { CurrencyCode } from '@moysklad/money/currencies';
-import { Input, formatMoney } from '@moysklad/ui';
+import { Input, formatMoney, noAccidentalClose } from '@moysklad/ui';
 import * as Dialog from '@radix-ui/react-dialog';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { Banknote, CreditCard, DollarSign, Monitor, X } from 'lucide-react';
@@ -316,6 +316,7 @@ export function RasmiyashtirishModal({
         {/* K-1: tavsif matni ataylab yo'q — Radix'ning rasmiy opt-out'i
             (`aria-describedby={undefined}`) console warning'ni o'chiradi. */}
         <Dialog.Content
+          {...noAccidentalClose}
           aria-describedby={undefined}
           className="fixed left-1/2 top-1/2 z-50 w-[min(96vw,42rem)] -translate-x-1/2 -translate-y-1/2 rounded-2xl bg-[var(--ms-bg-surface)] shadow-2xl outline-none flex flex-col max-h-[92dvh]"
         >

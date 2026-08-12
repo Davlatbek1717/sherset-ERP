@@ -448,18 +448,16 @@ export function CellLabelPrintOverlay({
     });
   }, [cells, initialRanges]);
 
+  // Ochiq turganda ostidagi sahifa scroll'i qulflanadi. Escape ATAYLAB
+  // tinglanmaydi: bu oynada tanlangan diapazon/format bor — tasodifiy tugma
+  // uni yo'qotmasin, yopish faqat «Yopish» tugmasi bilan (2026-08-12).
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    document.addEventListener('keydown', onKey);
     const prevOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     return () => {
-      document.removeEventListener('keydown', onKey);
       document.body.style.overflow = prevOverflow;
     };
-  }, [onClose]);
+  }, []);
 
   // One permanent location label per TICKED cell: the cell code + a Code 128
   // of its barcode (code as the fallback payload when no barcode is set).

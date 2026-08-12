@@ -2,7 +2,7 @@
 
 import { ceilAmountInput, formatAmountInput, parseAmountToMinor } from '@/lib/pos/parse-amount';
 import type { CurrencyCode } from '@moysklad/money/currencies';
-import { formatMoney } from '@moysklad/ui';
+import { formatMoney, noAccidentalClose } from '@moysklad/ui';
 import * as Dialog from '@radix-ui/react-dialog';
 import { useTranslations } from 'next-intl';
 import { useCallback, useState } from 'react';
@@ -89,7 +89,13 @@ export function PaymentDialog({
     <Dialog.Root open={open} onOpenChange={handleOpenChange}>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-50 bg-black/50" />
-        <Dialog.Content className="-translate-x-1/2 -translate-y-1/2 fixed top-1/2 left-1/2 z-50 w-full max-w-md rounded-xl bg-[var(--ms-bg-surface)] p-6 shadow-2xl outline-none">
+        {/* Tasodifiy yopilish yo'q: Esc ham, chetiga bosish ham oynani
+            yopmaydi — faqat «Bekor» / to'lov tugmasi (kassir monoblokda
+            yarim kiritilgan to'lovni yo'qotardi). */}
+        <Dialog.Content
+          {...noAccidentalClose}
+          className="-translate-x-1/2 -translate-y-1/2 fixed top-1/2 left-1/2 z-50 w-full max-w-md rounded-xl bg-[var(--ms-bg-surface)] p-6 shadow-2xl outline-none"
+        >
           <Dialog.Title className="mb-4 font-semibold text-[var(--ms-text-primary)] text-lg">
             {t('title')}
           </Dialog.Title>

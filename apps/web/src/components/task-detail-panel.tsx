@@ -29,6 +29,7 @@ import {
   Icons,
   type PickerItem,
   Textarea,
+  noAccidentalClose,
   useToast,
 } from '@moysklad/ui';
 import * as Dialog from '@radix-ui/react-dialog';
@@ -213,6 +214,7 @@ export function TaskDetailPanel({
             style={{ animationDuration: '150ms' }}
           />
           <Dialog.Content
+            {...noAccidentalClose}
             data-testid="task-detail-panel"
             className="data-[state=closed]:slide-out-to-right data-[state=open]:slide-in-from-right fixed top-0 right-0 z-[var(--ms-z-modal)] flex h-screen w-[min(1040px,98vw)] max-w-[100vw] flex-col bg-[var(--ms-bg-app)] shadow-[var(--ms-shadow-lg)] focus:outline-none data-[state=closed]:animate-out data-[state=open]:animate-in"
             style={{ animationDuration: '200ms' }}

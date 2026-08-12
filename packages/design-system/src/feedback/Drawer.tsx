@@ -4,6 +4,7 @@ import * as Dialog from '@radix-ui/react-dialog';
 import { X } from 'lucide-react';
 import type * as React from 'react';
 import { cn } from '../lib/cn.ts';
+import { parkInitialFocus } from '../lib/dialog-guards.ts';
 
 /**
  * Generic right-side slide-in panel. Wraps Radix Dialog with the
@@ -38,6 +39,15 @@ export interface DrawerProps {
   hideClose?: boolean;
   closeLabel?: string;
   testId?: string;
+  /**
+   * Let Escape / a click outside close the panel. **Default false** — same
+   * contract as `<Modal>`: a panel that can hold half-entered work closes
+   * only on a deliberate ✕ / Cancel / Save.
+   *
+   * Pass `dismissible` for read-only or navigational panels (help, command
+   * palette, history viewer) where a quick Escape costs the user nothing.
+   */
+  dismissible?: boolean;
 }
 
 export function Drawer({
@@ -52,6 +62,7 @@ export function Drawer({
   hideClose,
   closeLabel = 'Yopish',
   testId,
+  dismissible = false,
 }: DrawerProps) {
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
@@ -68,6 +79,14 @@ export function Drawer({
           data-testid={testId}
           // Opt out of Radix's describedby warning when no <Dialog.Description>.
           {...(description ? {} : { 'aria-describedby': undefined })}
+          // Accidental-close guard — see `dismissible` on DrawerProps.
+          onOpenAutoFocus={dismissible ? undefined : parkInitialFocus}
+          onEscapeKeyDown={(e) => {
+            if (!dismissible) e.preventDefault();
+          }}
+          onInteractOutside={(e) => {
+            if (!dismissible) e.preventDefault();
+          }}
           className={cn(
             // h-dvh, not h-screen: on phones the URL bar overlaps the bottom of
             // a 100vh panel — the footer buttons became unreachable. dvh tracks

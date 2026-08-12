@@ -118,14 +118,8 @@ export function CreateModificationsModal({
     }
   }, [open]);
 
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [open, onClose]);
+  // Escape ATAYLAB tinglanmaydi — yarim to'ldirilgan o'q/qiymatlar tasodifiy
+  // tugmadan yo'qolmasin. Yopish: ✕ yoki «Bekor» (`noAccidentalClose`).
 
   const charsQuery = useQuery<{ items: { id: string; name: string }[] }>({
     queryKey: ['characteristics', 'all'],

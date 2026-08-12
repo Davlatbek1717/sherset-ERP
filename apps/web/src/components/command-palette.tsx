@@ -363,6 +363,9 @@ export function CommandPalette({ hideTrigger = false }: CommandPaletteProps = {}
         description={t('hint')}
         widthClass="w-[480px]"
         testId="command-palette"
+        // Navigatsion panel — hech qanday kiritilgan ish yo'q, shuning uchun
+        // Esc/tashqariga bosish bilan yopiladi (ma'lumotli oynalar teskarisi).
+        dismissible
       >
         <div className="flex h-full flex-col">
           <div className="border-[var(--ms-border-default)] border-b px-4 py-3">

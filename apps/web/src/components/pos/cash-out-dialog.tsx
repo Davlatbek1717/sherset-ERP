@@ -3,7 +3,7 @@
 import { api } from '@/lib/api-client';
 import { parseAmountToMinor } from '@/lib/pos/parse-amount';
 import type { CurrencyCode } from '@moysklad/money/currencies';
-import { Input, formatMoney } from '@moysklad/ui';
+import { Input, formatMoney, noAccidentalClose } from '@moysklad/ui';
 import * as Dialog from '@radix-ui/react-dialog';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Banknote, Receipt, X } from 'lucide-react';
@@ -128,6 +128,7 @@ export function CashOutDialog({ open, onOpenChange, sessionId, currency = 'UZS',
         {/* K-1: tavsif matni ataylab yo'q — Radix'ning rasmiy opt-out'i
             (`aria-describedby={undefined}`) console warning'ni o'chiradi. */}
         <Dialog.Content
+          {...noAccidentalClose}
           aria-describedby={undefined}
           className="-translate-x-1/2 -translate-y-1/2 fixed top-1/2 left-1/2 z-50 flex max-h-[92vh] w-full max-w-lg flex-col overflow-hidden rounded-2xl bg-[var(--ms-bg-surface)] shadow-2xl outline-none"
         >

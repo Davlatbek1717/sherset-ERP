@@ -7,6 +7,7 @@ import * as React from 'react';
 import { EmptyState } from '../feedback/EmptyState.tsx';
 import { Icons } from '../icons/action-icons.ts';
 import { cn } from '../lib/cn.ts';
+import { parkInitialFocus } from '../lib/dialog-guards.ts';
 import { Button } from '../primitives/Button.tsx';
 import { Input } from '../primitives/Input.tsx';
 
@@ -216,6 +217,14 @@ export function CatalogPicker<T = unknown>({
         <Dialog.Content
           data-test-id={testId ?? 'catalog-picker'}
           aria-describedby={undefined}
+          // Accidental-close guard (same contract as <Modal>): a picker holds a
+          // typed search and a half-made selection, so only the ✕ / footer
+          // buttons close it — never Escape, never a click on the dimmer.
+          onEscapeKeyDown={(e) => e.preventDefault()}
+          onInteractOutside={(e) => e.preventDefault()}
+          // Boshlang'ich fokus ✕ da qolmasin (skanerning Enter'i yopib
+          // yubormasin); ichkarida `autoFocus` bo'lsa u yutadi.
+          onOpenAutoFocus={parkInitialFocus}
           className={cn(
             '-translate-x-1/2 -translate-y-1/2 fixed top-1/2 left-1/2 z-[400]',
             'w-full max-w-xl bg-[var(--ms-bg-surface)]',

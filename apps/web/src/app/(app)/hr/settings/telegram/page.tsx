@@ -397,23 +397,35 @@ function ModalShell({
   testId: string;
   children: React.ReactNode;
 }) {
+  const tCommon = useTranslations('common');
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-      onKeyDown={(e) => {
-        if (e.key === 'Escape') onClose();
-      }}
-      // biome-ignore lint/a11y/useSemanticElements: role=dialog + ESC matches other HR modals; native <dialog> breaks tanstack-query flow
+      // Tasodifiy yopilish yo'q: fonga bosish ham, Esc ham oynani yopmaydi —
+      // faqat oynaning o'z tugmalari (@moysklad/ui `noAccidentalClose` bilan
+      // bir xil shartnoma; egasining jonli sinovi, 2026-08-12).
+      // biome-ignore lint/a11y/useSemanticElements: role=dialog; oyna faqat o‘z tugmalari bilan yopiladi; native <dialog> breaks tanstack-query flow
       role="dialog"
       aria-modal="true"
       tabIndex={-1}
       data-test-id={testId}
     >
       <div className="w-full max-w-md rounded-[var(--ms-radius-lg)] bg-[var(--ms-bg-surface)] p-6 shadow-xl">
-        <h2 className="font-semibold text-[var(--ms-text-strong)] text-lg">{title}</h2>
+        {/* Oyna endi fon/Esc bilan yopilmagani uchun ✕ MAJBURIY — yopishning
+            ko'rinadigan yo'li har doim ekranda tursin (pastdagi «Bekor»
+            tugmasi uzun formada scroll ostida qolishi mumkin). */}
+        <div className="flex items-start justify-between gap-3">
+          <h2 className="font-semibold text-[var(--ms-text-strong)] text-lg">{title}</h2>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label={tCommon('close')}
+            className="shrink-0 rounded p-1 text-[var(--ms-text-muted)] hover:bg-[var(--ms-bg-hover)] hover:text-[var(--ms-text-primary)]"
+            data-test-id={`${testId}-close`}
+          >
+            ✕
+          </button>
+        </div>
         <div className="mt-4">{children}</div>
       </div>
     </div>

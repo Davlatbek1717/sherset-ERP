@@ -429,19 +429,16 @@ export function QrPriceTagPrintOverlay({
     },
   });
 
-  // Escape closes; lock the page scroll behind the overlay while open.
+  // Lock the page scroll behind the overlay while open. Escape is deliberately
+  // NOT bound: this sheet carries a chosen format + selection, and a stray key
+  // used to throw all of it away — closing goes through the button only.
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    document.addEventListener('keydown', onKey);
     const prevOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     return () => {
-      document.removeEventListener('keydown', onKey);
       document.body.style.overflow = prevOverflow;
     };
-  }, [onClose]);
+  }, []);
 
   const spec = TAG_FORMATS[format];
   const perPage = spec.cols * spec.rows;

@@ -135,6 +135,10 @@ export function FilterDrawer({
           <Dialog.Overlay className="fixed inset-0 z-40 bg-black/20" />
           <Dialog.Content
             aria-describedby={undefined}
+            // dismissible-by-design: a filter panel holds no unsaved record —
+            // its values live in the list's URL/query state and survive a
+            // close, so Escape / dimmer-click stay as quick exits. Data-bearing
+            // dialogs are the opposite; see <Modal> `dismissible`.
             className={cn(
               'fixed right-0 top-0 z-50 h-full w-[360px] max-w-full',
               'bg-[var(--ms-bg-surface)] shadow-xl flex flex-col',

@@ -85,6 +85,8 @@ export function DocumentHistoryLink({
         onOpenChange={setOpen}
         title={tAudit('history_title')}
         widthClass="w-[920px]"
+        // Faqat o'qiladigan audit tarixi — yo'qoladigan kiritma yo'q.
+        dismissible
         testId="history-drawer"
       >
         <div className="px-4 py-4">

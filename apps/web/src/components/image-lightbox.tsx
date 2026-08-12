@@ -20,6 +20,9 @@ export function ImageLightbox({
   alt?: string;
   onClose: () => void;
 }) {
+  // dismissible-by-design: a picture viewer holds no user input — Escape and a
+  // backdrop click are the fastest way out and cost nothing. Every dialog that
+  // DOES carry input closes on deliberate action only (`noAccidentalClose`).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();

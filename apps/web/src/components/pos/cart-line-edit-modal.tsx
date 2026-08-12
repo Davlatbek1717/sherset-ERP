@@ -21,7 +21,7 @@ import { parseAmountToMinor } from '@/lib/pos/parse-amount';
 import { SHOW_MARGIN_ON_SCREEN } from '@/lib/pos/ui-flags';
 import { classifyPrice, priceFloorMinor } from '@moysklad/money';
 import type { CurrencyCode } from '@moysklad/money/currencies';
-import { formatMoney } from '@moysklad/ui';
+import { formatMoney, noAccidentalClose } from '@moysklad/ui';
 import * as Dialog from '@radix-ui/react-dialog';
 import { Lock, X } from 'lucide-react';
 import { useTranslations } from 'next-intl';
@@ -219,6 +219,7 @@ export function CartLineEditModal({
         <Dialog.Overlay className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm" />
         {/* K-1: tavsif matni ataylab yo'q — Radix'ning rasmiy opt-out'i. */}
         <Dialog.Content
+          {...noAccidentalClose}
           aria-describedby={undefined}
           data-test-id="pos-line-edit"
           data-price-band={band}

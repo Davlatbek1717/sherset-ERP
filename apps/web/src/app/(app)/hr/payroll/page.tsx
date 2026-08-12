@@ -735,13 +735,10 @@ function ManualBonusModal({
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-      onKeyDown={(e) => {
-        if (e.key === 'Escape') onClose();
-      }}
-      // biome-ignore lint/a11y/useSemanticElements: role=dialog + ESC matches other HR modals; native <dialog> breaks tanstack-query flow
+      // Tasodifiy yopilish yo'q: fonga bosish ham, Esc ham oynani yopmaydi —
+      // faqat oynaning o'z tugmalari (@moysklad/ui `noAccidentalClose` bilan
+      // bir xil shartnoma; egasining jonli sinovi, 2026-08-12).
+      // biome-ignore lint/a11y/useSemanticElements: role=dialog; oyna faqat o‘z tugmalari bilan yopiladi; native <dialog> breaks tanstack-query flow
       role="dialog"
       aria-modal="true"
       tabIndex={-1}
@@ -848,13 +845,10 @@ function PayrollDetailModal({
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-      onKeyDown={(e) => {
-        if (e.key === 'Escape') onClose();
-      }}
-      // biome-ignore lint/a11y/useSemanticElements: role=dialog + ESC matches other HR modals; native <dialog> breaks tanstack-query flow
+      // Tasodifiy yopilish yo'q: fonga bosish ham, Esc ham oynani yopmaydi —
+      // faqat oynaning o'z tugmalari (@moysklad/ui `noAccidentalClose` bilan
+      // bir xil shartnoma; egasining jonli sinovi, 2026-08-12).
+      // biome-ignore lint/a11y/useSemanticElements: role=dialog; oyna faqat o‘z tugmalari bilan yopiladi; native <dialog> breaks tanstack-query flow
       role="dialog"
       aria-modal="true"
       tabIndex={-1}

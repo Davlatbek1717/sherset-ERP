@@ -173,6 +173,8 @@ export function EmployeeHistoryLink({ employeeId }: { employeeId: string }) {
         onOpenChange={setOpen}
         title={tAudit('history_title')}
         widthClass="w-[920px]"
+        // Faqat o'qiladigan audit tarixi — yo'qoladigan kiritma yo'q.
+        dismissible
         testId="employee-history-drawer"
       >
         <div className="px-4 py-4">

@@ -145,6 +145,10 @@ function ConfirmDialog({
     target?.focus();
   }, [tone]);
 
+  // dismissible-by-design: unlike a <Modal>, this prompt holds no typed work —
+  // Escape resolves it as «cancel», i.e. the asked-about action simply does
+  // not happen and the form underneath is untouched. That is why the
+  // no-accidental-close contract (2026-08-12) deliberately stops at modals.
   React.useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.key === 'Escape') {

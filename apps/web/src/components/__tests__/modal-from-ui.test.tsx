@@ -74,7 +74,14 @@ describe('Modal', () => {
       expect(screen.getByRole('button', { name: 'Explicit' })).toBeInTheDocument();
     });
 
-    it('Escape key closes the modal (Radix default)', async () => {
+    /**
+     * 🔴 Egasining jonli sinovi (2026-08-12): kassir monoblokda oynaning
+     * chetiga tegib ketardi yoki skanerdan tasodifiy tugma kelardi — yarim
+     * to'ldirilgan oyna yopilib, hamma kiritilgan narsa yo'qolardi. Esc —
+     * Radix'ning sukut xulqi edi, bizning qarorimiz EMAS. Endi teskarisi:
+     * oyna faqat ✕ / footer tugmalari bilan yopiladi.
+     */
+    it('🔴 Escape oynani YOPMAYDI (sukut xulq)', async () => {
       const onOpenChange = vi.fn();
       const user = userEvent.setup();
       renderWithProviders(
@@ -83,6 +90,59 @@ describe('Modal', () => {
         </Modal>,
       );
       await user.keyboard('{Escape}');
+      expect(onOpenChange).not.toHaveBeenCalled();
+    });
+
+    it('`dismissible` berilsa Escape yana yopadi (navigatsion overlay)', async () => {
+      const onOpenChange = vi.fn();
+      const user = userEvent.setup();
+      renderWithProviders(
+        <Modal open dismissible onOpenChange={onOpenChange} title="Title">
+          <div>Body</div>
+        </Modal>,
+      );
+      await user.keyboard('{Escape}');
+      expect(onOpenChange).toHaveBeenCalledWith(false);
+    });
+
+    /**
+     * 🔴 Klaviatura yo'lining ikkinchi yarmi: Radix boshlang'ich fokusni
+     * birinchi tugmaga — bizning chrome'da ✕ ga — beradi. Shunda oyna
+     * ochilishi bilan kelgan ilk Enter (masalan skanerning oxirgi Enter'i)
+     * uni darhol yopardi. Endi fokus kartaning o'zida turadi.
+     */
+    it('🔴 ochilganda fokus ✕ da EMAS — ilk Enter oynani yopmaydi', async () => {
+      const onOpenChange = vi.fn();
+      const user = userEvent.setup();
+      renderWithProviders(
+        <Modal open onOpenChange={onOpenChange} title="Title" closeLabel="Yopish">
+          <div>Body</div>
+        </Modal>,
+      );
+      expect(screen.getByRole('button', { name: 'Yopish' })).not.toHaveFocus();
+      await user.keyboard('{Enter}');
+      expect(onOpenChange).not.toHaveBeenCalled();
+    });
+
+    it('ichkarida `autoFocus` maydon bo‘lsa — fokus o‘shanda qoladi', () => {
+      renderWithProviders(
+        <Modal open onOpenChange={vi.fn()} title="Title">
+          {/* biome-ignore lint/a11y/noAutofocus: aynan shu xulq tekshirilmoqda */}
+          <input autoFocus aria-label="Summa" />
+        </Modal>,
+      );
+      expect(screen.getByLabelText('Summa')).toHaveFocus();
+    });
+
+    it('✕ tugmasi esa har doim yopadi (yagona qasddan yo‘l)', async () => {
+      const onOpenChange = vi.fn();
+      const user = userEvent.setup();
+      renderWithProviders(
+        <Modal open onOpenChange={onOpenChange} title="Title" closeLabel="Yopish">
+          <div>Body</div>
+        </Modal>,
+      );
+      await user.click(screen.getByRole('button', { name: 'Yopish' }));
       expect(onOpenChange).toHaveBeenCalledWith(false);
     });
 

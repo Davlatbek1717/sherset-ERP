@@ -47,6 +47,7 @@ import {
   type PickerItem,
   cn,
   formatMoney,
+  noAccidentalClose,
   useDebounce,
 } from '@moysklad/ui';
 import * as Dialog from '@radix-ui/react-dialog';
@@ -718,6 +719,7 @@ export function ProductSelectModal({
       <Dialog.Portal>
         <Dialog.Overlay className="data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 fixed inset-0 z-[400] bg-black/40 data-[state=closed]:animate-out data-[state=open]:animate-in" />
         <Dialog.Content
+          {...noAccidentalClose}
           data-test-id="product-select-modal"
           // Mobile (owner 2026-07-20): the picker takes the WHOLE screen —
           // a centered 92vh card left unusable slivers on a phone.

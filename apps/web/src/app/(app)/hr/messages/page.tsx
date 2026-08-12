@@ -254,13 +254,10 @@ export default function HrMessagesPage() {
       {chatFor && (
         <div
           className="fixed inset-0 z-50 flex justify-end bg-black/40"
-          onClick={(e) => {
-            if (e.target === e.currentTarget) setChatFor(null);
-          }}
-          onKeyDown={(e) => {
-            if (e.key === 'Escape') setChatFor(null);
-          }}
-          // biome-ignore lint/a11y/useSemanticElements: native <dialog> incompatible with tanstack-query; role=dialog + ESC mirrors other HR modals
+          // Tasodifiy yopilish yo'q: fonga bosish ham, Esc ham oynani yopmaydi —
+          // faqat oynaning o'z tugmalari (@moysklad/ui `noAccidentalClose` bilan
+          // bir xil shartnoma; egasining jonli sinovi, 2026-08-12).
+          // biome-ignore lint/a11y/useSemanticElements: native <dialog> incompatible with tanstack-query; role=dialog; oyna faqat o‘z tugmalari bilan yopiladi
           role="dialog"
           aria-modal="true"
           tabIndex={-1}
