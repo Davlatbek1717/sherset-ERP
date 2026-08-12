@@ -59,7 +59,7 @@ export class PosPinService {
   /** PIN o'rnatish yoki almashtirish. */
   async setPin(accountId: string, employeeId: string, pin: string): Promise<{ ok: true }> {
     if (!isValidPosPin(pin)) {
-      throw new BadRequestException('PIN 4–6 raqamdan iborat bo`lishi kerak');
+      throw new BadRequestException('PIN 4 raqamdan iborat bo`lishi kerak');
     }
     const employee = await this.prisma.client.employee.findFirst({
       where: { id: employeeId, accountId },

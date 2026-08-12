@@ -16,8 +16,6 @@ export interface PinKeypadProps {
   maxLength: number;
 }
 
-/** Server sxemasi 4–6 raqam kutadi (`PosLoginSchema`) — minimum shu yerda ham. */
-const MIN_PIN = 4;
 const DIGITS = ['1', '2', '3', '4', '5', '6', '7', '8', '9'] as const;
 
 export function PinKeypad({ value, onChange, onSubmit, disabled, maxLength }: PinKeypadProps) {
@@ -33,12 +31,13 @@ export function PinKeypad({ value, onChange, onSubmit, disabled, maxLength }: Pi
   return (
     <div className="flex flex-col items-center gap-6">
       {/* Kiritilgan raqamlar OCHIQ ko'rsatilmaydi — kassa monitorini mijoz ham ko'radi.
-          Nuqtalar soni: kamida MIN_PIN (4), kiritish uzayganda O'SADI, `maxLength`
-          da to'xtaydi. Ilgari doim 6 ta chizilardi va 4 raqamli PIN qo'ygan kassir
-          «yana ikkitasi qani?» deb turardi (egasining jonli sinovi, 2026-08-11) —
-          6 ga qotirib qo'yish esa 5–6 raqamli PIN'ni kiritib bo'lmas qilardi. */}
+          Nuqtalar soni ENDI O'ZGARMAS: aynan `maxLength` ta. Ilgari u kiritish
+          bilan o'sardi (server 4–6 ni qabul qilgani uchun) va o'sadigan
+          indikator kassirga «yana bosaverish mumkin» degan ishora berardi —
+          egasi 2026-08-12 da aynan shunday 5-, keyin 6-raqamni kiritdi.
+          Qat'iy N ta doira = qat'iy N raqam, boshqa o'qish yo'q. */}
       <div className="flex h-12 items-center gap-3" aria-label={t('pin_label')}>
-        {Array.from({ length: Math.min(maxLength, Math.max(MIN_PIN, value.length)) }, (_, i) => (
+        {Array.from({ length: maxLength }, (_, i) => (
           <span
             // biome-ignore lint/suspicious/noArrayIndexKey: pozitsiya-indikator, ro'yxat emas
             key={i}
@@ -95,7 +94,8 @@ export function PinKeypad({ value, onChange, onSubmit, disabled, maxLength }: Pi
       <button
         type="button"
         onClick={onSubmit}
-        disabled={disabled || value.length < MIN_PIN}
+        // Uzunlik AYNAN bitta ⇒ «to'liq emas» va «juda uzun» bir shart.
+        disabled={disabled || value.length !== maxLength}
         className="h-14 w-full rounded-[var(--ms-radius-md)] bg-[var(--ms-brand-500)] font-semibold text-white disabled:opacity-50"
       >
         {t('submit')}

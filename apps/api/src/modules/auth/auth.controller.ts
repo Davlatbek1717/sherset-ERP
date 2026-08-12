@@ -195,7 +195,7 @@ export class AuthController {
     return this.posPin.hasPin(user.accountId, user.sub);
   }
 
-  /** PIN o'rnatish / almashtirish (4–6 raqam). */
+  /** PIN o'rnatish / almashtirish (AYNAN 4 raqam). */
   @UseGuards(JwtAuthGuard)
   @Post('pos-pin')
   setPosPin(@CurrentUser() user: AuthenticatedUser, @Body() body: unknown) {

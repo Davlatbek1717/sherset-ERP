@@ -79,7 +79,7 @@ describe('kirish ekrani (PinKeypad) — sahifa numpadi', () => {
         onChange={() => undefined}
         onSubmit={() => undefined}
         disabled={false}
-        maxLength={6}
+        maxLength={4}
       />,
     );
   });
@@ -151,7 +151,7 @@ describe('umumiy invariant — kiritish yo`li AYNAN BITTA', () => {
         onChange={() => undefined}
         onSubmit={() => undefined}
         disabled={false}
-        maxLength={6}
+        maxLength={4}
       />,
     );
     const hasPageNumpad = pageDigitButtons(document.body).length > 0;

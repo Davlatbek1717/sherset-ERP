@@ -112,10 +112,12 @@ export function PosPinLock() {
           inputMode="numeric"
           autoFocus
           value={pin}
-          maxLength={6}
-          onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))}
+          // AYNAN 4 (`POS_PIN_RE`). `maxLength` qobiq klaviaturasi yuborgan
+          // kalitni ham to'sadi — u brauzer kiritish yo'lidan o'tadi.
+          maxLength={4}
+          onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 4))}
           onKeyDown={(e) => {
-            if (e.key === 'Enter' && pin.length >= 4) void unlock();
+            if (e.key === 'Enter' && pin.length === 4) void unlock();
           }}
           className="text-center text-2xl tracking-[0.5em]"
           data-test-id="pos-pin-input"
@@ -128,7 +130,7 @@ export function PosPinLock() {
         <Button
           className="mt-4 w-full"
           onClick={() => void unlock()}
-          disabled={pending || pin.length < 4}
+          disabled={pending || pin.length !== 4}
           data-test-id="pos-pin-submit"
         >
           {t('unlock')}

@@ -14,7 +14,7 @@ function renderKeypad(props: Partial<React.ComponentProps<typeof PinKeypad>> = {
         onChange={onChange}
         onSubmit={onSubmit}
         disabled={false}
-        maxLength={6}
+        maxLength={4}
         {...props}
       />
     </NextIntlClientProvider>,
@@ -36,9 +36,20 @@ describe('PinKeypad', () => {
     expect(onChange).toHaveBeenCalledWith('123');
   });
 
-  it('maxLength ga yetganda yangi raqam QO`SHILMAYDI', () => {
-    const { onChange } = renderKeypad({ value: '123456', maxLength: 6 });
-    fireEvent.click(screen.getByRole('button', { name: '7' }));
+  /**
+   * 🔴 EGASINING JONLI SINOVI (2026-08-12): 5-raqam bosilganda u KIRITILDI,
+   * 6-raqam ham. Sabab kirish sahifasidagi `MAX_PIN = 6` edi. Endi chegara
+   * AYNAN 4 — bu test 5-bosishni qo'riqlaydi, 7-bosishni emas.
+   */
+  it('4 raqam kiritilgach 5-raqam QO`SHILMAYDI', () => {
+    const { onChange } = renderKeypad({ value: '1234', maxLength: 4 });
+    fireEvent.click(screen.getByRole('button', { name: '5' }));
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it('«0» ham chegaradan o`tkazmaydi (alohida tugma — o`z yo`li bor)', () => {
+    const { onChange } = renderKeypad({ value: '1234', maxLength: 4 });
+    fireEvent.click(screen.getByRole('button', { name: '0' }));
     expect(onChange).not.toHaveBeenCalled();
   });
 
@@ -87,34 +98,30 @@ describe('PinKeypad', () => {
 
   /**
    * Nuqtalar soni — kassirning «PIN necha raqamli?» degan yagona ishorasi.
-   * Ilgari HAR DOIM `maxLength` (6) ta chizilardi: 4 raqamli PIN qo'ygan kassir
-   * ikkita bo'sh doira oldida turib qolardi (egasi 2026-08-11 da ko'rsatdi).
-   * 4 ga QOTIRISH esa teskari xato bo'lardi — server 4–6 ni qabul qiladi va
-   * 6 raqamli PIN kiritib bo'lmay qolardi. Shuning uchun: kamida 4, kiritish
-   * bilan o'sadi, `maxLength` da to'xtaydi.
+   * Endi u O'ZGARMAS: `maxLength` (= 4) ta. Ilgari u kiritish bilan O'SARDI,
+   * chunki server 4–6 ni qabul qilardi; o'sadigan indikator esa «yana raqam
+   * bosish mumkin» degan ishora berardi va aynan shu egasini 5–6 raqam
+   * kiritishga olib keldi (2026-08-12). Qat'iy 4 ta doira = qat'iy 4 raqam.
    */
   describe('nuqtalar soni', () => {
     const dots = (): number =>
       screen.getByLabelText(messages.kassaLogin.pin_label).querySelectorAll('span').length;
 
-    it('bo`sh qiymatda 4 ta (6 ta EMAS)', () => {
-      renderKeypad({ value: '', maxLength: 6 });
+    it.each([
+      ['bo`sh', ''],
+      ['yarim', '12'],
+      ['to`la', '1234'],
+    ])('%s qiymatda ham AYNAN 4 ta', (_case, value) => {
+      renderKeypad({ value, maxLength: 4 });
       expect(dots()).toBe(4);
     });
 
-    it('4 raqam kiritilganda ham 4 ta', () => {
-      renderKeypad({ value: '1234', maxLength: 6 });
-      expect(dots()).toBe(4);
-    });
-
-    it('5-raqam kiritilsa 5 ta bo`ladi (uzun PIN bloklanmaydi)', () => {
-      renderKeypad({ value: '12345', maxLength: 6 });
-      expect(dots()).toBe(5);
-    });
-
-    it('maxLength dan oshmaydi', () => {
-      renderKeypad({ value: '123456', maxLength: 6 });
-      expect(dots()).toBe(6);
+    it('to`ldirilgan doiralar soni = kiritilgan raqamlar soni', () => {
+      renderKeypad({ value: '12', maxLength: 4 });
+      const filled = [
+        ...screen.getByLabelText(messages.kassaLogin.pin_label).querySelectorAll('span'),
+      ].filter((s) => s.className.includes('bg-[var(--ms-brand-500)]'));
+      expect(filled).toHaveLength(2);
     });
   });
 });

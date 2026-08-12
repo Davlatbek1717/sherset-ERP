@@ -110,13 +110,16 @@ export interface LoginResponse {
 }
 
 /**
- * POS PIN (kassa TZ §3.2) — 4–6 raqam.
+ * POS PIN (kassa TZ §3.2) — AYNAN 4 raqam.
  *
  * Uzunlik chegarasi ataylab tor: PIN qulay qaytish vositasi, parol emas.
  * Uzaytirish kassirni yozib qo'yishga majbur qiladi va qulfni zaiflashtiradi.
+ *
+ * 🔴 2026-08-12: `4,6` diapazoni AYNAN 4 ga toraytirildi — sabab va migratsiya
+ * eslatmasi `kiosk-policy.ts` → `POS_PIN_RE` da.
  */
 export const SetPosPinSchema = z.object({
-  pin: z.string().regex(/^\d{4,6}$/, 'PIN 4-6 raqamdan iborat bo`lishi kerak'),
+  pin: z.string().regex(/^\d{4}$/, 'PIN 4 raqamdan iborat bo`lishi kerak'),
 });
 export type SetPosPinInput = z.infer<typeof SetPosPinSchema>;
 
@@ -131,7 +134,7 @@ export type SetPosPinInput = z.infer<typeof SetPosPinSchema>;
 export const SetEmployeePosPinSchema = z.object({
   pin: z
     .string()
-    .regex(/^\d{4,6}$/, 'PIN 4-6 raqamdan iborat bo`lishi kerak')
+    .regex(/^\d{4}$/, 'PIN 4 raqamdan iborat bo`lishi kerak')
     .nullable(),
 });
 export type SetEmployeePosPinInput = z.infer<typeof SetEmployeePosPinSchema>;
@@ -152,13 +155,15 @@ export type SetEmployeePosPinInput = z.infer<typeof SetEmployeePosPinSchema>;
  * berilmasa xodim PIN bo'yicha topiladi.
  *
  * NIMA YO'QOTILDI (ochiq yozib qo'yilsin): qurilma kaliti ikkinchi omil edi —
- * usiz kassa hisobiga kirish 4–6 raqamga qolади va manzilni bilgan har kim
+ * usiz kassa hisobiga kirish 4 raqamga qoladi va manzilni bilgan har kim
  * PIN sinab ko'ra oladi. Egasi bu almashuvdan xabardor holda qaror qildi.
+ * (2026-08-12 da maydon yana toraydi: 4–6 emas, AYNAN 4 ⇒ 10 000 variant.
+ * Buni ushlab turadigan yagona narsa — `POS_PIN_MAX_ATTEMPTS = 5` qulfi.)
  */
 export const PosLoginSchema = z.object({
   deviceId: z.string().uuid().optional(),
   deviceSecret: z.string().min(32).optional(),
-  pin: z.string().regex(/^\d{4,6}$/, 'PIN 4-6 raqamdan iborat bo`lishi kerak'),
+  pin: z.string().regex(/^\d{4}$/, 'PIN 4 raqamdan iborat bo`lishi kerak'),
 });
 export type PosLoginInput = z.infer<typeof PosLoginSchema>;
 

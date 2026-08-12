@@ -20,8 +20,14 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { useEffect, useState } from 'react';
 
-/** Server sxemasi bilan bir xil: 4–6 raqam (`SetEmployeePosPinSchema`). */
-const PIN_RE = /^\d{4,6}$/;
+/**
+ * Server sxemasi bilan bir xil: AYNAN 4 raqam (`SetEmployeePosPinSchema`).
+ *
+ * 🔴 Bu yerni kirish ekrani bilan BIRGA o'zgartirish shart. Diapazon qolib
+ * ketsa admin 6 raqamli PIN qo'ya olardi, kassir esa 4 ta doirali ekranda
+ * uni hech qachon kirita olmasdi — hisob jimgina o'lik qolardi.
+ */
+const PIN_RE = /^\d{4}$/;
 
 export function PosPinModal({
   open,
@@ -98,8 +104,9 @@ export function PosPinModal({
 
         <Input
           value={pin}
-          onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
+          onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 4))}
           placeholder="1234"
+          maxLength={4}
           inputMode="numeric"
           autoComplete="off"
           data-testid="employee-pos-pin-input"

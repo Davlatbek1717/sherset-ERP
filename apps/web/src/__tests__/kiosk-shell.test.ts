@@ -111,9 +111,44 @@ describe('PIN-qulf', () => {
     expect(lock).toMatch(/if \(!hasPin \|\| locked\) return;/);
   });
 
-  it('faqat raqam qabul qilinadi, uzunligi 6 bilan cheklangan', () => {
+  it('faqat raqam qabul qilinadi, uzunligi 4 bilan cheklangan', () => {
     expect(lock).toContain("replace(/\\D/g, '')");
-    expect(lock).toContain('maxLength={6}');
+    expect(lock).toContain('maxLength={4}');
+  });
+});
+
+/**
+ * 🔴 PIN UZUNLIGI — AYNAN 4, TO'RT JOYDA BIR XIL (2026-08-12).
+ *
+ * Egasi jonli qurilmada 5-raqamni bosdi va u kiritildi, keyin 6-raqam ham.
+ * Sabab: butun zanjir 4–6 ga qurilgan edi va kirish sahifasi `MAX_PIN = 6`
+ * uzatardi.
+ *
+ * NEGA TO'RTALASI BIRGA QULFLANADI: bittasi qolib ketsa shartnoma jimgina
+ * ikkiga bo'linadi — masalan admin modali 6 raqamli PIN qo'yishga ruxsat
+ * bersa, kassir uni kirish ekranida (4 ta doira) HECH QACHON kirita olmaydi
+ * va hisob o'lik qoladi. Hech bir typecheck/biome buni tutmaydi: to'rttasi
+ * ham mustaqil literal.
+ */
+describe('PIN uzunligi — zanjir bo`ylab AYNAN 4', () => {
+  const kassaKirish = readFileSync(join(WEB, 'app', 'kassa-kirish', 'page.tsx'), 'utf8');
+  const pinModal = readFileSync(
+    join(WEB, 'app', '(app)', 'settings', 'employees', '_components', 'pos-pin-modal.tsx'),
+    'utf8',
+  );
+
+  it('server RE aynan 4 raqam (4–6 EMAS)', () => {
+    expect(policy).toMatch(/POS_PIN_RE\s*=\s*\/\^\\d\{4\}\$\//);
+  });
+
+  it('kirish sahifasi klaviaturaga 4 uzatadi', () => {
+    expect(kassaKirish).toMatch(/PIN_LENGTH\s*=\s*4/);
+    expect(kassaKirish).not.toMatch(/maxLength=\{6\}/);
+  });
+
+  it('admin PIN qo`yish modali 4 dan uzunini qabul qilmaydi', () => {
+    expect(pinModal).toMatch(/PIN_RE\s*=\s*\/\^\\d\{4\}\$\//);
+    expect(pinModal).toContain('slice(0, 4)');
   });
 });
 

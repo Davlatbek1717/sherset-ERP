@@ -8,8 +8,16 @@ import { useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 
-/** Server sxemasi 4–6 raqam kutadi (`PosLoginSchema`). */
-const MAX_PIN = 6;
+/**
+ * PIN uzunligi — AYNAN 4 (`PosLoginSchema` / `POS_PIN_RE` bilan bir xil).
+ *
+ * 🔴 2026-08-12: bu yerda `6` turardi va aynan shu tufayli egasi 5-, keyin
+ * 6-raqamni kiritib yubordi. Klaviatura o'zi chegarani to'g'ri hurmat qiladi —
+ * xato faqat SHU sonda edi. Serverni ham 4 ga toraytirmasdan o'zgartirish
+ * shartnomani ikkiga bo'lardi (admin 6 raqamli PIN qo'yadi, kassir kirita
+ * olmaydi) — `kiosk-shell.test.ts` to'rtala joyni birga qulflaydi.
+ */
+const PIN_LENGTH = 4;
 
 /**
  * Kassa kirishi — FAQAT PIN.
@@ -68,7 +76,7 @@ export default function KassaKirishPage() {
               onChange={setPin}
               onSubmit={submit}
               disabled={pending}
-              maxLength={MAX_PIN}
+              maxLength={PIN_LENGTH}
             />
           </div>
         </div>

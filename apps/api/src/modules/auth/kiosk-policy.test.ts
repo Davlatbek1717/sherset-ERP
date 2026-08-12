@@ -219,11 +219,16 @@ describe('ro`yxat sog`ligi', () => {
 });
 
 describe('POS PIN', () => {
-  it.each(['1234', '12345', '123456'])('%s — to`g`ri (4–6 raqam)', (pin) => {
+  it.each(['1234', '0000', '9999'])('%s — to`g`ri (AYNAN 4 raqam)', (pin) => {
     expect(isValidPosPin(pin)).toBe(true);
   });
 
-  it.each(['123', '1234567', '', 'abcd', '12a4', '12 34', '１２３４'])(
+  // 🔴 2026-08-12: 5 va 6 raqam ENDI RAD ETILADI. Egasi jonli qurilmada
+  // 5-raqamni bosib ko'rdi va u kiritildi — «4 tadan oshmasligi kerak».
+  // Uzunlik butun zanjirda AYNAN 4: server RE + admin PIN qo'yishi + kirish
+  // klaviaturasi + qulf ekrani. Biri qolib ketsa shartnoma ikkiga bo'linadi
+  // (admin 6 raqamli PIN qo'yadi, kassir uni kirita olmaydi).
+  it.each(['123', '12345', '123456', '1234567', '', 'abcd', '12a4', '12 34', '１２３４'])(
     '%s — rad etiladi',
     (pin) => {
       expect(isValidPosPin(pin)).toBe(false);

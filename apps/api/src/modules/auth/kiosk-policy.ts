@@ -201,12 +201,22 @@ export function isKioskAllowed(method: string, path: string): boolean {
 }
 
 /**
- * PIN shakli: 4–6 raqam (TZ §3.2).
+ * PIN shakli: AYNAN 4 raqam (TZ §3.2, 2026-08-12 da toraytirildi).
  *
  * Uzunlik chegarasi ataylab tor: PIN — qulay qaytish vositasi, parol emas.
  * Uni uzaytirish kassirni yozib qo'yishga majbur qiladi va qulfni zaiflashtiradi.
+ *
+ * 🔴 Ilgari `4,6` edi. Egasi jonli qurilmada 5- va 6-raqamni kiritib ko'rdi
+ * («4 tadan oshmasligi kerak»). Diapazon o'zi UI'da ham yopishqoq muammo
+ * tug'dirardi: kassirga necha raqam kutilayotgani ko'rinmasdi. Bu qiymat —
+ * butun zanjirning YAGONA manbai; web tomoni `kiosk-shell.test.ts` bilan
+ * shu yerga qulflangan.
+ *
+ * ⚠️ Migratsiya: 5–6 raqamli PIN'i bor xodim kira olmaydi — admin unga
+ * xodim kartasidan 4 raqamli PIN qayta qo'yishi kerak. PIN xesh saqlanadi,
+ * ya'ni eski uzunlikni oldindan aniqlab bo'lmaydi.
  */
-export const POS_PIN_RE = /^\d{4,6}$/;
+export const POS_PIN_RE = /^\d{4}$/;
 
 export function isValidPosPin(pin: string): boolean {
   return POS_PIN_RE.test(pin);
