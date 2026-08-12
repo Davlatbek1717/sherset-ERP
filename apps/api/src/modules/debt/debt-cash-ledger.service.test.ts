@@ -1,4 +1,4 @@
-import { Logger } from '@nestjs/common';
+import { BadRequestException, Logger } from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
 import { DebtService } from './debt.service.js';
 
@@ -37,6 +37,8 @@ interface PaymentRow {
   reversedAt: Date | null;
   receivedById: string;
   sourceName: string | null;
+  /** POS to'lovi qaysi smenada qabul qilingan (NULL = POS'dan tashqarida). */
+  retailShiftId: string | null;
 }
 
 function makeSvc(
@@ -58,6 +60,21 @@ function makeSvc(
      * (aynan eski BUG) deb yozilganda ham hamma test yashil bo'lib turardi.
      */
     deskCurrency?: string;
+    /**
+     * `CashierSession.state` — to'lov qabul qilingan SMENA holati.
+     *
+     * `undefined` = smena qatori bazada TOPILMAYDI (`findFirst → null`): eski
+     * yoki o'chib ketgan sessiyaga ishora. `'open'`/`'closed'` bersa qator
+     * shu holatda topiladi.
+     */
+    shiftState?: 'open' | 'closed';
+    /**
+     * 🔴 POYGA modeli. `reversePayment` tashqarida O'QIGAN nusxada `reversedAt`
+     * hali `null`, bazadagi qatorda esa raqib tranzaksiya uni allaqachon
+     * qo'ygan. Ya'ni ikkinchi storno tashqi tez-yo'l tekshiruvidan JIM o'tadi
+     * va faqat tranzaksiya ichidagi shartli claim to'xtatishi mumkin.
+     */
+    staleUnreversedSnapshot?: true;
   } = {},
 ) {
   const deskCurrency = opts.deskCurrency ?? 'UZS';
@@ -91,6 +108,7 @@ function makeSvc(
       reversedAt: null,
       receivedById: 'u1',
       sourceName: 'Kassa 1',
+      retailShiftId: null,
       ...opts.seedPayment,
     });
     debtRow.paidMinor = payments[0]?.amountMinor ?? 0n;
@@ -133,6 +151,7 @@ function makeSvc(
         reversedAt: null,
         receivedById: 'u1',
         sourceName: null,
+        retailShiftId: null,
         ...(args.data as unknown as Partial<PaymentRow>),
       };
       payments.push(row);
@@ -144,6 +163,23 @@ function makeSvc(
       Object.assign(row, args.data);
       return { ...row };
     },
+    /**
+     * SHARTLI claim — `where` HAQIQATAN filtrlaydi (`reversedAt: null` ni
+     * ham). Aks holda soxta qatlam «atomik» kodni ham, shartsiz `update` ni
+     * ham bir xil yashil ko'rsatardi va poyga testi bo'shab qolardi.
+     */
+    updateMany: async (args: {
+      where: { id: string; accountId?: string; reversedAt?: null };
+      data: Record<string, unknown>;
+    }) => {
+      const matched = payments.filter(
+        (p) =>
+          p.id === args.where.id &&
+          (!('reversedAt' in args.where) || p.reversedAt === args.where.reversedAt),
+      );
+      for (const row of matched) Object.assign(row, args.data);
+      return { count: matched.length };
+    },
     aggregate: async () => ({
       _sum: {
         amountMinor: payments
@@ -153,7 +189,9 @@ function makeSvc(
     }),
     findFirst: async (args: { where: { id: string } }) => {
       const row = payments.find((p) => p.id === args.where.id);
-      return row ? { ...row, receivedBy: { name: 'Kassir' } } : null;
+      if (!row) return null;
+      const snapshot = opts.staleUnreversedSnapshot ? { ...row, reversedAt: null } : { ...row };
+      return { ...snapshot, receivedBy: { name: 'Kassir' } };
     },
   };
 
@@ -177,6 +215,11 @@ function makeSvc(
     // Storno endi yashiq VALYUTASINI o'qiydi (`debt-cash-ledger.deskCurrency`):
     // kassa boshqa valyutada bo'lsa teskari harakat ham yozilmaydi.
     cashDesk: { findFirst: async () => ({ currency: deskCurrency }) },
+    // Storno smena holatini o'qiydi: yopilgan smenaning muzlatilgan farq akti
+    // retroaktiv buzilmasin (`undefined` = qator topilmadi).
+    cashierSession: {
+      findFirst: async () => (opts.shiftState ? { state: opts.shiftState } : null),
+    },
     debtPayment: paymentDelegate,
     debtNote: {
       create: async () => ({ id: 'note-1' }),
@@ -388,6 +431,96 @@ describe('DebtService storno — yashiqdan qaytarish (M-05 simmetriyasi)', () =>
    * `wasWritten` tekshiruvi yana `deltas.length === 0` dan KEYINGA qaytarilsa
    * (o'sha holda bu shoxga umuman kirilmaydi) — shu test QIZIL bo'ladi.
    */
+  /**
+   * 🔴 IKKI PARALLEL STORNO — yashiqdan pul IKKI MARTA chiqmaydi (Faza 2).
+   *
+   * `reversedAt` tekshiruvi tranzaksiyadan TASHQARIDA o'qilgan nusxa ustida
+   * ishlaydi, `reverseCashDeskDelta` esa har chaqiruvda `−amount` yozadi. Ikki
+   * tab (yoki timeout keyin retry) ikkalasi ham tashqi tekshiruvdan o'tsa,
+   * shartsiz `update` ikkinchi debetni ham yozib yuborardi.
+   *
+   * Bu yerda ATOMIKLIK EMAS, uning KO'RINADIGAN oqibati o'lchanadi: tashqi
+   * nusxa «qaytarilmagan» deb turganda ham (raqib allaqachon qo'ygan) storno
+   * XATO bilan to'xtaydi va yashiqqa BITTA ham delta tushmaydi.
+   *
+   * MUTANT: claim'dan `reversedAt: null` sharti olib tashlansa yoki
+   * `count === 0` shoxi o'chirilsa — shu test QIZIL.
+   */
+  it('🔴 raqib storno ulgurgan bo`lsa: xato otiladi, yashiqqa delta TUSHMAYDI', async () => {
+    const { svc, cashDeltas, payments } = makeSvc({
+      // Bazadagi qator ALLAQACHON storno (raqib tranzaksiya)…
+      seedPayment: { reversedAt: new Date('2026-08-12T09:00:00Z') },
+      // …lekin bizning tashqi o'qishimiz uni `null` ko'rgan.
+      staleUnreversedSnapshot: true,
+    });
+
+    await expect(
+      svc.reversePayment(ACC, 'u1', 'cashier', DEBT, 'pay-seed', { reason: 'ikkinchi urinish' }),
+    ).rejects.toThrow(BadRequestException);
+
+    // Kredit daftarda BOR (legacy emas), ya'ni qo'riqchi bo'lmasa aynan shu
+    // yerda ikkinchi `−30 000` yozilardi.
+    expect(cashDeltas).toHaveLength(0);
+    // Raqibning muhri o'zgarmadi — bizning `reversedById` ustiga yozilmadi.
+    expect(payments[0]?.reversedAt).toEqual(new Date('2026-08-12T09:00:00Z'));
+  });
+
+  /**
+   * 🔴 YOPILGAN SMENA — muzlatilgan farq akti retroaktiv buzilmaydi (Faza 2).
+   *
+   * Smena yopilganda kutilgan naqd MUZLATILADI (`expectedCashMinor` +
+   * `CashierSessionVariance`), keyingi hisoblar esa `reversedAt: null`
+   * filtridan qayta yig'iladi. Yopilgan smenadagi to'lovni storno qilish
+   * kutilgan naqdni pasaytirib, muzlatilgan aktni yolg'onga chiqaradi:
+   * farqsiz yopilgan smena keyin «ortiqcha» ko'rsatardi.
+   *
+   * MUTANT: smena qo'riqchisi o'chirilsa yoki shart `state !== 'open'` dan
+   * boshqasiga aylantirilsa — shu test QIZIL.
+   */
+  it('🔴 yopilgan smenadagi to`lov stornosi BLOKLANADI', async () => {
+    const { svc, cashDeltas } = makeSvc({
+      seedPayment: { retailShiftId: 'shift-1' },
+      shiftState: 'closed',
+    });
+
+    await expect(
+      svc.reversePayment(ACC, 'u1', 'cashier', DEBT, 'pay-seed', { reason: 'xato summa' }),
+    ).rejects.toThrow(/Smena yopilgan/);
+
+    expect(cashDeltas).toHaveLength(0);
+  });
+
+  it('OCHIQ smenadagi to`lov stornosi normal o`tadi', async () => {
+    const { svc, cashDeltas, payments } = makeSvc({
+      seedPayment: { retailShiftId: 'shift-1' },
+      shiftState: 'open',
+    });
+
+    await svc.reversePayment(ACC, 'u1', 'cashier', DEBT, 'pay-seed', { reason: 'xato summa' });
+
+    expect(payments[0]?.reversedAt).not.toBeNull();
+    expect(cashDeltas).toHaveLength(1);
+    expect(cashDeltas[0]).toMatchObject({ deltaMinor: -30_000n });
+  });
+
+  /**
+   * Smena qatori TOPILMASA storno bloklanmaydi: «o'lchanmagan» holat (eski yoki
+   * o'chib ketgan sessiyaga ishora qilgan `retailShiftId`) operatorning xato
+   * to'lovni qaytarish huquqini olib qo'ymasligi kerak — aks holda qo'riqchi
+   * o'zi yangi tuzoq bo'lib qolardi.
+   */
+  it('smena qatori topilmasa storno BLOKLANMAYDI (o`lchanmagan ≠ yopilgan)', async () => {
+    const { svc, cashDeltas, payments } = makeSvc({
+      seedPayment: { retailShiftId: 'shift-yoq' },
+      // shiftState berilmadi ⇒ `cashierSession.findFirst` null qaytaradi.
+    });
+
+    await svc.reversePayment(ACC, 'u1', 'cashier', DEBT, 'pay-seed', { reason: 'xato summa' });
+
+    expect(payments[0]?.reversedAt).not.toBeNull();
+    expect(cashDeltas).toHaveLength(1);
+  });
+
   it('kassa valyutasi O`ZGARIB ketgan bo`lsa: storno o`tadi, lekin XATO qayd etiladi', async () => {
     const errorSpy = vi.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
     try {

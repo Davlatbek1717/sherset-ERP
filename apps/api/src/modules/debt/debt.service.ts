@@ -1315,14 +1315,48 @@ export class DebtService {
       (minor / 100n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
 
     const updated = await this.prisma.client.$transaction(async (tx) => {
-      await tx.debtPayment.update({
-        where: { id: payment.id },
+      // 🔴 ATOMIK DA'VO (`remove()` naqshi, quyida). Yuqoridagi `reversedAt`
+      // tekshiruvi tranzaksiyadan TASHQARIDA o'qilgan nusxa ustida ishlaydi —
+      // ikki parallel storno (ikki tab / timeout keyin retry) ikkalasi ham
+      // undan o'tib, `reverseCashDeskDelta` orqali yashiqdan pulni IKKI MARTA
+      // chiqarardi. Shart `reversedAt: null` — g'olib bitta bo'ladi. Tashqi
+      // tekshiruv o'chirilmaydi: u arzon tez-yo'l (400 ni tranzaksiyasiz
+      // qaytaradi), qo'riqchining O'ZI esa shu claim.
+      const claimed = await tx.debtPayment.updateMany({
+        where: { id: payment.id, accountId, reversedAt: null },
         data: {
           reversedAt: new Date(),
           reversedById: userId,
           reverseReason: input.reason,
         },
       });
+      if (claimed.count === 0) {
+        // Raqib tranzaksiya ulgurdi — jimgina davom etsak yashiqdan ikkinchi
+        // marta pul chiqardik.
+        throw new BadRequestException('Bu to’lov allaqachon qaytarilgan');
+      }
+
+      // YOPILGAN SMENA (2026-08-12). `collectCashInputs` `reversedAt: null`
+      // filtrlaydi, ya'ni storno yopilgan smenaning QAYTA HISOBLANGAN kutilgan
+      // naqdini o'zgartirib yuboradi, muzlatilgan farq akti esa turaveradi —
+      // farqsiz yopilgan smena keyin «ortiqcha» ko'rsatardi. Chek qaytarish
+      // yo'li aynan shu sababdan bloklangan (`retail-sale.service.ts`); qarz
+      // stornosi ham shu qoidaga bo'ysunadi.
+      //
+      // Smena qatori TOPILMASA storno BLOKLANMAYDI: `retailShiftId` eski/o'chib
+      // ketgan sessiyaga ishora qilishi mumkin, va «o'lchanmagan» holat
+      // operatorning xato to'lovni qaytarish huquqini olib qo'ymaydi.
+      if (payment.retailShiftId) {
+        const shift = await tx.cashierSession.findFirst({
+          where: { id: payment.retailShiftId, accountId },
+          select: { state: true },
+        });
+        if (shift && shift.state !== 'open') {
+          throw new BadRequestException(
+            'Smena yopilgan — bu to’lovni qaytarib bo’lmaydi. Menejerga murojaat qiling (farq akti orqali tuzatiladi).',
+          );
+        }
+      }
 
       // Kassa daftari (`M-05`): qaytarilgan naqd yashiqdan CHIQADI.
       await this.reverseCashDeskDelta(tx, accountId, payment, debt.counterpartyId, input.reason);
