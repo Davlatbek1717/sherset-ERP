@@ -1,6 +1,10 @@
 import { Prisma } from '@moysklad/db';
 import { BadRequestException, Inject, Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service.js';
+// P14/`H3`: POS yashig'idan FAQAT xarajatni olish sharti — byudjet moduli
+// bilan BIR MANBA. Ikkinchi literal yozilsa, chegara ikki joyda yashab
+// jimgina ajralib ketardi (`expense-budget-fact-sources` xotirasi).
+import { drawerExpenseWhereKind } from '../expense-budget/expense-fact.js';
 // Analitika TZ §4 — yagona formulalar qatlami.
 import { marginPercentText } from './metrics/index.js';
 import { type PnlFilterInput, PnlFilterSchema, type PnlGroupByValue } from './pnl.schema.js';
@@ -89,10 +93,11 @@ export class PnlService {
     seen: CurrencyTally,
   ): Promise<PnlRow> {
     // Revenue + COGS come from posted Demand minus posted SalesReturn.
-    // Other expenses come from posted PaymentOut + CashOut. Each money table
-    // is grouped by currency so its document-currency total can be
-    // base-consolidated; COGS (demand.cost_sum_minor) is ALREADY base
-    // (normalized at supply-post) so it is summed directly.
+    // Other expenses come from posted PaymentOut + CashOut + POS drawer
+    // expenses (P14/`H3`). Each money table is grouped by currency so its
+    // document-currency total can be base-consolidated; COGS
+    // (demand.cost_sum_minor) is ALREADY base (normalized at supply-post) so
+    // it is summed directly.
     const orgClause = filter.organizationId
       ? Prisma.sql`AND organization_id = ${filter.organizationId}::uuid`
       : Prisma.empty;
@@ -110,7 +115,13 @@ export class PnlService {
       sum_minor: bigint | null;
       cost_minor: bigint | null;
     };
-    const [demandRows, returnRows, payOutRows, cashOutRows] = await Promise.all([
+    // P14/`H3` — POS yashig'idan chiqqan XARAJAT (`РКО-`). Chegara sharti
+    // (`kind = 'expense'`) MAJBURIY: o'sha jadvalda инкассация ham turadi, u
+    // esa xarajat emas — kassadan bankka ko'chirish, va o'sha pul bankdan
+    // `PaymentOut` bilan chiqqanda YUQORIDA allaqachon sanalgan. Filtrsiz
+    // yig'indi bir pulni ikki marta hisoblardi.
+    const drawerKind = drawerExpenseWhereKind().kind;
+    const [demandRows, returnRows, payOutRows, cashOutRows, drawerOutRows] = await Promise.all([
       this.prisma.client.$queryRaw<CurRow[]>`
         SELECT currency, rate_value, SUM(sum_minor)::bigint AS sum_minor, SUM(cost_sum_minor)::bigint AS cost_minor
         FROM demands WHERE account_id = ${accountId}::uuid ${window} ${orgClause}
@@ -126,6 +137,11 @@ export class PnlService {
       this.prisma.client.$queryRaw<CurRow[]>`
         SELECT currency, rate_value, SUM(sum_minor)::bigint AS sum_minor, NULL::bigint AS cost_minor
         FROM cash_out WHERE account_id = ${accountId}::uuid ${window} ${orgClause}
+        GROUP BY currency, rate_value`,
+      this.prisma.client.$queryRaw<CurRow[]>`
+        SELECT currency, rate_value, SUM(sum_minor)::bigint AS sum_minor, NULL::bigint AS cost_minor
+        FROM retail_drawer_cash_out WHERE account_id = ${accountId}::uuid ${window} ${orgClause}
+          AND kind = ${drawerKind}
         GROUP BY currency, rate_value`,
     ]);
 
@@ -143,8 +159,16 @@ export class PnlService {
     const returnsAmount = sumRevenue(returnRows);
     const paymentOutSum = sumRevenue(payOutRows);
     const cashOutSum = sumRevenue(cashOutRows);
+    const drawerOutSum = sumRevenue(drawerOutRows);
 
-    return this.buildRow('totals', 'Итого', sales, returnsAmount, cogs, paymentOutSum + cashOutSum);
+    return this.buildRow(
+      'totals',
+      'Итого',
+      sales,
+      returnsAmount,
+      cogs,
+      paymentOutSum + cashOutSum + drawerOutSum,
+    );
   }
 
   // -------------------------------------------------------------------
@@ -165,14 +189,17 @@ export class PnlService {
       val ? Prisma.sql`AND ${Prisma.raw(col)} = ${val}::uuid` : Prisma.empty;
     const orgAnd = optionalAnd('organization_id', filter.organizationId);
 
-    // Compute four parallel raw-SQL aggregations with consistent
+    // Compute five parallel raw-SQL aggregations with consistent
     // bucket keys, then merge in TS by bucket. Keeping them separate
     // (rather than UNION ALL) is cheaper because each query uses its
     // own table indexes natively.
     // Each query groups by (bucket, currency, rate_value); revenue is
     // base-consolidated in TS at the bucket documents OWN rate (M-11), COGS
     // (cost_minor) is summed directly (already base).
-    const [demandRows, returnRows, paymentOutRows, cashOutRows] = await Promise.all([
+    // P14/`H3`: beshinchi so'rov — POS yashig'i xarajati; `kind` chegarasi
+    // `computeTotals` bilan AYNAN bir xil (izohi o'sha yerda).
+    const drawerKind = drawerExpenseWhereKind().kind;
+    const [demandRows, returnRows, paymentOutRows, cashOutRows, drawerOutRows] = await Promise.all([
       this.prisma.client.$queryRaw<
         Array<{
           bucket: Date;
@@ -267,6 +294,30 @@ export class PnlService {
         GROUP BY bucket, currency, rate_value
         ORDER BY bucket ASC
       `,
+      this.prisma.client.$queryRaw<
+        Array<{
+          bucket: Date;
+          currency: string;
+          rate_value: bigint | null;
+          sum_minor: bigint | null;
+        }>
+      >`
+        SELECT
+          date_trunc(${truncUnit}, moment AT TIME ZONE 'UTC') AS bucket,
+          currency,
+          rate_value,
+          SUM(sum_minor)::bigint AS sum_minor
+        FROM retail_drawer_cash_out
+        WHERE account_id = ${accountId}::uuid
+          AND state = 'posted'
+          AND deleted_at IS NULL
+          AND moment >= ${gte}
+          AND moment < ${lt}
+          AND kind = ${drawerKind}
+          ${orgAnd}
+        GROUP BY bucket, currency, rate_value
+        ORDER BY bucket ASC
+      `,
     ]);
 
     type Bucket = {
@@ -275,12 +326,13 @@ export class PnlService {
       returns: bigint;
       paymentOut: bigint;
       cashOut: bigint;
+      drawerOut: bigint;
     };
     const merged = new Map<string, Bucket>();
     const ensure = (k: string) => {
       let b = merged.get(k);
       if (!b) {
-        b = { sales: 0n, cogs: 0n, returns: 0n, paymentOut: 0n, cashOut: 0n };
+        b = { sales: 0n, cogs: 0n, returns: 0n, paymentOut: 0n, cashOut: 0n, drawerOut: 0n };
         merged.set(k, b);
       }
       return b;
@@ -323,6 +375,15 @@ export class PnlService {
         r.rate_value ?? undefined,
       );
     }
+    for (const r of drawerOutRows) {
+      ensure(r.bucket.toISOString()).drawerOut += consolidateToBase(
+        r.sum_minor ?? 0n,
+        r.currency,
+        ctx,
+        seen,
+        r.rate_value ?? undefined,
+      );
+    }
 
     const sortedKeys = Array.from(merged.keys()).sort().slice(0, filter.limit);
     return sortedKeys.map((k) => {
@@ -333,7 +394,7 @@ export class PnlService {
         b.sales,
         b.returns,
         b.cogs,
-        b.paymentOut + b.cashOut,
+        b.paymentOut + b.cashOut + b.drawerOut,
       );
     });
   }

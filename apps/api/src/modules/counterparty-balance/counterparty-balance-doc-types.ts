@@ -36,6 +36,12 @@ export const BALANCE_DOC_TYPE = {
   invoiceIn: 'invoiceIn',
   /** Faza 13 (`PP-02`): taminotchiga qaytarish — qabul deltasining teskarisi. */
   purchaseReturn: 'purchaseReturn',
+  /**
+   * P14 (`H1`, 2026-08-12): MIJOZ qaytarishi — `invoiceOut` deltasining
+   * teskarisi (`−sumMinor`: tovar bizga qaytdi ⇒ mijozning qarzi kamayadi).
+   * `purchaseReturn` ning savdo tomonidagi ko'zgusi.
+   */
+  salesReturn: 'salesReturn',
   paymentIn: 'paymentIn',
   paymentOut: 'paymentOut',
   cashIn: 'cashIn',

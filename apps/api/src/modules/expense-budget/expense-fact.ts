@@ -31,12 +31,21 @@ import {
  * orqali allaqachon COGS'da turibdi. Qo'shilsa bir xarajat ikki marta
  * hisoblanardi.
  *
- * ⚠️ **P&L bilan farq (ataylab, hujjatlangan qarz):** `report/pnl.service.ts`
- * xarajat qatorini faqat `payments_out` + `cash_out` dan yig'adi —
- * `retail_drawer_cash_out` u yerda YO'Q. Byudjet POS xarajatini ham ko'rsatadi
- * (aks holda kassadan to'langan ijara byudjetda ko'rinmasdi). Ikki raqamning
- * farqi shundan. P&L tomonini tuzatish MK12 qamrovidan tashqarida — alohida
- * faza qilib yozilgan.
+ * ✅ **P&L bilan farq YOPILDI (P14/`H3`, 2026-08-12).** Ilgari
+ * `report/pnl.service.ts` xarajat qatorini faqat `payments_out` + `cash_out`
+ * dan yig'ardi — `retail_drawer_cash_out` u yerda YO'Q edi, ya'ni kassadan
+ * to'langan ijara byudjetda ko'rinib, foyda-zarar hisobotida ko'rinmasdi
+ * (sof foyda doimo yuqori chiqardi). Endi P&L ham AYNAN shu uchinchi manbani
+ * o'qiydi va chegara shartini `drawerExpenseWhereKind()` dan — SHU fayldan —
+ * oladi, ya'ni ikki ekran bitta qoidada. Qulf:
+ * `report/pnl-pos-expense.test.ts`.
+ *
+ * ⚠️ **HAMON ochiq (P14 dan tashqarida):** P&L xarajat qatoriga `cash_out` /
+ * `payments_out` ning HAMMASI kiradi — shu jumladan `Supply`/`InvoiceIn`/
+ * `PurchaseOrder` yaratgan TAMINOTCHI to'lovlari, vaholanki o'sha tovar puli
+ * COGS'da (`demands.cost_sum_minor`) allaqachon turibdi. Bu — P14'dan OLDIN
+ * ham mavjud bo'lgan ikki-karra sanoq; yashiq manbasi uni yomonlashtirmaydi,
+ * lekin «P&L xarajat to'g'riligi» fazasi buni alohida hal qilishi kerak.
  */
 
 export const EXPENSE_FACT_SOURCE = {
