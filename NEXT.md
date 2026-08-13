@@ -331,6 +331,29 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-08-13a (KASSA-EXE F8 — reliz 1.5.0 KANALDA + migratsiya/web PRODDA ·
+> qurilma-QA QOLDI) — `13d74361` prodda** (`Deploy done: 9ba939d8 → 13d74361`; api health ok ·
+> erp.sherset.uz 200 · 1 migratsiya qo'llandi: `pos_device_shell_version`, backup 732M oldindan).
+>
+> Reja `docs/superpowers/plans/2026-08-13-kassa-exe-barqarorlik.md` ning F8 fazasi. F1–F7
+> (7 commit, `efae4c5f`…`bc493869`) allaqachon lokalda edi — bu sessiya ularni prodga chiqardi:
+> **8.1** `.exe` 1.5.0 yig'ildi, asar MAZMUNI bilan tasdiqlandi (installOnBoot/⏎/fonts.ready/…),
+> sha512 mos. **🐛 Topilma:** watchdog `.ps1` artefaktga kirmasdi (`build.files` faqat js/html) —
+> `extraResources` bilan tuzatildi (`13d74361`, qo'riqchi test RED→GREEN, to'liq gate).
+> **8.2** migratsiya prodga (drift oldindan o'lchandi — aynan 1 ta qo'llandi, ustun SELECT bilan bor).
+> **8.3** push + `deploy-smart.sh` v2. **8.4** kanal: exe+blockmap avval, sha512 REMOTE'da qayta
+> hisoblab mos, `latest.yml` ENG OXIRIDA (bak-1.4.0 saqlandi), 1.2–1.4 o'chirilmagan.
+> Kanal tirik: nginx'da real qurilmadan `electron-updater` so'rovi ko'rindi.
+>
+> **🔴 QOLDI (operator «keyingisiga o'taver» dedi — qurilma bosqichi o'tkazib yuborildi):**
+> 8.5 qo'lda 1.4.0→1.5.0 (per-machine→per-user avtomatik EMAS) · 8.6 o'lchov varaqasi 17/17
+> «☐ sinalmadi» · **8.7 K04 avtoyangilanish jonli sinovi — butun rejaning maqsadi, HAMON qarz** ·
+> o'rnatma papkasi nomi o'lchanmagan (watchdog yo'li TAXMIN) · `shell_version` qiymatlari hali
+> NULL (keyingi kassir kirishida 1.4.0 tushishi kutiladi). To'liq varaqa + retsept:
+> `docs/REJA-KASSA-EXE-2026-08.md`. **Hech bir K-ID «Phase-2 verified» olmadi.**
+>
+> ---
+>
 > **🕒 2026-08-12h (BUTUN ILOVA — oyna tasodifan yopilmaydi: Esc yo'q, fon-bosish yo'q ·
 > ✅ DEPLOYED) — `9ba939d8` prodda** (`Deploy done: cb1e3879… → 9ba939d8…`; site 200 ·
 > `:4001/health` 200 · 1 migratsiya qo'llandi — u parallel sessiyaning `af39086d` qarz-idempotentlik
