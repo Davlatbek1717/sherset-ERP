@@ -29,6 +29,23 @@ function shell(): ShellBridge | null {
   return el?.isSherset ? el : null;
 }
 
+/**
+ * Sahifa Electron kassa-qobig'i (`.exe`) ichida ochilganmi?
+ *
+ * NEGA KERAK (2026-08-13): juftlash 2026-08-11 da olib tashlangan — yangi
+ * o'rnatmalarda qurilma kaliti YO'Q, ya'ni `readPosDevice()` null va «bu kassa
+ * ish o'rnimi?» savoliga faqat qurilma kaliti orqali javob berib bo'lmaydi.
+ * Qobiq preload'i `window.electronAPI.isSherset` bayrog'ini HAR sahifada
+ * o'rnatadi — bu deterministik belgi. Layout/PIN-qulf shunga qarab .exe ichida
+ * doim kassa ko'rinishini va PIN ekranini tanlaydi (parol ekrani emas).
+ *
+ * ⚠️ Bu — QULAYLIK, xavfsizlik emas (bayroqni istagan sahifa soxtalashi
+ * mumkin). Haqiqiy cheklovlar serverda (`KioskGuard`, ruxsat matritsasi).
+ */
+export function isShersetShell(): boolean {
+  return shell() !== null;
+}
+
 function isComplete(v: unknown): v is PosDeviceCreds {
   const o = v as Partial<PosDeviceCreds> | null;
   return (

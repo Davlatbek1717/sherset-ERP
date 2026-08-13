@@ -11,7 +11,7 @@ import { useNotificationStream } from '@/hooks/use-notification-stream';
 import { usePermissions } from '@/hooks/use-permissions';
 import { useTasksBadgeCount } from '@/hooks/use-tasks-badge-count';
 import { hasAuthHint, isKioskUser, logout, useAuth } from '@/lib/auth-store';
-import { readPosDevice } from '@/lib/pos-device';
+import { isShersetShell, readPosDevice } from '@/lib/pos-device';
 import {
   AppShell,
   Icons,
@@ -59,12 +59,16 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       // must survive the login round-trip (usePathname drops search params).
       const search = typeof window !== 'undefined' ? window.location.search : '';
       const redirect = encodeURIComponent(pathname + search);
-      // Juftlangan kassa qurilmasida sessiya tugagach PAROL ekrani emas, PIN
-      // ekrani ochilishi kerak — kassir parolni bilmaydi va kassa jimgina
-      // o'lik qolardi. Bu yerda `auth.user` allaqachon `null` (shuning uchun
-      // yo'naltiryapmiz), ya'ni `isKioskUser` mavjud emas — qaror QURILMA
-      // bo'yicha olinadi: brauzer juftlangan bo'lsa, u kassa ish o'rni.
-      router.replace(readPosDevice() ? '/kassa-kirish' : `/login?redirect=${redirect}`);
+      // Kassa ish o'rnida sessiya tugagach PAROL ekrani emas, PIN ekrani
+      // ochilishi kerak — kassir parolni bilmaydi va kassa jimgina o'lik
+      // qolardi. Bu yerda `auth.user` allaqachon `null` (shuning uchun
+      // yo'naltiryapmiz), ya'ni `isKioskUser` mavjud emas — qaror MUHIT
+      // bo'yicha olinadi: juftlangan qurilma YOKI Electron qobig'i (.exe).
+      // Qobiq sharti 2026-08-13 da qo'shildi: juftlash olib tashlangach yangi
+      // o'rnatmalarda kalit yo'q va .exe ichida /login ochilib qolardi.
+      router.replace(
+        readPosDevice() || isShersetShell() ? '/kassa-kirish' : `/login?redirect=${redirect}`,
+      );
     }
   }, [auth.initialized, auth.user, pathname, router]);
 
@@ -739,22 +743,30 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   // ⚠️ Bu — QULAYLIK qatlami, xavfsizlik EMAS. Menyuni yashirish bevosita
   // URL bilan kirishni to'xtatmaydi — haqiqiy cheklov serverdagi
   // `KioskGuard` da (default-deny ro'yxat). Ikkalasi birga ishlaydi.
-  if (isKioskUser(auth.user)) {
+  //
+  // 🔴 Electron qobig'i (.exe) ichida HAR DOIM kiosk ko'rinish (2026-08-13,
+  // egasining shikoyati: .exe da PIN bilan kirilganda ERP navbar'li WEB
+  // ko'rinish ochilgan). PIN har qanday xodimniki bo'lishi mumkin, `uiMode`
+  // esa roldan keladi — rol kiosk bo'lmasa qobiq ichida butun ERP ochilardi.
+  // Kassa qurilmasida esa faqat kassa ilovasi ko'rinishi kerak. Server
+  // ruxsatlariga tegilmaydi — to'liq-rejim xodimning API huquqlari o'zgarmaydi.
+  if (isKioskUser(auth.user) || isShersetShell()) {
     return (
       <div className="flex min-h-screen flex-col bg-[var(--ms-bg-app)]">
         {children}
         {/* «Chiqish» — smena topshirilganda keyingi kassir o'z PIN'i bilan
-            kiradi. Yo'nalish QURILMAGA bog'liq: juftlangan kassada PIN
-            ekrani, juftlanmagan brauzerda esa parol ekrani (u yerda PIN
-            ekrani foydasiz bo'lardi). `window.location` ishlatiladi —
-            chiqishdan keyin butun sahifa holati (savat qoldig'i, keshlar)
-            tozalanishi kerak, `router.replace` uni ushlab qolardi. */}
+            kiradi. Yo'nalish MUHITGA bog'liq: kassa ish o'rnida (juftlangan
+            qurilma yoki .exe qobig'i) PIN ekrani, oddiy brauzerda esa parol
+            ekrani (u yerda PIN ekrani foydasiz bo'lardi). `window.location`
+            ishlatiladi — chiqishdan keyin butun sahifa holati (savat
+            qoldig'i, keshlar) tozalanishi kerak, `router.replace` uni
+            ushlab qolardi. */}
         <button
           type="button"
           data-test-id="kiosk-logout"
           className="fixed right-3 bottom-3 z-50 rounded-[var(--ms-radius-sm)] bg-[var(--ms-bg-muted)] px-3 py-1.5 text-[var(--ms-text-muted)] text-xs"
           onClick={() => {
-            const dest = readPosDevice() ? '/kassa-kirish' : '/login';
+            const dest = readPosDevice() || isShersetShell() ? '/kassa-kirish' : '/login';
             void logout().finally(() => {
               window.location.href = dest;
             });

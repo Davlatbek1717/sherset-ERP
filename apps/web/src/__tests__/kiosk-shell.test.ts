@@ -52,6 +52,15 @@ describe('kiosk qobiq — ERP menyusi RENDER QILINMAYDI', () => {
     expect(kioskAt).toBeLessThan(shellAt);
   });
 
+  it('🔴 Electron qobig`ida TO`LIQ foydalanuvchi ham kiosk ko`rinishini oladi (2026-08-13)', () => {
+    // Egasi .exe da PIN bilan kirganda ERP navbar'li WEB ko'rinish ochilgan:
+    // PIN har qanday xodimniki bo'lishi mumkin, `uiMode` esa roldan keladi —
+    // rol kiosk bo'lmasa qobiq ichida butun ERP ochilardi. Qobiq (kassa
+    // qurilmasi) ichida esa HAR DOIM kassa ilovasi ko'rinishi kerak.
+    // Server ruxsatlari o'zgarmaydi — bu faqat ko'rinish (KioskGuard alohida).
+    expect(layout).toMatch(/isKioskUser\(auth\.user\)\s*\|\|\s*isShersetShell\(\)/);
+  });
+
   it('kiosk shoxida navigatsiya komponentlari YO`Q', () => {
     // Kiosk bloki `AppShell` gacha bo'lgan qismda; unda menyu bo'lmasin.
     const branch = layout.slice(
@@ -102,7 +111,11 @@ describe('PIN-qulf', () => {
     // `/login`. Ilgari bu yerda so'zsiz `/login` qulflangan edi — batafsil
     // qo'riqchi: `kiosk-logout-redirect.test.ts`.
     expect(lock).toContain('window.location.href = dest');
-    expect(lock).toContain("readPosDevice() ? '/kassa-kirish' : '/login'");
+    // 🔴 NIYAT KENGAYDI (2026-08-13): juftlash 2026-08-11 da olib tashlangan,
+    // yangi o'rnatmalarda qurilma kaliti YO'Q — `readPosDevice()` null. Shart
+    // faqat qurilmaga qaralsa .exe ichida lockout kassirni PAROL ekraniga
+    // tashlardi. Endi Electron qobig'i ham kassa ish o'rni deb sanaladi.
+    expect(lock).toContain("readPosDevice() || isShersetShell() ? '/kassa-kirish' : '/login'");
   });
 
   it('PIN o`rnatilmagan bo`lsa qulf ISHLAMAYDI', () => {

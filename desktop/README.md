@@ -1,8 +1,8 @@
 # Sherset Kassa — Electron o'rami (`desktop/`)
 
-> Holat: **manbada `1.5.0` — per-user o'rnatma, boot'da yangilanadi; HALI
-> YIG'ILMAGAN va kanalda YO'Q** (2026-08-13). Kanaldagi oxirgi reliz **`1.4.0`
-> (2026-08-12)**, o'rnatish oqimi Phase-1.
+> Holat: **manbada `1.6.0` — o'ng-yuqorida ko'rinadigan chiqish tugmasi (✕);
+> HALI YIG'ILMAGAN va kanalda YO'Q** (2026-08-13). Kanaldagi oxirgi reliz
+> **`1.5.0` (2026-08-13, `latest.yml` da o'lchandi)**, o'rnatish oqimi Phase-1.
 > `.exe` **yig'iladi va kanalga chiqadi** (o'lchangan, pastga qarang), lekin
 > qobiqning O'ZI bu repo'da hech qachon ishga tushirilmagan: chop etish, mijoz-ekran
 > va ekran klaviaturasi **hech bir printerda, hech bir 2-monitorda va hech bir
@@ -303,11 +303,11 @@ pnpm install            # bir marta (electron + electron-builder ≈ 200 MB)
 pnpm run dist           # = node check-build-assets.js && electron-builder --win nsis
 ```
 
-Natija (hozirgi `version: 1.5.0` uchun):
+Natija (hozirgi `version: 1.6.0` uchun):
 
 ```
-desktop/dist/Sherset-Kassa-Setup-1.5.0.exe
-desktop/dist/Sherset-Kassa-Setup-1.5.0.exe.blockmap
+desktop/dist/Sherset-Kassa-Setup-1.6.0.exe
+desktop/dist/Sherset-Kassa-Setup-1.6.0.exe.blockmap
 desktop/dist/latest.yml
 ```
 
@@ -351,8 +351,8 @@ o'rnida ikkinchisini qo'ya olmaydi — ikki nusxa bo'lib qolardi.
 
 Har qurilmada bir marta, admin huquqi bilan:
 1. «Приложения и возможности» → **Sherset Kassa** → «Удалить» (1.4.0 ni o'chirish).
-2. `Sherset-Kassa-Setup-1.5.0.exe` ni ishga tushirish (UAC **so'ralmaydi**).
-3. Ochilgach kirish ekranining burchagida **1.5.0** turganini tasdiqlash.
+2. Eng so'nggi `Sherset-Kassa-Setup-<versiya>.exe` ni ishga tushirish (UAC **so'ralmaydi**).
+3. Ochilgach kirish ekranining burchagida o'sha versiya turganini tasdiqlash.
 
 Shundan KEYIN keyingi barcha versiyalar o'zi keladi: ilova ishga tushganda yangilanishni
 tekshiradi, topsa o'rnatadi va **o'zi qaytadi**. UAC yo'q, kassirdan hech narsa talab qilinmaydi.
@@ -481,7 +481,8 @@ qolganlarini to'xtatadi).
 | `1.2.0` | 2026-08-11 | chiqish imosi, chop etish, mijoz-ekran; kanalga birinchi bo'lib qo'yilgan reliz |
 | `1.3.0` | 2026-08-11 | qobiq klaviaturasi: **numpad layout** (`type=number|tel`, `inputMode=decimal|numeric|tel`) + **kirill/РУС** almashtirgichi |
 | `1.4.0` | 2026-08-12 | chek: bo'sh printer nomi = **Windows sukut printeri** (`deviceName` berilmaydi); kanalga chiqqan oxirgi per-machine reliz |
-| `1.5.0` | — (yig'ilmagan) | **per-user o'rnatma** (UAC yo'q) + **boot'da o'rnatish** (`installOnBoot`, kirish ekranida; o'rnatgach o'zi qaytadi). 🔴 `.exe` HALI yig'ilmagan; 1.4.0 → 1.5.0 o'tish QO'LDA (yuqoridagi bo'lim) |
+| `1.5.0` | 2026-08-13 | **per-user o'rnatma** (UAC yo'q) + **boot'da o'rnatish** (`installOnBoot`, kirish ekranida; o'rnatgach o'zi qaytadi). Kanalga chiqqan (`latest.yml` 2026-08-13 da o'lchandi); 1.4.0 → 1.5.0 o'tish QO'LDA (yuqoridagi bo'lim) |
+| `1.6.0` | — (yig'ilmagan) | **chiqish tugmasi ✕** o'ng-yuqori burchakda (imoga qo'shimcha, tasdiq dialogli `shell:request-quit`). 🔴 `.exe` HALI yig'ilmagan |
 
 **Kanal tomoni — o'lchangan (2026-08-11, `1.3.0`):**
 `https://erp.sherset.uz/downloads/desktop/latest.yml` → **200**, ichida

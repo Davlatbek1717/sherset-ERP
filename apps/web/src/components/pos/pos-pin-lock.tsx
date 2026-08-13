@@ -17,7 +17,7 @@
 
 import { api } from '@/lib/api-client';
 import { logout } from '@/lib/auth-store';
-import { readPosDevice } from '@/lib/pos-device';
+import { isShersetShell, readPosDevice } from '@/lib/pos-device';
 import { Button, Input } from '@moysklad/ui';
 import { useTranslations } from 'next-intl';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -77,10 +77,12 @@ export function PosPinLock() {
       const err = e as { body?: { lockout?: boolean; remaining?: number }; message?: string };
       if (err.body?.lockout) {
         // 5 xato → hisob boshqa odamda bo'lishi mumkin: to'liq chiqamiz.
-        // Juftlangan kassada PIN ekraniga qaytamiz — kassir PAROLNI bilmaydi,
-        // `/login` ga tashlansa kassa jimgina o'lik qolardi. Juftlanmagan
-        // brauzerda PIN ekrani foydasiz ⇒ `/login` qoladi.
-        const dest = readPosDevice() ? '/kassa-kirish' : '/login';
+        // Kassa ish o'rnida (juftlangan qurilma YOKI .exe qobig'i) PIN
+        // ekraniga qaytamiz — kassir PAROLNI bilmaydi, `/login` ga tashlansa
+        // kassa jimgina o'lik qolardi. Oddiy brauzerda PIN ekrani foydasiz ⇒
+        // `/login` qoladi. Qobiq sharti 2026-08-13 da qo'shildi: juftlash
+        // olib tashlangach yangi o'rnatmalarda qurilma kaliti yo'q.
+        const dest = readPosDevice() || isShersetShell() ? '/kassa-kirish' : '/login';
         await logout();
         window.location.href = dest;
         return;

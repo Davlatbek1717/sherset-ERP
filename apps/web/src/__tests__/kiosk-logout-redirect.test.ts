@@ -26,6 +26,16 @@ describe('kiosk chiqish yo`nalishi — layout', () => {
     expect(layout).toContain('readPosDevice');
   });
 
+  it('🔴 Electron qobig`i ham kassa ish o`rni sanaladi (2026-08-13)', () => {
+    // Juftlash 2026-08-11 da olib tashlangan: yangi o'rnatmalarda qurilma
+    // kaliti YO'Q, `readPosDevice()` null. Faqat qurilmaga qaralsa .exe
+    // ichida sessiya o'lganda ham, «Chiqish»da ham kassir PAROL ekranini
+    // ko'rardi («webdagi sahifa chiqyapti» shikoyati). Ikkala joyda ham
+    // (avto-yo'naltirish + logout tugmasi) qobiq sharti bo'lishi shart.
+    const hits = layout.match(/readPosDevice\(\) \|\| isShersetShell\(\)/g) ?? [];
+    expect(hits.length, 'layoutda qobiq-sharti 2 joyda bo`lishi kerak').toBeGreaterThanOrEqual(2);
+  });
+
   it('/login zaxira yo`li YO`QOLMAYDI (juftlanmagan brauzer uchun)', () => {
     expect(layout).toContain('/login?redirect=');
   });
@@ -44,6 +54,10 @@ describe('kiosk chiqish yo`nalishi — PIN-qulf lockout', () => {
   it('5 xatodan keyingi chiqish ham PIN ekraniga qaytaradi', () => {
     expect(lock).toContain('readPosDevice');
     expect(lock).toContain('/kassa-kirish');
+  });
+
+  it('lockout yo`nalishi ham qobiqni kassa ish o`rni deb biladi (2026-08-13)', () => {
+    expect(lock).toContain('readPosDevice() || isShersetShell()');
   });
 
   it('juftlanmagan brauzerda /login qoladi', () => {
