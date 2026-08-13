@@ -240,8 +240,10 @@ describe('Savat qatori tahrir oynasi — narx tasmalari JONLI', () => {
       'below-wholesale',
     );
     // P12: «−6 000 tushirildi» summasi endi KO'RSATILMAYDI (egasining qarori) —
-    // o'rnida pastki chegara turadi.
+    // o'rnida pastki chegara turadi. P03 (2026-08-13): chegara qiymati ham
+    // sukutda yashirin — ko'rish uchun «•••» bosiladi.
     expect(screen.queryByTestId('pos-line-edit-markdown')).not.toBeInTheDocument();
+    await user.click(screen.getByTestId('pos-line-edit-floor-toggle'));
     expect(norm(screen.getByTestId('pos-line-edit-floor').textContent)).toContain('6 000,00');
   });
 
@@ -270,25 +272,65 @@ describe('Savat qatori tahrir oynasi — narx tasmalari JONLI', () => {
 /**
  * P12 — NARX POLI (egasining qarori, 2026-08-11/12).
  *
- * Oynada ZARAR belgisi o'rniga **«Minimal: X»** turadi (X = pol) va poldan past
+ * Oynada ZARAR belgisi o'rniga **«Minimal»** qatori turadi va poldan past
  * narxni **saqlab bo'lmaydi** — bu ogohlantirish emas, QULF. Pol = min(tan narx,
  * karta chakana narxi); tan narx NULL bo'lsa pol YO'Q (NULL ≠ 0).
+ *
+ * P03 (2026-08-13, egasi): pol QIYMATI sukutda YASHIRIN — o'rnida bosiladigan
+ * «Minimal: •••» turadi, bosilganda ochiladi, boshqa qator ochilsa yana
+ * yashirinadi. Eski «Minimal: X doim ochiq» niyati (2026-08-11/12) shu kuni
+ * toraytirildi: qiymat mijoz ko'zi oldida ochiq turmasin. QULF esa o'zgarmadi —
+ * yashirish faqat KO'RSATISH.
  *
  * Ekran qulfi himoyaning FAQAT ko'rinadigan qismi — haqiqiy chegara serverda
  * (`price-policy-guard.ts`). Ikkalasi bitta manbadan (`@moysklad/money`) o'qiydi.
  */
-describe('Savat qatori tahrir oynasi — narx POLI (P12)', () => {
-  it('«Minimal» pol sifatida tan narxni ko‘rsatadi', () => {
+describe('Savat qatori tahrir oynasi — narx POLI (P12) va yashirin «Minimal» (P03)', () => {
+  it('P03 (2026-08-13) — «Minimal» sukutda YASHIRIN, o‘rnida «•••» tugmasi turadi', () => {
     open();
-    expect(norm(screen.getByTestId('pos-line-edit-floor').textContent)).toContain('6 000,00');
+    expect(screen.queryByTestId('pos-line-edit-floor')).not.toBeInTheDocument();
+    expect(screen.getByTestId('pos-line-edit-floor-toggle')).toBeInTheDocument();
   });
 
-  it('tan narx YO‘Q bo‘lsa «Minimal» ko‘rsatilmaydi — pol yo‘q (NULL ≠ 0)', () => {
+  it('P03 — «•••» bosilganda pol qiymati OCHILADI (tan narx = pol)', async () => {
+    const user = userEvent.setup();
+    open();
+
+    await user.click(screen.getByTestId('pos-line-edit-floor-toggle'));
+
+    expect(norm(screen.getByTestId('pos-line-edit-floor').textContent)).toContain('6 000,00');
+    expect(screen.queryByTestId('pos-line-edit-floor-toggle')).not.toBeInTheDocument();
+  });
+
+  it('P03 — BOSHQA qator ochilsa pol YANA yashirinadi', async () => {
+    const user = userEvent.setup();
+    const { rerender } = renderWithProviders(
+      <CartLineEditModal line={LINE} onSave={vi.fn()} onRemove={vi.fn()} onClose={vi.fn()} />,
+    );
+    await user.click(screen.getByTestId('pos-line-edit-floor-toggle'));
+    expect(screen.getByTestId('pos-line-edit-floor')).toBeInTheDocument();
+
+    rerender(
+      <CartLineEditModal
+        line={{ ...LINE, productId: 'p-2', productName: 'Rozetka' }}
+        onSave={vi.fn()}
+        onRemove={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByTestId('pos-line-edit-floor')).not.toBeInTheDocument();
+    expect(screen.getByTestId('pos-line-edit-floor-toggle')).toBeInTheDocument();
+  });
+
+  it('tan narx YO‘Q bo‘lsa pol qatori UMUMAN chizilmaydi — «•••» ham (NULL ≠ 0)', () => {
     open({ costMinor: null });
     expect(screen.queryByTestId('pos-line-edit-floor')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('pos-line-edit-floor-toggle')).not.toBeInTheDocument();
   });
 
-  it('karta narxi tan narxdan past bo‘lsa pol = karta narxi (46 tovar holati)', () => {
+  it('karta narxi tan narxdan past bo‘lsa pol = karta narxi (46 tovar holati)', async () => {
+    const user = userEvent.setup();
     // Prod: chakana 3 500 < tan 24 500 ⇒ karta narxida sotish mumkin bo'lib qoladi.
     open({
       costMinor: 2_450_000n,
@@ -296,11 +338,12 @@ describe('Savat qatori tahrir oynasi — narx POLI (P12)', () => {
       priceMinor: 350_000n,
       priceStr: '3500',
     });
+    await user.click(screen.getByTestId('pos-line-edit-floor-toggle'));
     expect(norm(screen.getByTestId('pos-line-edit-floor').textContent)).toContain('3 500,00');
     expect(screen.queryByTestId('pos-line-edit-floor-blocked')).not.toBeInTheDocument();
   });
 
-  it('🔴 poldan past narx SAQLANMAYDI — sabab yoziladi', async () => {
+  it('🔴 poldan past narx SAQLANMAYDI — pol YASHIRIN holatda ham (P03: qulf ≠ ko‘rsatish)', async () => {
     const user = userEvent.setup();
     const { onSave } = open();
 
@@ -310,6 +353,8 @@ describe('Savat qatori tahrir oynasi — narx POLI (P12)', () => {
 
     expect(onSave).not.toHaveBeenCalled();
     expect(screen.getByTestId('pos-line-edit-floor-blocked')).toBeInTheDocument();
+    // Qiymat ochilmagan — qulf baribir ishladi.
+    expect(screen.queryByTestId('pos-line-edit-floor')).not.toBeInTheDocument();
   });
 
   it('polga TENG narx saqlanadi — pol o‘zi ruxsat etilgan', async () => {

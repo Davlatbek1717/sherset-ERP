@@ -102,6 +102,12 @@ export function CartLineEditModal({
    * ⌫ esa bu rejimni UZADI: u aynan mavjud qiymatni tahrirlash uchun bor.
    */
   const [replaceNext, setReplaceNext] = useState(true);
+  /**
+   * P03 (2026-08-13, egasi): «Minimal» qiymati sukutda YASHIRIN — kassir/mijoz
+   * ko'zi oldida pol narxi ochiq turmasin; o'rnidagi «•••» bosilganda ochiladi.
+   * Qulf mantiqqa (`belowFloor`/`blocked`) TEGILMAGAN — bu faqat ko'rsatish.
+   */
+  const [floorRevealed, setFloorRevealed] = useState(false);
 
   /**
    * Boshqa qatorga o'tilganda (yoki oyna qayta ochilganda) maydonlar qayta
@@ -117,6 +123,7 @@ export function CartLineEditModal({
     setPriceInput(line.priceStr);
     setActiveField('qty');
     setReplaceNext(true);
+    setFloorRevealed(false); // P03: boshqa qator ochilsa pol yana yashirin
   }
   // Yopilganda «yuklangan» belgisi tozalanadi — aks holda AYNI qator qayta
   // ochilganda saqlanmagan eski tahrir qaytib chiqardi.
@@ -341,19 +348,36 @@ export function CartLineEditModal({
                     tushirsa bo'ladi» kerak. Foyda RAQAMI hamon yashirin
                     (`ui-flags.ts`) — faqat chegara ko'rinadi, egasi buni bilib
                     tanladi. */}
-                {floorMinor != null && (
-                  <span
-                    data-test-id="pos-line-edit-floor"
-                    className={
-                      belowFloor
-                        ? 'font-bold text-red-700'
-                        : 'font-semibold text-[var(--ms-text-primary)]'
-                    }
-                  >
-                    {t('cart_floor')}:{' '}
-                    <span className="tabular-nums">{formatMoney(floorMinor)}</span>
-                  </span>
-                )}
+                {/* P03 (2026-08-13): qiymat sukutda yashirin — «•••» bosilganda
+                    ochiladi. Poldan pastda ham QIZIL bo'lib qoladi (qulf banneri
+                    bilan birga) — faqat SON berkitilgan, signal emas. */}
+                {floorMinor != null &&
+                  (floorRevealed ? (
+                    <span
+                      data-test-id="pos-line-edit-floor"
+                      className={
+                        belowFloor
+                          ? 'font-bold text-red-700'
+                          : 'font-semibold text-[var(--ms-text-primary)]'
+                      }
+                    >
+                      {t('cart_floor')}:{' '}
+                      <span className="tabular-nums">{formatMoney(floorMinor)}</span>
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      data-test-id="pos-line-edit-floor-toggle"
+                      onClick={() => setFloorRevealed(true)}
+                      className={`cursor-pointer ${
+                        belowFloor
+                          ? 'font-bold text-red-700'
+                          : 'font-semibold text-[var(--ms-text-primary)]'
+                      }`}
+                    >
+                      {t('cart_floor')}: •••
+                    </button>
+                  ))}
                 {band === 'below-wholesale' && (
                   <span className="rounded bg-amber-500 px-1.5 py-0.5 font-semibold text-[10px] text-white">
                     {t('cart_below_wholesale')}
