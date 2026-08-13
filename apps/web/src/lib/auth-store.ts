@@ -137,8 +137,8 @@ export async function login(identifier: string, password: string): Promise<User>
  * cookie'larni qo'yadi, shuning uchun refresh/logout/media yo'llari o'zgarmaydi.
  *
  * Qurilma NOMI ataylab yuborilmaydi — server `PosLoginSchema`
- * (`apps/api/src/modules/auth/auth.schema.ts:130-134`) faqat
- * `deviceId`/`deviceSecret`/`pin` ni kutadi.
+ * (`apps/api/src/modules/auth/auth.schema.ts`) faqat
+ * `deviceId`/`deviceSecret`/`pin`/`shellVersion` ni kutadi.
  */
 /**
  * Kassa kirishi — PIN.
@@ -147,6 +147,13 @@ export async function login(identifier: string, password: string): Promise<User>
  * talabi). Eski juftlangan o'rnatmalarda kalit hamon yuboriladi va server uni
  * avvalgidek tekshiradi; yangi o'rnatmalarda esa faqat PIN ketadi.
  */
+/** Qobiq versiyasi — bo'lmasa (brauzer) umuman yuborilmaydi (K07). */
+function shellVersion(): string | undefined {
+  if (typeof window === 'undefined') return undefined;
+  const el = (window as { electronAPI?: { isSherset?: boolean; version?: string } }).electronAPI;
+  return el?.isSherset && typeof el.version === 'string' ? el.version : undefined;
+}
+
 export async function posLogin(
   creds: { deviceId: string; deviceSecret: string } | null,
   pin: string,
@@ -155,9 +162,10 @@ export async function posLogin(
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
-    body: JSON.stringify(
-      creds ? { deviceId: creds.deviceId, deviceSecret: creds.deviceSecret, pin } : { pin },
-    ),
+    body: JSON.stringify({
+      ...(creds ? { deviceId: creds.deviceId, deviceSecret: creds.deviceSecret, pin } : { pin }),
+      ...(shellVersion() ? { shellVersion: shellVersion() } : {}),
+    }),
   });
   if (!res.ok) {
     const body = (await res.json().catch(() => ({}))) as { message?: string };

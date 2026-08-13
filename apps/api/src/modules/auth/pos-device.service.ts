@@ -109,10 +109,19 @@ export class PosDeviceService {
     });
   }
 
-  async registerSuccess(deviceId: string): Promise<void> {
+  /**
+   * @param shellVersion Electron qobig'i versiyasi. `undefined` bo'lsa ustun
+   *   TEGILMAYDI — brauzerdan kirish reyestrni o'chirib yubormasin (K07).
+   */
+  async registerSuccess(deviceId: string, shellVersion?: string): Promise<void> {
     await this.prisma.client.posDevice.update({
       where: { id: deviceId },
-      data: { failedAttempts: 0, lockedUntil: null, lastSeenAt: new Date() },
+      data: {
+        failedAttempts: 0,
+        lockedUntil: null,
+        lastSeenAt: new Date(),
+        ...(shellVersion ? { shellVersion } : {}),
+      },
     });
   }
 }

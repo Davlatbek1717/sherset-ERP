@@ -164,6 +164,11 @@ export const PosLoginSchema = z.object({
   deviceId: z.string().uuid().optional(),
   deviceSecret: z.string().min(32).optional(),
   pin: z.string().regex(/^\d{4}$/, 'PIN 4 raqamdan iborat bo`lishi kerak'),
+  /**
+   * Electron qobig'i versiyasi (`app.getVersion()`). IXTIYORIY: brauzerdan
+   * kirishda yo'q. Faqat qayd uchun — hech qanday qarorga ta'sir qilmaydi (K07).
+   */
+  shellVersion: z.string().max(32).optional(),
 });
 export type PosLoginInput = z.infer<typeof PosLoginSchema>;
 

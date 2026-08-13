@@ -79,7 +79,14 @@ describe('PosLoginService.login', () => {
     expect(out.refreshToken).toBe('refresh-raw');
     expect(out.mediaToken).toBe('media-jwt');
     expect(out.device).toMatchObject({ cashDeskId: 'desk-1', storeId: 'store-1' });
-    expect(devices.registerSuccess).toHaveBeenCalledWith('dev-1');
+    // shellVersion yuborilmagan — undefined uzatiladi (ustun tegilmaydi, K07).
+    expect(devices.registerSuccess).toHaveBeenCalledWith('dev-1', undefined);
+  });
+
+  it('shellVersion input`dan registerSuccess`ga yetib boradi (K07)', async () => {
+    const { svc, devices } = makeDeps();
+    await svc.login({ ...INPUT, shellVersion: '1.5.0' }, META);
+    expect(devices.registerSuccess).toHaveBeenCalledWith('dev-1', '1.5.0');
   });
 
   it('PIN topilmadi → 401 va qurilma hisoblagichi oshadi', async () => {

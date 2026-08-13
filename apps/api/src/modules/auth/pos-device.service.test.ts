@@ -154,4 +154,28 @@ describe('PosDeviceService.registerSuccess', () => {
     expect(updates[0]?.data).toMatchObject({ failedAttempts: 0, lockedUntil: null });
     expect(updates[0]?.data.lastSeenAt).toBeInstanceOf(Date);
   });
+
+  it('qobiq versiyasini yozadi (K07)', async () => {
+    const row = await makeRow('s3cret');
+    const { prisma, client } = makePrisma(row);
+    await new PosDeviceService(prisma).registerSuccess('dev-1', '1.5.0');
+    expect(client.posDevice.update).toHaveBeenCalledWith({
+      where: { id: 'dev-1' },
+      data: {
+        failedAttempts: 0,
+        lockedUntil: null,
+        lastSeenAt: expect.any(Date),
+        shellVersion: '1.5.0',
+      },
+    });
+  });
+
+  it('versiya berilmasa ESKI qiymat saqlanadi (NULL bilan ustidan yozmaydi)', async () => {
+    // Brauzerdan kirish qobiq versiyasini yubormaydi — u yerdagi undefined
+    // «qurilmada exe yo'q» degani emas. Ustidan yozilsa reyestr o'chib ketardi.
+    const row = await makeRow('s3cret');
+    const { prisma, updates } = makePrisma(row);
+    await new PosDeviceService(prisma).registerSuccess('dev-1');
+    expect(updates.at(-1)?.data).not.toHaveProperty('shellVersion');
+  });
 });

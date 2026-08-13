@@ -594,6 +594,11 @@ model PosDevice {
   pairedAt   DateTime  @default(now()) @map("paired_at") @db.Timestamptz()
   lastSeenAt DateTime? @map("last_seen_at") @db.Timestamptz()
 
+  /// Qurilmadagi Electron qobig'ining versiyasi (`app.getVersion()`), har
+  /// muvaffaqiyatli kirishda yangilanadi. NULL = qobiq versiya yubormadi
+  /// (eski exe yoki brauzerdan kirilgan) — «eski» degani EMAS, «o'lchanmagan».
+  shellVersion String? @map("shell_version") @db.VarChar(32)
+
   /// Qurilma yo'qolsa/o'g'irlansa admin bekor qiladi. O'CHIRILMAYDI — audit
   /// izi qolishi kerak (qaysi qurilmadan qaysi sotuv qilingani).
   revokedAt DateTime? @map("revoked_at") @db.Timestamptz()

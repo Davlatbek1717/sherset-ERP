@@ -91,7 +91,7 @@ export class PosLoginService {
       where: { id: employee.id },
       data: { failedLoginAttempts: 0, lockedUntil: null, lastLoginAt: new Date() },
     });
-    if (device) await this.devices.registerSuccess(device.id);
+    if (device) await this.devices.registerSuccess(device.id, input.shellVersion);
 
     // Qurilmasiz kirishda do'kon/kassa/tashkilot hisobning SUKUT qiymatlaridan
     // olinadi — kassirdan tanlash SO'RALMAYDI (egasining talabi). Bittasi
