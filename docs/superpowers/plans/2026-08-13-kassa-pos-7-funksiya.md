@@ -876,8 +876,8 @@ va TO'XTA — keyingi fazani BOSHLAMA.
 
 ## 📝 Hisobotlar (har faza agenti O'Z seksiyasini Edit bilan to'ldiradi — append TAQIQ)
 
-### 📝 F1 hisoboti — 2026-08-13 · `5f758d71`
-**Holat:** ⚠️ qisman (kod to'liq, exe yig'ilmagan — operator ruxsati kutilmoqda)
+### 📝 F1 hisoboti — 2026-08-13 · `5f758d71` (kod) · `57b0ed3` (hisobot)
+**Holat:** ✅ Phase-1 complete (kod + exe kanalda; qurilmada runtime-tasdiqlanmagan)
 **Nima o'zgardi:** Qobiqda o'ng-yuqori uchlik: «—» (`shell:minimize`), «❐» (`shell:toggle-windowed`
 — kiosk ↔ ramkasiz 1280×800 markazda), «✕» (avvalgidek tasdiqli `shell:request-quit`). Close-qo'riqchi
 `win?.isKiosk()` dan `!allowQuit && serverBase()` ga ko'chdi — oynali rejimda Alt+F4/taskbar-close
@@ -892,8 +892,8 @@ endi jim yopmaydi, sozlash oynasi (serverBase bo'sh) esa avvalgidek yopiladi. Ve
 **Testlar:** desktop-window-controls (11 test: uchlik chiziladi, yalang button, 3 kanal, tasdiqsiz quit yo'q, file:// sharti, imo qoladi, CSSOM, main.js W1/W2). RED ko'rildi: 8 failed / 3 passed (tugmalar/ishlovchilar/qo'riqchi yo'qligida). GREEN: 134/134 (window-controls + touch-keyboard + bridge-contract birga).
 **Gate:** typecheck 0 ✓ · lint:product 0 ✓ · i18n:gate 19/19 ✓ · web test 269 fayl / 3838 pass ✓ (api'ga tegilmagan)
 **O'LCHANGAN vs O'LCHANMAGAN:** O'lchandi — preload happy-dom'da haqiqiy ijro (tugmalar DOM'da, IPC kanallari mok orqali), main.js manba-grep, to'liq web gate, commit tarkibi (`git show --stat`: 7 o'z fayl + progress.json hook'i). O'LCHANMADI — qurilmada —/❐ xulqi (minimize/restore, kiosk↔oynali o'tish, oynali rejimdan qaytish), 1.7.0 exe umuman yig'ilmagan. **Phase-1: strukturaviy, qurilmada runtime-tasdiqlanmagan.**
-**Nima QILINMADI va nega:** 1.8 (exe yig'ish + kanalga chiqarish) — operator ruxsati shart edi, so'raldi; push ham exe qadami bilan birga qoldi.
-**Deploy:** yo'q (web deploy shart emas — faqat desktop o'zgardi; exe/kanal operator ruxsatini kutmoqda).
+**Nima QILINMADI va nega:** qurilmada —/❐ jonli sinovi va 1.6.0→1.7.0 avto-o'tish kuzatuvi — bu Phase-2/qurilma-QA ishi.
+**Deploy:** ✅ operator ruxsati bilan (1.8): `pnpm run dist` → `Sherset-Kassa-Setup-1.7.0.exe` (81 962 235 bayt) → scp `/var/www/kassa-downloads/desktop/` → remote sha512 latest.yml bilan AYNAN mos → `latest.yml.bak-1.6.0` zaxira → yangi `latest.yml` → curl: manifest `version: 1.7.0`, exe HEAD 200. Git push o'tdi (`69b48eda..57b0ed39`). Web deploy YO'Q (kerak emas — faqat desktop o'zgardi).
 **TO'XTADIM.**
 
 ### 📝 F2 hisoboti
