@@ -32,6 +32,7 @@ Yupqa kiosk o'ram (spec §3.1): savdo mantiqi web ilovasida qoladi, bu jarayon f
 | `offline.html` | aloqa yo'q ekrani + qayta urinish |
 | `updating.html` | boot'da yangilanish o'rnatilayotganda ko'rinadigan «yangilanmoqda» ekrani |
 | `tools/kbd-probe/` | ekran klaviaturasini HAQIQIY Electron'da o'lchaydigan skript (P6) |
+| `tools/watchdog/` | jarayon yiqilsa qayta ko'taradigan Task Scheduler skriptlari (K12, F8 da o'rnatiladi) |
 
 ## Ishga tushirish (dasturchi)
 
@@ -357,6 +358,38 @@ Shundan KEYIN keyingi barcha versiyalar o'zi keladi: ilova ishga tushganda yangi
 tekshiradi, topsa o'rnatadi va **o'zi qaytadi**. UAC yo'q, kassirdan hech narsa talab qilinmaydi.
 
 ---
+
+## Watchdog — jarayon yiqilsa o'zi ko'tariladi (K12, F4)
+
+Qobiqning o'zida ikki qatlam bor: `setLoginItemSettings` (K08) Windows'ga
+kirganda ochadi, crash-backoff (K11) render yiqilishida qayta yuklaydi. Lekin
+**Electron jarayoni butunlay o'lsa** (OOM, drayver, Windows yangilanishi) uni
+hech kim ko'tarmaydi — buning uchun tashqi watchdog kerak.
+
+| Fayl | Vazifasi |
+|---|---|
+| `tools/watchdog/kassa-watchdog.ps1` | jarayonni tekshiradi; yo'q bo'lsa exe'ni ishga tushiradi va logga yozadi |
+| `tools/watchdog/install-watchdog.ps1` | watchdog'ni Task Scheduler'ga yozadi (har 2 daqiqada) — qurilmada BIR MARTA |
+
+O'rnatish (qurilmada, admin bilan, **F8 da**):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File desktop\tools\watchdog\install-watchdog.ps1
+```
+
+O'chirish:
+
+```powershell
+Unregister-ScheduledTask -TaskName 'ShersetKassaWatchdog' -Confirm:$false
+```
+
+Log fayli: `%APPDATA%\sherset-kassa-watchdog.log` — «exe topilmadi» va
+«ishga tushirilmoqda» yozuvlari shu yerda.
+
+🔴 **Skriptdagi exe yo'li (`%LOCALAPPDATA%\Programs\sherset-kassa\Sherset
+Kassa.exe`) — TAXMIN**: per-user NSIS o'rnatma papkasi **F8 da qurilmada
+o'lchanadi** va farq qilsa skriptda tuzatiladi. Skriptlar bu repo mashinasida
+hech qachon yugurtirilmagan — Task Scheduler yozuvi faqat qurilmada yaratiladi.
 
 ## Avtoyangilanish
 

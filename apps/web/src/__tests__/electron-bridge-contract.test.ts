@@ -560,3 +560,39 @@ describe('desktop/logger.js — qurilma logi FAYLGA (K05)', () => {
     expect(main).toMatch(/logger\.write\(\s*'shell'/);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+describe('kiosk qattiqligi — qurilma o`zi ko`tariladi (F4)', () => {
+  const main = read(desktopFile('main.js'));
+  const preload = read(desktopFile('preload.js'));
+
+  it('K08 — Windows`ga kirganda o`zi ochiladi', () => {
+    expect(main).toContain('setLoginItemSettings');
+    // Dev mashinada yoqilmasin — dasturchining tizimiga yozib qo'ymasin.
+    const at = main.indexOf('setLoginItemSettings');
+    expect(main.slice(Math.max(0, at - 300), at)).toContain('isPackaged');
+  });
+
+  it('K09 — ekran uxlamaydi', () => {
+    expect(main).toContain('powerSaveBlocker');
+    expect(main).toContain('prevent-display-sleep');
+  });
+
+  it('K10 — sensorli zoom qulflangan (layout buzilmasin)', () => {
+    expect(preload).toContain('setVisualZoomLevelLimits');
+  });
+
+  it('🔴 K11 — render yiqilishida CHEKSIZ qayta yuklash YO`Q', () => {
+    const at = main.indexOf("'render-process-gone'");
+    expect(at, 'render-process-gone ishlovchisi yo`q').toBeGreaterThan(0);
+    const handler = main.slice(at, at + 700);
+    expect(handler, 'chegara yo`q — cheksiz sikl').toContain('RELOAD_LIMIT');
+    expect(handler).toContain('showOffline');
+  });
+
+  it('K12 — watchdog skripti repo`da', () => {
+    const wd = read(join(REPO, 'desktop', 'tools', 'watchdog', 'kassa-watchdog.ps1'));
+    expect(wd.length, 'kassa-watchdog.ps1 topilmadi').toBeGreaterThan(0);
+    expect(wd).toContain('Sherset Kassa');
+  });
+});

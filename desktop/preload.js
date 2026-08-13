@@ -16,7 +16,7 @@
  * tekshiradi, Promise unga «juftlanmagan» bo'lib ko'rinadi.
  */
 
-const { contextBridge, ipcRenderer } = require('electron');
+const { contextBridge, ipcRenderer, webFrame } = require('electron');
 
 contextBridge.exposeInMainWorld('electronAPI', {
   // Web qobiqni shu bayroq bilan taniydi (`print-agent.ts:67`, `pos-device.ts:29`).
@@ -380,7 +380,23 @@ function installTouchKeyboard() {
   });
 }
 
+/**
+ * Sensorli «pinch» zoom layoutni buzadi va kassir uni qaytara olmaydi (K10) —
+ * kiosk oynada masshtab tugmalari ham, menyu ham yo'q.
+ *
+ * 🔴 `preventDefault` ISHLATILMAYDI (K3 qo'riqchisi) — bu Chromium'ning
+ * o'z chegarasi, hodisa to'silmaydi.
+ */
+function lockZoom() {
+  try {
+    webFrame.setVisualZoomLevelLimits(1, 1);
+  } catch {
+    // Eski Chromium — zoom qulflanmaydi, qolgan hammasi ishlaydi.
+  }
+}
+
 function installShellHelpers() {
+  lockZoom();
   installExitGesture();
   installTouchKeyboard();
 }

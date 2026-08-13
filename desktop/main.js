@@ -18,7 +18,16 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
-const { BrowserWindow, Menu, app, dialog, ipcMain, screen, shell } = require('electron');
+const {
+  BrowserWindow,
+  Menu,
+  app,
+  dialog,
+  ipcMain,
+  powerSaveBlocker,
+  screen,
+  shell,
+} = require('electron');
 const store = require('./device-store');
 const logger = require('./logger'); // F2 (K05) — qurilma logi faylga
 const updater = require('./updater'); // F4 — avtoyangilanish (spec §8.3)
@@ -32,6 +41,10 @@ const ENTRY_PATH = '/kassa-kirish'; // kassir har doim shu ekrandan boshlaydi
 const BOOT_UPDATE_WAIT_MS = 25000;
 const CFD_PATH = '/customer-display'; // mijoz-ekran sahifasi (apps/web)
 const HEALTH_POLL_MS = 5000;
+
+/** Render jarayoni shuncha marta yiqilsa qayta yuklashni to'xtatamiz. */
+const RELOAD_LIMIT = 3;
+const RELOAD_WINDOW_MS = 60000;
 
 // Chop etish (spec §6.4).
 const PRINT_LOAD_TIMEOUT_MS = 15000; // HTML render vaqti
@@ -75,6 +88,9 @@ let printSeq = 0;
 let healthTimer = null;
 /** Oyna faqat shu bayroq bilan yopiladi — Alt+F4 kassirni chiqarib yubormasin. */
 let allowQuit = false;
+/** Yiqilish hisoblagichi — cheksiz qayta yuklash siklining qulfi. */
+let reloadCount = 0;
+let reloadWindowStart = 0;
 
 function serverBase() {
   return store.getServerUrl() || DEFAULT_SERVER_URL;
@@ -147,6 +163,38 @@ function onEntryScreen() {
 }
 
 // ─── Kiosk oyna ─────────────────────────────────────────────────────────────
+
+/**
+ * Monoblok yoqilganda kassa O'ZI ochilsin (K08).
+ *
+ * 🔴 Faqat paketlangan holatda: dasturchi mashinasida `pnpm run dev` yugurtirsa
+ * Electron o'zini Windows avtoyuklanishiga yozib qo'yardi.
+ */
+function applyAutoStart() {
+  if (!app.isPackaged) return;
+  try {
+    app.setLoginItemSettings({ openAtLogin: true, path: process.execPath, args: [] });
+  } catch (e) {
+    logger.write('shell', `autostart sozlanmadi: ${errMessage(e)}`);
+  }
+}
+
+/** @type {number | null} */
+let powerBlockerId = null;
+
+/**
+ * Ekran uxlamasin (K09). Kassa monoblokida energiya sozlamasi ko'pincha
+ * standart qoladi va 10 daqiqadan keyin ekran o'chadi — kassir uni
+ * «kompyuter o'chib qoldi» deb tushunadi.
+ */
+function keepScreenAwake() {
+  if (powerBlockerId !== null) return;
+  try {
+    powerBlockerId = powerSaveBlocker.start('prevent-display-sleep');
+  } catch (e) {
+    logger.write('shell', `powerSaveBlocker: ${errMessage(e)}`);
+  }
+}
 
 function createWindow() {
   // 🔴 KIOSK FAQAT SERVER MANZILI KIRITILGANDAN KEYIN (2026-08-11, real
@@ -245,7 +293,24 @@ function createWindow() {
     if (errorCode === -3) return; // ERR_ABORTED — navigatsiya almashdi, xato emas
     showOffline(errorDescription || `xato ${errorCode}`);
   });
-  win.webContents.on('render-process-gone', () => loadApp());
+  // 🔴 Darhol `loadApp()` qilish CHEKSIZ SIKL edi (K11): sahifa har safar
+  // yiqilsa qobiq uni tinimsiz qayta yuklab, protsessorni yeb qo'yardi va
+  // kassir hech qachon xato ko'rmasdi. Endi bir daqiqada 3 urinish, keyin
+  // tushunarli ekran — kassir operatorga qo'ng'iroq qila oladi.
+  win.webContents.on('render-process-gone', (_e, details) => {
+    const now = Date.now();
+    if (now - reloadWindowStart > RELOAD_WINDOW_MS) {
+      reloadWindowStart = now;
+      reloadCount = 0;
+    }
+    reloadCount += 1;
+    logger.write('shell', `render yiqildi (${details?.reason}); urinish ${reloadCount}`);
+    if (reloadCount > RELOAD_LIMIT) {
+      showOffline('Sahifa qayta-qayta yiqilmoqda');
+      return;
+    }
+    loadApp();
+  });
 
   loadApp();
   if (isDev) win.webContents.openDevTools({ mode: 'detach' });
@@ -708,6 +773,8 @@ if (!app.requestSingleInstanceLock()) {
     logger.write('shell', `ishga tushdi v${app.getVersion()}`);
     Menu.setApplicationMenu(null);
     registerIpc();
+    applyAutoStart();
+    keepScreenAwake();
     // Oyna DARHOL ochiladi — kassir 25 soniya qora ekran ko'rmasin.
     createWindow();
 
