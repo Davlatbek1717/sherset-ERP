@@ -311,10 +311,14 @@ describe('desktop/main.js — kiosk oyna qattiqligi (spec §6.2)', () => {
     expect(mainSrc).toMatch(/win\??\.isKiosk\(\)/);
   });
 
-  it('yopish qo`riqchisi KIOSK holatida ishlaydi (kassir Alt+F4 bilan chiqmasin)', () => {
-    expect(mainSrc).toMatch(
-      /if\s*\(!allowQuit\s*&&\s*win\?\.isKiosk\(\)\)\s*e\.preventDefault\(\)/,
-    );
+  it('yopish qo`riqchisi KONFIGga bog`langan (kassir Alt+F4 bilan chiqmasin)', () => {
+    // 2026-08-13 (P01) da niyat o'zgardi: ilgari shart `win?.isKiosk()` edi,
+    // lekin «❐» tugmasi oynali (kiosk EMAS) rejimga o'tkazganda `isKiosk()`
+    // false bo'lib qolar va Alt+F4 / taskbar-close ilovani JIM yopib yuborardi.
+    // Endi qo'riqchi KONFIG bo'yicha: server manzili sozlangan bo'lsa oynani
+    // yopib bo'lmaydi (sozlash oynasi esa avvalgidek oddiy «X» bilan yopiladi).
+    // Batafsil: desktop-window-controls.test.ts (W2).
+    expect(mainSrc).toMatch(/if\s*\(!allowQuit\s*&&\s*serverBase\(\)\)\s*e\.preventDefault\(\)/);
   });
 
   /**

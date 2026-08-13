@@ -1,8 +1,9 @@
 # Sherset Kassa — Electron o'rami (`desktop/`)
 
-> Holat: **`1.6.0` yig'ildi va KANALDA** (2026-08-13, `latest.yml`+exe HTTPS
-> orqali o'lchandi: sha512 mos, HEAD 200). Yangilik: o'ng-yuqorida ko'rinadigan
-> chiqish tugmasi (✕). Qurilmada o'tish oqimi Phase-1 (jonli kuzatilmagan).
+> Holat: **`1.7.0` kodda tayyor, hali yig'ilmagan** (2026-08-13). Yangilik:
+> o'ng-yuqorida oyna boshqaruv uchligi — «—» (minimize), «❐» (kiosk ↔ oynali
+> rejim), «✕» (tasdiqli chiqish); close-qo'riqchi endi konfig bo'yicha
+> (oynali rejimda ham Alt+F4 yopmaydi). Kanalda hozircha `1.6.0` turibdi.
 > `.exe` **yig'iladi va kanalga chiqadi** (o'lchangan, pastga qarang), lekin
 > qobiqning O'ZI bu repo'da hech qachon ishga tushirilmagan: chop etish, mijoz-ekran
 > va ekran klaviaturasi **hech bir printerda, hech bir 2-monitorda va hech bir
@@ -303,11 +304,11 @@ pnpm install            # bir marta (electron + electron-builder ≈ 200 MB)
 pnpm run dist           # = node check-build-assets.js && electron-builder --win nsis
 ```
 
-Natija (hozirgi `version: 1.6.0` uchun):
+Natija (hozirgi `version: 1.7.0` uchun):
 
 ```
-desktop/dist/Sherset-Kassa-Setup-1.6.0.exe
-desktop/dist/Sherset-Kassa-Setup-1.6.0.exe.blockmap
+desktop/dist/Sherset-Kassa-Setup-1.7.0.exe
+desktop/dist/Sherset-Kassa-Setup-1.7.0.exe.blockmap
 desktop/dist/latest.yml
 ```
 
@@ -483,6 +484,7 @@ qolganlarini to'xtatadi).
 | `1.4.0` | 2026-08-12 | chek: bo'sh printer nomi = **Windows sukut printeri** (`deviceName` berilmaydi); kanalga chiqqan oxirgi per-machine reliz |
 | `1.5.0` | 2026-08-13 | **per-user o'rnatma** (UAC yo'q) + **boot'da o'rnatish** (`installOnBoot`, kirish ekranida; o'rnatgach o'zi qaytadi). Kanalga chiqqan (`latest.yml` 2026-08-13 da o'lchandi); 1.4.0 → 1.5.0 o'tish QO'LDA (yuqoridagi bo'lim) |
 | `1.6.0` | 2026-08-13 | **chiqish tugmasi ✕** o'ng-yuqori burchakda (imoga qo'shimcha, tasdiq dialogli `shell:request-quit`); web tomonda qobiq doim kiosk-ko'rinish. Kanalga chiqqan (sha512+HEAD 200 o'lchandi); qurilmada 1.5.0→1.6.0 avto-o'tish jonli KUZATILMAGAN |
+| `1.7.0` | 2026-08-13 | **oyna boshqaruv uchligi — ❐ ✕** (P01): «—» minimize, «❐» kiosk ↔ oynali (ramkasiz 1280×800) rejim, «✕» avvalgidek tasdiqli; close-qo'riqchi `isKiosk()` dan KONFIGga ko'chdi (oynali rejimda Alt+F4 jim yopmasin). Hali yig'ilmagan/kanalga chiqmagan; qurilmada o'lchanmagan |
 
 **Kanal tomoni — o'lchangan (2026-08-11, `1.3.0`):**
 `https://erp.sherset.uz/downloads/desktop/latest.yml` → **200**, ichida

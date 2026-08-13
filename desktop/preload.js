@@ -121,17 +121,18 @@ function installExitGesture() {
 }
 
 /**
- * CHIQISH TUGMASI — o'ng-yuqori burchakdagi ko'rinadigan «✕» (2026-08-13,
- * egasining talabi: burchak-imosi KO'RINMAS edi — uni bilmagan odam ilovadan
- * chiqa olmasdi; Chrome'ning yopish tugmasiga o'xshash belgi so'raldi).
+ * OYNA BOSHQARUV TUGMALARI — o'ng-yuqorida uchlik (P01, 2026-08-13 egasi):
+ * «—» ilovadan chiqmasdan ish stoliga (minimize), «❐» kiosk ↔ oynali rejim,
+ * «✕» tasdiq dialogli chiqish (1.6.0 dagi tugma — o'sha yilgi «bitta ✕»
+ * niyati shu kuni uchlikka kengaydi). Imo (installExitGesture) o'rnida qoladi.
  *
- * Imoning O'RNINI BOSMAYDI — unga qo'shimcha. Bosilganda ham xuddi imo kabi
- * `shell:request-quit` ketadi: main tomonda TASDIQ dialogi bor, tasodifiy
- * bosish savdoni yo'qotmaydi (`shell:quit` to'g'ridan-to'g'ri chaqirilmaydi).
+ * ✕ bosilganda xuddi imo kabi `shell:request-quit` ketadi: main tomonda
+ * TASDIQ dialogi bor, tasodifiy bosish savdoni yo'qotmaydi (`shell:quit`
+ * to'g'ridan-to'g'ri chaqirilmaydi).
  *
- * 🔴 YALANG <button>, konteyner div YO'Q: `desktop-touch-keyboard.test.ts`
- * dagi `keyboardRoot()` evristikasi «fixed element ichida button bor» deb
- * qidiradi — konteynerli tugma klaviatura ildizi bilan adashtirilardi.
+ * 🔴 Har tugma YALANG <button>, konteyner div YO'Q: `desktop-touch-keyboard.
+ * test.ts` dagi `keyboardRoot()` evristikasi «fixed element ichida button bor»
+ * deb qidiradi — konteynerli blok klaviatura ildizi bilan adashtirilardi.
  *
  * 🔴 Qobiqning o'z file:// sahifalarida (setup/offline/updating) chizilmaydi:
  * setup oynasi ramkali (haqiqiy X bor), offline'da «Chiqish: Ctrl+Alt+Shift+Q»
@@ -139,32 +140,40 @@ function installExitGesture() {
  *
  * Uslublar faqat CSSOM (`el.style.x`) — sahifa CSP'si (`style-src`) tegmaydi.
  */
-function installExitButton() {
+const WINDOW_BUTTONS = [
+  { label: '—', channel: 'shell:minimize', right: '104px' },
+  { label: '❐', channel: 'shell:toggle-windowed', right: '56px' },
+  { label: '✕', channel: 'shell:request-quit', right: '8px' },
+];
+
+function installWindowControls() {
   if (location.protocol === 'file:') return;
-  const b = document.createElement('button');
-  b.type = 'button';
-  b.tabIndex = -1;
-  b.textContent = '✕';
-  const styles = {
-    position: 'fixed',
-    top: '8px',
-    right: '8px',
-    // Klaviatura (2147483647) dan bitta past — klaviatura pastda, kesishmaydi.
-    zIndex: '2147483646',
-    width: '40px',
-    height: '40px',
-    lineHeight: '1',
-    fontSize: '20px',
-    color: '#ffffff',
-    background: 'rgba(15, 23, 42, 0.45)',
-    border: '0',
-    borderRadius: '20px',
-    cursor: 'pointer',
-    opacity: '0.7',
-  };
-  for (const k of Object.keys(styles)) b.style[k] = styles[k];
-  b.addEventListener('click', () => ipcRenderer.send('shell:request-quit'));
-  document.body.appendChild(b);
+  for (const cfg of WINDOW_BUTTONS) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.tabIndex = -1;
+    b.textContent = cfg.label;
+    const styles = {
+      position: 'fixed',
+      top: '8px',
+      right: cfg.right,
+      // Klaviatura (2147483647) dan bitta past — klaviatura pastda, kesishmaydi.
+      zIndex: '2147483646',
+      width: '40px',
+      height: '40px',
+      lineHeight: '1',
+      fontSize: '20px',
+      color: '#ffffff',
+      background: 'rgba(15, 23, 42, 0.45)',
+      border: '0',
+      borderRadius: '20px',
+      cursor: 'pointer',
+      opacity: '0.7',
+    };
+    for (const k of Object.keys(styles)) b.style[k] = styles[k];
+    b.addEventListener('click', () => ipcRenderer.send(cfg.channel));
+    document.body.appendChild(b);
+  }
 }
 
 /**
@@ -480,7 +489,7 @@ function lockZoom() {
 function installShellHelpers() {
   lockZoom();
   installExitGesture();
-  installExitButton();
+  installWindowControls();
   installTouchKeyboard();
 }
 

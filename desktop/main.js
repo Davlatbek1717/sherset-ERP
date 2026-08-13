@@ -240,13 +240,14 @@ function createWindow() {
   });
 
   // Kassir oynani yopa olmasin (Alt+F4, tizim tugmasi) — chiqish faqat
-  // operator kaliti (Ctrl+Alt+Shift+Q), burchak-imosi yoki `app.quit()` orqali.
+  // operator kaliti (Ctrl+Alt+Shift+Q), burchak-imosi yoki ✕ tugmasi orqali.
   //
-  // Juftlanmagan (sozlash) oynada esa oddiy «X» ISHLAYDI: hali kassir yo'q,
-  // qulflaydigan narsa ham yo'q — aks holda klaviaturasiz monoblokda ilovani
-  // umuman yopib bo'lmasdi.
+  // 🔴 Shart `isKiosk()` EMAS, KONFIG (2026-08-13, P01): «❐» oynali rejimga
+  // o'tkazganda `isKiosk()` false bo'lib qolardi va Alt+F4 / taskbar-close
+  // ilovani JIM yopib yuborardi. Sozlash oynasi (serverBase bo'sh) esa
+  // oddiy «X» bilan yopilaveradi — hali kassir yo'q, qulflaydigan narsa yo'q.
   win.on('close', (e) => {
-    if (!allowQuit && win?.isKiosk()) e.preventDefault();
+    if (!allowQuit && serverBase()) e.preventDefault();
   });
   win.on('closed', () => {
     win = null;
@@ -736,6 +737,28 @@ function registerIpc() {
     return { ok };
   });
   ipcMain.on('shell:quit', () => quitShell());
+
+  // «—» — ilovadan chiqmasdan ish stoliga (P01). Kiosk oynada ham ishlaydi.
+  ipcMain.on('shell:minimize', () => {
+    win?.minimize();
+  });
+
+  /**
+   * «❐» — kiosk ↔ oynali rejim (P01). Ramka (frame) ish paytida qo'shib
+   * bo'lmaydi, shuning uchun oynali rejim ham RAMKASIZ: 1280×800, markazda.
+   * Qayta bosilsa kiosk'ga qaytadi. Chiqish baribir faqat ✕/imo orqali —
+   * `close` qo'riqchisi konfig bo'yicha to'sadi (`createWindow` dagi izoh).
+   */
+  ipcMain.on('shell:toggle-windowed', () => {
+    if (!win) return;
+    if (win.isKiosk()) {
+      win.setKiosk(false);
+      win.setSize(1280, 800);
+      win.center();
+    } else {
+      win.setKiosk(true);
+    }
+  });
 
   /**
    * Qurilma holati — kirish ekranidagi belgi uchun (K06).
