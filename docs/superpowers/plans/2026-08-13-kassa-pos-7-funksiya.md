@@ -969,8 +969,46 @@ faqat uslub. `--ms-font-sans`/boshqa ERP sahifalari ataylab tegilmadi (reja taqi
 **Deploy:** YO'Q (operator buyrug'i kutilyapti — web deploy xohlasa).
 **TO'XTADIM.**
 
-### 📝 F5 hisoboti
-_(hali yozilmagan)_
+### 📝 F5 hisoboti — 2026-08-13 · `cd412607`
+**Holat:** ✅ Phase-1 complete (strukturaviy, qurilmada runtime-tasdiqlanmagan)
+**Nima o'zgardi:** Kontragentli kassa cheki oxirida «Sizning qarzingiz: …» qatori (P05, egasi:
+«to'lasa/to'lamasa, chek pastida qolgan summa»). Model: `ReceiptModel.debtAfterMinor: bigint|null`
+(+ `RECEIPT_LABELS.debtAfter`); ko'rsatish sharti `!= null && > 0n` — `null` = O'LCHANMAGAN
+(so'rov yiqilgan, 0 EMAS — xotira `pos-customer-card-one-number`), qator chiqmaydi, chek
+TO'XTAMAYDI (fail-open). UCH renderer birga (xotira `ombor-chek-uch-renderer`): ESC/POS matn
+(`buildReceiptText`, to'lovlardan keyin ajratuvchi chiziq bilan), Electron HTML
+(`buildReceiptHtml`, to'lov qatori uslubida), React `TovarChek` (yangi `debtAfterMinor` prop,
+`chek-debt-after` qatori; buyurtma/jo'natma cheklari prop bermaydi ⇒ namunaga 1:1 mos qoladi).
+Ma'lumot: yangi 25-qatorlik `lib/pos/receipt-debt.ts` → `fetchDebtAfter(agentId)` =
+`GET /debts/pos/summary/:agentId?currency=UZS` → `BigInt(payableMinor)`, catch→null — ikkala
+chop-nuqta (agent-yo'l `printReceiptViaAgent` va brauzer-popup `/print/retail-sale/[id]`, u yerda
+`auto=1` poygasiga qarshi qarz so'rovi ham render'dan oldin kutiladi) BITTA helper'dan. `apps/api`ga
+TEGILMADI (reja taqig'i — `payableMinor` serverda tayyor, post()'dan keyingi qoldiq).
+**Fayllar:** | Yo'l | Nima qilindi |
+| `apps/web/src/lib/pos/receipt-model.ts` | `debtAfterMinor` (input+model), `debtAfter` labeli |
+| `apps/web/src/lib/pos/receipt-debt.ts` | YANGI: `fetchDebtAfter` helper (fail-open) |
+| `apps/web/src/lib/print-agent.ts` | ESC/POS + Electron HTML qatorlari; `printReceiptViaAgent`da summary ulash |
+| `apps/web/src/components/print/tovar-chek.tsx` | `debtAfterMinor` prop + `chek-debt-after` qatori |
+| `apps/web/src/app/print/retail-sale/[id]/page.tsx` | debt-query (agent bo'lsagina), modelga ulash, prop |
+| `apps/web/src/messages/{uz,ru}.json` | `pages.print.chek_debt_after` (uz «Sizning qarzingiz», ru «Ваш долг») |
+| testlar (5 fayl) | receipt-model (o'tkazish + i18n-juftlik), receipt-renderers (2 renderer + 32-ustun), tovar-chek-restored (prop), print-retail-sale (sahifa-wiring: so'rov/fail-open/agentsiz), print-agent-reason (agent-yo'l wiring: so'rov/fail-open/agentsiz) |
+**Testlar:** 11 yangi test. RED ko'rildi: 6 failed / 113 passed (label/maydon/qator/wiring yo'q
+edi); GREEN 119/119. Rejada sanalmagan 3 test fayli (tovar-chek-restored, print-retail-sale,
+print-agent-reason) ONGLI qo'shildi: renderers.test.ts sof `.ts` — React renderni chizolmaydi
+(reja o'zi «tovar-chek: render qilib tekshir» degan), wiring (5.4) esa testsiz qolardi.
+**Gate:** typecheck 0 ✓ · lint:product 0 ✓ (1 organizeImports tuzatildi) · i18n:gate 19/19 ✓ ·
+web test 269 fayl / 3855 pass ✓ (api'ga tegilmagan — api test shart emas)
+**O'LCHANGAN vs O'LCHANMAGAN:** O'lchandi — happy-dom'da uchala renderer chiqishi (>0 chiqadi;
+0/null/berilmagan chiqmaydi; 32-ustun chegarasi), ikkala chop-nuqta wiring'i (summary URL,
+fail-open, agentsiz so'ralmasligi), to'liq web suite, commit tarkibi (`git show --stat HEAD`:
+12 o'z fayl + `docs/progress.json` hook'i — normal). O'LCHANMADI — real qog'ozda qator ko'rinishi,
+jonli serverda `payableMinor` qiymatining post()'dan keyin yangilanish tartibi (runtime).
+**Phase-1: strukturaviy, runtime-tasdiqlanmagan.**
+**Nima QILINMADI va nega:** F6 boshlanmadi — alohida faza. `apps/api` tegilmadi (taqiq).
+Chek modelida qarz VALYUTASI faqat UZS (summary `?currency=UZS`) — mavjud «bitta halol raqam»
+shartnomasiga mos.
+**Deploy:** YO'Q (operator buyrug'i kutilyapti — web deploy xohlasa).
+**TO'XTADIM.**
 
 ### 📝 F6 hisoboti
 _(hali yozilmagan)_
