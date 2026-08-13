@@ -239,7 +239,8 @@ export function CartLineEditModal({
                 <Dialog.Title className="font-bold text-[10px] text-[var(--ms-text-muted)] uppercase tracking-widest">
                   {t('line_edit_title')}
                 </Dialog.Title>
-                <div className="mt-0.5 truncate font-bold text-[var(--ms-text-primary)] text-xl leading-tight">
+                {/* P04 (2026-08-13): mahsulot nomi POS shriftida (font-pos). */}
+                <div className="mt-0.5 truncate font-pos font-bold text-[var(--ms-text-primary)] text-xl leading-tight">
                   {line.productName}
                 </div>
                 {line.availableStock !== undefined && (

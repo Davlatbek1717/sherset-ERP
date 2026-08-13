@@ -209,6 +209,10 @@
 
   /* Font families (from Moysklad CSS) */
   --ms-font-sans: "Helvetica Neue", Helvetica, Arial, "Lucida Grande", sans-serif;
+  /* POS mahsulot nomlari (P04, 2026-08-13 egasi: «boshqa xildagi kattaroq
+     shrift»). Segoe UI — kassa monobloki Windows'da doim bor; boshqa OS'da
+     sans zaxirasiga tushadi. Global --ms-font-sans'ga TEGILMAGAN. */
+  --pos-font-product: "Segoe UI", "Segoe UI Variable Text", var(--ms-font-sans);
   --ms-font-dense: Tahoma, Geneva, sans-serif;
   --ms-font-mono: "JetBrains Mono", Menlo, Monaco, Consolas, monospace;
 }

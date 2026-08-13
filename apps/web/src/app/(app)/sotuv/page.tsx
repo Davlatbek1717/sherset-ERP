@@ -1918,7 +1918,9 @@ function SalesScreen({
                     data-test-id="sotuv-product"
                     className="flex flex-col items-start rounded-xl border border-[var(--ms-border)] bg-[var(--ms-bg-surface)] p-4 text-left shadow-sm transition-colors hover:bg-[var(--ms-bg-hover)]"
                   >
-                    <span className="font-medium text-[var(--ms-text-primary)] text-sm">
+                    {/* P04 (2026-08-13, egasi): mahsulot nomi boshqa xildagi
+                        kattaroq shriftda — font-pos (Segoe UI zanjiri). */}
+                    <span className="font-pos font-semibold text-[var(--ms-text-primary)] text-base">
                       {p.name}
                     </span>
                     <span className="mt-1 font-bold text-[var(--ms-text-destructive)] text-base">
@@ -2733,7 +2735,7 @@ function SalesScreen({
                             data-test-id="sotuv-cart-line-edit"
                             onClick={() => setEditingProductId(line.productId)}
                             title={t('line_edit_open')}
-                            className="min-w-0 flex-1 truncate text-left font-medium text-sm text-[var(--ms-text-primary)] hover:underline"
+                            className="min-w-0 flex-1 truncate text-left font-pos font-semibold text-base text-[var(--ms-text-primary)] hover:underline"
                           >
                             {line.productName}
                           </button>

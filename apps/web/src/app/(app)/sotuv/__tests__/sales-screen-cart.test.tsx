@@ -118,6 +118,19 @@ describe('SalesScreen — tovar setkasi', () => {
     expect(within(at(tiles, 0)).queryByTestId('sotuv-grid-cost')).toBeNull();
   });
 
+  it('P04 (2026-08-13) — mahsulot nomi POS shriftida va kattaroq', async () => {
+    renderWithProviders(<SotuvPage />);
+
+    // P04 (2026-08-13, egasi): «shriftlarni o'zgartirish kerak — mahsulot nomi
+    // boshqa xildagi kattaroq shriftda». `font-pos` = `--pos-font-product`
+    // (Segoe UI zanjiri, global --ms-font-sans'ga TEGILMAGAN).
+    const tiles = await screen.findAllByTestId('sotuv-product');
+    const name = at(tiles, 0).querySelector('.font-pos');
+    expect(name, 'qidiruv kartasi nomi font-pos emas').not.toBeNull();
+    expect(name?.className).toContain('text-base');
+    expect(norm(name?.textContent)).toContain('Kabel 2×2.5');
+  });
+
   it('bo‘sh savat — «Savat bo‘sh» va «Omborchiga yuborish» bloklangan', async () => {
     renderWithProviders(<SotuvPage />);
 
@@ -179,6 +192,17 @@ describe('SalesScreen — savat qatorlari', () => {
     expect(norm(line.textContent)).toContain('10 000,00 сум');
     // Jami + dona soni footerda.
     expect(norm(screen.getByText(/ta mahsulot/).textContent)).toBe('1 ta mahsulot');
+  });
+
+  it('P04 (2026-08-13) — savat qatoridagi nom ham POS shriftida va kattaroq', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<SotuvPage />);
+
+    const line = await addFirstProduct(user);
+    // Nom-tugma (`sotuv-cart-line-edit`) — qidiruv kartasi bilan bir siyosat (P04).
+    const name = within(line).getByTestId('sotuv-cart-line-edit');
+    expect(name.className, 'savat qatori nomi font-pos emas').toContain('font-pos');
+    expect(name.className).toContain('text-base');
   });
 
   it('bir tovarni ikki marta bosish — YANGI qator emas, miqdor 2 bo‘ladi', async () => {
