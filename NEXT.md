@@ -331,6 +331,16 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-08-13c (KASSA POS — 7-funksiya REJASI tuzildi, bajarilmagan) —** egasining 7 talabi
+> (oyna tugmalari —/❐/✕ · shrift · narx-maxfiylik · modal-minimal yashirin · chekda qarz ·
+> istalgan chekka qaytarish · Mijozlar tabi) uchun faza-reja:
+> `docs/superpowers/plans/2026-08-13-kassa-pos-7-funksiya.md`. Har faza ALOHIDA sessiyada
+> (rejada tayyor promptlar bor), agent faza tugagach reja pastidagi o'z hisobot-seksiyasini
+> to'ldirib TO'XTAYDI. Tavsiya tartib: F1→F2→F3→F4→F5→F6→F7 (F7 F6'ga tayanadi; F2/F4 ikkalasi
+> sotuv/page.tsx'ga tegadi — parallel QILINMASIN). Hech biri hali boshlanmagan.
+>
+> ---
+>
 > **🕒 2026-08-13b (KASSA — .exe'da endi DOIM kassa ko'rinishi + ✕ chiqish tugmasi ·
 > ✅ DEPLOYED web `7ae1554c` + reliz 1.6.0 KANALDA) —** egasining ikki shikoyati: (1) .exe'da
 > PIN bilan kirilganda navbar'li to'liq web-ERP ochilgan — ildiz: kiosk-ko'rinish faqat
