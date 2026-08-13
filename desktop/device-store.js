@@ -141,6 +141,23 @@ function clearDevice() {
   return { ok: true };
 }
 
+// ─── Mijoz-ekran holati ─────────────────────────────────────────────────────
+
+/**
+ * Mijoz-ekran ochiq qoldirilganmi. Qurilma qayta ishga tushganda (yangilanish,
+ * elektr) kassir tugmani QAYTA bosishi kerak edi (K19) — endi qobiq o'zi
+ * tiklaydi. Bu sir emas, ochiq saqlanadi.
+ */
+function getCustomerDisplayOpen() {
+  return readRaw().customerDisplayOpen === true;
+}
+
+function setCustomerDisplayOpen(open) {
+  const raw = readRaw();
+  raw.customerDisplayOpen = open === true;
+  writeRaw(raw);
+}
+
 module.exports = {
   configPath,
   normalizeServerUrl,
@@ -149,4 +166,6 @@ module.exports = {
   getDevice,
   setDevice,
   clearDevice,
+  getCustomerDisplayOpen,
+  setCustomerDisplayOpen,
 };

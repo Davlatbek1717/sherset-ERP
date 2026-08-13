@@ -42,6 +42,10 @@ const BOOT_UPDATE_WAIT_MS = 25000;
 const CFD_PATH = '/customer-display'; // mijoz-ekran sahifasi (apps/web)
 const HEALTH_POLL_MS = 5000;
 
+/** Mijoz-ekran yuklanmasa shuncha marta qayta urinamiz, keyin yopamiz. */
+const CFD_RETRY_LIMIT = 3;
+const CFD_RETRY_DELAY_MS = 3000;
+
 /** Render jarayoni shuncha marta yiqilsa qayta yuklashni to'xtatamiz. */
 const RELOAD_LIMIT = 3;
 const RELOAD_WINDOW_MS = 60000;
@@ -95,6 +99,8 @@ let allowQuit = false;
 /** Yiqilish hisoblagichi — cheksiz qayta yuklash siklining qulfi. */
 let reloadCount = 0;
 let reloadWindowStart = 0;
+/** Mijoz-ekran qayta urinishlar hisoblagichi (K20). */
+let cfdRetries = 0;
 
 function serverBase() {
   return store.getServerUrl() || DEFAULT_SERVER_URL;
@@ -247,7 +253,8 @@ function createWindow() {
     stopHealthPolling();
     // Kassir oynasi yopilsa mijoz-ekran ham ketadi — aks holda `window-all-
     // closed` hech qachon otilmay, ilova ko'rinmas holda tirik qolardi.
-    closeCustomerDisplay();
+    // `false` — bu ilova yopilishi, kassirning «yop» buyrug'i emas (K19).
+    closeCustomerDisplay(false);
     if (printPopup && !printPopup.isDestroyed()) printPopup.destroy();
   });
 
@@ -368,7 +375,8 @@ function quitShell() {
   // Mijoz-ekran HAR IKKI yo'lda ham yopiladi — yangilanish o'rnatilsa ham,
   // oddiy chiqishda ham. Aks holda o'rnatuvchi jarayonni yopganda ikkinchi
   // monitorda osilgan oyna qolardi.
-  closeCustomerDisplay();
+  // `false` — bu ilova yopilishi, kassirning «yop» buyrug'i emas (K19).
+  closeCustomerDisplay(false);
   // 🔴 Yangilanish AYNAN shu yerda o'rnatiladi (spec §8.3) — savdo o'rtasida
   // emas. `true` qaytsa o'rnatuvchi jarayonni o'zi yopadi.
   if (updater.installOnQuit()) return;
@@ -627,25 +635,45 @@ function openCustomerDisplay() {
   cfdWin.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   // Sahifa ko'tarilishi bilan JORIY savatni beramiz — aks holda ekran
   // keyingi o'zgarishgacha bo'sh turardi.
-  cfdWin.webContents.on('did-finish-load', () => sendCart());
-  // Yuklanmasa oynani YOPAMIZ: mijoz turgan ekranda Chrome'ning xato sahifasi
-  // osilib qolgandan ko'ra o'chiq ekran yaxshi (kassir tugmani qayta bosadi).
-  cfdWin.webContents.on('did-fail-load', (_e, errorCode, _desc, _url, isMainFrame) => {
+  cfdWin.webContents.on('did-finish-load', () => {
+    cfdRetries = 0;
+    sendCart();
+  });
+  // 🔴 Ilgari birinchi nosozlikda oyna YOPILARDI (K20): tarmoq bir soniya
+  // uzilsa mijoz-ekran o'lar va kassir buni sezmasdi ham. Endi bir necha
+  // marta urinamiz; baribir kelmasa yopamiz (mijoz turgan ekranda Chrome
+  // xato sahifasi osilib qolgandan ko'ra o'chiq ekran yaxshi).
+  cfdWin.webContents.on('did-fail-load', (_e, errorCode, desc, _url, isMainFrame) => {
     if (!isMainFrame || errorCode === -3) return; // -3 = ERR_ABORTED
-    closeCustomerDisplay();
+    cfdRetries += 1;
+    logger.write('cfd', `yuklanmadi (${desc}); urinish ${cfdRetries}`);
+    if (cfdRetries > CFD_RETRY_LIMIT) {
+      closeCustomerDisplay();
+      return;
+    }
+    setTimeout(() => {
+      if (cfdWin && !cfdWin.isDestroyed()) cfdWin.loadURL(`${base}${CFD_PATH}`);
+    }, CFD_RETRY_DELAY_MS);
   });
   cfdWin.loadURL(`${base}${CFD_PATH}`);
+  store.setCustomerDisplayOpen(true);
   return { open: true };
 }
 
-/** Ochiq bo'lsa yopadi (yopiq bo'lsa hech narsa qilmaydi). @returns yopildimi */
-function closeCustomerDisplay() {
+/**
+ * Ochiq bo'lsa yopadi (yopiq bo'lsa hech narsa qilmaydi). @returns yopildimi
+ * @param {boolean} [remember=true] Holatni saqlaymizmi. `false` — ilova
+ *   yopilayotganda: oyna yopiladi, lekin «ochiq edi» xotirasi QOLADI, aks
+ *   holda qayta ishga tushgach tiklash (K19) hech qachon ishlamasdi.
+ */
+function closeCustomerDisplay(remember = true) {
   if (!cfdWin || cfdWin.isDestroyed()) {
     cfdWin = null;
     return false;
   }
   cfdWin.destroy();
   cfdWin = null;
+  if (remember) store.setCustomerDisplayOpen(false);
   return true;
 }
 
@@ -816,6 +844,8 @@ if (!app.requestSingleInstanceLock()) {
     keepScreenAwake();
     // Oyna DARHOL ochiladi — kassir 25 soniya qora ekran ko'rmasin.
     createWindow();
+    // Oldingi seansda ochiq qolgan mijoz-ekranni tiklaymiz (K19).
+    if (store.getCustomerDisplayOpen()) openCustomerDisplay();
 
     const res = updater.start(serverBase);
     if (!res.started) return;
@@ -832,7 +862,9 @@ if (!app.requestSingleInstanceLock()) {
     // Ekran chizilishiga ulguradi, keyin o'rnatuvchi jarayonni yopadi.
     setTimeout(() => {
       allowQuit = true;
-      closeCustomerDisplay();
+      // `false` — o'rnatishdan keyingi qayta ishga tushishda ekran o'zi
+      // tiklanishi kerak (K19 ning asosiy stsenariysi aynan yangilanish).
+      closeCustomerDisplay(false);
       updater.installOnBoot();
     }, 1200);
   });

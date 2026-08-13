@@ -529,6 +529,25 @@ describe('desktop/main.js — mijoz-ekran (F3, spec §6.5)', () => {
     // cookie'sidan token oladi — alohida partition uni uzib qo'yadi.
     expect(code).not.toMatch(/partition\s*:/);
   });
+
+  // ── F7 — mijoz-ekran barqarorligi ─────────────────────────────────────────
+
+  it('K19 — oyna holati SAQLANADI (qayta ishga tushgach o`zi ochiladi)', () => {
+    // Ilgari holat faqat xotirada edi: yangilanish/elektr uzilishidan keyin
+    // kassir tugmani QAYTA bosishi kerak edi va buni ko'pincha sezmasdi ham.
+    const storeSrc = read(desktopFile('device-store.js'));
+    expect(storeSrc).toContain('setCustomerDisplayOpen');
+    expect(storeSrc).toContain('getCustomerDisplayOpen');
+    expect(mainSrc).toContain('getCustomerDisplayOpen');
+  });
+
+  it('🔴 K20 — yuklanmasa QAYTA URINADI, darhol yopilmaydi', () => {
+    // Tarmoq bir soniya uzilsa mijoz-ekran o'lardi va kassir sezmasdi.
+    const at = mainSrc.indexOf("cfdWin.webContents.on('did-fail-load'");
+    expect(at, 'did-fail-load ishlovchisi yo`q').toBeGreaterThan(0);
+    const body = mainSrc.slice(at, at + 800);
+    expect(body, 'qayta urinish yo`q').toContain('CFD_RETRY_LIMIT');
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
