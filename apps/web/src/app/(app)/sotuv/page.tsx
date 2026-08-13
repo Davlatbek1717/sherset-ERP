@@ -37,7 +37,11 @@ import { parseAmountToMinor } from '@/lib/pos/parse-amount';
 // Chop natijasi → keyingi qadam (qobiqda popup ochilmaydi) — izohi modulda.
 import { printFollowUp } from '@/lib/pos/print-fallback';
 // Ekranga nima chiqishi (hisob-kitobga tegmaydi) — izohi shu faylda.
-import { SHOW_MARGIN_ON_SCREEN } from '@/lib/pos/ui-flags';
+import {
+  SHOW_COST_IN_SEARCH,
+  SHOW_MARGIN_ON_SCREEN,
+  SHOW_WHOLESALE_IN_CART,
+} from '@/lib/pos/ui-flags';
 import {
   type PrintIdleReason,
   fetchAgentPrinters,
@@ -1930,7 +1934,10 @@ function SalesScreen({
                       >
                         {t('stock')}: {onHand.toLocaleString('uz-UZ')} {t('pieces')}
                       </span>
-                      {p.buyPrice != null && (
+                      {/* «Kelgan» — ekranda KO'RSATILMAYDI (P02, 2026-08-13,
+                          egasi): mijoz ko'zi oldida tan narx ochiq turmasin.
+                          Markup bayroq bilan to'silgan (`lib/pos/ui-flags.ts`). */}
+                      {SHOW_COST_IN_SEARCH && p.buyPrice != null && (
                         <span
                           data-test-id="sotuv-grid-cost"
                           className="text-[var(--ms-text-muted)]"
@@ -2804,7 +2811,10 @@ function SalesScreen({
                                 </span>
                               </span>
                             )}
-                            {line.wholesaleMinor != null && (
+                            {/* «Optom» — savat qatorida KO'RSATILMAYDI (P02,
+                                2026-08-13, egasi): faqat qator-tahrir oynasida
+                                qoladi (F3). Bayroq — `lib/pos/ui-flags.ts`. */}
+                            {SHOW_WHOLESALE_IN_CART && line.wholesaleMinor != null && (
                               <span data-test-id="sotuv-cart-min">
                                 · {t('cart_min')}:{' '}
                                 <span className="tabular-nums">

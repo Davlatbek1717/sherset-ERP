@@ -26,3 +26,21 @@
  * Qaytarish = shu qiymatni `true` qilish (boshqa hech narsa).
  */
 export const SHOW_MARGIN_ON_SCREEN = false;
+
+/**
+ * Qidiruv kartasida tan narx («Kelgan», `buyPrice`) ko'rinadimi.
+ * 2026-08-13 egasining qarori (P02): YO'Q — «tovarni qidirganda qoldiq
+ * ko'rinishi kerak, lekin kelgan narxi va optom narxi ko'rinmasligi kerak» —
+ * mijoz ko'zi oldidagi ekranda tan narx ochiq turmasin. Bu SHOW_MARGIN_ON_SCREEN
+ * (savat, 2026-08-11) qarorining setkadagi davomi. Hisob-mantiq (foyda,
+ * narx-pol) bunga BOG'LIQ EMAS. Qaytarish = `true`.
+ */
+export const SHOW_COST_IN_SEARCH = false;
+
+/**
+ * Savat qatorida «Optom» chegara ko'rinadimi. 2026-08-13 (P02): YO'Q — optom
+ * narx faqat qator-tahrir modalida qoladi (egasining aniq talabi, F3).
+ * P12'dagi «sotuv narxi — maxfiy emas» asosi shu kuni bekor qilindi.
+ * «Optomdan past» sariq tasma va hisob-mantiq bunga BOG'LIQ EMAS. Qaytarish = `true`.
+ */
+export const SHOW_WHOLESALE_IN_CART = false;

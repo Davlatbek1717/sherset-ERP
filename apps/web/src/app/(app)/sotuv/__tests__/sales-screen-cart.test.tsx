@@ -102,7 +102,7 @@ function priceText(line: HTMLElement): string {
 }
 
 describe('SalesScreen — tovar setkasi', () => {
-  it('tovar, sotuv narxi, qoldiq va tan narx chiziladi', async () => {
+  it('P02 — tovar, sotuv narxi, qoldiq chiziladi; tan narx («Kelgan») KO‘RINMAYDI', async () => {
     renderWithProviders(<SotuvPage />);
 
     const tiles = await screen.findAllByTestId('sotuv-product');
@@ -110,11 +110,12 @@ describe('SalesScreen — tovar setkasi', () => {
     expect(norm(at(tiles, 0).textContent)).toContain('Kabel 2×2.5');
     expect(norm(at(tiles, 0).textContent)).toContain('10 000,00 сум');
     expect(norm(at(tiles, 0).textContent)).toContain('Qoldiq: 12 dona');
-    // «Kelgan» (tan narx) setkada HAM ko'rinadi — kassir ko'radigan raqam
-    // savatda ham, setkada ham bir xil bo'lishi ataylab (§5.2 izohi).
-    expect(norm(within(at(tiles, 0)).getByTestId('sotuv-grid-cost').textContent)).toContain(
-      '6 000,00 сум',
-    );
+    // P02 (2026-08-13, egasi): «tovarni qidirganda qoldiq ko'rinishi kerak,
+    // lekin kelgan narxi va optom narxi ko'rinmasligi kerak» — mijoz ko'zi
+    // oldidagi ekranda tan narx ochiq turmasin. Eski niyat («Kelgan» setkada
+    // HAM ko'rinadi, §5.2 izohi) shu kuni bekor qilindi. Hisob-mantiq
+    // (narx-pol, foyda) bunga BOG'LIQ EMAS (`lib/pos/ui-flags.ts`).
+    expect(within(at(tiles, 0)).queryByTestId('sotuv-grid-cost')).toBeNull();
   });
 
   it('bo‘sh savat — «Savat bo‘sh» va «Omborchiga yuborish» bloklangan', async () => {
@@ -507,20 +508,19 @@ describe('SalesScreen — savat va tovar ro‘yxati bog‘lanishi', () => {
     );
   });
 
-  it('savatga qo‘shilgan qator kartochkadagi optom chegarani ko‘rsatadi', async () => {
+  it('P02 — savat qatorida «Optom» KO‘RINMAYDI (tahrir oynasida qoladi — F3)', async () => {
     const user = userEvent.setup();
     renderWithProviders(<SotuvPage />);
 
     const line = await addFirstProduct(user);
-    // Yorliq P12 da «Min» dan «Optom» ga o'zgardi: oynadagi yangi «Minimal»
-    // (narx poli) bilan chalkashmasin — ikkalasi ikki xil chegara.
-    expect(norm(within(line).getByTestId('sotuv-cart-min').textContent)).toBe(
-      '· Optom: 8 000,00 сум',
-    );
-    // Tan narx ATAYLAB yo'q (marja ekranda ko'rsatilmaydi); optom chegara —
-    // sotuv narxi, ya'ni maxfiy raqam emas va kassirga kerak.
+    // P02 (2026-08-13, egasi): optom narx ham mijoz ko'zi oldida ochiq
+    // turmasin — u FAQAT qator-tahrir oynasida qoladi (egasining aniq
+    // talabi, F3 qamrovi). Eski niyat (P12: qatorda «Optom» ko'rsatiladi,
+    // «sotuv narxi — maxfiy emas» degan asos) shu kuni bekor qilindi.
+    expect(within(line).queryByTestId('sotuv-cart-min')).toBeNull();
+    // Tan narx avvalgidek yo'q (marja ekranda ko'rsatilmaydi, 2026-08-11).
     expect(within(line).queryByTestId('sotuv-cart-cost')).not.toBeInTheDocument();
-    // Qoldiq kartochkadan olinadi.
+    // Qoldiq kartochkadan olinadi — bu QOLADI (egasi aynan shuni so'ragan).
     expect(norm(line.textContent)).toContain('Qolgan: 12');
   });
 
