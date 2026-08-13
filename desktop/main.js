@@ -53,6 +53,8 @@ const MICRONS_PER_PX = 264.5833; // 1px = 1/96 dyuym = 25400/96 mikron
 const DEFAULT_WIDTH_MICRONS = 80000; // 80mm chek — eski exe'ning legacy o'lchami
 const MIN_HEIGHT_MICRONS = 20000; // 20mm — drayver 0 balandlikni rad etadi
 const TAIL_MICRONS = 4000; // 4mm quyruq: oxirgi qator kesilmasin
+/** Shriftlar shuncha kutiladi; kelmasa baribir chop etamiz (chek to'xtamasin). */
+const FONTS_TIMEOUT_MS = 3000;
 
 const isDev = !app.isPackaged;
 
@@ -84,6 +86,8 @@ let cfdWin = null;
 let lastCart = { lines: [], discountPct: 0 };
 /** Chop etish faylining nomi takrorlanmasin (bir vaqtda ikki chek bo'lishi mumkin). */
 let printSeq = 0;
+/** Chop popup'i — BITTA. Aks holda kiosk ustida oynalar tizilib qolardi. @type {BrowserWindow | null} */
+let printPopup = null;
 /** @type {NodeJS.Timeout | null} */
 let healthTimer = null;
 /** Oyna faqat shu bayroq bilan yopiladi — Alt+F4 kassirni chiqarib yubormasin. */
@@ -244,6 +248,7 @@ function createWindow() {
     // Kassir oynasi yopilsa mijoz-ekran ham ketadi — aks holda `window-all-
     // closed` hech qachon otilmay, ilova ko'rinmas holda tirik qolardi.
     closeCustomerDisplay();
+    if (printPopup && !printPopup.isDestroyed()) printPopup.destroy();
   });
 
   win.webContents.on('before-input-event', (event, input) => {
@@ -327,7 +332,14 @@ function createWindow() {
  * olishi kerak. Bu oyna savdo sahifasi emas — qulflashning ma'nosi yo'q.
  */
 function openInternalPopup(url) {
-  const popup = new BrowserWindow({
+  // 🔴 Ochiq popup QAYTA ISHLATILADI (K17): ilgari har chop urinishi yangi
+  // oyna ochardi va kassir ularni yopmasa kiosk ustida to'planib qolardi.
+  if (printPopup && !printPopup.isDestroyed()) {
+    printPopup.loadURL(url);
+    printPopup.focus();
+    return;
+  }
+  printPopup = new BrowserWindow({
     parent: win ?? undefined,
     width: 420,
     height: 720,
@@ -341,12 +353,13 @@ function openInternalPopup(url) {
       sandbox: true,
     },
   });
-  popup.setMenu(null);
+  printPopup.setMenu(null);
+  printPopup.on('closed', () => {
+    printPopup = null;
+  });
   // 🔴 Avtomatik yopish ATAYLAB yo'q: Electron'da chop dialogi tugaganini
-  // beradigan OMMAVIY hodisa yo'q (ichki `-webContents-print-finished` ga
-  // tayanish keyingi versiyada jimgina o'lardi). Oyna ramkali — kassir
-  // «X» bilan yopadi.
-  popup.loadURL(url);
+  // beradigan OMMAVIY hodisa yo'q. Oyna ramkali — kassir «X» bilan yopadi.
+  printPopup.loadURL(url);
 }
 
 function quitShell() {
@@ -421,6 +434,23 @@ async function resolvePageSize(jobWin, requested) {
   const width = paperWidthMicrons(requested);
   const reqH = Number(requested?.height);
   if (reqH > 0) return { width, height: Math.round(reqH) };
+
+  // 🔴 Shriftlar yuklanguncha kutamiz (K16): `loadFile` HTML va rasm bilan
+  // tugaydi, web-shrift esa kechroq keladi va matn balandligini O'ZGARTIRADI.
+  // Kutilmasa `scrollHeight` kichik chiqib chek oxiri KESILARDI — bu faqat
+  // qog'ozda ko'rinadi, hech bir test tutmaydi.
+  try {
+    await withTimeout(
+      jobWin.webContents.executeJavaScript(
+        'document.fonts && document.fonts.ready ? document.fonts.ready.then(() => true) : true',
+      ),
+      FONTS_TIMEOUT_MS,
+      'shrift kutish vaqti tugadi',
+    );
+  } catch (e) {
+    // Shrift kelmadi — chekni baribir bosamiz, lekin izini qoldiramiz.
+    logger.write('print', `shrift kutilmadi: ${errMessage(e)}`);
+  }
 
   let px = 0;
   try {

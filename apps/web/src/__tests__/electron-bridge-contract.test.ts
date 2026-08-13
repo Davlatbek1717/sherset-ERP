@@ -472,6 +472,28 @@ describe('desktop/main.js — chop etish (F3, spec §6.4)', () => {
     expect(code).toMatch(/ok\s*:\s*false/);
     expect(code).toMatch(/ok\s*:\s*true/);
   });
+
+  it('🔴 K16 — balandlik SHRIFT yuklangandan KEYIN o`lchanadi', () => {
+    // Web-shrift kech kelsa `scrollHeight` kichik chiqadi va chek OXIRI
+    // kesiladi — qog'ozda ko'rinadi, hech bir test tutmaydi.
+    const at = mainSrc.indexOf('function resolvePageSize');
+    expect(at, 'resolvePageSize topilmadi').toBeGreaterThan(0);
+    const body = mainSrc.slice(at, at + 1200);
+    expect(body).toContain('document.fonts');
+  });
+
+  it('shrift kutish CHEKLANGAN (buzuq shrift chekni to`xtatmasin)', () => {
+    const at = mainSrc.indexOf('FONTS_TIMEOUT_MS');
+    expect(at, 'shrift kutish vaqti chegarasi yo`q').toBeGreaterThan(0);
+  });
+
+  it('🔴 K17 — chop popup`i BITTA (oynalar to`planmaydi)', () => {
+    const at = mainSrc.indexOf('function openInternalPopup');
+    expect(at).toBeGreaterThan(0);
+    const body = mainSrc.slice(at, at + 900);
+    expect(body, 'ochiq popup qayta ishlatilmaydi').toContain('isDestroyed()');
+    expect(body).toContain("'closed'");
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
