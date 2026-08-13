@@ -1010,8 +1010,51 @@ shartnomasiga mos.
 **Deploy:** YO'Q (operator buyrug'i kutilyapti — web deploy xohlasa).
 **TO'XTADIM.**
 
-### 📝 F6 hisoboti
-_(hali yozilmagan)_
+### 📝 F6 hisoboti — 2026-08-13 · `75d30b6c`
+**Holat:** ✅ Phase-1 complete (strukturaviy, qurilmada runtime-tasdiqlanmagan)
+**Nima o'zgardi:** Kassir endi ISTALGAN chekka qaytarish qila oladi (P06). Ikki ONGLI siyosat-bekor,
+qo'riqchi testlar o'chirilmasdan yangi niyat+sana+sabab bilan qayta yozildi: **(A) smena to'sig'i** —
+eski «asl chek smenasi ochiq bo'lishi shart» precheck'i olib tashlandi; qaytarish endi QAYTARUVCHI
+KASSIRNING JORIY OCHIQ SMENASIGA rasmiylashadi (mirror `sessionId`, atomik claim + returnsCount/
+returnsSumMinor hisoblagichlari, naqd chiqim CashDesk — hammasi joriy smenada; Z-hisobot sessionId
+agregatlari avtomatik to'g'ri); ochiq smena bo'lmasa 409 «Ochiq smena yo'q — qaytarish uchun avval
+smena oching». **(B) ruxsat to'sig'i** — 2026-08-12 «kassadan pul chiqishi menejer qarori» qarori
+egasi tomonidan bekor: cashier shabloniga `salesreturn.view/create = ALL`; FE'da `!isKiosk` yashirish
+sharti olib tashlandi. **(C) istalgan chekni TOPISH** — Cheklar tabida qidiruv maydoni
+(`sotuv-chek-search`): bo'sh = joriy smena (eski xulq), matn = `GET /retail-sales?search=…&limit=50`
+(sessionId'siz, barcha smenalar; backend filtri tayyor edi). Kanal-cap (karta cheki naqd
+qaytarilmaydi), COGS/qarz auto-split va mirror-chekni qayta qaytarish taqiqi TEGILMADI.
+Rejadan ikkita ongli aniqlashtirish: (1) tovar-qaytim ombori ham joriy smena do'koniga (kassir
+jismonan shu yerda; bitta-do'konli o'rnatmada farqsiz); (2) audit-iz (`writeAuditEvents`) ham joriy
+smena jurnaliga — amal shu smenada sodir bo'ldi.
+**Fayllar:** | Yo'l | Nima qilindi |
+| `apps/api/src/modules/retail-sale/retail-sale.service.ts` | precheck olib tashlandi; `currentSession` findFirst (cashierId+state:'open'); mirror sessionId/claim/hisoblagich/CashDesk/stock-store/audit joriy smenaga |
+| `apps/api/src/modules/permissions/role-templates.ts` | cashier'ga `grant(['salesreturn'], {view/create: ALL})` (izohda 2026-08-12 qarori bekor qilingani) |
+| `apps/api/src/scripts/ops-f6-salesreturn-topup.ts` | YANGI: prod'dagi mavjud cashier rollariga salesreturn top-up; DRY sukut, `--apply` operator bilan; IDEMPOTENT |
+| `retail-sale-refund-guards.test.ts` | QAYTA yozildi (o'chirilmadi): «asl smena yopiq → 409» niyati → «yopiq bo'lsa ham O'TADI»; +4 yangi F6 testi (mirror joriy smenaga, naqd joriy kassadan, ochiq smena yo'q → 409, claim joriy smenada); mirror-ban va poyga qoldi |
+| `retail-sale-lifecycle-permissions.test.ts` | «kassir qaytara olmaydi» → «kassir qaytara oladi» (ikki marta ag'darilgan katakcha tarixi izohda); +kiosk-marshrut testi |
+| `role-templates.test.ts` (+snapshot) | +cashier salesreturn kutiluvi (faqat view/create, qolganlari NO); kiosk-xaritaga `salesreturn → /retail-sales` + create-override `/retail-sales/:id/refund`; snapshot 1-qatorlik ochiq diff |
+| `retail-sale-refund-debt/-pricing/.cas.test.ts` | jihoz moslashuvi: `client.cashierSession.findFirst` dublyori (bir-smena stsenariysi — assertlar o'zgarmagan). Rejada faqat refund-debt sanalgan; pricing/cas ham refund() chaqirgani uchun MAJBURIY edi |
+| `apps/web/src/app/(app)/sotuv/page.tsx` | `!isKiosk` sharti olib tashlandi (P3 izohi F6 bilan yangilandi); `chekSearch` holati + so'rov almashinuvi + qidiruv input |
+| `chek-detail-panel.test.tsx` | «kioskda tugma ko'rinmaydi» → «KO'RINADI» (niyat-bekor izohi); +2 qidiruv testi (maydon bor; `search=` sessionId'siz ketadi) |
+| `messages/{ru,uz}.json` | `chek_search_placeholder`, `chek_search_empty` |
+**Testlar:** API: refund-guards to'liq qayta yozildi (8 test), lifecycle-permissions 4, role-templates +1;
+RED ko'rildi: 9 failed / 78 passed (eski precheck :1445, grant yo'q, kiosk-xarita) → GREEN. Web: 3 test
+qayta/yangi; RED ko'rildi: 3 failed / 18 passed (tugma yashirin, maydon yo'q) → GREEN 21/21.
+**Gate:** typecheck 0 ✓ (turbo 10/10) · lint:product 0 ✓ (2 fayl format tuzatildi) · i18n:gate 19/19 ✓ ·
+web test 269 fayl / 3857 pass ✓ · api test 595 fayl / 8258 pass ✓ (to'liq suite, barcha API o'zgarishlaridan keyin)
+**O'LCHANGAN vs O'LCHANMAGAN:** O'lchandi — service xulqi mock-Prisma dublyorlarida (mirror/claim/pul
+joriy smenada, 409 yo'llari, poyga), ruxsat matritsasi haqiqiy PermissionsGuard bilan, kiosk-policy
+mosligi, happy-dom'da panel/qidiruv renderi va so'rov shakli, to'liq ikkala suite, commit tarkibi
+(`git show --stat HEAD`: 14 o'z fayl + progress.json hook'i — normal). O'LCHANMADI — jonli DB'da
+yopiq-smenali chekni qaytarish oqimi (end-to-end), prod rollariga top-up (`--apply` YUGURTIRILMAGAN —
+hech qanday DB'ga yozilmadi, dry-run ham lokal DB o'chiq bo'lgani uchun yugurtirilmadi), qurilmada
+qidiruv/tugma. **Phase-1: strukturaviy, runtime-tasdiqlanmagan.**
+**Nima QILINMADI va nega:** F7 boshlanmadi (taqiq). `retail-refund-validation.ts` va COGS mantiqiga
+tegilmadi (taqiq). Deploy yo'q. Diqqat: deploy bo'lsa prod'da `ops-f6-salesreturn-topup.ts --apply`
+ham SHART (operator ruxsati bilan) — aks holda prod kassirlarda ruxsat bo'lmaydi.
+**Deploy:** YO'Q (operator buyrug'i kutilyapti — web+api deploy va ops-skript `--apply` birga ketishi kerak).
+**TO'XTADIM.**
 
 ### 📝 F7 hisoboti
 _(hali yozilmagan)_
