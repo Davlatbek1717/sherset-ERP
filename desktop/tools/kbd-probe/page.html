@@ -10,7 +10,28 @@
     <input id="money" type="text" inputmode="decimal" />
     <input id="pin" type="password" inputmode="numeric" />
     <input id="pinro" type="password" inputmode="numeric" readonly />
+    <!-- F5 boshqaruv kalitlari: Enter forma yuboradimi, o'qlar kursorni siljitadimi. -->
+    <form id="form">
+      <input id="ctl" type="text" />
+      <button type="submit" style="display: none"></button>
+    </form>
+    <textarea id="ta"></textarea>
     <div id="host"></div>
+    <script>
+      // F5 o'lchov jurnali: `keydown` React'gacha yetadigan hodisa bilan bir xil
+      // yo'ldan keladi; `submit` — Enter'ning forma-darajasidagi samarasi.
+      window.__ctl = { keydowns: [], submits: 0 };
+      document.getElementById('ctl').addEventListener('keydown', (e) => {
+        window.__ctl.keydowns.push(e.key);
+      });
+      document.getElementById('ta').addEventListener('keydown', (e) => {
+        window.__ctl.keydowns.push('ta:' + e.key);
+      });
+      document.getElementById('form').addEventListener('submit', (e) => {
+        e.preventDefault(); // navigatsiya bo'lmasin — probe sahifada qoladi
+        window.__ctl.submits += 1;
+      });
+    </script>
     <script>
       // React-ga o'xshash BOSHQARILADIGAN maydon: qiymat faqat `input`
       // hodisasidan keyin holatdan qayta yoziladi. Agar qobiq kaliti `input`

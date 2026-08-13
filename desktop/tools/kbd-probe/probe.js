@@ -41,6 +41,15 @@ process.on('uncaughtException', (e) => {
 /** Kirill — RU alifbosi + o'zbek kirilli (`preload.js` KB_CYRILLIC_ROWS dan). */
 const CHARS = ['a', 'A', '5', '.', "'", 'ф', 'Ф', 'я', 'ў', 'қ', 'ғ', 'ҳ'];
 
+/**
+ * Boshqaruv kalitlari (F5). Savol: `sendInputEvent({type:'keyDown', keyCode})`
+ * `<input>` va `<textarea>` ga qanday ta'sir qiladi —
+ *   - `Enter`: forma yuboriladimi (`submit`/`keydown` React'ga yetadimi)?
+ *   - `Left`/`Right`: kursor siljiydimi (`selectionStart` o'zgaradimi)?
+ * Javob Chromium'ga bog'liq, faqat o'lchanadi.
+ */
+const CONTROL_KEYS = ['Enter', 'Left', 'Right'];
+
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 app.on('window-all-closed', () => app.quit());
@@ -52,9 +61,9 @@ app.on('window-all-closed', () => app.quit());
 ipcMain.on('kbd:key', (_e, key) => {
   const win = BrowserWindow.getAllWindows()[0];
   if (!win || typeof key !== 'string') return;
-  if (key === 'Backspace') {
-    win.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Backspace' });
-    win.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Backspace' });
+  if (CONTROL_KEYS.concat('Backspace').includes(key)) {
+    win.webContents.sendInputEvent({ type: 'keyDown', keyCode: key });
+    win.webContents.sendInputEvent({ type: 'keyUp', keyCode: key });
     return;
   }
   if ([...key].length !== 1) return;
@@ -158,6 +167,65 @@ app.whenReady().then(async () => {
     out.directInsertText.push({ ch, arrived: value === ch, value });
   }
 
+  // ── 1b) Boshqaruv kalitlari (F5): keyDown/keyUp `<input>` va `<textarea>` da ─
+  out.controlKeys = { input: [], textarea: [] };
+  for (const key of CONTROL_KEYS) {
+    // Maydon `abc` bilan to'ldiriladi, kursor OXIRIDA (3) — `Left` samarasi
+    // `selectionStart` 2 ga tushishida ko'rinadi; `Right` oxirida joyida qoladi,
+    // shuning uchun u alohida o'rtadan (1) ham o'lchanadi.
+    await js(
+      `(() => { const el = document.getElementById('ctl'); el.value = 'abc'; el.focus();
+         el.setSelectionRange(3, 3); window.__ctl.keydowns.length = 0; window.__ctl.submits = 0;
+         return true; })()`,
+    );
+    await sleep(80);
+    win.webContents.sendInputEvent({ type: 'keyDown', keyCode: key });
+    win.webContents.sendInputEvent({ type: 'keyUp', keyCode: key });
+    await sleep(150);
+    const r = await js(
+      `(() => { const el = document.getElementById('ctl');
+         return { selectionStart: el.selectionStart, value: el.value,
+                  keydownSeen: window.__ctl.keydowns.length > 0,
+                  keydowns: [...window.__ctl.keydowns],
+                  submitSeen: window.__ctl.submits > 0 }; })()`,
+    );
+    out.controlKeys.input.push({ key, ...r });
+  }
+
+  // `Right` o'rtadan: kursor 1 → 2 bo'lsa — siljitadi.
+  await js(
+    `(() => { const el = document.getElementById('ctl'); el.value = 'abc'; el.focus();
+       el.setSelectionRange(1, 1); return true; })()`,
+  );
+  await sleep(80);
+  win.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Right' });
+  win.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Right' });
+  await sleep(150);
+  out.controlKeys.rightFromMiddle = await js(
+    `(() => { const el = document.getElementById('ctl');
+       return { selectionStart: el.selectionStart, value: el.value }; })()`,
+  );
+
+  for (const key of CONTROL_KEYS) {
+    await js(
+      `(() => { const el = document.getElementById('ta'); el.value = 'abc'; el.focus();
+         el.setSelectionRange(3, 3); window.__ctl.keydowns.length = 0; window.__ctl.submits = 0;
+         return true; })()`,
+    );
+    await sleep(80);
+    win.webContents.sendInputEvent({ type: 'keyDown', keyCode: key });
+    win.webContents.sendInputEvent({ type: 'keyUp', keyCode: key });
+    await sleep(150);
+    const r = await js(
+      `(() => { const el = document.getElementById('ta');
+         return { selectionStart: el.selectionStart, value: el.value,
+                  keydownSeen: window.__ctl.keydowns.length > 0,
+                  keydowns: [...window.__ctl.keydowns],
+                  submitSeen: window.__ctl.submits > 0 }; })()`,
+    );
+    out.controlKeys.textarea.push({ key, ...r });
+  }
+
   // ── 2) BUTUN ZANJIR: haqiqiy preload klaviaturasi orqali ────────────────
   const s = out.shellKeyboard;
 
@@ -198,6 +266,29 @@ app.whenReady().then(async () => {
   await js(clickKey('ў'));
   await sleep(200);
   s.controlledState = await js('window.__state()');
+
+  // ── 2b) BUTUN ZANJIR: boshqaruv tugmalari (F5) — preload tugmasi bosilganda
+  // kalit `kbd:key` → keyDown/keyUp orqali maydonga yetadimi.
+  await js(
+    `(() => { const el = document.getElementById('ctl'); el.value = 'abc'; el.focus();
+       el.setSelectionRange(3, 3); window.__ctl.keydowns.length = 0; window.__ctl.submits = 0;
+       return true; })()`,
+  );
+  await sleep(250);
+  await js(clickKey('◀'));
+  await sleep(200);
+  const chainAfterLeft = await js(
+    `(() => { const el = document.getElementById('ctl');
+       return { selectionStart: el.selectionStart, keydowns: [...window.__ctl.keydowns] }; })()`,
+  );
+  await js(clickKey('⏎'));
+  await sleep(200);
+  s.controlChain = {
+    afterLeft: chainAfterLeft,
+    afterEnter: await js(
+      '(() => ({ keydowns: [...window.__ctl.keydowns], submits: window.__ctl.submits }))()',
+    ),
+  };
 
   // ── 3) PIN maydonlari (P6 «ikki numpad» savoli) ─────────────────────────
   await js(focusField('pin'));

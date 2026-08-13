@@ -404,3 +404,63 @@ describe('K6 — `readOnly` maydon (P6 o`lchovi)', () => {
     expect(keyLabels()).toContain('0');
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+/**
+ * K7 — boshqaruv kalitlari: Enter (K13), o'qlar (K14), pastki bo'shliq (K15) — F5.
+ *
+ * Haqiqiy Electron o'lchovi (`desktop/tools/kbd-probe/result.json`, 33.4.11 /
+ * Chromium 130): `sendInputEvent({type:'keyDown', keyCode:'Enter'|'Left'|'Right'})`
+ * `keydown` hodisasini yetkazadi (`keydownSeen: true`, `ArrowLeft`/`ArrowRight`)
+ * va o'qlar `selectionStart` ni siljitadi. Forma implicit-submit BO'LMAYDI
+ * (`submitSeen: false`) — Enter'ning qiymati React `onKeyDown` ishlovchilarida.
+ */
+describe('K7 — boshqaruv kalitlari (Enter, o`qlar) — F5', () => {
+  it('harf layoutida Enter tugmasi bor', () => {
+    focusField({ type: 'text' });
+    expect(keyLabels()).toContain('⏎');
+  });
+
+  it('Enter bosilsa `kbd:key` ga «Enter» ketadi', () => {
+    focusField({ type: 'text' });
+    press('⏎');
+    expect(shell.sends.at(-1)).toEqual({ channel: 'kbd:key', payload: 'Enter' });
+  });
+
+  it('numpad`da ham Enter bor (summa kiritib tasdiqlash)', () => {
+    focusField({ type: 'text', inputmode: 'decimal' });
+    expect(keyLabels()).toContain('⏎');
+  });
+
+  it('o`q tugmalari kursorni siljitish uchun yuboriladi', () => {
+    focusField({ type: 'text' });
+    press('◀');
+    expect(shell.sends.at(-1)).toEqual({ channel: 'kbd:key', payload: 'Left' });
+    press('▶');
+    expect(shell.sends.at(-1)).toEqual({ channel: 'kbd:key', payload: 'Right' });
+  });
+
+  it('numpad`da ham o`q tugmalari bor', () => {
+    focusField({ type: 'text', inputmode: 'decimal' });
+    expect(keyLabels()).toContain('◀');
+    expect(keyLabels()).toContain('▶');
+  });
+
+  it('main.js boshqaruv kalitlarini keyDown/keyUp ga aylantiradi', () => {
+    const code = stripComments(mainSrc);
+    expect(code, 'main.js da CONTROL_KEYS ro`yxati yo`q').toContain('CONTROL_KEYS');
+    expect(code).toMatch(/type:\s*'keyDown'/);
+    expect(code).toMatch(/type:\s*'keyUp'/);
+  });
+
+  it('🔴 K15 — klaviatura ochilganda sahifa pastiga BO`SHLIQ qo`shiladi', () => {
+    focusField({ type: 'text' });
+    expect(document.body.style.paddingBottom).not.toBe('');
+  });
+
+  it('yashirilganda bo`shliq QAYTARILADI (sahifa pastida bo`sh joy qolmasin)', () => {
+    focusField({ type: 'text' });
+    press('Yashirish');
+    expect(document.body.style.paddingBottom).toBe('');
+  });
+});

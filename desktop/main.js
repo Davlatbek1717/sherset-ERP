@@ -707,11 +707,20 @@ function registerIpc() {
    * React holatini yangilamay, matn keyingi render'da yo'qolardi. Bu esa
    * Chromium darajasidagi HAQIQIY klaviatura hodisasi.
    */
+  /**
+   * Boshqaruv kalitlari — `char` emas, `keyDown`/`keyUp`.
+   * `Enter` klaviaturasiz qurilmada YAGONA tasdiqlash yo'li edi (K13);
+   * `Left`/`Right` matn o'rtasidagi xatoni tuzatish uchun (K14).
+   * O'lchangan (kbd-probe, Electron 33.4.11): keydown hodisasi yetadi,
+   * o'qlar `selectionStart` ni siljitadi.
+   */
+  const CONTROL_KEYS = ['Backspace', 'Enter', 'Left', 'Right'];
+
   ipcMain.on('kbd:key', (_e, key) => {
     if (!win || typeof key !== 'string') return;
-    if (key === 'Backspace') {
-      win.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Backspace' });
-      win.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Backspace' });
+    if (CONTROL_KEYS.includes(key)) {
+      win.webContents.sendInputEvent({ type: 'keyDown', keyCode: key });
+      win.webContents.sendInputEvent({ type: 'keyUp', keyCode: key });
       return;
     }
     // Faqat BITTA belgi — uzun satr yuborilsa u kalit emas, xato/hujum.

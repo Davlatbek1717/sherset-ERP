@@ -177,6 +177,12 @@ const KB_NUMERIC_MODES = ['decimal', 'numeric', 'tel'];
 const KEY_H = '46px'; // harf tugmasi
 const NUM_KEY_H = '68px'; // raqam tugmasi — barmoq uchun ataylab kattaroq
 const BACKSPACE = '⌫';
+// F5 boshqaruv tugmalari: klaviaturasiz qurilmada tasdiqlash (K13) va matn
+// o'rtasidagi xatoni tuzatish (K14) uchun. `main.js` ularni keyDown/keyUp ga
+// aylantiradi (kbd-probe bilan o'lchangan).
+const ENTER = '⏎';
+const ARROW_LEFT = '◀';
+const ARROW_RIGHT = '▶';
 
 /**
  * Til tanlovi SAQLANADI: preload har navigatsiyada noldan ishga tushadi, ya'ni
@@ -254,8 +260,24 @@ function installTouchKeyboard() {
     return r;
   };
 
+  /**
+   * Klaviatura `position: fixed` — sahifaning pastidagi maydon uning ORTIDA
+   * qolardi (K15). `scrollIntoView` yordam beradi, lekin sahifa oxirida
+   * skroll qiladigan joy YO'Q. Shuning uchun `<body>` ga vaqtincha pastki
+   * bo'shliq qo'shamiz va yashirilganda qaytaramiz.
+   */
+  const applyInset = () => {
+    if (!root) return;
+    document.body.style.paddingBottom = `${root.offsetHeight}px`;
+  };
+
+  const clearInset = () => {
+    document.body.style.paddingBottom = '';
+  };
+
   const hide = () => {
     if (root) root.style.display = 'none';
+    clearInset();
   };
 
   /** Harf layoutining pastki qatori: shift · til · belgilar · probel · ⌫ · yashirish. */
@@ -287,13 +309,20 @@ function installTouchKeyboard() {
     for (const s of KB_SYMBOLS) r.appendChild(makeKey(s, () => send(s)));
     r.appendChild(makeKey('␣', () => send(' '), { flex: 3 }));
     r.appendChild(makeKey(BACKSPACE, () => send('Backspace'), { flex: 1.4 }));
+    r.appendChild(makeKey(ARROW_LEFT, () => send('Left'), { flex: 1 }));
+    r.appendChild(makeKey(ARROW_RIGHT, () => send('Right'), { flex: 1 }));
+    r.appendChild(makeKey(ENTER, () => send('Enter'), { flex: 1.6 }));
     r.appendChild(makeKey('Yashirish', hide, { flex: 2 }));
     return r;
   };
 
   const numberFooter = () => {
     const r = makeRow();
-    r.appendChild(makeKey('Yashirish', hide, { height: KEY_H }));
+    r.appendChild(makeKey(ARROW_LEFT, () => send('Left'), { height: KEY_H }));
+    r.appendChild(makeKey(ARROW_RIGHT, () => send('Right'), { height: KEY_H }));
+    // Summa kiritib darhol tasdiqlash — kassaning eng ko'p takrorlanadigan amali.
+    r.appendChild(makeKey(ENTER, () => send('Enter'), { height: KEY_H, flex: 1.4 }));
+    r.appendChild(makeKey('Yashirish', hide, { height: KEY_H, flex: 1.4 }));
     return r;
   };
 
@@ -365,6 +394,9 @@ function installTouchKeyboard() {
       render();
     }
     root.style.display = 'block';
+    // Bo'shliq skrolldan OLDIN — aks holda `scrollIntoView` eski (kalta)
+    // balandlik bilan hisoblab, maydonni baribir panel ortida qoldirardi.
+    applyInset();
     // Maydon klaviatura ostida qolib ketmasin.
     if (typeof target.scrollIntoView === 'function') {
       target.scrollIntoView({ block: 'center' });
@@ -375,7 +407,10 @@ function installTouchKeyboard() {
     // Kechikish: tugma bosilganda fokus bir lahza yo'qolishi mumkin.
     setTimeout(() => {
       if (!root) return;
-      if (!wanted(document.activeElement)) root.style.display = 'none';
+      if (!wanted(document.activeElement)) {
+        root.style.display = 'none';
+        clearInset();
+      }
     }, 150);
   });
 }
