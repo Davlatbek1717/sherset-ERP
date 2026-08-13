@@ -896,8 +896,29 @@ endi jim yopmaydi, sozlash oynasi (serverBase bo'sh) esa avvalgidek yopiladi. Ve
 **Deploy:** ✅ operator ruxsati bilan (1.8): `pnpm run dist` → `Sherset-Kassa-Setup-1.7.0.exe` (81 962 235 bayt) → scp `/var/www/kassa-downloads/desktop/` → remote sha512 latest.yml bilan AYNAN mos → `latest.yml.bak-1.6.0` zaxira → yangi `latest.yml` → curl: manifest `version: 1.7.0`, exe HEAD 200. Git push o'tdi (`69b48eda..57b0ed39`). Web deploy YO'Q (kerak emas — faqat desktop o'zgardi).
 **TO'XTADIM.**
 
-### 📝 F2 hisoboti
-_(hali yozilmagan)_
+### 📝 F2 hisoboti — 2026-08-13 · `2b0abcf1`
+**Holat:** ✅ Phase-1 complete (strukturaviy, qurilmada runtime-tasdiqlanmagan)
+**Nima o'zgardi:** Qidiruv kartasidagi «Kelgan» (tan narx, `sotuv-grid-cost`) va savat qatoridagi
+«Optom» (`sotuv-cart-min`) endi chizilmaydi — mijoz ko'zi oldidagi ekranda tan/optom narx ochiq
+turmasin (P02, egasining talabi). Markup o'chirilmadi: ikkala blok `lib/pos/ui-flags.ts` dagi yangi
+bayroqlar (`SHOW_COST_IN_SEARCH`, `SHOW_WHOLESALE_IN_CART`, ikkalasi `false`) bilan shartga olindi —
+qaytarish = bitta `true`. «Qoldiq» (setka) va «Qolgan» (savat) QOLDI. Hisob-mantiqa (cart-math,
+narx-pol, «optomdan past» tasma) TEGILMADI — bu faqat ko'rsatish siyosati. Modal (F3) tegilmadi.
+**Fayllar:** | Yo'l | Nima qilindi |
+| `apps/web/src/lib/pos/ui-flags.ts` | 2 yangi bayroq (izoh: sana, sabab, qaytarish yo'li) |
+| `apps/web/src/app/(app)/sotuv/page.tsx` | 2 blok bayroqqa o'raldi (:1933 grid-cost, :2807 cart-min), import yangilandi |
+| `apps/web/src/app/(app)/sotuv/__tests__/sales-screen-cart.test.tsx` | 2 qo'riqchi test yangi niyat bilan QAYTA yozildi (o'chirilmadi): «tan narx setkada ko'rinadi» (§5.2) va «qatorda Optom ko'rsatiladi» (P12) niyatlari 2026-08-13 da bekor — endi ikkalasi KO'RINMASLIKNI qulflaydi, Qoldiq/Qolgan qolishini ham tasdiqlaydi |
+**Testlar:** 2 qayta yozilgan test; RED ko'rildi (2 failed / 32 passed — `sotuv-grid-cost` va
+`sotuv-cart-min` DOM'da edi), keyin GREEN 34/34.
+**Gate:** typecheck 0 ✓ · lint:product 0 ✓ · i18n:gate 19/19 ✓ · web test 269 fayl / 3838 pass ✓
+(api'ga tegilmagan — api test shart emas)
+**O'LCHANGAN vs O'LCHANMAGAN:** O'lchandi — happy-dom'da sahifa renderi (setka + savat), to'liq web
+suite, commit tarkibi (`git show --stat HEAD`: 3 o'z fayl + `docs/progress.json` hook'i — normal).
+O'LCHANMADI — real brauzer/monoblokda ko'rinish. **Phase-1: strukturaviy, runtime-tasdiqlanmagan.**
+**Nima QILINMADI va nega:** F3 (modalda «Minimal» yashirish) boshlanmadi — alohida faza; modalda
+«Optom» ataylab qoldi (egasining talabi). Deploy qilinmadi.
+**Deploy:** YO'Q (reja: operator xohlasa web deploy — buyruq kutilyapti).
+**TO'XTADIM.**
 
 ### 📝 F3 hisoboti
 _(hali yozilmagan)_
