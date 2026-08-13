@@ -920,11 +920,54 @@ O'LCHANMADI — real brauzer/monoblokda ko'rinish. **Phase-1: strukturaviy, runt
 **Deploy:** YO'Q (reja: operator xohlasa web deploy — buyruq kutilyapti).
 **TO'XTADIM.**
 
-### 📝 F3 hisoboti
-_(hali yozilmagan)_
+### 📝 F3 hisoboti — 2026-08-13 · `3afa551f`
+**Holat:** ✅ Phase-1 complete (strukturaviy, qurilmada runtime-tasdiqlanmagan)
+**Nima o'zgardi:** Qator-tahrir modalida «Minimal» (narx-pol) qiymati endi sukutda YASHIRIN —
+o'rnida bosiladigan `Minimal: •••` tugmasi (`pos-line-edit-floor-toggle`) turadi; bosilganda
+qiymat ochiladi; boshqa qator ochilganda yana yashirinadi. «Optom» modalda QOLDI (egasining
+talabi). Pol QULFIga tegilmadi — `belowFloor`/`blocked`, «Saqlash» bloklanishi va
+`pos-line-edit-floor-blocked` banneri aynan ishlaydi (yashirin holatda ham — test qulflaydi).
+Rejadan bitta ongli chetlanish: reset `useEffect` bilan emas, komponentning mavjud
+«prop o'zgarganda holatni render paytida to'g'rilash» naqshi ichida (`productId !== loadedId`
+bloki) — fayl o'zi useEffect'ning bir-kadr kechikishini hujjatlab taqiqlagan.
+**Fayllar:** | Yo'l | Nima qilindi |
+| `apps/web/src/components/pos/cart-line-edit-modal.tsx` | `floorRevealed` holati; floor-span → shartli span/`•••`-tugma; reset mavjud reload-blokida |
+| `apps/web/src/components/pos/__tests__/cart-line-edit-modal.test.tsx` | P12 seksiyasi P03 niyati bilan QAYTA yozildi (o'chirilmadi): «Minimal doim ochiq» (2026-08-11/12) niyati 2026-08-13 da toraytirildi. 3 yangi test (sukutda yashirin; bosilganda ochiladi; boshqa qatorda yana yashirin), 3 test moslandi (reveal-bosish qo'shildi; NULL-polda toggle ham yo'q; qulf yashirin holatda) |
+**Testlar:** 27/27; RED ko'rildi — 6 failed / 21 passed (floor doim ochiq, toggle yo'q edi), keyin GREEN.
+**Gate:** typecheck 0 ✓ · lint:product 0 ✓ · i18n:gate 19/19 ✓ · web test 269 fayl / 3840 pass ✓ (api'ga tegilmagan — api test shart emas)
+**O'LCHANGAN vs O'LCHANMAGAN:** O'lchandi — happy-dom'da modal renderi (yashirish/ochilish/qayta-yashirinish, qulf yashirin holatda), to'liq web suite, commit tarkibi (`git show --stat HEAD`: 2 o'z fayl + `docs/progress.json` hook'i — normal). O'LCHANMADI — real monoblokda «•••» bosilishi (sensorli nishon o'lchami), brauzer-ko'rinish. **Phase-1: strukturaviy, runtime-tasdiqlanmagan.**
+**Nima QILINMADI va nega:** F4 (shrift) boshlanmadi — alohida faza. i18n kalit qo'shilmadi — `•••` belgi, `cart_floor` kaliti mavjud edi.
+**Deploy:** YO'Q (operator buyrug'i kutilyapti).
+**TO'XTADIM.**
 
-### 📝 F4 hisoboti
-_(hali yozilmagan)_
+### 📝 F4 hisoboti — 2026-08-13 · `ede4e7d7`
+**Holat:** ✅ Phase-1 complete (strukturaviy, qurilmada runtime-tasdiqlanmagan)
+**Nima o'zgardi:** Mahsulot nomlari endi alohida POS shriftida va kattaroq (P04, egasi: «boshqa
+xildagi kattaroq shrift»). Yangi CSS o'zgaruvchi `--pos-font-product: "Segoe UI", "Segoe UI
+Variable Text", var(--ms-font-sans)` (globals.css, font-bloki ichida) + Tailwind'da `font-pos`
+klassi. Qo'llangan joylar: qidiruv kartasi nomi (`text-sm font-medium` → `text-base font-semibold
+font-pos`), savat qatori nom-tugmasi (xuddi shunday), modal sarlavhadagi nom (`text-xl font-bold`
+qoldi, faqat `font-pos` qo'shildi). Global `--ms-font-sans` TEGILMADI (ERP moysklad-parity);
+font fayli/download YO'Q — Segoe UI kassa monobloki Windows'da doim bor, boshqa OS sans zaxirasiga tushadi.
+**Fayllar:** | Yo'l | Nima qilindi |
+| `packages/design-system/src/globals.css` | `--pos-font-product` o'zgaruvchisi (izoh: sana, sabab, taqiq) |
+| `apps/web/tailwind.config.ts` | `fontFamily.pos: ['var(--pos-font-product)']` |
+| `apps/web/src/app/(app)/sotuv/page.tsx` | 2 joy: qidiruv kartasi nomi (:1921) va savat qatori nom-tugmasi (:2746) `font-pos font-semibold text-base` |
+| `apps/web/src/components/pos/cart-line-edit-modal.tsx` | modal sarlavha nomiga `font-pos` |
+| `apps/web/src/app/(app)/sotuv/__tests__/sales-screen-cart.test.tsx` | 2 yangi guard-test: qidiruv kartasi va savat qatori nomi `.font-pos` + `text-base` |
+**Testlar:** 2 yangi guard (kartada `.font-pos` element `text-base` bilan; savat nom-tugmasida
+`font-pos`+`text-base`). RED ko'rildi: 2 failed / 34 passed (klasslar yo'q edi), keyin GREEN 36/36
+(+ modal 27/27 birga yugurtirildi).
+**Gate:** typecheck 0 ✓ (turbo 10/10, design-system build turbo orqali) · lint:product 0 ✓ ·
+i18n:gate 19/19 ✓ · web test 269 fayl / 3842 pass ✓ (api'ga tegilmagan — api test shart emas)
+**O'LCHANGAN vs O'LCHANMAGAN:** O'lchandi — happy-dom'da klass mavjudligi (guard-testlar), to'liq
+web suite, commit tarkibi (`git show --stat HEAD`: 5 o'z fayl + `docs/progress.json` hook'i — normal).
+O'LCHANMADI — real monoblokda Segoe UI renderi (happy-dom haqiqiy shrift chizmaydi — klass/token
+darajasida qulflangan xolos), brauzer-ko'rinish. **Phase-1: strukturaviy, runtime-tasdiqlanmagan.**
+**Nima QILINMADI va nega:** F5 boshlanmadi — alohida faza. i18n kalit yo'q — matn o'zgarmadi,
+faqat uslub. `--ms-font-sans`/boshqa ERP sahifalari ataylab tegilmadi (reja taqig'i).
+**Deploy:** YO'Q (operator buyrug'i kutilyapti — web deploy xohlasa).
+**TO'XTADIM.**
 
 ### 📝 F5 hisoboti
 _(hali yozilmagan)_
