@@ -147,30 +147,41 @@ describe('P3 — kassir chek zanjirini oxirigacha o‘tkazadi', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 2. QAYTARISH — kassirga ATAYLAB YOPIQ (egasi qarori 2026-08-12)
+// 2. QAYTARISH — kassirga OCHIQ (F6: 2026-08-12 qarori 2026-08-13 da BEKOR)
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe('P3 — qaytarish kassirga ochilmaydi', () => {
+describe('F6 — qaytarish kassirga ochiq (alohida ruxsatda)', () => {
   /**
-   * `post`/`cancel` ni ochish uchun kassirga `retailsale.approve` berildi.
-   * Qaytarish AYNI ruxsatda o'tirgan edi, ya'ni bu o'zgarish kassadan PUL
-   * CHIQARISHNI ham jimgina ochib yuborardi. Shuning uchun `refund`
-   * `salesreturn.create` ga ko'chirildi. Bu test — o'sha ko'chirishning
-   * qulfi: kimdir uni `retailsale.approve` ga qaytarsa, qaytarish kassirga
-   * JIM ochiladi va hech narsa qizarmasdi.
+   * Tarix, chunki bu katakcha ikki marta ag'darilgan:
+   *  · 2026-08-12 (P3): «kassadan pul chiqishi menejer qarori» — refund
+   *    `retailsale.approve` dan `salesreturn.create` ga ko'chirildi va
+   *    kassirga BERILMADI (shu faylda «kassir qaytara olmaydi» qulflangan edi).
+   *  · 2026-08-13 (F6): egasi o'sha qarorni BEKOR qildi — «kassir istalgan
+   *    chekga vozvrat qilishi kerak». Endi cashier shablonida
+   *    `salesreturn.view/create = ALL`.
+   *
+   * `salesreturn.create` ga KO'CHIRISH esa amal qiladi: refund alohida
+   * katakchada turgani uchun uni rolga berish/olish `post`/`cancel` ga
+   * tegmaydi. Kimdir refund'ni `retailsale.approve` ga qaytarsa, bu boshqaruv
+   * nuqtasi yo'qoladi — birinchi test shuni qulflaydi.
    */
-  it('refund `retailsale.approve` da EMAS', () => {
+  it('refund `retailsale.approve` da EMAS — alohida boshqaruv nuqtasi', () => {
     const req = permissionOf(C.refund);
     expect(req).toEqual({ entity: 'salesreturn', action: 'create' });
   });
 
-  it('kassir qaytara olmaydi', async () => {
-    expect(await allows('cashier', C.refund)).toBe(false);
+  it('kassir qaytara oladi (F6, egasi 2026-08-13)', async () => {
+    expect(await allows('cashier', C.refund)).toBe(true);
   });
 
   it('admin va menejer qaytara oladi', async () => {
     expect(await allows('admin', C.refund)).toBe(true);
     expect(await allows('sales_manager', C.refund)).toBe(true);
+  });
+
+  it('refund kiosk marshrutida ham ochiq (ikkinchi qatlam)', () => {
+    // Ruxsat berildi-yu KioskGuard yopiq bo'lsa — kassir baribir 403 olardi.
+    expect(isKioskAllowed('POST', '/retail-sales/x/refund')).toBe(true);
   });
 });
 

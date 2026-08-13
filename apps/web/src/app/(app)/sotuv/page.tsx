@@ -10,7 +10,7 @@ import { useDestructiveMutation } from '@/hooks/use-destructive-mutation';
 import { useFillViewport } from '@/hooks/use-fill-viewport';
 import { usePermissions } from '@/hooks/use-permissions';
 import { api } from '@/lib/api-client';
-import { isKioskUser, useAuth } from '@/lib/auth-store';
+import { useAuth } from '@/lib/auth-store';
 // B8 — savat matematikasi sof modulda (20 test). Ilgari bu qoidalar shu
 // faylda edi va ularni sinash uchun butun POS ekranini render qilish
 // kerak bo'lardi, shuning uchun ular umuman sinalmagan edi.
@@ -371,9 +371,6 @@ function ChekDetailPanel({ saleId, onBack }: { saleId: string; onBack: () => voi
   const qc = useQueryClient();
   const { toast } = useToast();
   const finishPrint = usePrintOutcome();
-  // P3 — kiosk (kassir) qaytara olmaydi; sabab tugma yonidagi izohda.
-  const { user } = useAuth();
-  const isKiosk = isKioskUser(user);
   const [returnMode, setReturnMode] = useState(false);
   // positionId → qaytariladigan miqdor, **decimal SATR** (defolt — to'liq
   // sotilgan miqdor). FE-02: `number` bo'lganda kassir kasr miqdor kirita
@@ -511,17 +508,14 @@ function ChekDetailPanel({ saleId, onBack }: { saleId: string; onBack: () => voi
         >
           🖨 {t('receipt')}
         </button>
-        {/* P3 (egasi qarori, 2026-08-12) — QAYTARISH KASSIRDA YO'Q.
-            Kassirga `retailsale.approve` berildi (usiz u chekni na to'lay,
-            na bekor qila olardi), lekin qaytarish AYNI ruxsatdan
-            `salesreturn.create` ga KO'CHIRILDI: kassadan pul chiqishi
-            menejer qarori bo'lib qoladi. Tugmani kioskda ko'rsatib turish
-            uni har bosganda 403 beradigan «buzuq» tugmaga aylantirardi —
-            shuning uchun yashiriladi.
-            ⚠️ Bu QULAYLIK, cheklov emas: haqiqiy qulf serverdagi ruxsat
+        {/* F6 (egasi qarori, 2026-08-13) — QAYTARISH KIOSKDA HAM OCHIQ.
+            2026-08-12 dagi «kassadan pul chiqishi menejer qarori» yashirishi
+            (`!isKiosk` sharti) egasi tomonidan BEKOR qilindi: «kassir
+            istalgan chekga vozvrat qilishi kerak». Server tomonda kassirga
+            `salesreturn.view/create` berildi (role-templates F6) — tugma
+            endi 403 bermaydi. ⚠️ Haqiqiy qulf avvalgidek serverdagi ruxsat
             matritsasida (`retail-sale-lifecycle-permissions.test.ts`). */}
         {data.state === 'posted' &&
-          !isKiosk &&
           (returnMode ? (
             <button
               type="button"
@@ -1162,9 +1156,19 @@ function SalesScreen({
 
   const [selectedChekId, setSelectedChekId] = useState<string | null>(null);
 
+  // F6.C (2026-08-13) — «istalgan chekni TOPISH»: bo'sh qidiruv = joriy smena
+  // (eski xulq); matn kiritilsa so'rov `search=` bilan BARCHA smenalar
+  // bo'ylab ketadi (`sessionId`siz) — backend chek nomi + kontragent nomi
+  // bo'yicha qidiradi (`RetailSaleFilterSchema.search`).
+  const [chekSearch, setChekSearch] = useState('');
+  const chekQuery = chekSearch.trim();
+
   const { data: cheklar } = useQuery<{ items: SaleRow[]; total: number }>({
-    queryKey: ['retail-sales-session', session.id],
-    queryFn: () => api.get(`/retail-sales?sessionId=${session.id}&limit=100`),
+    queryKey: ['retail-sales-session', session.id, chekQuery],
+    queryFn: () =>
+      chekQuery
+        ? api.get(`/retail-sales?search=${encodeURIComponent(chekQuery)}&limit=50`)
+        : api.get(`/retail-sales?sessionId=${session.id}&limit=100`),
     enabled: tab === 'cheklar',
   });
 
@@ -2257,11 +2261,24 @@ function SalesScreen({
 
         {/* ── CHEKLAR TAB ── */}
         {tab === 'cheklar' && !selectedChekId && (
-          <div className="flex-1 overflow-y-auto">
+          <div className="flex flex-1 flex-col overflow-y-auto">
+            {/* F6.C — istalgan chekni topish (barcha smenalar bo'ylab). */}
+            <div className="shrink-0 border-b border-[var(--ms-border)] p-2">
+              <input
+                type="text"
+                data-test-id="sotuv-chek-search"
+                value={chekSearch}
+                onChange={(e) => setChekSearch(e.target.value)}
+                placeholder={t('chek_search_placeholder')}
+                className="h-9 w-full rounded-lg border border-[var(--ms-border)] bg-[var(--ms-bg-app)] px-3 text-sm outline-none focus:border-[var(--ms-primary-500)]"
+              />
+            </div>
             {!cheklar || cheklar.items.length === 0 ? (
-              <div className="flex h-full flex-col items-center justify-center gap-1 text-[var(--ms-text-muted)]">
+              <div className="flex flex-1 flex-col items-center justify-center gap-1 text-[var(--ms-text-muted)]">
                 <Receipt className="h-8 w-8 opacity-40" />
-                <span className="text-sm">{t('receipts_empty')}</span>
+                <span className="text-sm">
+                  {chekQuery ? t('chek_search_empty') : t('receipts_empty')}
+                </span>
               </div>
             ) : (
               <div className="flex flex-col divide-y divide-[var(--ms-border)]">

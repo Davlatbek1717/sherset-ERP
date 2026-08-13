@@ -172,6 +172,12 @@ const KIOSK_ROUTE_BY_ENTITY: Partial<Record<PermissionEntity, string>> = {
   exchangerate: '/exchange-rates',
   settings: '/company-settings',
   customerorder: '/customer-orders',
+  // F6 (2026-08-13) — POS qaytarish `salesreturn` katakchasida, lekin kiosk'da
+  // u `/retail-sales` resursi orqali yashaydi: yaratish `POST
+  // /retail-sales/:id/refund` (quyida OVERRIDE), mirror cheklarni ko'rish esa
+  // `GET /retail-sales` ro'yxati. Alohida `/sales-returns` moduli kiosk'ka
+  // ATAYLAB ochilmagan.
+  salesreturn: '/retail-sales',
 };
 
 /**
@@ -191,6 +197,9 @@ const KIOSK_ROUTE_OVERRIDE: Record<string, string> = {
   // `PATCH /counterparties/:id/pos-contact` (telefon + izoh) orqali yashaydi.
   // Umumiy `PATCH /counterparties/:id` — to'liq karta — ataylab yopiq.
   'counterparty.update': '/counterparties/8f7d1c22-0000-4000-8000-000000000002/pos-contact',
+  // F6 sababi: kassirning `salesreturn.create` ruxsati kiosk'da AYNAN
+  // `POST /retail-sales/:id/refund` orqali ishlaydi.
+  'salesreturn.create': '/retail-sales/8f7d1c22-0000-4000-8000-000000000003/refund',
 };
 
 const METHOD_BY_ACTION: Record<PermissionAction, string> = {
@@ -266,6 +275,25 @@ describe('MK29 — kassir shabloni kiosk cheklovi bilan mos (TZ §3.1)', () => {
         scopeFor(ROLE_TEMPLATES.cashier, 'customerorder', action),
         `customerorder.${action}`,
       ).toBe('NO');
+    }
+  });
+
+  /**
+   * F6 (2026-08-13) — qaytarish kassirga OCHIQ. Eski niyat (2026-08-12,
+   * «kassadan pul chiqishi menejer qarori» — salesreturn kassirda NO) egasi
+   * tomonidan BEKOR qilindi: «kassir istalgan chekga vozvrat qilishi kerak».
+   * Faqat `view`/`create` — mirror chekni KO'RISH va YARATISH; qolgan
+   * amallar (update/delete/approve/print) ochilmaydi, chunki POS qaytarish
+   * oqimiga ular kerak emas va har ortiqcha katakcha kiosk-moslik testida
+   * marshrut talab qiladi.
+   */
+  it('kassir qaytarishni ko‘radi va yaratadi — F6 (2026-08-12 qarori bekor)', () => {
+    expect(scopeFor(ROLE_TEMPLATES.cashier, 'salesreturn', 'view')).toBe('ALL');
+    expect(scopeFor(ROLE_TEMPLATES.cashier, 'salesreturn', 'create')).toBe('ALL');
+    for (const action of ['update', 'delete', 'approve', 'print'] as PermissionAction[]) {
+      expect(scopeFor(ROLE_TEMPLATES.cashier, 'salesreturn', action), `salesreturn.${action}`).toBe(
+        'NO',
+      );
     }
   });
 });

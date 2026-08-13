@@ -63,6 +63,17 @@ function makeHarness(positions: OriginalPosition[]) {
     documentSequence: mockDocumentSequence(),
     employee: { findUnique: vi.fn(async () => null) },
     bonusOperation: { findFirst: vi.fn(async () => null) },
+    // F6 (2026-08-13) — refund() qaytaruvchi kassirning JORIY ochiq smenasini
+    // topadi; bu jihozda u ASL chek smenasining o'zi (bir-smena stsenariysi),
+    // shuning uchun pul/summa assertlari o'zgarmaydi.
+    cashierSession: {
+      findFirst: vi.fn(async () => ({
+        id: SESSION_ID,
+        cashDeskId: CASHDESK_ID,
+        storeId: STORE_ID,
+        cashDesk: { currency: 'UZS' },
+      })),
+    },
     retailSale: {
       findFirst: vi.fn().mockResolvedValue({
         id: SALE_ID,

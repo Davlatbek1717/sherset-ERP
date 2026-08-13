@@ -1442,8 +1442,25 @@ export class RetailSaleService {
         `${original.name} — vozvrat cheki. Vozvrat chekini qaytarib bo'lmaydi — asl chekni qaytaring.`,
       );
     }
-    if (original.session.state !== 'open') {
-      throw new BadRequestException(`Session is ${original.session.state}. Cannot refund.`);
+    // F6 (2026-08-13, egasi) — «kassir ISTALGAN chekka qaytarish qila oladi».
+    // Eski precheck (2026-08-10: «asl chek smenasi ochiq bo'lishi shart»,
+    // `original.session.state !== 'open'` → 400) ONGLI ravishda OLIB TASHLANDI:
+    // qaytarish endi asl smenaga emas, QAYTARUVCHI KASSIRNING JORIY OCHIQ
+    // SMENASIGA rasmiylashadi (mirror sessionId, hisoblagichlar, naqd chiqim —
+    // hammasi quyida shu smenaga bog'lanadi; Z-hisobot sessionId bo'yicha
+    // agregatlagani uchun avtomatik to'g'ri). Bu nusxa tranzaksiyadan
+    // TASHQARIDA o'qilgan (eskirgan) — atomik claim quyida, tx ichida.
+    const currentSession = await this.prisma.client.cashierSession.findFirst({
+      where: { accountId, cashierId: userId, state: 'open' },
+      select: {
+        id: true,
+        cashDeskId: true,
+        storeId: true,
+        cashDesk: { select: { currency: true } },
+      },
+    });
+    if (!currentSession) {
+      throw new ConflictException("Ochiq smena yo'q — qaytarish uchun avval smena oching.");
     }
 
     // SALES-05: what earlier refunds of this receipt already took. Before this,
@@ -1634,7 +1651,8 @@ export class RetailSaleService {
           accountId,
           ownerId: userId,
           groupId: creatorGroupId,
-          sessionId: original.sessionId,
+          // F6: mirror JORIY smenaga — asl chek smenasi yopiq bo'lishi mumkin.
+          sessionId: currentSession.id,
           name,
           agentId: original.agentId ?? null,
           moment: new Date(),
@@ -1678,8 +1696,9 @@ export class RetailSaleService {
 
       // Kassa TZ §9 — qaytarish erkin (Q11), shuning uchun iz qoladi.
       // `docId` = OYNA chek: pul aynan o'sha hujjat orqali harakat qiladi;
-      // asl chek payload ichida.
-      await this.writeAuditEvents(tx, accountId, original.sessionId, userId, [
+      // asl chek payload ichida. F6: iz ham JORIY smena jurnaliga — qaytarish
+      // amali shu smenada sodir bo'ldi, asl (ehtimol yopiq) smenada emas.
+      await this.writeAuditEvents(tx, accountId, currentSession.id, userId, [
         planRefundAuditEvent(refundSale.id, {
           originalId: original.id,
           originalName: original.name,
@@ -1737,7 +1756,11 @@ export class RetailSaleService {
         const deltas: StockDelta[] = persistedPositions
           .filter((p): p is typeof p & { productId: string } => p.productId !== null)
           .map((p) => ({
-            storeId: original.session.storeId,
+            // F6: tovar JORIY smena do'koniga qaytadi — kassir jismonan shu
+            // yerda turibdi. Asl do'konga yozish, do'konlar farq qilganda,
+            // tovar yetib bormagan omborda soxta qoldiq yaratardi. (Bitta
+            // do'konli o'rnatmada ikkalasi aynan bir xil.)
+            storeId: currentSession.storeId,
             assortmentKind: 'product',
             assortmentId: p.productId,
             qtyDelta: String(p.quantity), // positive — inflow back to stock
@@ -1756,12 +1779,15 @@ export class RetailSaleService {
       // Cash outflow: route through MoneyService for the ledger entry
       // (negative deltaMinor) + balance update with overdraft guard.
       if (cashReturn > 0n) {
+        // F6: naqd qaytim JORIY smena kassasidan — pul jismonan shu yashiqdan
+        // chiqadi; asl smena kassasi (boshqa yashiq bo'lsa) hisobiga yozish
+        // uni sanoqda kamaytirib yuborardi.
         const refundDeltas: MoneyDelta[] = [
           {
             sourceKind: 'cash_desk',
-            sourceId: original.session.cashDeskId,
+            sourceId: currentSession.cashDeskId,
             deltaMinor: -cashReturn,
-            currency: original.session.cashDesk.currency,
+            currency: currentSession.cashDesk.currency,
             documentKind: 'retailsale',
             documentId: refundSale.id,
             description: `POS refund for ${original.name}`,
@@ -1785,17 +1811,18 @@ export class RetailSaleService {
         );
       }
 
-      // SMENA CLAIM'i — post() dagi SALES-07 bilan bir naqsh. Yuqoridagi
-      // `original.session.state !== 'open'` tekshiruvi tranzaksiyadan
-      // TASHQARIDA o'qilgan (eskirgan) nusxa ustida; o'sha o'qish bilan bu
-      // yer orasida `close()` yugursa, qaytarish YOPILGAN smenaga tushardi:
-      // pul yashiqdan chiqadi, `close()` esa uni sanamagan ⇒ smena naqdi
-      // hech qachon to'g'ri chiqmaydi. Shart `close()` flip'i bilan AYNI
-      // ustunda (`state`) — Postgres qator-qulfi ikkalasini
-      // ketma-ketlashtiradi, ikkinchi kelgan `count = 0` oladi va BUTUN
-      // qaytarish (pul/ombor/balans kaskadi bilan) orqaga qaytadi.
+      // SMENA CLAIM'i — post() dagi SALES-07 bilan bir naqsh, F6'dan keyin
+      // JORIY smenada. Yuqoridagi `currentSession` tranzaksiyadan TASHQARIDA
+      // o'qilgan (eskirgan) nusxa; o'sha o'qish bilan bu yer orasida `close()`
+      // yugursa, qaytarish YOPILGAN smenaga tushardi: pul yashiqdan chiqadi,
+      // `close()` esa uni sanamagan ⇒ smena naqdi hech qachon to'g'ri
+      // chiqmaydi. Shart `close()` flip'i bilan AYNI ustunda (`state`) —
+      // Postgres qator-qulfi ikkalasini ketma-ketlashtiradi, ikkinchi kelgan
+      // `count = 0` oladi va BUTUN qaytarish (pul/ombor/balans kaskadi bilan)
+      // orqaga qaytadi. Hisoblagichlar ham shu smenada — Z-hisobot (sessionId
+      // agregatlari) mirror bilan bir joyda turadi.
       const sessionClaim = await tx.cashierSession.updateMany({
-        where: { id: original.sessionId, accountId, state: 'open' },
+        where: { id: currentSession.id, accountId, state: 'open' },
         data: {
           returnsCount: { increment: 1 },
           returnsSumMinor: { increment: refundPositions.totalMinor },
@@ -1803,7 +1830,7 @@ export class RetailSaleService {
       });
       if (sessionClaim.count === 0) {
         throw new ConflictException(
-          `Smena ${original.sessionId} yopilgan; qaytarish rasmiylashtirilmadi. Yangi smena oching.`,
+          `Smena ${currentSession.id} yopilib qoldi; qaytarish rasmiylashtirilmadi. Yangi smena oching.`,
         );
       }
 

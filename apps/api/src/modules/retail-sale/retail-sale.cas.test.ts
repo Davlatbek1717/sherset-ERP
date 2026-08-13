@@ -401,6 +401,16 @@ describe('RetailSaleService.refund — CAS state guard', () => {
     const client = {
       documentSequence: mockDocumentSequence(),
       employee: { findUnique: vi.fn(async () => null) },
+      // F6 (2026-08-13) — refund() tranzaksiyadan oldin qaytaruvchi kassirning
+      // JORIY ochiq smenasini topadi; CAS-guard undan KEYIN, tx ichida.
+      cashierSession: {
+        findFirst: vi.fn(async () => ({
+          id: SESSION_ID,
+          cashDeskId: CASHDESK_ID,
+          storeId: STORE_ID,
+          cashDesk: { currency: 'UZS' },
+        })),
+      },
       retailSale: {
         findFirst: vi.fn(),
         // Oldingi qaytarishlar (kumulyativ chegaralar) — bu yerda yo'q.

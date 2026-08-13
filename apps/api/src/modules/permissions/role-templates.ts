@@ -320,10 +320,9 @@ export const ROLE_TEMPLATES: Record<RoleTemplateSlug, RoleTemplate> = {
       // qaytarardi. Prod dalili: Kassir 1/2 da 4 ta `picking` chek va 0 ta
       // posted — cheklar «omborchi yo'q» dan emas, TO'LOV TAQIQIDAN qotardi.
       //
-      // 🔴 QAYTARISH BU RUXSATGA KIRMAYDI (egasi qarori, 2026-08-12): kassadan
-      // pul CHIQISHI menejer qarori bo'lib qoladi. Shuning uchun
-      // `POST /retail-sales/:id/refund` `salesreturn.create` ga ko'chirildi —
-      // aks holda `approve` ni ochish qaytarishni ham jimgina ochib yuborardi.
+      // Qaytarish `retailsale.approve` da EMAS — `salesreturn.create` da
+      // (alohida boshqaruv nuqtasi; `approve` ni ochish qaytarishni jimgina
+      // ochib yubormasin deb 2026-08-12 da ajratilgan edi).
       grant(['retailsale'], {
         view: 'ALL',
         create: 'ALL',
@@ -331,6 +330,13 @@ export const ROLE_TEMPLATES: Record<RoleTemplateSlug, RoleTemplate> = {
         approve: 'ALL',
         print: 'ALL',
       }),
+      // 🔴 F6 (2026-08-13): egasi 2026-08-12 qarorini («kassadan pul chiqishi
+      // menejer qarori — qaytarish kassirga BERILMAYDI») BEKOR qildi: «kassir
+      // istalgan chekga vozvrat qilishi kerak». Faqat view/create — mirror
+      // chekni ko'rish va yaratish; kiosk'da bu `GET /retail-sales` va
+      // `POST /retail-sales/:id/refund` orqali yashaydi. Prod'dagi MAVJUD
+      // kassir rollari uchun: `scripts/ops-f6-salesreturn-topup.ts`.
+      grant(['salesreturn'], { view: 'ALL', create: 'ALL' }),
       grant(['cashiersession'], { view: 'ALL', create: 'ALL', update: 'ALL', print: 'ALL' }),
       grant(['product', 'productfolder', 'pricetype'], { view: 'ALL' }),
       // F9 — mijoz kartasi. `update` kiosk'da FAQAT bitta tor yo'lda yashaydi:

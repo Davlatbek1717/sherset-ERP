@@ -201,23 +201,23 @@ describe('ChekDetailPanel — ko‘rinish', () => {
 });
 
 /**
- * P3 (egasi qarori, 2026-08-12) — QAYTARISH KASSIRDA YO'Q.
+ * F6 (egasi qarori, 2026-08-13) — QAYTARISH KIOSKDA HAM OCHIQ.
  *
- * Kassirga `retailsale.approve` berildi (usiz u chekni na to'lay, na bekor
- * qila olardi — prodda 4 ta chek aynan shundan qotgan edi). Lekin qaytarish
- * AYNI ruxsatda o'tirardi, ya'ni to'lovni ochish kassadan PUL CHIQARISHNI
- * ham jimgina ochib yuborardi. Server tomonda u `salesreturn.create` ga
- * ko'chirildi; bu yerda EKRAN tomoni: kassirga har bosganda 403 beradigan
- * «buzuq» tugma ko'rsatilmaydi.
+ * Tarix: 2026-08-12 (P3) da egasi «kassadan pul chiqishi menejer qarori»
+ * degan edi — tugma kioskda yashirilgan va bu yerda «ko'rinmaydi» deb
+ * qulflangan edi. 2026-08-13 da egasi o'sha qarorni BEKOR qildi: «kassir
+ * istalgan chekga vozvrat qilishi kerak». Server tomonda kassirga
+ * `salesreturn.view/create` berildi (role-templates F6); bu yerda EKRAN
+ * tomoni: `!isKiosk` sharti olib tashlandi — tugma endi hammaga ko'rinadi.
  */
-describe('ChekDetailPanel — qaytarish kassirda YOPIQ (P3)', () => {
-  it('kiosk rejimida «Qaytarish» tugmasi ko‘rinmaydi', async () => {
+describe('ChekDetailPanel — qaytarish KIOSKDA HAM OCHIQ (F6)', () => {
+  it('kiosk rejimida «Qaytarish» tugmasi KO‘RINADI (2026-08-12 yashirish bekor)', async () => {
     authState.kiosk = true;
     const user = userEvent.setup();
     renderWithProviders(<SotuvPage />);
     await openChekDetail(user);
 
-    expect(screen.queryByRole('button', { name: '↩ Qaytarish' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '↩ Qaytarish' })).toBeInTheDocument();
   });
 
   it('to‘liq rejimda (menejer/admin) tugma JOYIDA', async () => {
@@ -236,6 +236,56 @@ describe('ChekDetailPanel — qaytarish kassirda YOPIQ (P3)', () => {
 
     expect(screen.getByText('CHEK-00001')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '🖨 Chek' })).toBeInTheDocument();
+  });
+});
+
+/**
+ * F6.C — «istalgan chekni TOPISH»: Cheklar tabida qidiruv. Bo'sh qidiruv =
+ * joriy smena cheklari (eski xulq); matn kiritilsa so'rov `search=` bilan
+ * BARCHA smenalar bo'ylab ketadi (`sessionId`siz) — backend
+ * `RetailSaleFilterSchema.search` chek nomi + kontragent nomi bo'yicha
+ * qidiradi.
+ */
+describe('Cheklar tabida qidiruv (F6)', () => {
+  it('qidiruv maydoni bor va bo‘shligida joriy smena ro‘yxati turadi', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<SotuvPage />);
+
+    await user.click(await screen.findByRole('button', { name: /^Cheklar/ }));
+    expect(await screen.findByTestId('sotuv-chek-search')).toBeInTheDocument();
+    // Sukut — smena so'rovi (limit=100, sessionId bilan) natijasi.
+    expect(await screen.findByRole('button', { name: /Usta Vali/ })).toBeInTheDocument();
+  });
+
+  it('matn kiritilsa so‘rov `search=` bilan va `sessionId`SIZ ketadi', async () => {
+    const found = SALE_ROW({
+      id: 's-9',
+      name: 'CHEK-00777',
+      state: 'posted',
+      sumMinor: '500000',
+      agent: { id: 'cp-2', name: 'Eski Mijoz' },
+    });
+    vi.mocked(api.get).mockImplementation(
+      router(chekRoutes({}, [{ match: /search=/, value: { items: [found], total: 1 } }])),
+    );
+    const user = userEvent.setup();
+    renderWithProviders(<SotuvPage />);
+
+    await user.click(await screen.findByRole('button', { name: /^Cheklar/ }));
+    await user.type(await screen.findByTestId('sotuv-chek-search'), '777');
+
+    // Natija barcha-smenalar qidiruvidan keladi.
+    expect(await screen.findByRole('button', { name: /Eski Mijoz/ })).toBeInTheDocument();
+    // Chap ustundagi tovar qidiruvi (`/products?search=`) ham `search=`
+    // ishlatadi — faqat chek so'rovlarini olamiz.
+    const searchCalls = vi
+      .mocked(api.get)
+      .mock.calls.map((c) => String(c[0]))
+      .filter((u) => u.startsWith('/retail-sales?') && u.includes('search='));
+    expect(searchCalls.length).toBeGreaterThan(0);
+    for (const u of searchCalls) {
+      expect(u).not.toContain('sessionId=');
+    }
   });
 });
 

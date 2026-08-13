@@ -199,6 +199,7 @@ exports[`MK29 — shablon matritsasi snapshot (10/10) > cashier matritsasi 1`] =
   "product": "view:ALL",
   "productfolder": "view:ALL",
   "retailsale": "view:ALL create:ALL update:ALL approve:ALL print:ALL",
+  "salesreturn": "view:ALL create:ALL",
   "settings": "view:ALL",
 }
 `;
