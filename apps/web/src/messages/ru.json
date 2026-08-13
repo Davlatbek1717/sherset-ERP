@@ -3730,6 +3730,7 @@
       "chek_col_uom": "Ед. изм.",
       "chek_comment": "Комментарий",
       "chek_dated": "от {date}",
+      "chek_debt_after": "Ваш долг",
       "chek_discount": "Скидка",
       "chek_footer_legal": "Данный чек является документом, подтверждающим оплату.",
       "chek_footer_thanks": "Спасибо, что выбрали нас!",

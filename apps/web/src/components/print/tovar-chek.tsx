@@ -70,6 +70,13 @@ export interface TovarChekProps {
    * (`undefined`) ⇒ ular namunaga 1:1 mos qoladi.
    */
   payments?: ReceiptPaymentEntry[];
+  /**
+   * P05 (2026-08-13, egasi): kontragentli KASSA chekida chekdan keyingi qarz
+   * qoldig'i («Sizning qarzingiz»). Faqat `> 0n` bo'lsa chiziladi; `null` =
+   * o'lchanmagan (so'rov yiqilgan) — qator yo'q, chek baribir chiqadi.
+   * Buyurtma/jo'natma cheklari bermaydi ⇒ namunaga 1:1 mos qoladi.
+   */
+  debtAfterMinor?: bigint | null;
   /** Qog'oz eni (mm) — shrift shunga qarab moslashadi. */
   widthMm: number;
 }
@@ -89,6 +96,7 @@ export function TovarChek({
   totalMinor,
   subtotalMinor,
   payments,
+  debtAfterMinor,
   widthMm,
 }: TovarChekProps) {
   const t = useTranslations('pages.print');
@@ -248,6 +256,16 @@ export function TovarChek({
               )}
             </React.Fragment>
           ))}
+          {/* P05 — mijozning qolgan qarzi: to'lov qatorlaridan keyin, xuddi
+              shu uslubda. Shart renderer'lar bilan BIR XIL: != null && > 0n. */}
+          {debtAfterMinor != null && debtAfterMinor > 0n && (
+            <tr data-test-id="chek-debt-after">
+              <td colSpan={5} style={{ ...cell, textAlign: 'center' }}>
+                {t('chek_debt_after')}:
+              </td>
+              <td style={num}>{fmtSom(debtAfterMinor)}</td>
+            </tr>
+          )}
         </tfoot>
       </table>
 

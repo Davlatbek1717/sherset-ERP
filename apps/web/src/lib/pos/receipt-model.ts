@@ -63,6 +63,8 @@ export const RECEIPT_LABELS = {
   total: 'Jami summa',
   itemsCount: 'Jami nomenklaturalar soni',
   itemsUnit: 'ta',
+  /** P05 (2026-08-13, egasi): kontragentli chek oxirida qolgan qarz. */
+  debtAfter: 'Sizning qarzingiz',
   inWords: 'Raqam bilan',
   footerLegal: "Ushbu chek to'lovni tasdiqlovchi hujjat hisoblanadi.",
   footerThanks: 'Rahmat, bizni tanlaganingiz uchun!',
@@ -77,7 +79,15 @@ export interface ReceiptSaleInput {
   cardAmountMinor: string;
   changeMinor: string;
   description: string | null;
-  agent: { name: string; legalTitle: string | null } | null;
+  /** `id` chop-nuqtada qarz so'rovi uchun kerak (P05) — eski chaqiruvchilarda yo'q bo'lishi mumkin. */
+  agent: { id?: string; name: string; legalTitle: string | null } | null;
+  /**
+   * P05 — chekdan KEYINGI qarz qoldig'i (`/debts/pos/summary` → payableMinor;
+   * kam to'lov qarzi post()'da balansga allaqachon yozilgan). Chop-nuqta
+   * so'rab beradi; so'rov yiqilsa `null` = O'LCHANMAGAN (0 EMAS — xotira
+   * `pos-customer-card-one-number`) va qator chizilmaydi, chek to'xtamaydi.
+   */
+  debtAfterMinor?: bigint | null;
   session: {
     cashier: { name: string };
     organization: { name: string; legalTitle: string | null; phone?: string | null };
@@ -123,6 +133,8 @@ export interface ReceiptModel {
   itemsCount: number;
   inWords: string;
   payments: ReceiptPaymentEntry[];
+  /** P05: renderer'lar `!= null && > 0n` bo'lsagina qator chizadi. */
+  debtAfterMinor: bigint | null;
 }
 
 /** Tiyin → «330 250» (butun bo'lsa kasrsiz — namunadagidek). */
@@ -215,6 +227,7 @@ export function buildReceiptModel(sale: ReceiptSaleInput): ReceiptModel {
     itemsCount: rows.length,
     inWords: amountInWords(totalMinor, 'UZS', 'uz'),
     payments,
+    debtAfterMinor: sale.debtAfterMinor ?? null,
   };
 }
 

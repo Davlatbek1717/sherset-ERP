@@ -250,6 +250,23 @@ describe('TovarChek — to`lov bloki (faqat kassa cheki)', () => {
     expect(text).toContain('Qaytim');
   });
 
+  it('P05 (2026-08-13) — «Sizning qarzingiz» qatori berilsa chiqadi', () => {
+    // Egasi: kontragent tanlangan kassa cheki oxirida qolgan qarz. Buyurtma/
+    // jo'natma cheklari bu prop'ni bermaydi ⇒ ular namunaga 1:1 mos qoladi.
+    const { container } = renderChek({ debtAfterMinor: 125000000n });
+    const row = container.querySelector('[data-test-id="chek-debt-after"]');
+    expect(row).toBeTruthy();
+    expect(row?.textContent).toContain('Sizning qarzingiz');
+    expect(hasAmount(container, '1250000')).toBe(true);
+  });
+
+  it('P05 — qarz 0/null/berilmagan bo`lsa qator CHIQMAYDI', () => {
+    for (const over of [{}, { debtAfterMinor: null }, { debtAfterMinor: 0n }]) {
+      const { container } = renderChek(over);
+      expect(container.querySelector('[data-test-id="chek-debt-after"]')).toBeNull();
+    }
+  });
+
   it('valyuta qatorida kurs izohi ikkinchi qator bo`lib chiqadi', () => {
     const { container } = renderWithProviders(
       <TovarChek

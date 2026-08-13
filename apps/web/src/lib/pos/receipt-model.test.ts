@@ -70,6 +70,7 @@ describe('yorliqlar i18n bilan bir xil (ikki manba ajralib ketmasin)', () => {
     ['colSum', 'chek_col_sum'],
     ['subtotal', 'chek_subtotal'],
     ['discount', 'chek_discount'],
+    ['debtAfter', 'chek_debt_after'],
     ['total', 'chek_total'],
     ['itemsCount', 'chek_items_count'],
     ['itemsUnit', 'chek_items_unit'],
@@ -185,6 +186,16 @@ describe('buildReceiptModel — namunadagi maydonlar', () => {
     expect(labels).toContain('Naqd');
     // Qaytim — chekdagi eng nizoli raqam, u YO'QOLMASLIGI shart.
     expect(labels).toContain('Qaytim');
+  });
+
+  it('P05 (2026-08-13) — debtAfterMinor modeldan o`tadi (null = o`lchanmagan)', () => {
+    // Egasi: kontragent tanlangan chek oxirida «Sizning qarzingiz» qatori.
+    // Qiymat serverniki (`/debts/pos/summary` → payableMinor, post'dan keyin);
+    // so'rov yiqilsa null — «o'lchanmagan» ≠ 0 (xotira `pos-customer-card-one-number`).
+    const m = buildReceiptModel({ ...SALE(), debtAfterMinor: 125000000n });
+    expect(m.debtAfterMinor).toBe(125000000n);
+    const m2 = buildReceiptModel(SALE());
+    expect(m2.debtAfterMinor).toBeNull();
   });
 
   it('🔴 dollar qatorida kurs ×10^8 shkalasida formatlanadi', () => {

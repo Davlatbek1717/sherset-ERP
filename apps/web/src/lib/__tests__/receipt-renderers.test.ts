@@ -205,3 +205,38 @@ describe('chek shabloni — uchala renderer bir xil bloklarni chiqaradi', () => 
     expect(buildReceiptHtml(MIXED as never)).not.toContain('Xarid uchun rahmat!');
   });
 });
+
+/**
+ * P05 (2026-08-13, egasi) — chek oxirida «Sizning qarzingiz: …».
+ *
+ * Qiymat modeldan (`debtAfterMinor`, manba `/debts/pos/summary` → payableMinor,
+ * post'dan KEYINGI qoldiq). Ikkala matnli renderer BIRGA yangilanadi (xotira
+ * `ombor-chek-uch-renderer`); uchinchisi (React `TovarChek`) o'z testida.
+ * null = o'lchanmagan, 0 = qarz yo'q — ikkalasida ham qator CHIQMAYDI.
+ */
+describe('P05 — «Sizning qarzingiz» qatori', () => {
+  it('ikkala matnli renderer qatorni chiqaradi (qarz > 0)', () => {
+    const sale = SALE({ debtAfterMinor: 125000000n });
+    const txt = buildReceiptText(sale as never);
+    expect(txt).toContain('Sizning qarzingiz');
+    expect(txt).toContain('1 250 000');
+    const html = buildReceiptHtml(sale as never);
+    expect(html).toContain('Sizning qarzingiz');
+    expect(html).toContain('1 250 000');
+  });
+
+  it('qarz 0, null yoki umuman berilmagan bo`lsa qator CHIQMAYDI', () => {
+    for (const over of [{ debtAfterMinor: 0n }, { debtAfterMinor: null }, {}]) {
+      const sale = SALE(over);
+      expect(buildReceiptText(sale as never)).not.toContain('Sizning qarzingiz');
+      expect(buildReceiptHtml(sale as never)).not.toContain('Sizning qarzingiz');
+    }
+  });
+
+  it('🔴 qarz qatori ham 32 ustun chegarasida (printer o`ng chetini qirqmasin)', () => {
+    const sale = SALE({ debtAfterMinor: 125000000n });
+    for (const line of buildReceiptText(sale as never).split('\n')) {
+      expect(line.length, `uzun qator: «${line}»`).toBeLessThanOrEqual(32);
+    }
+  });
+});

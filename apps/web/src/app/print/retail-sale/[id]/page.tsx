@@ -22,6 +22,7 @@
 import { ThermalShell } from '@/components/print/thermal-shell';
 import { type ChekPosition, TovarChek } from '@/components/print/tovar-chek';
 import { api } from '@/lib/api-client';
+import { fetchDebtAfter } from '@/lib/pos/receipt-debt';
 import { buildReceiptModel } from '@/lib/pos/receipt-model';
 import type { ReceiptPaymentRow } from '@/lib/pos/receipt-payments';
 import { useQuery } from '@tanstack/react-query';
@@ -73,11 +74,28 @@ export default function PrintRetailSalePage() {
     queryFn: () => api.get<RetailSaleDetail>(`/retail-sales/${id}`),
   });
 
-  if (isLoading) return <div style={{ padding: 24 }}>Loading...</div>;
+  // P05 — kontragentli chekda qolgan qarz («Sizning qarzingiz»). Helper
+  // fail-open (`null`) — summary yiqilsa chek qarz qatorisiz baribir chiqadi.
+  // `auto=1` popup'i darhol chop qilgani uchun bu so'rov ham render'dan
+  // OLDIN kutiladi (pastdagi isLoading sharti), aks holda qator poygada
+  // qog'ozga ulgurmasdi.
+  const agentId = data?.agent?.id ?? null;
+  const debtQuery = useQuery<bigint | null>({
+    queryKey: ['retail-sale-print-debt', agentId],
+    queryFn: () => fetchDebtAfter(agentId as string),
+    enabled: agentId != null,
+  });
+
+  if (isLoading || (agentId != null && debtQuery.isLoading)) {
+    return <div style={{ padding: 24 }}>Loading...</div>;
+  }
   if (!data) return <div style={{ padding: 24 }}>Not found</div>;
 
   // Qarorlar va formatlash SOF modulda — bu sahifa faqat chizadi.
-  const model = buildReceiptModel(data);
+  const model = buildReceiptModel({
+    ...data,
+    debtAfterMinor: agentId != null ? (debtQuery.data ?? null) : null,
+  });
 
   const positions: ChekPosition[] = data.positions.map((p) => ({
     position: p.position,
@@ -110,6 +128,7 @@ export default function PrintRetailSalePage() {
         totalMinor={data.sumMinor}
         subtotalMinor={grossMinor}
         payments={model.payments}
+        debtAfterMinor={model.debtAfterMinor}
         widthMm={widthMm}
       />
     </ThermalShell>

@@ -215,6 +215,57 @@ describe('printReceiptViaAgent — uzilish sababi', () => {
   });
 });
 
+/**
+ * P05 (2026-08-13, egasi) — kontragentli chekda «Sizning qarzingiz» qatori.
+ *
+ * Agent-yo'l chekni O'ZI yuklaydi, shuning uchun qarz qoldig'i ham shu yerda
+ * so'raladi (`/debts/pos/summary/:agentId?currency=UZS` → payableMinor).
+ * So'rov yiqilsa chek BARIBIR bosiladi (fail-open) — chek to'xtamasin.
+ */
+describe('printReceiptViaAgent — mijoz qarzi (P05)', () => {
+  const SALE_WITH_AGENT = {
+    ...SALE,
+    agent: { id: 'agent-1', name: 'Zikrillo aka', legalTitle: null },
+  };
+
+  it('kontragentli chek: summary so`raladi va qator HTML da bosiladi', async () => {
+    const printSheet = installShell();
+    vi.mocked(api.get).mockImplementation(async (url: string) => {
+      if (url.startsWith('/debts/pos/summary/agent-1')) return { payableMinor: '125000000' };
+      return SALE_WITH_AGENT;
+    });
+
+    const r = await printReceiptViaAgent('s-1');
+
+    expect(r).toMatchObject({ handled: true, ok: true });
+    expect(api.get).toHaveBeenCalledWith('/debts/pos/summary/agent-1?currency=UZS');
+    expect(printSheet.mock.calls[0]?.[1]).toContain('Sizning qarzingiz');
+  });
+
+  it('summary yiqilsa chek BARIBIR bosiladi (fail-open), qator yo`q', async () => {
+    const printSheet = installShell();
+    vi.mocked(api.get).mockImplementation(async (url: string) => {
+      if (url.startsWith('/debts/pos/summary/')) throw new Error('500');
+      return SALE_WITH_AGENT;
+    });
+
+    const r = await printReceiptViaAgent('s-1');
+
+    expect(r).toMatchObject({ handled: true, ok: true });
+    expect(printSheet.mock.calls[0]?.[1]).not.toContain('Sizning qarzingiz');
+  });
+
+  it('kontragentsiz chekda summary UMUMAN so`ralmaydi', async () => {
+    installShell();
+    apiGetOrThrowOnSettings(SALE);
+
+    await printReceiptViaAgent('s-1');
+
+    const urls = vi.mocked(api.get).mock.calls.map((c) => String(c[0]));
+    expect(urls.some((u) => u.startsWith('/debts/'))).toBe(false);
+  });
+});
+
 describe('printZReportViaAgent — uzilish sababi', () => {
   it('B3 — Z-hisobot ham sozlamani O`QIMAYDI, bo`sh nom bilan bosiladi', async () => {
     const printSheet = installShell();

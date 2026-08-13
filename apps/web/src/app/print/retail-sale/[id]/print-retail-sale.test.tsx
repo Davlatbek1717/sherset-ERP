@@ -121,6 +121,54 @@ describe('/print/retail-sale — to‘lov qatlami', () => {
 });
 
 /**
+ * P05 (2026-08-13, egasi) — kontragentli chek oxirida «Sizning qarzingiz».
+ *
+ * Sahifa qarz qoldig'ini `/debts/pos/summary/:agentId?currency=UZS` dan oladi
+ * (payableMinor — post'dan KEYINGI qoldiq). So'rov yiqilsa chek BARIBIR
+ * chiqadi (fail-open) — qarz qatori shunchaki bo'lmaydi.
+ */
+describe('/print/retail-sale — mijoz qarzi (P05)', () => {
+  const AGENT = { id: 'agent-1', name: 'Zikrillo aka', legalTitle: null };
+
+  it('kontragentli chekda summary so`raladi va qator chiqadi', async () => {
+    vi.mocked(api.get).mockImplementation(async (url: string) => {
+      if (url.startsWith('/debts/pos/summary/agent-1')) return { payableMinor: '125000000' };
+      return SALE({ agent: AGENT });
+    });
+    const { container } = renderWithProviders(<PrintRetailSalePage />);
+
+    await waitFor(() => expect(screen.getByTestId('tovar-chek')).toBeInTheDocument());
+    const text = (container.textContent ?? '').replace(/\s+/g, ' ');
+    expect(text).toContain('Sizning qarzingiz');
+    expect(text.replace(/\s/g, '')).toContain('1250000');
+    expect(api.get).toHaveBeenCalledWith('/debts/pos/summary/agent-1?currency=UZS');
+  });
+
+  it('summary yiqilsa chek BARIBIR chiqadi (fail-open), qator yo`q', async () => {
+    vi.mocked(api.get).mockImplementation(async (url: string) => {
+      if (url.startsWith('/debts/pos/summary/')) throw new Error('500');
+      return SALE({ agent: AGENT });
+    });
+    const { container } = renderWithProviders(<PrintRetailSalePage />);
+
+    await waitFor(() => expect(screen.getByTestId('tovar-chek')).toBeInTheDocument());
+    expect(container.textContent).not.toContain('Sizning qarzingiz');
+  });
+
+  it('kontragentsiz chekda summary UMUMAN so`ralmaydi', async () => {
+    vi.mocked(api.get).mockImplementation(async (url: string) => {
+      if (url.startsWith('/debts/')) throw new Error(`kutilmagan so'rov: ${url}`);
+      return SALE();
+    });
+    renderWithProviders(<PrintRetailSalePage />);
+
+    await waitFor(() => expect(screen.getByTestId('tovar-chek')).toBeInTheDocument());
+    const urls = vi.mocked(api.get).mock.calls.map((c) => String(c[0]));
+    expect(urls.some((u) => u.startsWith('/debts/'))).toBe(false);
+  });
+});
+
+/**
  * 🔴 SHABLON QULFI (2026-08-12) — bu sahifa endi egasining namunasini
  * (`chek.png`) chizadi, ya'ni ESC/POS va Electron renderer'lari bilan
  * AYNI bloklar. Ilgari u o'zining «termal tasma» ko'rinishida edi va

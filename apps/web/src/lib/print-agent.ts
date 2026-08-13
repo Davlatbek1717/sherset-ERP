@@ -11,11 +11,14 @@
  */
 
 import { api } from './api-client';
+// P05: chek oxiridagi qarz qoldig'i — ikkala chop-nuqta bitta helper'dan.
+import { fetchDebtAfter } from './pos/receipt-debt';
 // Chek modeli — uchala renderer uchun YAGONA manba (qaror + formatlash).
 import {
   RECEIPT_LABELS,
   type ReceiptSaleInput,
   buildReceiptModel,
+  fmtSom,
   wrapText,
 } from './pos/receipt-model';
 import {
@@ -514,6 +517,12 @@ export function buildReceiptText(sale: ReceiptSale): string {
       if (p.note) pushRow(L, `  ${p.note.left}`, p.note.right);
     }
   }
+  // ── P05: mijozning qolgan qarzi — to'lovlardan keyin, footer'dan oldin.
+  //    null = o'lchanmagan, 0 = qarz yo'q — ikkalasida qator chizilmaydi.
+  if (m.debtAfterMinor != null && m.debtAfterMinor > 0n) {
+    L.push(bar);
+    pushRow(L, `${RECEIPT_LABELS.debtAfter}:`, fmtSom(m.debtAfterMinor));
+  }
   L.push(bar);
   push(L, `${RECEIPT_LABELS.itemsCount}: ${m.itemsCount} ${RECEIPT_LABELS.itemsUnit}`);
   push(L, `${RECEIPT_LABELS.inWords}: ${m.inWords}`);
@@ -556,6 +565,12 @@ export function buildReceiptHtml(sale: ReceiptSale): string {
     )
     .join('');
 
+  // P05: qolgan qarz — to'lov qatorlari uslubida, ulardan keyin.
+  const debtHtml =
+    m.debtAfterMinor != null && m.debtAfterMinor > 0n
+      ? `<tr><td colspan="5" class="c">${e(RECEIPT_LABELS.debtAfter)}:</td><td class="r">${e(fmtSom(m.debtAfterMinor))}</td></tr>`
+      : '';
+
   return `<!doctype html><html><head><meta charset="utf-8"><style>
 @page{margin:0}
 *{box-sizing:border-box}
@@ -589,6 +604,7 @@ ${m.orgPhone ? `<div class="h">${e(m.orgPhone)}</div>` : ''}
 ${rowsHtml}
 ${totalsHtml}
 ${payHtml}
+${debtHtml}
 </table>
 <div class="foot">
 <div>${e(RECEIPT_LABELS.itemsCount)}: <b>${m.itemsCount} ${e(RECEIPT_LABELS.itemsUnit)}</b></div>
@@ -631,6 +647,10 @@ export async function printReceiptViaAgent(saleId: string): Promise<ReceiptPrint
   } catch {
     return idle('load-failed');
   }
+
+  // P05 — kontragentli chekda qolgan qarz. Helper fail-open (`null`), ya'ni
+  // summary yiqilsa chek qarz qatorisiz BARIBIR bosiladi.
+  if (sale.agent?.id) sale.debtAfterMinor = await fetchDebtAfter(sale.agent.id);
 
   // Printer TANLANMAYDI: qobiq bo'sh nomni Windows sukut printeri deb tushunadi
   // (desktop v1.4.0+). Akkaunt-darajali sozlama butunlay olib tashlandi — u
