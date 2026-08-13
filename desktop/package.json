@@ -25,6 +25,13 @@
       "buildResources": "build"
     },
     "files": ["**/*.js", "**/*.html", "package.json", "!check-build-assets.js"],
+    "extraResources": [
+      {
+        "from": "tools/watchdog",
+        "to": "tools/watchdog",
+        "filter": ["*.ps1"]
+      }
+    ],
     "win": {
       "target": [
         {

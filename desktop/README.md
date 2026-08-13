@@ -371,11 +371,20 @@ hech kim ko'tarmaydi — buning uchun tashqi watchdog kerak.
 | `tools/watchdog/kassa-watchdog.ps1` | jarayonni tekshiradi; yo'q bo'lsa exe'ni ishga tushiradi va logga yozadi |
 | `tools/watchdog/install-watchdog.ps1` | watchdog'ni Task Scheduler'ga yozadi (har 2 daqiqada) — qurilmada BIR MARTA |
 
+Skriptlar **artefakt bilan birga keladi** (`build.extraResources` — F8 8.1
+topilmasi: ilgari `build.files` faqat `*.js/*.html` olgani uchun `.ps1` lar
+o'rnatmaga umuman kirmasdi; asar ichiga solish ham yechim emas — Task
+Scheduler / PowerShell asar arxividan o'qiy olmaydi). O'rnatmadan keyin ular
+`<o'rnatma papkasi>\resources\tools\watchdog\` da haqiqiy fayl bo'lib turadi.
+
 O'rnatish (qurilmada, admin bilan, **F8 da**):
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File desktop\tools\watchdog\install-watchdog.ps1
+powershell -ExecutionPolicy Bypass -File "%LOCALAPPDATA%\Programs\sherset-kassa\resources\tools\watchdog\install-watchdog.ps1"
 ```
+
+(Repo checkout bor mashinada `desktop\tools\watchdog\install-watchdog.ps1`
+dan yugurtirish ham mumkin — ikkalasi bir xil fayl.)
 
 O'chirish:
 

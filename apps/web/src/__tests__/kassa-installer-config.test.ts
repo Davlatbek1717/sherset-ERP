@@ -66,6 +66,7 @@ interface BuildConfig {
   productName?: string;
   directories?: { output?: string; buildResources?: string };
   files?: string[];
+  extraResources?: unknown;
   win?: WinConfig;
   nsis?: NsisConfig;
   publish?: PublishConfig | PublishConfig[];
@@ -141,6 +142,17 @@ describe('electron-builder — NSIS (spec §8.1)', () => {
 
   it('ikonka yo`li konfiguratsiyada ko`rsatilgan', () => {
     expect(build.win?.icon).toBe(ICON_PATH);
+  });
+
+  it('🔴 watchdog .ps1 artefakt bilan YETKAZILADI (extraResources — asar EMAS)', () => {
+    // F8 8.1 topilmasi (2026-08-13): `build.files` faqat *.js/*.html oladi —
+    // tools/watchdog/*.ps1 artefaktga UMUMAN kirmasdi, ya'ni K12 watchdog'i
+    // qurilmaga yetmasdi. Ularni asar ichiga solish ham yechim emas: Task
+    // Scheduler / PowerShell asar arxividan o'qiy olmaydi. extraResources
+    // ularni o'rnatma papkasida HAQIQIY fayl qilib qo'yadi
+    // (`resources/tools/watchdog/`).
+    const extra = JSON.stringify(build.extraResources ?? []);
+    expect(extra, 'extraResources da tools/watchdog yo`q').toContain('tools/watchdog');
   });
 
   it('imzolash sertifikati repo`ga YOZILMAGAN (spec §8.2 — 1-versiya imzosiz)', () => {
