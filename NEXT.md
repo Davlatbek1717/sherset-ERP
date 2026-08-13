@@ -331,6 +331,24 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-08-13b (KASSA — .exe'da endi DOIM kassa ko'rinishi + ✕ chiqish tugmasi ·
+> ✅ DEPLOYED web `7ae1554c` + reliz 1.6.0 KANALDA) —** egasining ikki shikoyati: (1) .exe'da
+> PIN bilan kirilganda navbar'li to'liq web-ERP ochilgan — ildiz: kiosk-ko'rinish faqat
+> `uiMode==='kiosk'` rolga edi + juftlash olib tashlangach chiqish/sessiya-o'lim yo'llari
+> qobiq ichida `/login`ga tushardi. Fix: `isShersetShell()` (`pos-device.ts`) — layout kiosk-shoxi
+> `isKioskUser(...) || isShersetShell()`, uch chiqish yo'nalishi `readPosDevice() || isShersetShell()`.
+> (2) ko'rinadigan chiqish belgisi yo'q edi — preload'da o'ng-yuqori ✕ (`shell:request-quit`,
+> tasdiq dialogli; YALANG button — `keyboardRoot()` evristikasi uchun; file:// da chizilmaydi).
+> Qo'riqchilar: `desktop-exit-button.test.ts` (yangi, preload haqiqatan yugurtiriladi) +
+> `kiosk-shell`/`kiosk-logout-redirect` niyat-yangilandi (RED→GREEN). Gate to'liq yashil.
+> **Deploy o'lchandi:** box HEAD=lokal HEAD `7ae1554c`, chunk'da `||`-shart 3 joyda, sayt/health
+> 200. **Kanal o'lchandi:** 1.6.0 exe+blockmap `desktop/` ichki papkaga (🔴 gotcha: alias ildizi
+> emas!), sha512 remote'da qayta hisoblab mos, `latest.yml.bak-1.5.0` saqlandi, HTTPS HEAD 200.
+> **⚠️ Qurilmada KUZATILMAGAN (Phase-1):** 1.5.0→1.6.0 avto-o'tish (K04 qarzi turibdi), ✕ tugma
+> real monoblokda, kiosk-ko'rinish real PIN bilan. Keyingi qurilma-QA'da birga tekshirilsin.
+>
+> ---
+>
 > **🕒 2026-08-13a (KASSA-EXE F8 — reliz 1.5.0 KANALDA + migratsiya/web PRODDA ·
 > qurilma-QA QOLDI) — `13d74361` prodda** (`Deploy done: 9ba939d8 → 13d74361`; api health ok ·
 > erp.sherset.uz 200 · 1 migratsiya qo'llandi: `pos_device_shell_version`, backup 732M oldindan).

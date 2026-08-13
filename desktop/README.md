@@ -1,8 +1,8 @@
 # Sherset Kassa — Electron o'rami (`desktop/`)
 
-> Holat: **manbada `1.6.0` — o'ng-yuqorida ko'rinadigan chiqish tugmasi (✕);
-> HALI YIG'ILMAGAN va kanalda YO'Q** (2026-08-13). Kanaldagi oxirgi reliz
-> **`1.5.0` (2026-08-13, `latest.yml` da o'lchandi)**, o'rnatish oqimi Phase-1.
+> Holat: **`1.6.0` yig'ildi va KANALDA** (2026-08-13, `latest.yml`+exe HTTPS
+> orqali o'lchandi: sha512 mos, HEAD 200). Yangilik: o'ng-yuqorida ko'rinadigan
+> chiqish tugmasi (✕). Qurilmada o'tish oqimi Phase-1 (jonli kuzatilmagan).
 > `.exe` **yig'iladi va kanalga chiqadi** (o'lchangan, pastga qarang), lekin
 > qobiqning O'ZI bu repo'da hech qachon ishga tushirilmagan: chop etish, mijoz-ekran
 > va ekran klaviaturasi **hech bir printerda, hech bir 2-monitorda va hech bir
@@ -482,7 +482,7 @@ qolganlarini to'xtatadi).
 | `1.3.0` | 2026-08-11 | qobiq klaviaturasi: **numpad layout** (`type=number|tel`, `inputMode=decimal|numeric|tel`) + **kirill/РУС** almashtirgichi |
 | `1.4.0` | 2026-08-12 | chek: bo'sh printer nomi = **Windows sukut printeri** (`deviceName` berilmaydi); kanalga chiqqan oxirgi per-machine reliz |
 | `1.5.0` | 2026-08-13 | **per-user o'rnatma** (UAC yo'q) + **boot'da o'rnatish** (`installOnBoot`, kirish ekranida; o'rnatgach o'zi qaytadi). Kanalga chiqqan (`latest.yml` 2026-08-13 da o'lchandi); 1.4.0 → 1.5.0 o'tish QO'LDA (yuqoridagi bo'lim) |
-| `1.6.0` | — (yig'ilmagan) | **chiqish tugmasi ✕** o'ng-yuqori burchakda (imoga qo'shimcha, tasdiq dialogli `shell:request-quit`). 🔴 `.exe` HALI yig'ilmagan |
+| `1.6.0` | 2026-08-13 | **chiqish tugmasi ✕** o'ng-yuqori burchakda (imoga qo'shimcha, tasdiq dialogli `shell:request-quit`); web tomonda qobiq doim kiosk-ko'rinish. Kanalga chiqqan (sha512+HEAD 200 o'lchandi); qurilmada 1.5.0→1.6.0 avto-o'tish jonli KUZATILMAGAN |
 
 **Kanal tomoni — o'lchangan (2026-08-11, `1.3.0`):**
 `https://erp.sherset.uz/downloads/desktop/latest.yml` → **200**, ichida
