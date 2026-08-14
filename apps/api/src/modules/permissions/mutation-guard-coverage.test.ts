@@ -201,6 +201,12 @@ const INTENTIONALLY_OPEN: Record<string, string> = {
   // qurilma kaliti (argon2, `PosDeviceService.verify`) + PIN (lookup topadi,
   // argon2 tasdiqlaydi). Qurilmasiz so'rov 401 oladi.
   'AuthController#posLoginHandler': 'PIN-login — token shu yerda beriladi (qurilma kaliti + PIN)',
+  // F7 kassir almashtirish: `@RequirePermission` ATAYLAB yo'q — kiosk
+  // kassirining ruxsat matritsasida employee-huquqlari yo'q va bo'lmasligi
+  // kerak. Himoya servisda, tartibda: kiosk-juftlik (qurilma kaliti YOKI
+  // `uiMode==='kiosk'` token) → ochiq sessiya 409 → smena-a'zolik mezoni →
+  // target PIN'i (mavjud 5-xato lockout) → fail-closed audit-yozuv.
+  'AuthController#switchPosCashier': 'PIN-switch — kiosk-juftlik + a`zolik + PIN, audit bilan',
 
   // ── Webhook: autentifikatsiya = provayder imzosi / maxfiy token ──
   'ClickWebhookController#webhook': 'Click imzosi tekshiriladi',

@@ -198,6 +198,7 @@
     "action_purchase_order_create": "Buyurtma yaratildi",
     "action_invoice_in_create": "Hisobvaraq yaratildi",
     "action_mark_printed": "Chop etildi",
+    "action_pos_cashier_switch": "Kassir almashinuvi (kassa)",
     "action_unmark_printed": "Chop belgisi olib tashlandi",
     "action_create_bank_account": "Bank hisobi qo'shildi",
     "action_update_bank_account": "Bank hisobi o'zgartirildi",

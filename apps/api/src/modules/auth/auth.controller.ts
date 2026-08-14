@@ -261,6 +261,41 @@ export class AuthController {
   }
 
   /**
+   * F7 — kassirni almashtirish (ko'p-kassir, spec §8).
+   *
+   * Tekshiruvlar servisda (kiosk-juftlik · ochiq sessiya 409 · a'zolik ·
+   * PIN lockout · audit). Cookie'lar va javob shakli `pos-login` bilan
+   * AYNAN bir xil — F8 javobni auth-store'ga to'g'ridan-to'g'ri beradi.
+   * Joriy refresh-cookie servisga uzatiladi va u yerda BEKOR qilinadi
+   * (eski kassirning shu-qurilma zanjiri o'lsin), keyin ustidan yangisi
+   * yoziladi.
+   */
+  @Post('pos-pin/switch')
+  @UseGuards(JwtAuthGuard)
+  async switchPosCashier(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() body: unknown,
+    @Req() req: FastifyRequest,
+    @Res({ passthrough: true }) res: FastifyReply,
+  ) {
+    const meta = {
+      userAgent: req.headers['user-agent'],
+      ipAddress: (req.headers['x-forwarded-for'] as string | undefined) ?? req.ip,
+    };
+    const oldRefreshToken = req.cookies?.[REFRESH_COOKIE] ?? null;
+    const {
+      accessToken,
+      refreshToken,
+      mediaToken,
+      user: switchedUser,
+      device,
+    } = await this.posLogin.switchCashier(user, body, meta, oldRefreshToken);
+    res.setCookie(REFRESH_COOKIE, refreshToken, COOKIE_OPTS);
+    res.setCookie(MEDIA_TOKEN_COOKIE, mediaToken, MEDIA_COOKIE_OPTS);
+    return { accessToken, user: switchedUser, device };
+  }
+
+  /**
    * Qulfni ochish. Ketma-ket 5 xato → 401 `lockout: true` (FE to'liq chiqaradi).
    * Bu QAYTA LOGIN emas: to'g'ri PIN'da savat saqlanib qoladi.
    */

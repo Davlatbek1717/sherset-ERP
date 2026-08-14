@@ -1,4 +1,4 @@
-import { ForbiddenException, UnauthorizedException } from '@nestjs/common';
+import { ConflictException, ForbiddenException, UnauthorizedException } from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
 import { PosLoginService } from './pos-login.service.js';
 
@@ -283,5 +283,205 @@ describe('PosLoginService.candidates (F7)', () => {
     await expect(svc.candidates({ ...KIOSK_USER, uiMode: undefined })).rejects.toBeInstanceOf(
       ForbiddenException,
     );
+  });
+});
+
+/**
+ * F7 — KASSIRNI ALMASHTIRISH (`POST /auth/pos-pin/switch`).
+ *
+ * Tekshiruv TARTIBI reja shartnomasi: (1) kiosk-juftlik → (2) joriy kassirning
+ * ochiq sessiyasi yo'q (409) → (3) target a'zolik-mezoni (candidates bilan
+ * bitta) → (4) PIN mavjud lockout bilan → (5) audit-yozuv → javob shakli
+ * mavjud pos-login bilan BIR XIL.
+ */
+describe('PosLoginService.switchCashier (F7)', () => {
+  const TARGET_ID = '22222222-2222-4222-8222-222222222222';
+  const DEV_UUID = '33333333-3333-4333-8333-333333333333';
+  const TARGET = { ...EMPLOYEE, id: TARGET_ID, name: 'Boshqa Kassir' };
+  const KIOSK_USER = {
+    sub: 'emp-1',
+    accountId: 'acc-1',
+    email: 'kassir@demo.local',
+    name: 'Kassir',
+    username: null,
+    hrRoles: [],
+    isChecker: false,
+    uiMode: 'kiosk' as const,
+    hrPermissions: [],
+  };
+  const SWITCH_INPUT = { employeeId: TARGET_ID, pin: '5678' };
+
+  it('to`g`ri PIN → javob shakli pos-login bilan BIR XIL (F8 shartnomasi)', async () => {
+    const { svc, pins } = makeDeps({ employee: TARGET });
+    const out = await svc.switchCashier(KIOSK_USER, SWITCH_INPUT, META, 'old-rt');
+    // Aynan login qaytaradigan kalitlar — F8 buni auth-store'ga to'g'ridan-to'g'ri beradi.
+    expect(Object.keys(out).sort()).toEqual([
+      'accessToken',
+      'device',
+      'mediaToken',
+      'refreshToken',
+      'user',
+    ]);
+    expect(out.accessToken).toBe('access-jwt');
+    expect(out.user).toMatchObject({ id: TARGET_ID, uiMode: 'kiosk', accountPlan: 'pro' });
+    // Qurilma kalitisiz — hisob sukutlari (pos-login qurilmasiz yo'li bilan bir xil).
+    expect(out.device).toMatchObject({
+      id: null,
+      storeId: 'store-default',
+      cashDeskId: 'desk-default',
+      organizationId: 'org-default',
+    });
+    // PIN MAVJUD lockout hisoblagichi orqali, TARGET xodimga nisbatan.
+    expect(pins.verifyPin).toHaveBeenCalledWith('acc-1', TARGET_ID, '5678');
+  });
+
+  it('tana-shartnoma: noma`lum kalit RAD (jim tashlash yo`q), 3-raqamli PIN rad', async () => {
+    const { svc } = makeDeps({ employee: TARGET });
+    await expect(
+      svc.switchCashier(KIOSK_USER, { ...SWITCH_INPUT, extra: 'x' }, META, null),
+    ).rejects.toThrow();
+    await expect(
+      svc.switchCashier(KIOSK_USER, { employeeId: TARGET_ID, pin: '123' }, META, null),
+    ).rejects.toThrow();
+  });
+
+  it('kiosk emas (uiMode full, kalitsiz) → 403, hech qanday tekshiruv boshlanmaydi', async () => {
+    const { svc, prisma, pins } = makeDeps({ employee: TARGET });
+    await expect(
+      svc.switchCashier({ ...KIOSK_USER, uiMode: 'full' as const }, SWITCH_INPUT, META, null),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(prisma.client.cashierSession.findFirst).not.toHaveBeenCalled();
+    expect(pins.verifyPin).not.toHaveBeenCalled();
+  });
+
+  it('qurilma kaliti BERILSA verify chaqiriladi va uiMode full ham o`tadi', async () => {
+    const { svc, devices } = makeDeps({ employee: TARGET });
+    const out = await svc.switchCashier(
+      { ...KIOSK_USER, uiMode: 'full' as const },
+      { ...SWITCH_INPUT, deviceId: DEV_UUID, deviceSecret: 'x'.repeat(64) },
+      META,
+      null,
+    );
+    expect(devices.verify).toHaveBeenCalledWith(DEV_UUID, 'x'.repeat(64));
+    // Qurilma tasdiqlangach javobda qurilma konteksti keladi.
+    expect(out.device).toMatchObject({ id: 'dev-1', storeId: 'store-1' });
+  });
+
+  it('qurilma BOSHQA akkauntniki → 403 (tenant chegarasi)', async () => {
+    const { svc } = makeDeps({
+      employee: TARGET,
+      device: { verify: vi.fn().mockResolvedValue({ ...DEVICE_CTX, accountId: 'acc-BOSHQA' }) },
+    });
+    await expect(
+      svc.switchCashier(
+        KIOSK_USER,
+        { ...SWITCH_INPUT, deviceId: DEV_UUID, deviceSecret: 'x'.repeat(64) },
+        META,
+        null,
+      ),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('joriy kassirning OCHIQ sessiyasi bor → 409 (avval smena yopilsin)', async () => {
+    const { svc, prisma, pins } = makeDeps({ employee: TARGET });
+    prisma.client.cashierSession.findFirst.mockResolvedValue({ id: 'sess-1', name: '00001' });
+    await expect(svc.switchCashier(KIOSK_USER, SWITCH_INPUT, META, null)).rejects.toBeInstanceOf(
+      ConflictException,
+    );
+    // Tekshiruv JORIY kassirga (so'rovchi tokeniga) nisbatan, targetga emas.
+    expect(prisma.client.cashierSession.findFirst.mock.calls[0]?.[0]?.where).toMatchObject({
+      accountId: 'acc-1',
+      cashierId: 'emp-1',
+      state: 'open',
+    });
+    // 409'da PIN umuman tekshirilmaydi (lockout hisoblagichi kuymaydi).
+    expect(pins.verifyPin).not.toHaveBeenCalled();
+  });
+
+  it('target mezoni candidates bilan BITTA: a`zo emas / PIN`siz / boshqa akkaunt → 403', async () => {
+    const { svc, prisma, pins } = makeDeps({ employee: null });
+    await expect(svc.switchCashier(KIOSK_USER, SWITCH_INPUT, META, null)).rejects.toBeInstanceOf(
+      ForbiddenException,
+    );
+    const where = prisma.client.employee.findFirst.mock.calls[0]?.[0]?.where;
+    expect(where).toMatchObject({
+      id: TARGET_ID,
+      accountId: 'acc-1',
+      archived: false,
+      posPinHash: { not: null },
+      smenaAssignments: { some: { smena: { accountId: 'acc-1', archived: false } } },
+    });
+    // A'zo bo'lmagan target uchun PIN sanab ko'rib bo'lmaydi.
+    expect(pins.verifyPin).not.toHaveBeenCalled();
+  });
+
+  it('PIN xato → verifyPin 401`i o`tadi, audit YOZILMAYDI, token YO`Q', async () => {
+    const { svc, prisma, tokens } = makeDeps({
+      employee: TARGET,
+      pin: {
+        verifyPin: vi
+          .fn()
+          .mockRejectedValue(new UnauthorizedException({ message: 'PIN noto`g`ri', remaining: 3 })),
+      },
+    });
+    await expect(
+      svc.switchCashier(KIOSK_USER, SWITCH_INPUT, META, 'old-rt'),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+    expect(prisma.client.auditLog.create).not.toHaveBeenCalled();
+    expect(tokens.signAccessToken).not.toHaveBeenCalled();
+    // Muvaffaqiyatsiz almashinuvda eski sessiya TIRIK qoladi.
+    expect(tokens.revokeRefreshToken).not.toHaveBeenCalled();
+  });
+
+  it('bloklangan target → 401 (parol-login bilan bir xil qo`riqchi)', async () => {
+    const { svc } = makeDeps({
+      employee: { ...TARGET, lockedUntil: new Date(Date.now() + 10 * 60_000) },
+    });
+    await expect(svc.switchCashier(KIOSK_USER, SWITCH_INPUT, META, null)).rejects.toThrow(
+      /bloklangan/,
+    );
+  });
+
+  it('audit-yozuv: kim → kimga, qurilma, so`rov manbasi', async () => {
+    const { svc, prisma } = makeDeps({ employee: TARGET });
+    await svc.switchCashier(
+      KIOSK_USER,
+      { ...SWITCH_INPUT, deviceId: DEV_UUID, deviceSecret: 'x'.repeat(64) },
+      META,
+      null,
+    );
+    const data = prisma.client.auditLog.create.mock.calls[0]?.[0]?.data;
+    expect(data).toMatchObject({
+      accountId: 'acc-1',
+      userId: 'emp-1',
+      entity: 'employee',
+      entityId: TARGET_ID,
+      action: 'pos-cashier-switch',
+    });
+    expect(data.context).toMatchObject({
+      from: 'emp-1',
+      to: TARGET_ID,
+      deviceId: 'dev-1',
+      ip: '10.0.0.5',
+    });
+  });
+
+  it('eski refresh-token bekor qilinadi (shu qurilma zanjiri); berilmasa chaqirilmaydi', async () => {
+    const { svc, tokens } = makeDeps({ employee: TARGET });
+    await svc.switchCashier(KIOSK_USER, SWITCH_INPUT, META, 'old-rt');
+    expect(tokens.revokeRefreshToken).toHaveBeenCalledWith('old-rt');
+
+    const second = makeDeps({ employee: TARGET });
+    await second.svc.switchCashier(KIOSK_USER, SWITCH_INPUT, META, null);
+    expect(second.tokens.revokeRefreshToken).not.toHaveBeenCalled();
+  });
+
+  it('muvaffaqiyatda target hisoblagichlari tozalanadi (login bilan bir xil)', async () => {
+    const { svc, prisma } = makeDeps({ employee: TARGET });
+    await svc.switchCashier(KIOSK_USER, SWITCH_INPUT, META, null);
+    const call = prisma.client.employee.update.mock.calls[0]?.[0];
+    expect(call?.where).toEqual({ id: TARGET_ID });
+    expect(call?.data).toMatchObject({ failedLoginAttempts: 0, lockedUntil: null });
+    expect(call?.data.lastLoginAt).toBeInstanceOf(Date);
   });
 });

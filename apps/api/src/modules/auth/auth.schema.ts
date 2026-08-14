@@ -172,6 +172,28 @@ export const PosLoginSchema = z.object({
 });
 export type PosLoginInput = z.infer<typeof PosLoginSchema>;
 
+/**
+ * F7 — kassirni almashtirish (`POST /auth/pos-pin/switch`, spec §8).
+ *
+ * `.strict()` ATAYLAB: Zod sukutda noma'lum kalitni JIM tashlaydi
+ * (`pos-terminal-debt-payment-broken` xotirasi — jim tashlash real bug
+ * keltirgan). Almashinuv — auth-amal; klient nimadir ortiqcha yuborsa bu
+ * shartnoma-buzilish va u baland ovozda 400 bo'lishi kerak.
+ *
+ * `deviceId`/`deviceSecret` pos-login bilan bir xil IXTIYORIY (2026-08-11
+ * egasi qarori — juftlashsiz o'rnatmalar bor): berilsa qurilma-juftlik
+ * tekshiriladi, berilmasa kiosk-belgisi sifatida token `uiMode` xizmat qiladi.
+ */
+export const PosSwitchSchema = z
+  .object({
+    employeeId: z.string().uuid(),
+    pin: z.string().regex(/^\d{4}$/, 'PIN 4 raqamdan iborat bo`lishi kerak'),
+    deviceId: z.string().uuid().optional(),
+    deviceSecret: z.string().min(32).optional(),
+  })
+  .strict();
+export type PosSwitchInput = z.infer<typeof PosSwitchSchema>;
+
 /** Qurilmani do'kon/kassa/tashkilotga bog'lash (JWT + hr `employees:full`). */
 export const PairPosDeviceSchema = z.object({
   name: z.string().min(1).max(200),

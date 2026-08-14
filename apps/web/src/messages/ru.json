@@ -119,6 +119,7 @@
     "action_roles_change": "Роли изменены",
     "action_owner_transfer": "Владелец аккаунта изменён",
     "action_password_reset": "Пароль сброшен",
+    "action_pos_cashier_switch": "Смена кассира (касса)",
     "action_archive": "Помещён в архив"
   },
   "bulk": {
