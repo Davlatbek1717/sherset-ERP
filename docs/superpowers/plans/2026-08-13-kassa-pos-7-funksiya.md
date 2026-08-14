@@ -1089,6 +1089,32 @@ normal). O'LCHANMADI — real brauzer/monoblokda tab ko'rinishi va sensorli ishl
 `payableMinor`/`agentId` javoblari. **Phase-1: strukturaviy, runtime-tasdiqlanmagan.**
 **Nima QILINMADI va nega:** `CustomerCardPanel`/`DebtPaymentDialog` qayta yozilmadi (reja taqig'i —
 qayta ishlatildi); «Mijoz kartasi» tugmasi kartani qidiruv qadamidan ochadi (panelda `initialAgent`
-prop'i yo'q — unga tegish taqiq edi). Yangi backend yo'q. Deploy yo'q.
-**Deploy:** YO'Q (operator buyrug'i kutilyapti — web deploy xohlasa).
+prop'i yo'q — unga tegish taqiq edi). *(2026-08-14 bartaraf-etish sessiyasida tuzatildi — quyida.)*
+Yangi backend yo'q. Deploy yo'q.
+**Deploy:** YO'Q (operator buyrug'i kutilyapti — web deploy xohlasa). *(2026-08-14 da deploy qilindi — quyida.)*
+**TO'XTADIM.**
+
+### 📝 Yakuniy bartaraf-etish + deploy hisoboti — 2026-08-14 · `673ea1c9`
+**Holat:** ✅ Phase-1 complete + PRODDA (qurilmada runtime-tasdiqlanmagan)
+**Nima qilindi (7 hisobotdagi ochiq kamchiliklar bo'yicha):**
+1. **F7 kamchiligi tuzatildi:** `CustomerCardPanel`ga `initialAgent` prop (DebtPaymentDialog
+   naqshi) — Mijozlar panelidan «Mijoz kartasi» endi TANLANGAN mijoz bilan, qidiruv qadamisiz
+   ochiladi; Smena tabidagi eski tugma `null` bilan avvalgidek qidiruvdan boshlaydi. TDD: 3 yangi
+   test (2 komponent + 1 sahifa-wiring), RED ko'rildi (2 failed) → GREEN 45/45.
+2. **F6 ops-skript o'lchandi:** `ops-f6-salesreturn-topup.ts` lokal `climart_adopt`da DRY (4 qator
+   topdi — skript yaroqli), so'ng **prod'da DRY → `--apply`**: «Kassir» roliga `salesreturn.view/
+   create = ALL` — 2 qator YARATILDI, qayta-DRY 0/2 «qator BOR» (idempotent tasdiqlandi).
+3. **Deploy (F2–F7 birinchi marta prodda):** push `sherset` remote (VPS origin, `8f83b2b6..673ea1c9`,
+   14 commit) + `origin`; DB backup `pre-7funksiya-20260814-0508.sql.gz` (779M) OLDIN olindi;
+   `deploy-smart.sh DS_TARGET=v2` → `Deploy done: 7ae1554c → 673ea1c9` (web build + api restart).
+**Gate:** typecheck 0 ✓ (turbo 10/10) · lint:product 0 ✓ · i18n:gate 19/19 ✓ · web test 271 fayl /
+3872 pass ✓ (api'ga tegilmagan — F6 api suite o'z fazasida yashil edi).
+**Jonli verifikatsiya:** api health 200 (`:4001` tinglayapti) · erp.sherset.uz 200 · box HEAD =
+lokal HEAD `673ea1c9` · sotuv chunk'ida 4 marker grep bilan bor (`sotuv-chek-search` F6,
+`pos-line-edit-floor-toggle` F3, `pos-customers-card` F7, `initialAgent` F7-tuzatish) ·
+rol-qatorlari script-chiqishida tasdiqlangan.
+**O'LCHANMAGAN (ochiq qoladi — qurilma/brauzer-QA):** monoblokda —/❐ xulqi va 1.6.0→1.7.0
+avto-o'tish (F1) · real brauzerda F2–F4 ko'rinish/shrift/«•••» sensor nishoni · qog'oz chekda
+«Sizning qarzingiz» qatori (F5) · jonli yopiq-smenali chekni qaytarish end-to-end (F6) ·
+real kassir PIN bilan Mijozlar tabi (F7). **Phase-1: strukturaviy, qurilmada runtime-tasdiqlanmagan.**
 **TO'XTADIM.**

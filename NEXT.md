@@ -331,7 +331,24 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
-> **🕒 2026-08-13c (KASSA POS — 7-funksiya REJASI tuzildi, bajarilmagan) —** egasining 7 talabi
+> **🕒 2026-08-14a (KASSA POS 7-FUNKSIYA — kamchiliklar bartaraf + ✅ DEPLOYED `673ea1c9`) —**
+> 7 faza hisobotlaridagi ochiq kamchiliklar yopildi va F2–F7 birinchi marta prodga chiqdi:
+> (1) F7 kamchiligi — `CustomerCardPanel`ga `initialAgent` prop (TDD, 3 yangi test RED→GREEN):
+> Mijozlar panelidan «Mijoz kartasi» endi tanlangan mijoz bilan ochiladi; (2) F6
+> `ops-f6-salesreturn-topup.ts` lokal DRY (yaroqli) → **prod'da `--apply`**: «Kassir» roliga
+> `salesreturn.view/create=ALL` 2 qator yaratildi, qayta-DRY idempotent tasdiqladi; (3) push
+> `sherset` remote'ga (VPS origin — F1'dagi push faqat `origin`ga ekan, 14 commit kutgan) +
+> backup `pre-7funksiya-20260814-0508.sql.gz` (779M) + `deploy-smart.sh DS_TARGET=v2` →
+> `Deploy done: 7ae1554c → 673ea1c9`. **O'lchandi:** api health 200 · sayt 200 · box HEAD=lokal ·
+> sotuv chunk'ida 4 yangi-kod marker (F3/F6/F7/F7-tuzatish) grep bilan bor · gate to'liq yashil
+> (web 271 fayl/3872). **⚠️ Qurilma-QA QOLDI (Phase-1):** monoblokda —/❐ va 1.7.0 avto-o'tish ·
+> F2–F4 ko'rinish/shrift/«•••» sensor · qog'oz chekda «Sizning qarzingiz» (F5) · jonli
+> yopiq-smenali qaytarish (F6) · real PIN bilan Mijozlar tabi (F7). Reja-hujjat pastida
+> «Yakuniy bartaraf-etish + deploy hisoboti» seksiyasi bor.
+>
+> ---
+>
+> **🕒 2026-08-13c (KASSA POS — 7-funksiya REJASI tuzildi, ✅ 2026-08-14a da bajarildi+deploy) —** egasining 7 talabi
 > (oyna tugmalari —/❐/✕ · shrift · narx-maxfiylik · modal-minimal yashirin · chekda qarz ·
 > istalgan chekka qaytarish · Mijozlar tabi) uchun faza-reja:
 > `docs/superpowers/plans/2026-08-13-kassa-pos-7-funksiya.md`. Har faza ALOHIDA sessiyada
