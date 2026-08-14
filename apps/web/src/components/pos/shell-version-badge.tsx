@@ -4,11 +4,15 @@ import { useTranslations } from 'next-intl';
 import { useEffect, useState } from 'react';
 
 /**
- * Qurilma holati — kirish ekranining burchagida.
+ * Qurilma holati — kirish ekranining burchagida yoki POS headerida.
  *
  * NEGA KERAK: qobiq versiyasini bilishning yagona yo'li Windows «Приложения и
  * возможности» edi, ya'ni telefon orqali (K06). «Chek chiqmayapti» shikoyatining
  * birinchi savoli esa har doim «qaysi versiya turibdi?» — javob endi ekranda.
+ *
+ * Variantlar (F9, spec §3.1): `floating` (default) — kassa-kirish ekranidagi
+ * fixed burchak-belgi; `header` — POS headeriga singdirilgan chip, oddiy
+ * oqimda (fixed EMAS — klaviatura-evristika va header-layout sharti).
  *
  * Brauzerda (qobiqsiz) hech narsa chizilmaydi — bu POS'ning oddiy web ko'rinishi.
  */
@@ -24,7 +28,7 @@ interface Bridge {
   shellStatus?: () => Promise<ShellStatus>;
 }
 
-export function ShellVersionBadge() {
+export function ShellVersionBadge({ variant = 'floating' }: { variant?: 'floating' | 'header' }) {
   // Repo konvensiyasi: POS matnlari `pages.pos` ostida (boshqa POS dialoglar kabi).
   const t = useTranslations('pages.pos');
   const [status, setStatus] = useState<ShellStatus | null>(null);
@@ -55,7 +59,12 @@ export function ShellVersionBadge() {
   return (
     <div
       data-test-id="shell-version-badge"
-      className="fixed right-3 bottom-3 flex items-center gap-2 rounded-md bg-slate-800/80 px-3 py-1.5 text-slate-300 text-xs"
+      className={
+        variant === 'header'
+          ? // Header ichida: ko'k fonda oq-shaffof chip, px-o'lchamlar (F2 qoidasi).
+            'flex items-center gap-2 whitespace-nowrap rounded-md bg-white/15 px-2.5 py-1 text-[13px] text-[var(--pos-on-brand)]'
+          : 'fixed right-3 bottom-3 flex items-center gap-2 rounded-md bg-slate-800/80 px-3 py-1.5 text-slate-300 text-xs'
+      }
     >
       {/* «v1.5.0» — texnik belgi, tarjima qilinmaydi (jsx-text skaneridan chetda). */}
       <span>{`v${status?.version ?? version}`}</span>

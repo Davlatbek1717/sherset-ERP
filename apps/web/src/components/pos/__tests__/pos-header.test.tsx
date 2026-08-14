@@ -13,9 +13,9 @@
  * assert flaky bo'lardi (reja 2.2 qadami shu qarorni yozadi).
  */
 
-import { renderWithProviders, screen, within } from '@/test-utils';
+import { renderWithProviders, screen, waitFor, within } from '@/test-utils';
 import type { CurrentSession } from '@moysklad/contracts';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import { PosHeader, type PosHeaderProps } from '../pos-header';
 
 function SESSION(over: Partial<CurrentSession> = {}): CurrentSession {
@@ -104,5 +104,33 @@ describe('PosHeader — qobiq shartnomalari', () => {
     const header = screen.getByTestId('pos-header');
     expect(header.className).not.toMatch(/(^|\s)fixed(\s|$)/);
     expect(header.style.position).not.toBe('fixed');
+  });
+});
+
+// F9 (2026-08-15) — spec §3.1: versiya-badge endi headerning O'ZIDA
+// (F2/F6 chala-ishi yopildi; sahifadagi suzuvchi nusxa olib tashlangan).
+describe('PosHeader — versiya-badge headerda (F9, spec §3.1)', () => {
+  afterEach(() => {
+    (window as unknown as { electronAPI?: unknown }).electronAPI = undefined;
+  });
+
+  it('qobiqda badge header ICHIDA chiziladi (fixed emas)', async () => {
+    (window as unknown as { electronAPI?: unknown }).electronAPI = {
+      isSherset: true,
+      version: '1.8.0',
+    };
+    renderHeader();
+    const header = screen.getByTestId('pos-header');
+    await waitFor(() =>
+      expect(within(header).getByTestId('shell-version-badge')).toBeInTheDocument(),
+    );
+    expect(within(header).getByTestId('shell-version-badge').className).not.toMatch(
+      /(^|\s)fixed(\s|$)/,
+    );
+  });
+
+  it('brauzerda (qobiqsiz) headerda badge yo`q — joy band qilinmaydi', () => {
+    renderHeader();
+    expect(screen.queryByTestId('shell-version-badge')).not.toBeInTheDocument();
   });
 });

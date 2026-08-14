@@ -64,3 +64,35 @@ describe('ShellVersionBadge — qurilma versiyasi ekranda (K06)', () => {
     await waitFor(() => expect(screen.getByText(/1\.4\.0/)).toBeInTheDocument());
   });
 });
+
+// F9 (POS redizayn, 2026-08-15) — spec §3.1: badge POS headeriga singdiriladi.
+// `variant='header'` oddiy oqimda turadi (fixed EMAS — klaviatura-evristika
+// va header-layout sharti); default `floating` kassa-kirish ekranida qoladi.
+describe('ShellVersionBadge — header varianti (F9, spec §3.1)', () => {
+  const renderVariant = (variant: 'floating' | 'header') =>
+    render(
+      <NextIntlClientProvider locale="uz" messages={messages}>
+        <ShellVersionBadge variant={variant} />
+      </NextIntlClientProvider>,
+    );
+
+  it('`variant="header"` fixed EMAS — header oqimida turadi', async () => {
+    setShell({ version: '1.8.0', updateReady: false, defaultPrinter: 'XP-80' });
+    renderVariant('header');
+    await waitFor(() => expect(screen.getByTestId('shell-version-badge')).toBeInTheDocument());
+    const el = screen.getByTestId('shell-version-badge');
+    expect(el.className).not.toMatch(/(^|\s)fixed(\s|$)/);
+  });
+
+  it('default (floating) avvalgidek fixed burchakda — kassa-kirish regressi yo`q', async () => {
+    setShell({ version: '1.8.0', updateReady: false, defaultPrinter: 'XP-80' });
+    renderBadge();
+    await waitFor(() => expect(screen.getByTestId('shell-version-badge')).toBeInTheDocument());
+    expect(screen.getByTestId('shell-version-badge').className).toMatch(/(^|\s)fixed(\s|$)/);
+  });
+
+  it('`variant="header"` brauzerda (qobiqsiz) baribir hech narsa chizmaydi', () => {
+    const { container } = renderVariant('header');
+    expect(container).toBeEmptyDOMElement();
+  });
+});

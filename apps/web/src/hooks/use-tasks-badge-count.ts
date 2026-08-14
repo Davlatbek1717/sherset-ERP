@@ -1,7 +1,7 @@
 'use client';
 
 import { api } from '@/lib/api-client';
-import { useAuth } from '@/lib/auth-store';
+import { isKioskUser, useAuth } from '@/lib/auth-store';
 import { useQuery } from '@tanstack/react-query';
 
 interface TasksBadgeResponse {
@@ -18,13 +18,17 @@ interface TasksBadgeResponse {
  * caller that aren't in a terminal status (done/cancelled) and aren't
  * archived. Moysklad parity: their navbar shows e.g. "7" in red when
  * the user has open tasks.
+ *
+ * Kiosk (F9): kassir rolida `/tasks` server tomonda taqiqlangan — polling
+ * har daqiqa 403 qaytarib faqat shovqin edi; kiosk foydalanuvchida so'rov
+ * o'chiq (navbar baribir chizilmaydi).
  */
 export function useTasksBadgeCount(): number {
   const auth = useAuth();
   const { data } = useQuery<TasksBadgeResponse>({
     queryKey: ['tasks', 'badge-count'],
     queryFn: () => api.get<TasksBadgeResponse>('/tasks/badge-count'),
-    enabled: !!auth.user,
+    enabled: !!auth.user && !isKioskUser(auth.user),
     refetchInterval: 60_000,
     staleTime: 30_000,
   });

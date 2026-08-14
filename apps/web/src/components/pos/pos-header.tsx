@@ -6,7 +6,8 @@
  * Chapda SHERSET matn-logotipi (public/ da tayyor asset YO'Q — tekshirildi,
  * matn-logotip qalin oq, keng kerning bilan), o'rtada smena-chip (eski
  * «session strip» ma'lumotlari: kassir · yosh · savdo jami; `stale` → sariq),
- * o'ngda soat · aloqa indikatori · `children` sloti (F6 oyna-tugmalari).
+ * o'ngda aloqa indikatori · soat · versiya-badge (F9, spec §3.1 — qobiqda) ·
+ * `children` sloti (F6 oyna-tugmalari).
  *
  * `position: fixed` ATAYLAB ishlatilmaydi — desktop klaviatura-evristikasi
  * (`keyboardRoot`) «fixed ichida button»ni klaviatura ildizi deb qidiradi;
@@ -20,6 +21,7 @@ import type { CurrentSession } from '@moysklad/contracts';
 import { formatMoney } from '@moysklad/ui';
 import { useTranslations } from 'next-intl';
 import { type ReactNode, useEffect, useState } from 'react';
+import { ShellVersionBadge } from './shell-version-badge';
 import { WindowControls } from './window-controls';
 
 export interface PosHeaderProps {
@@ -117,6 +119,9 @@ export function PosHeader({ session, shiftAge, connectionOk, children }: PosHead
         >
           {now}
         </span>
+
+        {/* F9 — versiya-badge headerga singdirildi (spec §3.1; qobiqsiz null). */}
+        <ShellVersionBadge variant="header" />
 
         {/* Sahifa sloti (CFD tugmasi va b.). */}
         {children}

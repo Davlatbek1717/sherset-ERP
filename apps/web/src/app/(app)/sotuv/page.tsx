@@ -25,7 +25,6 @@ import { DebtPaymentDialog } from '@/components/pos/debt-payment-dialog';
 import { PosHeader } from '@/components/pos/pos-header';
 import { type PosMode, PosSidebar } from '@/components/pos/pos-sidebar';
 import { RasmiyashtirishModal } from '@/components/pos/rasmilashtirish-modal';
-import { ShellVersionBadge } from '@/components/pos/shell-version-badge';
 import { useServerLink } from '@/components/pos/use-server-link';
 import { useDestructiveMutation } from '@/hooks/use-destructive-mutation';
 import { useFillViewport } from '@/hooks/use-fill-viewport';
@@ -1414,12 +1413,8 @@ function SalesScreen({
         </main>
       </div>
 
-      {/* K06 — qobiq versiya-belgisi (brauzerda hech narsa chizmaydi).
-          Spec §3.1 uni header'da ko'rsatishni aytadi — komponent hozircha
-          o'zini fixed burchakka chizadi; header-integratsiya F6 bilan birga
-          (hisobotda CHALA sifatida qayd etilgan). */}
-      <ShellVersionBadge />
-
+      {/* K06 versiya-belgisi endi PosHeader ichida (F9, spec §3.1) —
+          suzuvchi nusxa olib tashlandi, dublikat bo'lmasin. */}
       <CashOutDialog
         open={cashOutOpen}
         onOpenChange={setCashOutOpen}

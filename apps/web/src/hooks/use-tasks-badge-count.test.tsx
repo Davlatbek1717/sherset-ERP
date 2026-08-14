@@ -15,14 +15,17 @@ vi.mock('@/lib/api-client', () => ({
   api: { get: vi.fn() },
 }));
 
-vi.mock('@/lib/auth-store', () => ({
+// `useAuth` mock, `isKioskUser` esa HAQIQIY implementatsiya (F9): kiosk-gate
+// aynan shu yordamchiga tayanadi — mock-nusxa haqiqiy mantiqdan ajralib ketardi.
+vi.mock('@/lib/auth-store', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/auth-store')>()),
   useAuth: vi.fn(),
 }));
 
 const mockedGet = vi.mocked(api.get);
 const mockedUseAuth = vi.mocked(useAuth);
 
-function authState(user: { id: string } | null) {
+function authState(user: { id: string; uiMode?: 'full' | 'kiosk' } | null) {
   return {
     user,
     initialized: true,
@@ -39,6 +42,17 @@ describe('useTasksBadgeCount', () => {
     mockedUseAuth.mockReturnValue(authState(null));
     const { result } = renderHookWithProviders(() => useTasksBadgeCount());
     expect(result.current).toBe(0);
+    expect(mockedGet).not.toHaveBeenCalled();
+  });
+
+  it("kiosk-kassirda so'rov UMUMAN ketmaydi (F9: /tasks 403-shovqini yopildi)", async () => {
+    // Kiosk rolida `/tasks/badge-count` server tomonda taqiqlangan (403) —
+    // 60s polling faqat konsol-shovqin va bekor trafik edi (F8 hisoboti qayd
+    // etgan qarz). Kiosk foydalanuvchida query o'chiq turadi.
+    mockedUseAuth.mockReturnValue(authState({ id: 'u-1', uiMode: 'kiosk' }));
+    const { result } = renderHookWithProviders(() => useTasksBadgeCount());
+    expect(result.current).toBe(0);
+    await Promise.resolve();
     expect(mockedGet).not.toHaveBeenCalled();
   });
 
