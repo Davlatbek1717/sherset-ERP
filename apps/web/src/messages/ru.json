@@ -8067,6 +8067,8 @@
       "shift_close_btn": "Закрыть смену",
       "shift_close_section": "Закрытие смены",
       "shift_closed": "Смена закрыта",
+      "switch_cashier": "Сменить кассира",
+      "switch_close_first": "Чтобы сменить кассира, сначала закройте смену",
       "shift_age_days": "{d} дн. {h} ч.",
       "shift_age_hours": "{h} ч. {m} мин.",
       "shift_age_minutes": "{m} мин.",

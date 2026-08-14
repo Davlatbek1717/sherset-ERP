@@ -17,6 +17,7 @@ import {
 } from '@/app/(app)/sotuv/_components/zakazlar-mode';
 import { CartLineEditModal } from '@/components/pos/cart-line-edit-modal';
 import { CashOutDialog } from '@/components/pos/cash-out-dialog';
+import { CashierSelectScreen } from '@/components/pos/cashier-select-screen';
 import type { CustomerCardRow } from '@/components/pos/customer-card-panel';
 import { CustomerCardPanel } from '@/components/pos/customer-card-panel';
 import { CustomersPanel } from '@/components/pos/customers-panel';
@@ -31,6 +32,7 @@ import { useFillViewport } from '@/hooks/use-fill-viewport';
 import { usePermissions } from '@/hooks/use-permissions';
 import { api } from '@/lib/api-client';
 import { useAuth } from '@/lib/auth-store';
+import { isPosWorkstation } from '@/lib/pos-device';
 // B8 — savat matematikasi sof modulda (20 test). Ilgari bu qoidalar shu
 // faylda edi va ularni sinash uchun butun POS ekranini render qilish
 // kerak bo'lardi, shuning uchun ular umuman sinalmagan edi.
@@ -1544,6 +1546,16 @@ export default function SotuvPage() {
   const [closedSessionId, setClosedSessionId] = useState<string | null>(null);
   const printZReport = usePrintZReport();
 
+  // F8 — kassir almashtirish: faqat smena YOPIQ ekranda (ochiq sessiyada
+  // SmenaMode'dagi tugma nofaol, izoh «avval yoping»). Hook'lar erta
+  // `return`dan YUQORIDA (React #310). Ish-o'rni bayrog'i effektda —
+  // SSR/hydration xavfsiz (kassa-kirish naqshi).
+  const [showCashierSelect, setShowCashierSelect] = useState(false);
+  const [workstation, setWorkstation] = useState(false);
+  useEffect(() => {
+    setWorkstation(isPosWorkstation());
+  }, []);
+
   if (!user || isLoading) {
     return (
       <div className="flex h-64 items-center justify-center text-[var(--ms-text-muted)] text-sm">
@@ -1553,6 +1565,24 @@ export default function SotuvPage() {
   }
 
   if (!session) {
+    // F8 — kassir-tanlash ekrani ochilish formasini ALMASHTIRADI (overlay
+    // emas): kassir bir paytda bitta oqim ko'radi. Muvaffaqiyatda kesh
+    // komponent ichida invalidatsiyalangan — yangi kassirning `smena-mine`si
+    // qayta so'raladi; eski kassirning yopiq-smena Z-hisobot tugmasi
+    // tozalanadi (u endi boshqa shaxs hujjati).
+    if (showCashierSelect) {
+      return (
+        <div className="pos-theme flex min-h-[70vh] flex-col p-4">
+          <CashierSelectScreen
+            onSwitched={() => {
+              setShowCashierSelect(false);
+              setClosedSessionId(null);
+            }}
+            onCancel={() => setShowCashierSelect(false)}
+          />
+        </div>
+      );
+    }
     return (
       <div className="p-4">
         {/* Endi yopilgan smena — Z-hisobot qog'ozi hali chiqarilmagan
@@ -1570,6 +1600,19 @@ export default function SotuvPage() {
           </button>
         )}
         <OpenShiftForm />
+        {/* F8 (spec §8) — smena yopiq: shu qurilmada BOSHQA kassir o'z PIN'i
+            bilan ishga tushishi mumkin. SmenaMode'dagi nofaol tugma bilan
+            BIR XIL yorliq — kassir yopishdan keyin xuddi shu nomni qidiradi. */}
+        {workstation && (
+          <button
+            type="button"
+            data-test-id="pos-switch-cashier-open"
+            onClick={() => setShowCashierSelect(true)}
+            className="mx-auto mt-6 flex h-[56px] w-full max-w-sm items-center justify-center rounded-xl border border-[var(--ms-border)] font-semibold text-[16px] text-[var(--ms-text-primary)] hover:bg-[var(--ms-bg-hover)]"
+          >
+            {t('switch_cashier')}
+          </button>
+        )}
       </div>
     );
   }

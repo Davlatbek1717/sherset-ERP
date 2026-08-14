@@ -659,3 +659,37 @@ describe('Yakunlanmagan cheklar ro‘yxati (F5, spec §5.4)', () => {
     expect(screen.getByRole('button', { name: 'Smenani yopish' })).toBeEnabled();
   });
 });
+
+/**
+ * F8 (spec §8) — «Kassirni almashtirish» Smena ekranida. Almashinuv har doim
+ * TOZA nuqtada: sessiya OCHIQ ekan tugma faol emas («avval smenani yoping»
+ * izohi) — haqiqiy almashinuv smena yopilgandan keyingi ekranda (`Boshqa
+ * kassir`, open-shift-form testlarida). Bo'lim faqat kassa ish o'rnida
+ * (`isPosWorkstation`): oddiy admin-brauzerda chizilmaydi.
+ */
+describe('Kassirni almashtirish (F8) — smena OCHIQ holatda bloklangan', () => {
+  const DEVICE = { deviceId: 'dev-1', deviceSecret: 'sec-1', name: 'Kassa-1' };
+
+  it('kassa ish o‘rnida: tugma DISABLED + «avval smenani yoping» izohi', async () => {
+    localStorage.setItem('sherset.pos-device', JSON.stringify(DEVICE));
+    try {
+      const user = userEvent.setup();
+      renderWithProviders(<SotuvPage />);
+      await openShiftTab(user);
+
+      const btn = await screen.findByRole('button', { name: 'Kassirni almashtirish' });
+      expect(btn).toBeDisabled();
+      expect(screen.getByText(/avval smenani yoping/i)).toBeInTheDocument();
+    } finally {
+      localStorage.removeItem('sherset.pos-device');
+    }
+  });
+
+  it('oddiy brauzerda (ish o‘rni emas) bo‘lim umuman chizilmaydi', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<SotuvPage />);
+    await openShiftTab(user);
+
+    expect(screen.queryByRole('button', { name: 'Kassirni almashtirish' })).not.toBeInTheDocument();
+  });
+});

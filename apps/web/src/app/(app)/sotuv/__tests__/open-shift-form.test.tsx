@@ -163,3 +163,49 @@ describe('OpenShiftForm — smena ochish', () => {
     expect(api.post).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * F8 (spec §8) — smena YOPIQ ekranda «Boshqa kassir» yo'li: kassa ish o'rnida
+ * (`isPosWorkstation`) kassir-tanlash ekranini ochadi. Almashinuvning o'zi
+ * `cashier-select-screen.test.tsx` da qulflangan — bu yerda faqat sahifa
+ * wiring'i (trigger + bekor qaytishi).
+ */
+describe('Boshqa kassir (F8) — smena yopiq ekranda', () => {
+  const DEVICE = { deviceId: 'dev-1', deviceSecret: 'sec-1', name: 'Kassa-1' };
+
+  it('kassa ish o‘rnida tugma bor; bosilsa kassir-tanlash, «Bekor» qaytaradi', async () => {
+    localStorage.setItem('sherset.pos-device', JSON.stringify(DEVICE));
+    try {
+      vi.mocked(api.get).mockImplementation(
+        router(
+          routes({ smena: SMENA, withinShift: true }, [
+            {
+              match: /^\/auth\/pos-pin\/candidates$/,
+              value: { cashiers: [{ employeeId: 'e-9', name: 'Botir Kassir' }] },
+            },
+          ]),
+        ),
+      );
+      const user = userEvent.setup();
+      renderWithProviders(<SotuvPage />);
+
+      await user.click(await screen.findByRole('button', { name: 'Kassirni almashtirish' }));
+      expect(await screen.findByText('Botir Kassir')).toBeInTheDocument();
+      // Tanlash ekrani ochilganda ochilish formasi ALMASHTIRILADI (overlay emas).
+      expect(screen.queryByText('Smenani ochish')).not.toBeInTheDocument();
+
+      await user.click(screen.getByTestId('cashier-select-cancel'));
+      expect(await screen.findByText('Smenani ochish')).toBeInTheDocument();
+    } finally {
+      localStorage.removeItem('sherset.pos-device');
+    }
+  });
+
+  it('oddiy brauzerda (ish o‘rni emas) tugma chizilmaydi', async () => {
+    vi.mocked(api.get).mockImplementation(router(routes({ smena: SMENA, withinShift: true })));
+    renderWithProviders(<SotuvPage />);
+
+    expect(await screen.findByText('Smenani ochish')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Kassirni almashtirish' })).not.toBeInTheDocument();
+  });
+});

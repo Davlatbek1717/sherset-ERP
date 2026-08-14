@@ -8067,6 +8067,8 @@
       "shift_close_btn": "Smenani yopish",
       "shift_close_section": "Smena yopish",
       "shift_closed": "Smena yopildi",
+      "switch_cashier": "Kassirni almashtirish",
+      "switch_close_first": "Kassirni almashtirish uchun avval smenani yoping",
       "shift_age_days": "{d} kun {h} soat",
       "shift_age_hours": "{h} soat {m} daq.",
       "shift_age_minutes": "{m} daq.",

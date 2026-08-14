@@ -29,10 +29,11 @@ const COUNT_NUMPAD_USD = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0',
 /** Maydon uzunligi chegarasi — 13 xonali summa `bigint` da ham xavfsiz. */
 const COUNT_MAX_LEN = 12;
 
+import { isPosWorkstation } from '@/lib/pos-device';
 import type { CurrentSession } from '@moysklad/contracts';
 import { formatMoney } from '@moysklad/ui';
 import { useTranslations } from 'next-intl';
-import { type Dispatch, type SetStateAction, useState } from 'react';
+import { type Dispatch, type SetStateAction, useEffect, useState } from 'react';
 import type { UnresolvedSaleRow } from './pos-types';
 
 /**
@@ -138,6 +139,13 @@ export function SmenaMode({
   const [closeStage, setCloseStage] = useState<'counting' | 'review'>('counting');
   // Numpad qaysi maydonga yozadi (dollar maydoni bor smenada).
   const [countField, setCountField] = useState<'som' | 'usd'>('som');
+
+  // F8 — «Kassirni almashtirish» bo'limi faqat kassa ish o'rnida (SSR/hydration
+  // xavfsiz: effektda o'qiladi, kassa-kirish `readPosDevice` naqshi).
+  const [workstation, setWorkstation] = useState(false);
+  useEffect(() => {
+    setWorkstation(isPosWorkstation());
+  }, []);
 
   const setCount = countField === 'som' ? setClosingCash : setClosingCashUsd;
   const handleCountKey = (key: string) => {
@@ -399,6 +407,27 @@ export function SmenaMode({
               </div>
             ))}
           </div>
+        </div>
+      )}
+
+      {/* F8 (spec §8) — «Kassirni almashtirish». SmenaMode FAQAT ochiq sessiyada
+          chiziladi, almashinuv esa har doim TOZA nuqtada (server 409) — shuning
+          uchun bu tugma DOIM nofaol, izoh yo'lni ko'rsatadi: smena yopilgach
+          sahifaning yopiq-ekranida xuddi shu nomli FAOL tugma chiqadi. Bo'lim
+          faqat kassa ish o'rnida — admin brauzerida ma'nosi yo'q. */}
+      {workstation && (
+        <div
+          data-test-id="smena-switch-cashier"
+          className="rounded-xl border border-[var(--ms-border)] bg-[var(--ms-bg-surface)] p-4"
+        >
+          <button
+            type="button"
+            disabled
+            className="h-[var(--pos-touch-min)] w-full rounded-xl border border-[var(--ms-border)] font-semibold text-[16px] text-[var(--ms-text-muted)] opacity-60"
+          >
+            {t('switch_cashier')}
+          </button>
+          <p className="mt-2 text-[14px] text-[var(--ms-text-muted)]">{t('switch_close_first')}</p>
         </div>
       )}
 
