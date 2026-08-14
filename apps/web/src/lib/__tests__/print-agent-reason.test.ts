@@ -201,7 +201,10 @@ describe('printReceiptViaAgent — uzilish sababi', () => {
     expect(r.reason).toBeUndefined();
     expect(printSheet).toHaveBeenCalledTimes(1);
     // 🔴 Bo'sh nom — «Windows sukut printeri» shartnomasi (desktop v1.4.0+).
-    expect(printSheet).toHaveBeenCalledWith('', expect.stringContaining('CHEK-1'));
+    // Uchinchi argument — 72mm bosiladigan-en (receipt-print-width.test.ts qulfi).
+    expect(printSheet).toHaveBeenCalledWith('', expect.stringContaining('CHEK-1'), {
+      width: 72000,
+    });
   });
 
   it('B3 — eski qobiqda ham AYNI yo`l (versiya darvozasi yo`q)', async () => {

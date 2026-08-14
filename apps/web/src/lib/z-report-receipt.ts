@@ -413,7 +413,7 @@ export function renderZReceiptHtml(view: ZReceiptView): string {
   return `<!doctype html><html><head><meta charset="utf-8"><style>
 @page{margin:0}
 *{box-sizing:border-box}
-body{width:72mm;margin:0 auto;padding:2mm 1mm;font-family:'Segoe UI',Arial,sans-serif;font-size:12px;color:#000}
+body{width:72mm;margin:0;padding:2mm 1mm;font-family:'Segoe UI',Arial,sans-serif;font-size:12px;color:#000}
 .h{text-align:center}
 .org{font-weight:700;font-size:15px}
 .ti{font-weight:700;font-size:14px}

@@ -46,7 +46,9 @@ interface ElectronBridge {
     html: string,
     // v1.0.3+: label kabi qat'iy qog'oz o'lchami (mikron). Eski exe'lar
     // qo'shimcha argumentni bilmaydi — jim e'tiborsiz qoldiradi (80mm legacy).
-    pageSizeMicrons?: { width: number; height: number },
+    // `height` ixtiyoriy: berilmasa exe (v1.4.0 `resolvePageSize` dan tasdiqlangan)
+    // balandlikni chek MAZMUNIDAN o'zi o'lchaydi — chek uzunligi oldindan noma'lum.
+    pageSizeMicrons?: { width: number; height?: number },
   ) => Promise<{ ok: boolean; error?: string }>;
   // v1.0.4+: kassir savati → mijoz-ekran (orqadagi 2-monitor). Savat har
   // o'zgarganda chaqiriladi; eski exe'lar bu funksiyani bilmaydi (optional).
@@ -85,6 +87,18 @@ function electron(): ElectronBridge | null {
   const el = window.electronAPI;
   return el?.isSherset ? el : null;
 }
+
+/**
+ * Termal chek sahifasining ENI (mikron) — printSheet'ga OSHKORA beriladi.
+ *
+ * 80mm termal printerning BOSILADIGAAN eni ~72mm (576 nuqta @203dpi): drayver
+ * 72mm'dan tashqarini KESADI, masshtablamaydi. Exe sukuti esa 80mm
+ * (main.js `DEFAULT_WIDTH_MICRONS`) — o'sha sukutga tayanilganda 72mm'lik
+ * markazlangan body ~4mm o'ngga surilib, «Summa» ustuni qog'ozdan chiqib
+ * ketdi (2026-08-14, egasining fotosi). Balandlik ATAYLAB berilmaydi — exe
+ * uni mazmundan o'lchaydi. Qulf: receipt-print-width.test.ts.
+ */
+export const THERMAL_PAGE_MICRONS = { width: 72000 } as const;
 
 function escapeHtml(s: string): string {
   return s
@@ -319,7 +333,7 @@ export function buildSheetHtml(sheet: AgentPickingSheet, res: AgentPickingSheets
   return `<!doctype html><html><head><meta charset="utf-8"><style>
 @page{margin:0}
 *{box-sizing:border-box}
-body{width:72mm;margin:0 auto;padding:2mm 1mm;font-family:Arial,Helvetica,sans-serif;font-size:11px;font-weight:600;color:#000}
+body{width:72mm;margin:0;padding:2mm 1mm;font-family:Arial,Helvetica,sans-serif;font-size:11px;font-weight:600;color:#000}
 .agent{font-weight:700;font-size:14px}
 .title{text-align:center;font-weight:700;font-size:16px;margin-top:2px}
 .from{text-align:center;font-size:11px}
@@ -407,7 +421,7 @@ export async function printPickingViaAgent(saleId: string): Promise<PickingPrint
       // Electron shell → native driver print (HTML, Cyrillic-safe).
       // Plain browser → HTTP print-agent (raw ESC/POS).
       const r = el
-        ? await el.printSheet(printer, buildSheetHtml(sheet, sheetsRes))
+        ? await el.printSheet(printer, buildSheetHtml(sheet, sheetsRes), THERMAL_PAGE_MICRONS)
         : await agentPrint(printer, { text: buildSheetText(sheet, sheetsRes) });
       return r.ok ? ('printed' as const) : ('error' as const);
     }),
@@ -574,7 +588,7 @@ export function buildReceiptHtml(sale: ReceiptSale): string {
   return `<!doctype html><html><head><meta charset="utf-8"><style>
 @page{margin:0}
 *{box-sizing:border-box}
-body{width:72mm;margin:0 auto;padding:2mm 1mm;font-family:'Times New Roman',Times,serif;font-size:11px;line-height:1.3;color:#000}
+body{width:72mm;margin:0;padding:2mm 1mm;font-family:'Times New Roman',Times,serif;font-size:11px;line-height:1.3;color:#000}
 .h{text-align:center}
 .org{font-weight:700;font-size:16px}
 .ttl{font-weight:700;font-size:15px;margin-top:2px}
@@ -658,7 +672,7 @@ export async function printReceiptViaAgent(saleId: string): Promise<ReceiptPrint
   // sozlaydigan sahifa umuman yo'q edi.
   const el = electron();
   const r = el
-    ? await el.printSheet('', buildReceiptHtml(sale))
+    ? await el.printSheet('', buildReceiptHtml(sale), THERMAL_PAGE_MICRONS)
     : await agentPrint('', { text: buildReceiptText(sale) });
   return { handled: true, ok: r.ok, error: r.error };
 }
@@ -714,7 +728,7 @@ export async function printZReportViaAgent(
   const view = buildZReceipt(z, { labels, returnsCount });
   const el = electron();
   const r = el
-    ? await el.printSheet('', renderZReceiptHtml(view))
+    ? await el.printSheet('', renderZReceiptHtml(view), THERMAL_PAGE_MICRONS)
     : await agentPrint('', { text: renderZReceiptText(view) });
   return { handled: true, ok: r.ok, error: r.error };
 }
