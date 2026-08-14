@@ -448,80 +448,99 @@ export function CheklarMode({
   const t = useTranslations('pages.sotuv');
   const chekQuery = chekSearch.trim();
 
-  if (selectedChekId) {
-    return <ChekDetailPanel saleId={selectedChekId} onBack={() => setSelectedChekId(null)} />;
-  }
-
+  // F4 (spec §5.3) — to'liq-ekran: chapda ro'yxat (64px qatorlar), o'ngda
+  // detal-panel. Detal ilgari ro'yxat O'RNIGA chizilardi; endi yonma-yon —
+  // funksional 1:1 (qidiruv, qaytarish, qayta chop o'sha panel/holatlar).
+  // ⚠️ Qator chek RAQAMINI ko'rsatmaydi (ilgari ham shunday): mavjud
+  // testlar «CHEK-xxxxx» faqat detalda ko'rinishiga qulflangan.
   return (
-    <div className="flex flex-1 flex-col overflow-y-auto">
-      {/* F6.C — istalgan chekni topish (barcha smenalar bo'ylab). */}
-      <div className="shrink-0 border-b border-[var(--ms-border)] p-2">
-        <input
-          type="text"
-          data-test-id="sotuv-chek-search"
-          value={chekSearch}
-          onChange={(e) => setChekSearch(e.target.value)}
-          placeholder={t('chek_search_placeholder')}
-          className="h-9 w-full rounded-lg border border-[var(--ms-border)] bg-[var(--ms-bg-app)] px-3 text-sm outline-none focus:border-[var(--ms-primary-500)]"
-        />
+    <div className="flex min-h-0 flex-1 overflow-hidden">
+      {/* ── Chap: qidiruv + ro'yxat ── */}
+      <div className="flex w-[400px] shrink-0 flex-col overflow-hidden border-[var(--ms-border)] border-r">
+        {/* F6.C — istalgan chekni topish (barcha smenalar bo'ylab). */}
+        <div className="shrink-0 border-b border-[var(--ms-border)] p-2">
+          <input
+            type="text"
+            data-test-id="sotuv-chek-search"
+            value={chekSearch}
+            onChange={(e) => setChekSearch(e.target.value)}
+            placeholder={t('chek_search_placeholder')}
+            className="h-[48px] w-full rounded-lg border border-[var(--ms-border)] bg-[var(--ms-bg-app)] px-3 text-[16px] outline-none focus:border-[var(--ms-primary-500)]"
+          />
+        </div>
+        {!cheklar || cheklar.items.length === 0 ? (
+          <div className="flex flex-1 flex-col items-center justify-center gap-1 text-[var(--ms-text-muted)]">
+            <Receipt className="h-8 w-8 opacity-40" />
+            <span className="text-[16px]">
+              {chekQuery ? t('chek_search_empty') : t('receipts_empty')}
+            </span>
+          </div>
+        ) : (
+          <div className="flex flex-1 flex-col divide-y divide-[var(--ms-border)] overflow-y-auto">
+            {cheklar.items.map((sale, i) => (
+              <button
+                type="button"
+                key={sale.id}
+                onClick={() => setSelectedChekId(sale.id)}
+                data-selected={selectedChekId === sale.id || undefined}
+                className="flex min-h-[var(--pos-row-h)] w-full shrink-0 items-center gap-3 px-4 text-left hover:bg-[var(--ms-bg-hover)] active:bg-[var(--ms-bg-hover)] data-[selected]:bg-[var(--pos-brand)]/10"
+              >
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[var(--ms-bg-app)] text-[14px] font-medium text-[var(--ms-text-muted)]">
+                  {cheklar.items.length - i}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[18px] font-semibold tabular-nums text-[var(--ms-text-primary)]">
+                      {formatMoney(BigInt(sale.sumMinor))}
+                    </span>
+                    <span className="shrink-0 text-[14px] text-[var(--ms-text-muted)]">
+                      {new Date(sale.moment).toLocaleTimeString('uz-UZ', {
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })}
+                    </span>
+                  </div>
+                  <div className="mt-0.5 flex items-center gap-2 text-[14px] text-[var(--ms-text-muted)]">
+                    {/* Server include'i buni kafolatlaydi (qo'riqchi:
+                        api → retail-sale-list-contract.test.ts), lekin
+                        kassir ismi — kosmetik maydon: u yetib kelmasa
+                        butun POS ekrani oq bo'lib qolmasin. */}
+                    <span className="truncate">{sale.session.cashier?.name ?? ''}</span>
+                    {sale.agent && (
+                      <>
+                        <span>·</span>
+                        <User className="h-3.5 w-3.5 shrink-0" />
+                        <span className="truncate">{sale.agent.name}</span>
+                      </>
+                    )}
+                    {sale._count && (
+                      <>
+                        <span>·</span>
+                        <span className="shrink-0">
+                          {t('items_count', { n: sale._count.positions })}
+                        </span>
+                      </>
+                    )}
+                  </div>
+                </div>
+                <span className="shrink-0 text-[14px] text-[var(--ms-text-muted)]">›</span>
+              </button>
+            ))}
+          </div>
+        )}
       </div>
-      {!cheklar || cheklar.items.length === 0 ? (
-        <div className="flex flex-1 flex-col items-center justify-center gap-1 text-[var(--ms-text-muted)]">
-          <Receipt className="h-8 w-8 opacity-40" />
-          <span className="text-sm">
-            {chekQuery ? t('chek_search_empty') : t('receipts_empty')}
-          </span>
-        </div>
-      ) : (
-        <div className="flex flex-col divide-y divide-[var(--ms-border)]">
-          {cheklar.items.map((sale, i) => (
-            <button
-              type="button"
-              key={sale.id}
-              onClick={() => setSelectedChekId(sale.id)}
-              className="flex w-full items-start gap-3 px-4 py-3 text-left hover:bg-[var(--ms-bg-hover)] active:bg-[var(--ms-bg-hover)]"
-            >
-              <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[var(--ms-bg-app)] text-xs font-medium text-[var(--ms-text-muted)]">
-                {cheklar.items.length - i}
-              </div>
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-sm font-semibold text-[var(--ms-text-primary)]">
-                    {formatMoney(BigInt(sale.sumMinor))}
-                  </span>
-                  <span className="shrink-0 text-xs text-[var(--ms-text-muted)]">
-                    {new Date(sale.moment).toLocaleTimeString('uz-UZ', {
-                      hour: '2-digit',
-                      minute: '2-digit',
-                    })}
-                  </span>
-                </div>
-                <div className="mt-0.5 flex items-center gap-2 text-xs text-[var(--ms-text-muted)]">
-                  {/* Server include'i buni kafolatlaydi (qo'riqchi:
-                      api → retail-sale-list-contract.test.ts), lekin
-                      kassir ismi — kosmetik maydon: u yetib kelmasa
-                      butun POS ekrani oq bo'lib qolmasin. */}
-                  <span>{sale.session.cashier?.name ?? ''}</span>
-                  {sale.agent && (
-                    <>
-                      <span>·</span>
-                      <User className="h-3 w-3" />
-                      <span>{sale.agent.name}</span>
-                    </>
-                  )}
-                  {sale._count && (
-                    <>
-                      <span>·</span>
-                      <span>{t('items_count', { n: sale._count.positions })}</span>
-                    </>
-                  )}
-                </div>
-              </div>
-              <span className="shrink-0 text-xs text-[var(--ms-text-muted)]">›</span>
-            </button>
-          ))}
-        </div>
-      )}
+
+      {/* ── O'ng: detal-panel yoki tanlov-taklif ── */}
+      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+        {selectedChekId ? (
+          <ChekDetailPanel saleId={selectedChekId} onBack={() => setSelectedChekId(null)} />
+        ) : (
+          <div className="flex flex-1 flex-col items-center justify-center gap-2 text-[var(--ms-text-muted)]">
+            <Receipt className="h-12 w-12 opacity-30" />
+            <span className="text-[18px]">{t('chek_detail_placeholder')}</span>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

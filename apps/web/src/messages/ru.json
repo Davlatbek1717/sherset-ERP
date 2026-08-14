@@ -7906,6 +7906,7 @@
       "cancel_sale_confirm": "Отменить чек «{name}» на {sum}?",
       "cancel_sale_confirm_label": "Отменить чек",
       "cancel_sale_success": "Чек отменён",
+      "chek_detail_placeholder": "Выберите чек из списка",
       "mark_ready": "Подтвердить",
       "mark_ready_confirm": "«{name}» собран?",
       "mark_ready_success": "Чек готов — принимайте оплату",

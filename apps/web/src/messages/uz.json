@@ -7906,6 +7906,7 @@
       "cancel_sale_confirm": "«{name}» chekini ({sum}) bekor qilasizmi?",
       "cancel_sale_confirm_label": "Chekni bekor qilish",
       "cancel_sale_success": "Chek bekor qilindi",
+      "chek_detail_placeholder": "Ro'yxatdan chekni tanlang",
       "mark_ready": "Tasdiqlash",
       "mark_ready_confirm": "«{name}» yig'ib bo'lindimi?",
       "mark_ready_hint": "Chek «Tayyor» ga o'tadi va to'lovni qabul qilish mumkin bo'ladi.",
