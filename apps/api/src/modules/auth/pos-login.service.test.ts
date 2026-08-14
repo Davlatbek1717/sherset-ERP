@@ -1,4 +1,4 @@
-import { UnauthorizedException } from '@nestjs/common';
+import { ForbiddenException, UnauthorizedException } from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
 import { PosLoginService } from './pos-login.service.js';
 
@@ -38,6 +38,7 @@ function makeDeps(over: { employee?: unknown; device?: unknown; pin?: unknown } 
   const pins = {
     findByPin: vi.fn().mockResolvedValue({ employeeId: 'emp-1' }),
     findByPinAnyAccount: vi.fn().mockResolvedValue({ employeeId: 'emp-1' }),
+    verifyPin: vi.fn().mockResolvedValue({ ok: true, remaining: null }),
     ...((over.pin as object) ?? {}),
   };
   const prisma = {
@@ -46,18 +47,25 @@ function makeDeps(over: { employee?: unknown; device?: unknown; pin?: unknown } 
         findFirst: vi
           .fn()
           .mockResolvedValue(over.employee === undefined ? EMPLOYEE : over.employee),
+        // F7 kassir-tanlash ro'yxati shu so'rovdan chiziladi.
+        findMany: vi.fn().mockResolvedValue([{ id: 'emp-2', name: 'Boshqa Kassir' }]),
         update: vi.fn().mockResolvedValue(EMPLOYEE),
       },
       // Qurilmasiz kirishda hisob sukutlari shu yerdan olinadi.
       store: { findFirst: vi.fn().mockResolvedValue({ id: 'store-default' }) },
       cashDesk: { findFirst: vi.fn().mockResolvedValue({ id: 'desk-default' }) },
       organization: { findFirst: vi.fn().mockResolvedValue({ id: 'org-default' }) },
+      // F7 switch: joriy kassirning ochiq sessiyasi tekshiriladi.
+      cashierSession: { findFirst: vi.fn().mockResolvedValue(null) },
+      // F7 switch: almashinuv audit-jurnalga yoziladi.
+      auditLog: { create: vi.fn().mockResolvedValue({ id: 'audit-1' }) },
     },
   };
   const tokens = {
     signAccessToken: vi.fn().mockReturnValue('access-jwt'),
     createRefreshToken: vi.fn().mockResolvedValue('refresh-raw'),
     signMediaToken: vi.fn().mockReturnValue('media-jwt'),
+    revokeRefreshToken: vi.fn().mockResolvedValue(undefined),
   };
   const svc = new PosLoginService(
     prisma as never,
@@ -203,5 +211,77 @@ describe('PosLoginService.login — qurilma kalitisiz', () => {
     expect(devices.verify).toHaveBeenCalled();
     expect(pins.findByPin).toHaveBeenCalledWith('acc-1', '1234');
     expect(out.device.storeId).toBe('store-1');
+  });
+});
+
+/**
+ * F7 — KASSIR-TANLASH RO'YXATI (`GET /auth/pos-pin/candidates`).
+ *
+ * Mezon `openSessionFromSmena` bilan BITTA manba: smena-a'zolik
+ * (`smenaEmployee`, faol smena). Do'kon/tashkilot bo'yicha ALOHIDA filtr
+ * ATAYLAB yo'q — `openSessionFromSmena` ham smena tanlashda do'konni
+ * tekshirmaydi (ombor kassirning sukutidan keladi); ikkinchi mezon kiritish
+ * ikki manbaning jimgina ajralishiga olib kelardi.
+ */
+describe('PosLoginService.candidates (F7)', () => {
+  const KIOSK_USER = {
+    sub: 'emp-1',
+    accountId: 'acc-1',
+    email: 'kassir@demo.local',
+    name: 'Kassir',
+    username: null,
+    hrRoles: [],
+    isChecker: false,
+    uiMode: 'kiosk' as const,
+    hrPermissions: [],
+  };
+
+  it('smena a`zosi + PIN`li xodimlar qaytadi ({ cashiers: [{ employeeId, name }] })', async () => {
+    const { svc } = makeDeps();
+    const out = await svc.candidates(KIOSK_USER);
+    expect(out).toEqual({ cashiers: [{ employeeId: 'emp-2', name: 'Boshqa Kassir' }] });
+  });
+
+  it('mezon: faqat PIN`li, arxivlanmagan, FAOL smenaga biriktirilganlar — o`z akkauntidan', async () => {
+    const { svc, prisma } = makeDeps();
+    await svc.candidates(KIOSK_USER);
+    const where = prisma.client.employee.findMany.mock.calls[0]?.[0]?.where;
+    // PIN'siz xodim QAYTMAYDI.
+    expect(where.posPinHash).toEqual({ not: null });
+    expect(where.archived).toBe(false);
+    // Tenant chegarasi: boshqa akkaunt (do'kon) xodimi QAYTMAYDI — a'zolik
+    // sharti ham smena orqali AYNAN shu akkauntga bog'langan.
+    expect(where.accountId).toBe('acc-1');
+    expect(where.smenaAssignments).toEqual({
+      some: { smena: { accountId: 'acc-1', archived: false } },
+    });
+  });
+
+  it('PIN yoki boshqa sir QAYTARILMAYDI — faqat id + name tanlanadi', async () => {
+    const { svc, prisma } = makeDeps();
+    const out = await svc.candidates(KIOSK_USER);
+    expect(prisma.client.employee.findMany.mock.calls[0]?.[0]?.select).toEqual({
+      id: true,
+      name: true,
+    });
+    for (const c of out.cashiers) {
+      expect(Object.keys(c).sort()).toEqual(['employeeId', 'name']);
+    }
+  });
+
+  it('kiosk bo`lmagan so`rovda 403 (uiMode full)', async () => {
+    const { svc, prisma } = makeDeps();
+    await expect(svc.candidates({ ...KIOSK_USER, uiMode: 'full' as const })).rejects.toBeInstanceOf(
+      ForbiddenException,
+    );
+    // Rad etilganda ro'yxat umuman so'ralmaydi.
+    expect(prisma.client.employee.findMany).not.toHaveBeenCalled();
+  });
+
+  it('uiMode YO`Q (eski token) ham 403 — kiosk opt-in, sukut ochiq emas', async () => {
+    const { svc } = makeDeps();
+    await expect(svc.candidates({ ...KIOSK_USER, uiMode: undefined })).rejects.toBeInstanceOf(
+      ForbiddenException,
+    );
   });
 });

@@ -247,6 +247,20 @@ export class AuthController {
   }
 
   /**
+   * F7 — kassir-tanlash ro'yxati (ko'p-kassir, spec §8).
+   *
+   * Shu akkauntning faol smenalariga biriktirilgan, PIN o'rnatgan xodimlar —
+   * sir QAYTARILMAYDI. Kiosk sharti (`uiMode==='kiosk'`) servisda: bu GET
+   * qurilma kalitini xavfsiz olib yura olmaydi (query-string logga tushadi),
+   * shuning uchun kiosk-belgisi sifatida token da'vosi ishlatiladi.
+   */
+  @Get('pos-pin/candidates')
+  @UseGuards(JwtAuthGuard)
+  posPinCandidates(@CurrentUser() user: AuthenticatedUser) {
+    return this.posLogin.candidates(user);
+  }
+
+  /**
    * Qulfni ochish. Ketma-ket 5 xato → 401 `lockout: true` (FE to'liq chiqaradi).
    * Bu QAYTA LOGIN emas: to'g'ri PIN'da savat saqlanib qoladi.
    */

@@ -1,4 +1,4 @@
-import { Inject, Injectable, UnauthorizedException } from '@nestjs/common';
+import { ForbiddenException, Inject, Injectable, UnauthorizedException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import type { AuthenticatedUser, LoginResponse, PosLoginInput } from './auth.schema.js';
 import { assertEmployeeMayLogin } from './employee-login-guards.js';
@@ -142,6 +142,45 @@ export class PosLoginService {
         organizationId: device?.organizationId ?? fallback?.organizationId ?? null,
       },
     };
+  }
+
+  /**
+   * F7 — kassir-tanlash ro'yxati (`GET /auth/pos-pin/candidates`).
+   *
+   * Mezon `openSessionFromSmena` (smena.service.ts) bilan BITTA manba:
+   * faol (arxivlanmagan) smenaga biriktirilgan (`smenaEmployee`), PIN
+   * o'rnatgan, arxivlanmagan xodimlar — so'rovchining o'z akkauntidan.
+   * Do'kon/tashkilot bo'yicha QO'SHIMCHA filtr ataylab yo'q:
+   * `openSessionFromSmena` ham smena ochishda do'konni a'zolikdan tashqari
+   * tekshirmaydi (ombor kassir sukutidan keladi) — ikkinchi mezon shu yerda
+   * paydo bo'lsa, ikki ro'yxat jimgina ajralib ketardi.
+   *
+   * PIN yoki boshqa sir QAYTARILMAYDI — faqat `employeeId` + `name`.
+   *
+   * Kiosk sharti: faqat `uiMode === 'kiosk'` token (mavjud kiosk-aniqlash —
+   * `KioskGuard` bilan bir mezon). GET so'rovda qurilma kalitini xavfsiz
+   * uzatib bo'lmaydi (query-string logga tushadi), shuning uchun bu yerda
+   * qurilma-muqobili yo'q; to'liq-rejim foydalanuvchi oddiy login ishlatadi.
+   */
+  async candidates(
+    user: AuthenticatedUser,
+  ): Promise<{ cashiers: Array<{ employeeId: string; name: string }> }> {
+    if (user.uiMode !== 'kiosk') {
+      throw new ForbiddenException('Kassir almashtirish faqat kassa rejimida');
+    }
+    const rows = await this.prisma.client.employee.findMany({
+      where: {
+        accountId: user.accountId,
+        archived: false,
+        posPinHash: { not: null },
+        smenaAssignments: {
+          some: { smena: { accountId: user.accountId, archived: false } },
+        },
+      },
+      select: { id: true, name: true },
+      orderBy: { name: 'asc' },
+    });
+    return { cashiers: rows.map((r) => ({ employeeId: r.id, name: r.name })) };
   }
 
   /**
