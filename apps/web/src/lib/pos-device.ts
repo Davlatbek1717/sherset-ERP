@@ -46,6 +46,21 @@ export function isShersetShell(): boolean {
   return shell() !== null;
 }
 
+/**
+ * Bu sahifa kassa ISH O'RNImi? (F8 — kassir-tanlash ekrani mezoni.)
+ *
+ * `pos-pin-lock` lockout-yo'nalishi bilan BITTA mezon: yo `.exe` qobig'i
+ * (`isShersetShell`), yo juftlangan qurilma kaliti (`readPosDevice`). Oddiy
+ * brauzerda (admin ish stoli) kassir-almashtirish ekrani chizilmaydi —
+ * u yerda to'liq login bor.
+ *
+ * ⚠️ QULAYLIK, xavfsizlik emas — haqiqiy to'siq serverda
+ * (`POST /auth/pos-pin/switch` kiosk-juftlikni o'zi tekshiradi).
+ */
+export function isPosWorkstation(): boolean {
+  return isShersetShell() || readPosDevice() !== null;
+}
+
 function isComplete(v: unknown): v is PosDeviceCreds {
   const o = v as Partial<PosDeviceCreds> | null;
   return (

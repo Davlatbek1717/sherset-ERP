@@ -51,6 +51,8 @@ const POS_FILES = [
   join(SRC, 'components', 'pos', 'pos-header.tsx'),
   // F6 (POS redizayn) — headerga singdirilgan oyna-tugmalari.
   join(SRC, 'components', 'pos', 'window-controls.tsx'),
+  // F8 (POS redizayn) — kassir-tanlash ekrani (ko'p-kassir).
+  join(SRC, 'components', 'pos', 'cashier-select-screen.tsx'),
 ];
 
 const rel = (f: string) => f.replace(SRC, 'src').replace(/\\/g, '/');

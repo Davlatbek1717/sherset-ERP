@@ -109,6 +109,21 @@ function getSnapshot(): State {
 
 const BASE = '/api/v1';
 
+/**
+ * Muvaffaqiyatli auth-javobni (login / pos-login / pos-pin-switch / refresh —
+ * server to'rttasida ham BIR XIL shakl qaytaradi) do'kon holatiga qabul qilish.
+ *
+ * F8 (kassir almashtirish): `POST /auth/pos-pin/switch` so'rovi `api-client`
+ * orqali ketadi (Authorization header + xato-body kerak), javobi esa SHU
+ * funksiya bilan qabul qilinadi — login yo'li bilan bitta nuqta, nusxa yo'q.
+ */
+export function acceptAuthResponse(data: { accessToken: string; user: User }): User {
+  state = { accessToken: data.accessToken, user: data.user, initialized: true };
+  writeAuthHint(true);
+  emit();
+  return data.user;
+}
+
 export async function login(identifier: string, password: string): Promise<User> {
   const isEmail = identifier.includes('@');
   const res = await fetch(`${BASE}/auth/login`, {
@@ -124,11 +139,8 @@ export async function login(identifier: string, password: string): Promise<User>
     throw new Error(body.message ?? `HTTP ${res.status}`);
   }
   const data = (await res.json()) as { accessToken: string; user: User };
-  state = { accessToken: data.accessToken, user: data.user, initialized: true };
-  writeAuthHint(true);
-  emit();
   // Chaqiruvchi kiosk yo'naltirishini shundan hal qiladi (login sahifasi).
-  return data.user;
+  return acceptAuthResponse(data);
 }
 
 /**
@@ -172,10 +184,7 @@ export async function posLogin(
     throw new Error(body.message ?? `HTTP ${res.status}`);
   }
   const data = (await res.json()) as { accessToken: string; user: User };
-  state = { accessToken: data.accessToken, user: data.user, initialized: true };
-  writeAuthHint(true);
-  emit();
-  return data.user;
+  return acceptAuthResponse(data);
 }
 
 export async function logout(): Promise<void> {
@@ -234,9 +243,7 @@ export function refresh(): Promise<boolean> {
         return false;
       }
       const data = (await res.json()) as { accessToken: string; user: User };
-      state = { accessToken: data.accessToken, user: data.user, initialized: true };
-      writeAuthHint(true);
-      emit();
+      acceptAuthResponse(data);
       return true;
     } catch {
       return false;

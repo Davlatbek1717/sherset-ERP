@@ -271,6 +271,8 @@ const POS_DONE_FILES = [
   'components/pos/pos-header.tsx',
   // F6 (POS redizayn) — headerga singdirilgan oyna-tugmalari.
   'components/pos/window-controls.tsx',
+  // F8 (POS redizayn) — kassir-tanlash ekrani (ko'p-kassir).
+  'components/pos/cashier-select-screen.tsx',
   'components/pos/rasmilashtirish-modal.tsx',
   'components/pos/shell-version-badge.tsx',
   'app/(app)/sotuv/page.tsx',

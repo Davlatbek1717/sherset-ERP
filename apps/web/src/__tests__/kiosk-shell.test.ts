@@ -163,6 +163,16 @@ describe('PIN uzunligi — zanjir bo`ylab AYNAN 4', () => {
     expect(pinModal).toMatch(/PIN_RE\s*=\s*\/\^\\d\{4\}\$\//);
     expect(pinModal).toContain('slice(0, 4)');
   });
+
+  it('F8: kassir-tanlash ekrani ham klaviaturaga 4 uzatadi', () => {
+    // Zanjirning beshinchi halqasi — switch-PIN ham AYNAN 4 (`POS_PIN_RE`).
+    const selectScreen = readFileSync(
+      join(WEB, 'components', 'pos', 'cashier-select-screen.tsx'),
+      'utf8',
+    );
+    expect(selectScreen).toMatch(/PIN_LENGTH\s*=\s*4/);
+    expect(selectScreen).toContain('maxLength={PIN_LENGTH}');
+  });
 });
 
 describe('i18n', () => {
