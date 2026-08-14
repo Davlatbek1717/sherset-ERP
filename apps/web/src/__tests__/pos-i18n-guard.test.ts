@@ -33,6 +33,9 @@ const UZ = JSON.parse(readFileSync(join(SRC, 'messages', 'uz.json'), 'utf8'));
 
 const POS_FILES = [
   join(SRC, 'app', '(app)', 'sotuv', 'page.tsx'),
+  // F1 (POS redizayn) — page.tsx dan ajratilgan rejim-komponentlar ham POS
+  // yuzasi: ular ro'yxatga kirmasa, ko'chirilgan matn qo'riqchidan chiqib qolardi.
+  join(SRC, 'app', '(app)', 'sotuv', '_components', 'smena-mode.tsx'),
   join(SRC, 'components', 'pos', 'cash-out-dialog.tsx'),
   join(SRC, 'components', 'pos', 'debt-payment-dialog.tsx'),
   join(SRC, 'components', 'pos', 'payment-dialog.tsx'),

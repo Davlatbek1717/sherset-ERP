@@ -269,6 +269,8 @@ const POS_DONE_FILES = [
   'components/pos/rasmilashtirish-modal.tsx',
   'components/pos/shell-version-badge.tsx',
   'app/(app)/sotuv/page.tsx',
+  // F1 (POS redizayn) — page.tsx dan ajratilgan rejim-komponentlar.
+  'app/(app)/sotuv/_components/smena-mode.tsx',
   'app/kassa-kirish/page.tsx',
 ];
 

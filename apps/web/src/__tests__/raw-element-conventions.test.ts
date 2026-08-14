@@ -120,6 +120,10 @@ const EXEMPT_INPUT_TEXTNUM = [
   // ko'chirish uni ataylab o'zgartirgan bo'lardi. Faqat text/number —
   // taqiqlangan turlar (date/password/…) yo'q.
   'app/(app)/sotuv/page.tsx',
+  // F1 (POS redizayn) — smena bloki page.tsx dan ko'chdi, mikro-maydonlari
+  // (kirim/chiqim summasi, yopish sanog'i, farq izohi) ham birga ketdi.
+  // Sabab o'zgargani yo'q: teginish uchun zich kassa terisi.
+  'app/(app)/sotuv/_components/smena-mode.tsx',
   'components/pos/rasmilashtirish-modal.tsx',
   // F2 — savat qatorining sensorli tahrir oynasi. Yagona maydon: numpad
   // yozadigan faol qiymat (`type="text"` ATAYLAB — `type="number"` oraliq
