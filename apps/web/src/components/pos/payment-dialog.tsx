@@ -17,7 +17,21 @@ interface PaymentDialogProps {
   loading?: boolean;
 }
 
-const QUICK_AMOUNTS = [1000_00n, 5000_00n, 10000_00n, 50000_00n];
+/**
+ * F3 (POS redizayn, spec §5.1): banknot nominallari — bosilganda qiymat naqd
+ * maydoniga **O'RNATILADI** (eski +1 000…+50 000 QO'SHISH tugmalari bekor:
+ * kassir «500 ming berdi» deb bosganda avvalgi kiritma ustiga qo'shilib
+ * summa adashardi).
+ */
+const QUICK_SET_AMOUNTS = [100_000_00n, 200_000_00n, 500_000_00n];
+
+/** Tugma yorlig'i: «100 000» (valyutasiz — nominal, summa emas; NBSP emas
+    oddiy bo'shliq — testlar/qidiruv matn bo'yicha topa olsin). */
+function quickLabel(amountMinor: bigint): string {
+  return Number(amountMinor / 100n)
+    .toLocaleString('uz-UZ')
+    .replace(/ /g, ' ');
+}
 
 export function PaymentDialog({
   open,
@@ -66,8 +80,11 @@ export function PaymentDialog({
     setCardInput('');
   };
 
-  const handleQuickAdd = (addMinor: bigint) => {
-    setCashInput(formatAmountInput(parseAmountToMinor(cashInput, currency) + addMinor, currency));
+  // O'RNATADI, qo'shmaydi (yuqoridagi QUICK_SET_AMOUNTS izohi). Faol maydon
+  // naqdga qaytariladi — nominal tugmalar naqd pul haqida.
+  const handleQuickSet = (amountMinor: bigint) => {
+    setCashInput(formatAmountInput(amountMinor, currency));
+    setActiveField('cash');
   };
 
   const handleConfirm = () => {
@@ -112,6 +129,7 @@ export function PaymentDialog({
           <div className="mb-4 grid grid-cols-2 gap-3">
             <button
               type="button"
+              data-test-id="payment-cash-field"
               onClick={() => setActiveField('cash')}
               className={`flex flex-col rounded-lg border-2 p-3 text-left transition-colors ${
                 activeField === 'cash'
@@ -150,23 +168,27 @@ export function PaymentDialog({
             </div>
           )}
 
-          {/* Quick-pay buttons */}
-          <div className="mb-4 flex gap-2">
+          {/* Tez-summa tugmalari (F3): «Aniq summa» + banknot nominallari.
+              Balandlik px'da (48px) — barmoq nishoni (ildiz font 12px,
+              rem-klasslar 0.75× kichik chiqadi). */}
+          <div className="mb-4 grid grid-cols-4 gap-2">
             <button
               type="button"
+              data-test-id="payment-quick-exact"
               onClick={handleExact}
-              className="flex-1 rounded-lg border border-[var(--ms-border)] bg-[var(--ms-bg-input)] px-2 py-2 font-medium text-xs transition-colors hover:bg-[var(--ms-bg-hover)]"
+              className="h-[48px] rounded-lg border border-[var(--ms-border)] bg-[var(--ms-bg-input)] px-1 font-semibold text-[14px] transition-colors hover:bg-[var(--ms-bg-hover)]"
             >
               {t('exact')}
             </button>
-            {QUICK_AMOUNTS.map((amount) => (
+            {QUICK_SET_AMOUNTS.map((amount) => (
               <button
                 type="button"
                 key={amount.toString()}
-                onClick={() => handleQuickAdd(amount)}
-                className="flex-1 rounded-lg border border-[var(--ms-border)] bg-[var(--ms-bg-input)] px-2 py-2 text-xs transition-colors hover:bg-[var(--ms-bg-hover)]"
+                data-test-id="payment-quick-set"
+                onClick={() => handleQuickSet(amount)}
+                className="h-[48px] rounded-lg border border-[var(--ms-border)] bg-[var(--ms-bg-input)] px-1 font-semibold text-[14px] tabular-nums transition-colors hover:bg-[var(--ms-bg-hover)]"
               >
-                +{formatMoney(amount)}
+                {quickLabel(amount)}
               </button>
             ))}
           </div>
