@@ -534,7 +534,25 @@ ro'yxatida yo'q edi, F9 hal qilsin). To'liq: `docs/audits/pos-redizayn-F6-hisobo
 - [ ] **7.5** Hisobot va TO'XTASH. OCHIQ yozilsin: token-invalidatsiya semantikasi qanday
   hal qilindi (eski kassir tokeni nima bo'ladi) — F8 agenti shunga qaraydi.
 
-**Hisobot (F7):** _[bo'sh]_
+**Hisobot (F7, 2026-08-14, `b24b3c2b`·`00f76357`·`4f370f18`):** Server tomoni tayyor, faqat
+apps/api: (1) `GET /auth/pos-pin/candidates` — faol smenaga biriktirilgan (`smenaEmployee`,
+`openSessionFromSmena` bilan BITTA mezon), PIN'li xodimlar `{employeeId,name}`, sir qaytmaydi;
+kiosk sharti `uiMode==='kiosk'` (GET'da qurilma-kalit xavfsiz uzatilmaydi). (2) `POST
+/auth/pos-pin/switch` `{employeeId,pin,deviceId?,deviceSecret?}` (Zod `.strict()`) — tartib:
+kiosk-juftlik (kalit YOKI uiMode) → joriy kassirning ochiq sessiyasi 409 → candidates-mezoni
+403 → `assertEmployeeMayLogin` → PIN MAVJUD lockout (`verifyPin`, target'ga) → fail-closed
+`AuditLog` (`pos-cashier-switch`, from/to/qurilma/IP) → javob `pos-login` bilan BIR XIL
+(yagona `issueBundle`; cookie'lar ham). **Token-semantika (F8 o'qisin):** eski kassirning
+SHU-qurilma refresh-tokeni DB'da bekor qilinadi + cookie ustidan yoziladi; access-JWT (≤15 daq)
+va boshqa qurilmalar ATAYLAB tegilmaydi (deny-list floor = offboarding vositasi). Kiosk-allowlist:
+yangi qoida KERAK EMAS (`/auth` `['*']`, F5 pretsedenti) — 2 test bilan qulflandi. Gate to'liq
+(ketma-ket): typecheck 0 · lint 0 error · i18n 19/19 · web **3945** · api **8288** (8267+21).
+Konvensiya-qo'riqchilar 2 kamchilik tutdi: mutation-guard allowlist yozuvi; `pos-cashier-switch`
+audit-slug'iga ru/uz yorliq — **rejadan og'ish (ochiq): «web'ga tegma»ga qaramay ru/uz.json'ga
+2 qator gate-majburiy label kirdi** (F8-UI emas). Birinchi gate'da web/api PARALLEL yugurtirilib
+yiqildi — yakka yugurishda toza (yuk-flake, hisobotda). **Phase-1: strukturaviy,
+runtime-tasdiqlanmagan** — HTTP-boot/lockout-ketma-ketlik/cookie jonli o'lchanmagan (F8/F9).
+To'liq: `docs/audits/pos-redizayn-F7-hisobot.md`.
 
 ---
 
