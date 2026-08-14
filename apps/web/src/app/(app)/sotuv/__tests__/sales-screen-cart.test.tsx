@@ -709,19 +709,31 @@ describe('SalesScreen — skaner-javob (F3)', () => {
   });
 
   it('qidiruv hech narsa topmasa notFound() chalinadi (xabar bilan birga)', async () => {
-    const missSpy = vi.spyOn(scanFeedback, 'notFound');
-    const user = userEvent.setup();
-    renderWithProviders(<SotuvPage />);
-    await screen.findAllByTestId('sotuv-product');
+    // F5 (2026-08-14): SOAT MUZLATILADI (faqat `Date`; taymerlar real qoladi —
+    // react-query/userEvent ishlashda davom etadi). Dedup oynasi (800ms)
+    // `Date.now()` dan o'qiladi; real soat bilan «aynan 1 marta» asserti
+    // MASHINA TEZLIGIGA bog'liq edi: band mashinada ikki prefiks-so'rov
+    // 800ms dan uzoq oraliqda kelib, dizayn BO'YICHA ikkinchi bip chalinardi
+    // va test yolg'ondan qizarardi. Muzlatilgan soatda barcha prefikslar
+    // bitta oynaga tushadi — dedup shartnomasi deterministik qulflanadi.
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      const missSpy = vi.spyOn(scanFeedback, 'notFound');
+      const user = userEvent.setup();
+      renderWithProviders(<SotuvPage />);
+      await screen.findAllByTestId('sotuv-product');
 
-    vi.mocked(api.get).mockImplementation(
-      router(salesRoutes([{ match: /^\/products\?/, value: { items: [], total: 0 } }])),
-    );
-    await user.type(screen.getByTestId('sotuv-search'), 'yoq-tovar');
+      vi.mocked(api.get).mockImplementation(
+        router(salesRoutes([{ match: /^\/products\?/, value: { items: [], total: 0 } }])),
+      );
+      await user.type(screen.getByTestId('sotuv-search'), 'yoq-tovar');
 
-    expect(await screen.findByText('Topilmadi')).toBeInTheDocument();
-    // Dedup (bir so'rov = bir marta, 800ms oynasi) tufayli aynan 1 marta.
-    await waitFor(() => expect(missSpy).toHaveBeenCalledTimes(1));
+      expect(await screen.findByText('Topilmadi')).toBeInTheDocument();
+      // Dedup (bir so'rov = bir marta, 800ms oynasi) tufayli aynan 1 marta.
+      await waitFor(() => expect(missSpy).toHaveBeenCalledTimes(1));
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 
