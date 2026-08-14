@@ -17,7 +17,19 @@ import { describe, expect, it } from 'vitest';
  */
 
 const REPO_ROOT = resolve(__dirname, '..', '..', '..', '..');
-const POS_PAGE = join(REPO_ROOT, 'apps', 'web', 'src', 'app', '(app)', 'sotuv', 'page.tsx');
+// F1 (POS redizayn): qaytarish ekrani (`ChekDetailPanel`) `page.tsx` dan
+// `_components/cheklar-mode.tsx` ga ko'chdi — qulf ham u bilan birga ko'chadi.
+const POS_PAGE = join(
+  REPO_ROOT,
+  'apps',
+  'web',
+  'src',
+  'app',
+  '(app)',
+  'sotuv',
+  '_components',
+  'cheklar-mode.tsx',
+);
 
 function posSource(): string {
   return readFileSync(POS_PAGE, 'utf8');

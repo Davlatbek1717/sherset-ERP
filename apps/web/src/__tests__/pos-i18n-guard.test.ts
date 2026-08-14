@@ -36,6 +36,9 @@ const POS_FILES = [
   // F1 (POS redizayn) — page.tsx dan ajratilgan rejim-komponentlar ham POS
   // yuzasi: ular ro'yxatga kirmasa, ko'chirilgan matn qo'riqchidan chiqib qolardi.
   join(SRC, 'app', '(app)', 'sotuv', '_components', 'smena-mode.tsx'),
+  join(SRC, 'app', '(app)', 'sotuv', '_components', 'cheklar-mode.tsx'),
+  join(SRC, 'app', '(app)', 'sotuv', '_components', 'zakazlar-mode.tsx'),
+  join(SRC, 'app', '(app)', 'sotuv', '_components', 'use-print-outcome.ts'),
   join(SRC, 'components', 'pos', 'cash-out-dialog.tsx'),
   join(SRC, 'components', 'pos', 'debt-payment-dialog.tsx'),
   join(SRC, 'components', 'pos', 'payment-dialog.tsx'),
