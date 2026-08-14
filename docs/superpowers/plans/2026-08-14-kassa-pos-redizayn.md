@@ -408,7 +408,23 @@ olish.
 - [ ] **5.4** Ko'z-tekshiruv: smena ochish→savdo→yopishga urinish→ro'yxat→bekor→yopish.
   Hisobot va TO'XTASH. Hisobotda OCHIQ: server xulqi o'zgarmagani, faqat UI.
 
-**Hisobot (F5):** _[bo'sh]_
+**Hisobot (F5, 2026-08-14, `30b37a14`·`dce82eab`·`cacba6eb` +flake `ba697907`):** (1) API:
+`GET /cashier-sessions/:id/unresolved` — mezon `close()` bilan YAGONA yordamchida
+(`findUnresolvedSales`, FSM `allowedFrom('cancel')`), manba-qulf testi nusxalashni taqiqlaydi;
+kiosk-allowlist'ga yangi qoida KERAK BO'LMADI (`/cashier-sessions` `['*']` qamraydi — test bilan
+qulflandi, rejadan sababli og'ish). (2) Web: blind sanoq (`idle→counting→review→closing` mashinasi
+smena-mode ichida; counting'da kutilgan DOM'da YO'Q, katta numpad; review'da Sanadingiz/Kutilgan/Farq,
+farq≠0→izoh MAJBURIY, sanoqqa qaytish YO'Q) + yakunlanmagan-cheklar kartalari (draft ham ko'rinadi,
+draft/picking faqat BEKOR, ready'da To'lov ham — mavjud `cancelSale`/`loadReadyToCart` yo'llari);
+yopish tugmasi ro'yxat bo'sh bo'lgandagina ochiq (haqiqiy to'siq SERVERDA, o'zgarmagan). Gate har
+commitda to'liq: typecheck 0 · lint 0 error · i18n 19/19 · web **3925 passed** (3917+8; qayta
+yozishlar faqat Edit) · api **8267 passed** (+8 yangi). Jonli ko'z-tekshiruv (headless chromium,
+api'ni o'zim ko'tarib-o'chirdim): 20/21 ✓, konsol 0 xato — savdo→ro'yxat→4 bekor→blind yopish
+serverda QABUL QILINDI; yagona ✗ skript-artefakt (matn next-intl katalog-scriptida, ko'rinadigan
+DOM'da emas). Dev-DB: eski stale smena yopildi, yangi smena ochib qo'yildi (hisobotda ochiq).
+**Phase-1: strukturaviy, runtime-tasdiqlanmagan** — qurilma/sensorli sinov YO'Q (F9). Keyingi
+agentga: «Kassirni almashtirish» tugmasi ATAYLAB yo'q (F8 qo'shadi); shiftRoutes kontragent-fixture
+endi `tags`/`companyType` talab qiladi. To'liq: `docs/audits/pos-redizayn-F5-hisobot.md`.
 
 ---
 
