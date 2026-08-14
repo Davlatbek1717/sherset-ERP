@@ -181,6 +181,17 @@ export class CashierSessionController {
   }
 
   /**
+   * F5 — smenani yopishga to'sqinlik qiluvchi cheklar (draft|picking|ready)
+   * STRUKTURA sifatida. Mezon `close()` bilan yagona yordamchida; endpoint
+   * faqat o'qiydi — yopish qoidalari o'zgarmagan.
+   */
+  @Get(':id/unresolved')
+  @RequirePermission({ entity: 'cashiersession', action: 'view' })
+  async unresolved(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    return this.sessions.unresolvedSales(user.accountId, id);
+  }
+
+  /**
    * Z-hisobot (kassa TZ §8.5) — smenaning to'liq moliyaviy manzarasi.
    *
    * Ochiq smenada ham ishlaydi (kassir kun o'rtasida holatni ko'radi):

@@ -184,6 +184,50 @@ export class CashierSessionService {
   }
 
   /**
+   * Smenani yopishga to'sqinlik qiluvchi cheklar — YAGONA tanlov-mezon.
+   *
+   * Faza Q1 (SALES-08): faqat `draft` emas — YIG'ILAYOTGAN cheklar ham.
+   * `picking`/`ready` chek yopilgan smenada osilib qolardi: uni endi post
+   * qilib ham bo'lmaydi (`post()` ochiq smena talab qiladi), bekor qilish
+   * esa kassirga taklif qilinmasdi. Ro'yxat FSM'dan (bekor qilish mumkin
+   * bo'lgan holatlar) o'qiladi — qo'lda `['draft','picking','ready']` yozilsa,
+   * FSM'ga yangi oraliq holat qo'shilgan kuni u jimgina osilib qolardi.
+   *
+   * F5: `close()` ichidagi to'siq HAM, `GET :id/unresolved` endpoint HAM shu
+   * yordamchidan o'qiydi. Mezon ikki joyda yashasa, ekran ro'yxati bo'sh-u
+   * yopish 400 beradigan (yoki aksincha) jim divergensiya paydo bo'lardi.
+   */
+  private findUnresolvedSales(
+    db: Pick<PrismaService['client'], 'retailSale'>,
+    accountId: string,
+    sessionId: string,
+  ) {
+    return db.retailSale.findMany({
+      where: { accountId, sessionId, state: { in: [...allowedFrom('cancel')] } },
+      select: { id: true, name: true, state: true, sumMinor: true },
+      orderBy: { createdAt: 'asc' },
+    });
+  }
+
+  /**
+   * F5 — yakunlanmagan cheklar STRUKTURA sifatida (POS «Smena» ekrani).
+   *
+   * Shu paytgacha bu ro'yxat faqat `close()` 400-xabari MATNIDA yashardi;
+   * kassir esa har chek uchun QADAM tashlashi kerak (to'lash yoki bekor
+   * qilish) — matndan tugma yasab bo'lmaydi. Endpoint faqat O'QIYDI: server
+   * smena-qoidalari (to'siq, avto-bekor yo'qligi) O'ZGARMAGAN.
+   */
+  async unresolvedSales(accountId: string, sessionId: string) {
+    const session = await this.prisma.client.cashierSession.findFirst({
+      where: { id: sessionId, accountId },
+      select: { id: true },
+    });
+    if (!session) throw new NotFoundException(`CashierSession ${sessionId} not found`);
+    const sales = await this.findUnresolvedSales(this.prisma.client, accountId, sessionId);
+    return { sales };
+  }
+
+  /**
    * Returns the active (open) session for a specific cashier, or null.
    *
    * P4 — javobga smena YOSHI qo'shiladi (`openMinutes` · `staleWarnHours` ·
@@ -355,11 +399,6 @@ export class CashierSessionService {
     // qiladi, shuning uchun yopish poygasida faqat bittasi o'tadi.
     const closed = await this.prisma.client.$transaction(
       async (tx) => {
-        // Faza Q1 (SALES-08): faqat `draft` emas — YIG'ILAYOTGAN cheklar ham.
-        // `picking`/`ready` chek yopilgan smenada osilib qolardi: uni endi post
-        // qilib ham bo'lmaydi (`post()` ochiq smena talab qiladi), bekor qilish
-        // esa kassirga taklif qilinmasdi.
-        const pending = [...allowedFrom('cancel')];
         // P3 (egasi qarori, 2026-08-12): to'siq QOLADI, lekin endi ROʻYXAT
         // bilan. Avto-bekor ATAYLAB YO'Q — tizim kassirning o'rniga pul
         // qarorini qabul qilmaydi (haqiqiy mijoz kutayotgan chek jimgina
@@ -370,11 +409,10 @@ export class CashierSessionService {
         // («Session has 4 unresolved sale(s)…»). Kassir qaysi chek ekanini
         // bilmasdi: prodda 5 ta qotgan chek turibdi va ular POS ro'yxatida
         // ikki BOSHQA bo'limda yotadi. Endi nom + summa aytiladi.
-        const unresolvedSales = await tx.retailSale.findMany({
-          where: { accountId, sessionId, state: { in: pending } },
-          select: { name: true, state: true, sumMinor: true },
-          orderBy: { createdAt: 'asc' },
-        });
+        //
+        // F5: tanlov-mezon `findUnresolvedSales` yordamchisida — `unresolved`
+        // endpoint bilan YAGONA (ro'yxat bilan to'siq ajralib ketmasin).
+        const unresolvedSales = await this.findUnresolvedSales(tx, accountId, sessionId);
         if (unresolvedSales.length > 0) {
           throw new BadRequestException(describeUnresolvedSales(unresolvedSales));
         }

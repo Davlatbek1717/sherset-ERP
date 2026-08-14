@@ -63,6 +63,11 @@ describe('isKioskAllowed — RUXSAT ETILGANLAR', () => {
     ['POST', '/retail-sales'],
     ['POST', '/retail-sales/abc/post'],
     ['GET', '/cashier-sessions/current'],
+    // F5 — smena yopishdan oldin yakunlanmagan cheklar ro'yxati. Alohida
+    // qoida YO'Q: `/cashier-sessions` `['*']` prefiks-qoidasi qamraydi —
+    // bu test o'sha qamrovni QULFLAYDI (qoida toraytirilsa kassir smenani
+    // yopa olmay qolardi).
+    ['GET', '/cashier-sessions/abc/unresolved'],
     // `/sotuv` smenani AYNAN shu ikki yo'l orqali ochadi (controller —
     // `@Controller('admin/smenas')`). Ilgari ro'yxatda mavjud bo'lmagan
     // `/smena/mine` turardi: kiosk-kassir smena ocholmay 403 olardi.
