@@ -68,7 +68,7 @@ import type {
 } from '@moysklad/contracts';
 import { Money, lineFloorBreach, marginPercent, priceFloorMinor } from '@moysklad/money';
 import { isCurrencyCode } from '@moysklad/money/currencies';
-import { Button, Input, useConfirm, useToast } from '@moysklad/ui';
+import { Button, Input, formatMoney, useConfirm, useToast } from '@moysklad/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -1014,11 +1014,18 @@ function SalesScreen({
   // Backend `cancel` 2026-08-02 dan `picking`/`ready` ni ham qabul qiladi va
   // omborchining ochiq yig'ish topshiriqlarini yopadi — usiz bunday chek na
   // to'lanardi, na bekor qilinardi (abadiy osilib qolardi).
+  // F4: tasdiq matnida chek raqami BILAN summa ko'rinadi (spec §5.2 —
+  // kassir qaysi chekni qancha pulga o'chirayotganini ko'rib tursin);
+  // tasdiq tugmasi kartadagi «Bekor qilish»dan farqli nomlanadi (dialogda
+  // ikki bir xil yozuvli tugma kassirni adashtirardi).
   const cancelSale = useCallback(
-    async (saleId: string, saleName: string) => {
+    async (saleId: string, saleName: string, sumMinor: string) => {
       const ok = await runDestructive({
-        title: t('cancel_sale_confirm', { name: saleName }),
-        confirmLabel: t('cancel_sale'),
+        title: t('cancel_sale_confirm', {
+          name: saleName,
+          sum: formatMoney(BigInt(sumMinor)),
+        }),
+        confirmLabel: t('cancel_sale_confirm_label'),
         successMessage: t('cancel_sale_success'),
         run: () => api.post(`/retail-sales/${saleId}/cancel`, {}),
       });
@@ -1271,31 +1278,17 @@ function SalesScreen({
             </>
           )}
 
-          {/* ── NAVBAT ── jarayonda + tayyor yonma-yon (F4 haqiqiy kanban
-              qiladi; F2 da ikkala eski blok bitta to'liq ekranga tushdi) ── */}
+          {/* ── NAVBAT ── ikki ustunli kanban (F4): Yig'ilmoqda · Tayyor ── */}
           {mode === 'navbat' && (
-            <>
-              <div className="flex min-w-0 flex-1 flex-col overflow-hidden border-[var(--ms-border)] border-r bg-[var(--ms-bg-surface)]">
-                <NavbatMode
-                  which="jarayonda"
-                  pickingSales={pickingSales}
-                  readySales={readySales}
-                  cancelSale={cancelSale}
-                  markReady={markReady}
-                  loadReadyToCart={loadReadyToCart}
-                />
-              </div>
-              <div className="flex min-w-0 flex-1 flex-col overflow-hidden bg-[var(--ms-bg-surface)]">
-                <NavbatMode
-                  which="tayyor"
-                  pickingSales={pickingSales}
-                  readySales={readySales}
-                  cancelSale={cancelSale}
-                  markReady={markReady}
-                  loadReadyToCart={loadReadyToCart}
-                />
-              </div>
-            </>
+            <div className="flex min-w-0 flex-1 flex-col overflow-hidden bg-[var(--ms-bg-app)]">
+              <NavbatMode
+                pickingSales={pickingSales}
+                readySales={readySales}
+                cancelSale={cancelSale}
+                markReady={markReady}
+                loadReadyToCart={loadReadyToCart}
+              />
+            </div>
           )}
 
           {/* ── ZAKAZLAR ── jarayondagi mijoz zakazlari ── */}
