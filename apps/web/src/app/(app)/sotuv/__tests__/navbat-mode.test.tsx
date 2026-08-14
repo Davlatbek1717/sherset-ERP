@@ -5,8 +5,10 @@
  *  · ikki ustun bir VAQTDA ko'rinadi: chapda «Yig'ilmoqda» (picking),
  *    o'ngda «Tayyor» (ready) — eski ikki alohida tab niyati F2 da «Navbat»
  *    rejimiga birlashgan, F4 esa ularni kanban qildi;
- *  · «To'lov» tugmasi FAQAT tayyor kartada (server `post()` faqat `ready`
+ *  · «To'lash» tugmasi FAQAT tayyor kartada (server `post()` faqat `ready`
  *    dan qabul qiladi — yig'ilmagan chekka to'lov tugmasi yolg'on va'da);
+ *    (F9, 2026-08-15: yorliq «To'lov»→«To'lash» — reja «TO'LASH» degan edi,
+ *    F4 kosmetik deb qoldirgan, egasi F9'da almashtirishni tanladi);
  *  · «Tasdiqlash» (kassir o'zi ready qiladi, egasi 2026-08-11) FAQAT
  *    yig'ilmoqda kartada QOLADI — F4 bu yo'lni olib tashlamaydi;
  *  · bekor qilish tasdig'ida chek RAQAMI ham, SUMMASI ham ko'rinadi
@@ -112,8 +114,8 @@ describe('NavbatMode — ikki ustunli kanban (F4)', () => {
     const { picking, ready } = await openNavbat(user);
     await within(ready).findByText('CHEK-00001');
 
-    expect(within(ready).getByRole('button', { name: /To.lov/ })).toBeInTheDocument();
-    expect(within(picking).queryByRole('button', { name: /To.lov/ })).not.toBeInTheDocument();
+    expect(within(ready).getByRole('button', { name: /To.lash/ })).toBeInTheDocument();
+    expect(within(picking).queryByRole('button', { name: /To.lash/ })).not.toBeInTheDocument();
     // Egasi 2026-08-11 yo'li: kassir yig'ilmoqda chekni o'zi «Tayyor» qila oladi.
     expect(within(picking).getByRole('button', { name: 'Tasdiqlash' })).toBeInTheDocument();
     expect(within(ready).queryByRole('button', { name: 'Tasdiqlash' })).not.toBeInTheDocument();

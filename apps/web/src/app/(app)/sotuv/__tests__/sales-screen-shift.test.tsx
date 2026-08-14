@@ -600,13 +600,13 @@ describe('Yakunlanmagan cheklar ro‘yxati (F5, spec §5.4)', () => {
 
     const cards = await screen.findAllByTestId('smena-unresolved-card');
     // draft — to'lab bo'lmaydi (`post()` faqat ready'dan) — faqat bekor.
-    expect(within(at(cards, 0)).queryByRole('button', { name: /To.lov/ })).toBeNull();
+    expect(within(at(cards, 0)).queryByRole('button', { name: /To.lash/ })).toBeNull();
     expect(within(at(cards, 0)).getByRole('button', { name: 'Bekor qilish' })).toBeInTheDocument();
     // picking — hali yig'ilmagan — faqat bekor.
-    expect(within(at(cards, 1)).queryByRole('button', { name: /To.lov/ })).toBeNull();
+    expect(within(at(cards, 1)).queryByRole('button', { name: /To.lash/ })).toBeNull();
     expect(within(at(cards, 1)).getByRole('button', { name: 'Bekor qilish' })).toBeInTheDocument();
     // ready — ikkalasi ham.
-    expect(within(at(cards, 2)).getByRole('button', { name: /To.lov/ })).toBeInTheDocument();
+    expect(within(at(cards, 2)).getByRole('button', { name: /To.lash/ })).toBeInTheDocument();
     expect(within(at(cards, 2)).getByRole('button', { name: 'Bekor qilish' })).toBeInTheDocument();
   });
 
@@ -616,7 +616,7 @@ describe('Yakunlanmagan cheklar ro‘yxati (F5, spec §5.4)', () => {
     await openShiftTab(user);
 
     const cards = await screen.findAllByTestId('smena-unresolved-card');
-    await user.click(within(at(cards, 2)).getByRole('button', { name: /To.lov/ }));
+    await user.click(within(at(cards, 2)).getByRole('button', { name: /To.lash/ }));
 
     // `loadReadyToCart` yo'li: chek detali o'qiladi va to'lov oynasi ochiladi.
     await waitFor(() => expect(api.get).toHaveBeenCalledWith('/retail-sales/u-r'));

@@ -66,7 +66,7 @@ interface SmenaModeProps {
   onOpenCashOut: () => void;
   /** F5 — smenani yopishga to'sqinlik qiluvchi cheklar (server ro'yxati). */
   unresolvedSales: UnresolvedSaleRow[];
-  /** «To'lov» — mavjud `loadReadyToCart` yo'li (faqat `ready` kartada). */
+  /** «To'lash» — mavjud `loadReadyToCart` yo'li (faqat `ready` kartada). */
   onPayUnresolved: (saleId: string) => void | Promise<void>;
   /** Bekor — mavjud `cancelSale` (tasdiq raqam+summa bilan sahifada). */
   cancelSale: (saleId: string, saleName: string, sumMinor: string) => void | Promise<void>;

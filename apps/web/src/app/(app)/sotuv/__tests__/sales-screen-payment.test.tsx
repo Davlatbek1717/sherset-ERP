@@ -140,7 +140,7 @@ describe('SalesScreen — «Tayyor» chekni to‘lovga olish', () => {
 
     await user.click(await screen.findByRole('button', { name: 'Navbat' }));
     expect(await screen.findByText('CHEK-00001')).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: /To.lov/ }));
+    await user.click(screen.getByRole('button', { name: /To.lash/ }));
 
     // Oyna SERVER summasi bilan ochiladi (qayta hisoblangan raqam emas).
     const dialog = await screen.findByRole('dialog');
@@ -153,7 +153,7 @@ describe('SalesScreen — «Tayyor» chekni to‘lovga olish', () => {
     renderWithProviders(<SotuvPage />);
 
     await user.click(await screen.findByRole('button', { name: 'Navbat' }));
-    await user.click(await screen.findByRole('button', { name: /To.lov/ }));
+    await user.click(await screen.findByRole('button', { name: /To.lash/ }));
     await screen.findByRole('dialog');
 
     // Savat ostida: 2 × 10 000 = 20 000, −10% ⇒ 18 000 — chek summasi bilan bir xil.
@@ -182,7 +182,7 @@ describe('SalesScreen — «Tayyor» chekni to‘lovga olish', () => {
     renderWithProviders(<SotuvPage />);
 
     await user.click(await screen.findByRole('button', { name: 'Navbat' }));
-    await user.click(await screen.findByRole('button', { name: /To.lov/ }));
+    await user.click(await screen.findByRole('button', { name: /To.lash/ }));
     const dialog = await screen.findByRole('dialog');
 
     expect(norm(screen.getByTitle('Chegirma uchun ikki marta bosing').textContent)).not.toContain(
@@ -198,7 +198,7 @@ describe('SalesScreen — «Tayyor» chekni to‘lovga olish', () => {
 /** Tayyor chekni (F2: Navbat rejimi, o'ng ustun) ochib to'lov oynasini qaytaradi. */
 async function openPaymentModal(user: ReturnType<typeof userEvent.setup>) {
   await user.click(await screen.findByRole('button', { name: 'Navbat' }));
-  await user.click(await screen.findByRole('button', { name: /To.lov/ }));
+  await user.click(await screen.findByRole('button', { name: /To.lash/ }));
   return await screen.findByRole('dialog');
 }
 

@@ -167,7 +167,7 @@ describe('To‘lovdan keyin savat tozalanadi (dublikat sotuv xavfi)', () => {
 
     // F2 (POS redizayn): «Tayyor» tab'i «Navbat» rejimiga qo'shildi (spec Q3).
     await user.click(await screen.findByRole('button', { name: 'Navbat' }));
-    await user.click(await screen.findByRole('button', { name: /To.lov/ }));
+    await user.click(await screen.findByRole('button', { name: /To.lash/ }));
     const dialog = await screen.findByRole('dialog');
 
     // `loadReadyToCart` savatni to'ldirgan (chek pozitsiyalari echosi).

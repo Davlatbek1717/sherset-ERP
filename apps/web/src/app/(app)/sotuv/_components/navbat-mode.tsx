@@ -10,7 +10,8 @@
  * bu komponent faqat ko'rinish.
  *
  * Karta tarkibi (spec §5.2): chek raqami (20px) · summa · mijoz · o'tgan
- * vaqt. Tugmalar: «To'lov» FAQAT tayyor kartada (server `post()` faqat
+ * vaqt. Tugmalar: «To'lash» (F9: yorliq «To'lov»dan almashdi — reja/egasi
+ * qarori) FAQAT tayyor kartada (server `post()` faqat
  * `ready` dan qabul qiladi); «Tasdiqlash» (kassir o'zi ready qiladi —
  * egasi 2026-08-11 yo'li, F4 uni OLIB TASHLAMAYDI) faqat yig'ilmoqda
  * kartada; «Bekor qilish» ikkalasida. O'lchamlar px'da (F2 qoidasi:
