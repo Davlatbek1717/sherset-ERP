@@ -97,8 +97,11 @@ export function CustomersPanel({
 
   return (
     <div className="flex flex-1 flex-col overflow-y-auto">
+      {/* F4 — faqat O'LCHAM-pass (spec §5.3/§4): qatorlar 64px, tugmalar
+          ≥56px, shriftlar px-shkala; to'liq-ekranda o'qilishi uchun kontent
+          640px ustunga yig'ilgan. Mantiq/DOM-tuzilma o'zgarmagan. */}
       {!agent && (
-        <div className="flex flex-col gap-2 p-3">
+        <div className="mx-auto flex w-full max-w-[640px] flex-col gap-2 p-3">
           <Input
             type="text"
             inputMode="tel"
@@ -106,22 +109,25 @@ export function CustomersPanel({
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder={t('customer_card_search_placeholder')}
+            className="h-[48px] text-[16px]"
           />
-          {cpLoading && <p className="text-[var(--ms-text-muted)] text-sm">{t('searching')}</p>}
+          {cpLoading && <p className="text-[16px] text-[var(--ms-text-muted)]">{t('searching')}</p>}
           {!cpLoading && (cpData?.items.length ?? 0) === 0 && (
-            <p className="text-[var(--ms-text-muted)] text-sm">{t('debt_no_customers')}</p>
+            <p className="text-[16px] text-[var(--ms-text-muted)]">{t('debt_no_customers')}</p>
           )}
-          <ul className="flex flex-col gap-1">
+          <ul className="flex flex-col gap-1.5">
             {(cpData?.items ?? []).map((row) => (
               <li key={row.id}>
                 <button
                   type="button"
                   data-test-id="pos-customers-result"
                   onClick={() => selectAgent(row)}
-                  className="flex w-full items-center justify-between rounded-lg border border-[var(--ms-border)] px-3 py-2 text-left text-sm hover:bg-[var(--ms-bg-hover)]"
+                  className="flex min-h-[var(--pos-row-h)] w-full items-center justify-between gap-3 rounded-xl border border-[var(--ms-border)] px-4 text-left hover:bg-[var(--ms-bg-hover)] active:bg-[var(--ms-bg-hover)]"
                 >
-                  <span className="font-medium">{row.name}</span>
-                  <span className="text-[var(--ms-text-muted)]">{row.phone ?? '—'}</span>
+                  <span className="truncate font-medium text-[18px]">{row.name}</span>
+                  <span className="shrink-0 text-[14px] text-[var(--ms-text-muted)]">
+                    {row.phone ?? '—'}
+                  </span>
                 </button>
               </li>
             ))}
@@ -130,18 +136,20 @@ export function CustomersPanel({
       )}
 
       {agent && (
-        <div className="flex flex-col gap-3 p-3">
+        <div className="mx-auto flex w-full max-w-[640px] flex-col gap-3 p-3">
           {/* ── Sarlavha ───────────────────────────────────────────────── */}
           <div className="flex items-start justify-between gap-3">
-            <div>
-              <p className="font-semibold text-[var(--ms-text-primary)] text-base">{agent.name}</p>
-              <p className="text-[var(--ms-text-muted)] text-sm">{agent.phone ?? '—'}</p>
+            <div className="min-w-0">
+              <p className="truncate font-semibold text-[20px] text-[var(--ms-text-primary)]">
+                {agent.name}
+              </p>
+              <p className="text-[16px] text-[var(--ms-text-muted)]">{agent.phone ?? '—'}</p>
             </div>
             <button
               type="button"
               data-test-id="pos-customers-change"
               onClick={() => setAgent(null)}
-              className="shrink-0 rounded-lg border border-[var(--ms-border)] px-3 py-1.5 text-sm hover:bg-[var(--ms-bg-hover)]"
+              className="h-[48px] shrink-0 rounded-lg border border-[var(--ms-border)] px-4 text-[16px] hover:bg-[var(--ms-bg-hover)]"
             >
               {t('change_customer')}
             </button>
@@ -149,23 +157,25 @@ export function CustomersPanel({
 
           {/* ── Qarz: BITTA HALOL RAQAM ────────────────────────────────── */}
           {!summary ? (
-            <p className="text-[var(--ms-text-muted)] text-sm">{t('debt_loading')}</p>
+            <p className="text-[16px] text-[var(--ms-text-muted)]">{t('debt_loading')}</p>
           ) : (
             <div
               data-test-id="pos-customers-debt"
-              className="rounded-xl border border-[var(--ms-border)] p-3"
+              className="rounded-xl border border-[var(--ms-border)] p-4"
             >
-              <p className="text-[var(--ms-text-muted)] text-xs">{t('customer_card_payable')}</p>
-              <p className="font-semibold text-2xl text-[var(--ms-text-primary)]">
+              <p className="text-[14px] text-[var(--ms-text-muted)]">
+                {t('customer_card_payable')}
+              </p>
+              <p className="font-semibold text-[32px] tabular-nums text-[var(--ms-text-primary)]">
                 {formatMoney(summary.payableMinor, currency)}
               </p>
-              <p className="text-[var(--ms-text-muted)] text-xs">
+              <p className="text-[14px] text-[var(--ms-text-muted)]">
                 {t('customer_card_payable_hint')}
               </p>
               {summary.balanceMinor === null && (
                 <p
                   data-test-id="pos-customers-balance-missing"
-                  className="mt-2 rounded-lg bg-[var(--ms-bg-hover)] px-3 py-2 text-[var(--ms-text-muted)] text-xs"
+                  className="mt-2 rounded-lg bg-[var(--ms-bg-hover)] px-3 py-2 text-[14px] text-[var(--ms-text-muted)]"
                 >
                   {t('customer_card_balance_missing')}
                 </p>
@@ -179,7 +189,7 @@ export function CustomersPanel({
               type="button"
               data-test-id="pos-customers-pay"
               onClick={() => onPayDebt(agent)}
-              className="h-11 rounded-lg bg-[var(--ms-bg-brand)] font-semibold text-sm text-white"
+              className="h-[var(--pos-touch-min)] rounded-xl bg-[var(--ms-bg-brand)] font-semibold text-[18px] text-white active:scale-[0.99]"
             >
               {t('customer_card_pay_debt')}
             </button>
@@ -188,7 +198,7 @@ export function CustomersPanel({
                 type="button"
                 data-test-id="pos-customers-card"
                 onClick={() => onOpenCustomerCard(agent)}
-                className="h-11 flex-1 rounded-lg border border-[var(--ms-border)] text-sm hover:bg-[var(--ms-bg-hover)]"
+                className="h-[var(--pos-touch-min)] flex-1 rounded-xl border border-[var(--ms-border)] text-[16px] hover:bg-[var(--ms-bg-hover)]"
               >
                 {t('customer_card_title')}
               </button>
@@ -196,7 +206,7 @@ export function CustomersPanel({
                 type="button"
                 data-test-id="pos-customers-cheks"
                 onClick={() => setCheksOpen((v) => !v)}
-                className={`h-11 flex-1 rounded-lg border text-sm ${
+                className={`h-[var(--pos-touch-min)] flex-1 rounded-xl border text-[16px] ${
                   cheksOpen
                     ? 'border-[var(--ms-text-brand)] text-[var(--ms-text-brand)]'
                     : 'border-[var(--ms-border)] hover:bg-[var(--ms-bg-hover)]'
@@ -210,7 +220,9 @@ export function CustomersPanel({
           {/* ── Cheklari (F6 qaytarish shu yerdan ochiladi) ────────────── */}
           {cheksOpen &&
             (!cheks || cheks.items.length === 0 ? (
-              <p className="text-[var(--ms-text-muted)] text-sm">{t('customer_card_no_sales')}</p>
+              <p className="text-[16px] text-[var(--ms-text-muted)]">
+                {t('customer_card_no_sales')}
+              </p>
             ) : (
               <div className="flex flex-col divide-y divide-[var(--ms-border)] rounded-xl border border-[var(--ms-border)]">
                 {cheks.items.map((sale) => (
@@ -219,19 +231,19 @@ export function CustomersPanel({
                     key={sale.id}
                     data-test-id="pos-customers-chek"
                     onClick={() => onOpenChek(sale.id)}
-                    className="flex w-full items-center gap-2 px-3 py-2.5 text-left hover:bg-[var(--ms-bg-hover)]"
+                    className="flex min-h-[var(--pos-row-h)] w-full items-center gap-3 px-4 text-left hover:bg-[var(--ms-bg-hover)] active:bg-[var(--ms-bg-hover)]"
                   >
-                    <Receipt className="h-4 w-4 shrink-0 text-[var(--ms-text-muted)]" />
+                    <Receipt className="h-5 w-5 shrink-0 text-[var(--ms-text-muted)]" />
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center justify-between gap-2">
-                        <span className="truncate font-medium text-[var(--ms-text-primary)] text-sm">
+                        <span className="truncate font-medium text-[18px] text-[var(--ms-text-primary)]">
                           {sale.name}
                         </span>
-                        <span className="shrink-0 font-semibold text-sm">
+                        <span className="shrink-0 font-semibold text-[18px] tabular-nums">
                           {formatMoney(sale.sumMinor, currency)}
                         </span>
                       </div>
-                      <span className="text-[var(--ms-text-muted)] text-xs">
+                      <span className="text-[14px] text-[var(--ms-text-muted)]">
                         {new Date(sale.moment).toLocaleDateString('uz-UZ', {
                           day: '2-digit',
                           month: '2-digit',
@@ -243,7 +255,7 @@ export function CustomersPanel({
                         })}
                       </span>
                     </div>
-                    <ChevronRight className="h-4 w-4 shrink-0 text-[var(--ms-text-muted)]" />
+                    <ChevronRight className="h-5 w-5 shrink-0 text-[var(--ms-text-muted)]" />
                   </button>
                 ))}
               </div>
