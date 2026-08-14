@@ -136,6 +136,70 @@ describe('qulf ekrani (PosPinLock) — qobiq klaviaturasi', () => {
   });
 });
 
+describe('qulf ekrani — smena YO`Q (F8): kassir-tanlash, invariant saqlanadi', () => {
+  /**
+   * F8 (spec §8.4): qulf tushganda kassirning OCHIQ sessiyasi bo'lmasa —
+   * PIN-maydon o'rniga kassir-tanlash ekrani (boshqa kassir o'z PIN'i bilan
+   * ishga tushadi). Bitta-numpad invarianti BU tarmoqda ham amal qiladi:
+   * karta-ekranida ham, PIN bosqichida ham <input> yo'q — faqat sahifa
+   * tugmalari (`PinKeypad`).
+   */
+  const DEVICE = { deviceId: 'dev-1', deviceSecret: 'sec-1', name: 'Kassa-1' };
+
+  beforeEach(async () => {
+    // Kassa ish o'rni mezoni (`isPosWorkstation`) — juftlangan qurilma kaliti.
+    localStorage.setItem('sherset.pos-device', JSON.stringify(DEVICE));
+    const { api } = await import('@/lib/api-client');
+    vi.mocked(api.get).mockImplementation(async (path: string) => {
+      if (path === '/cashier-sessions/current') return null;
+      if (path === '/auth/pos-pin/candidates') {
+        return { cashiers: [{ employeeId: 'e-1', name: 'Alisher Kassir' }] };
+      }
+      return { hasPin: true };
+    });
+
+    vi.useFakeTimers();
+    renderWithProviders(<PosPinLock />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5 * 60 * 1000 + 1000);
+    });
+    // React Query boshlang'ich fetch'ni taymer orqali rejalashtiradi — real
+    // taymerga o'tishdan OLDIN flush qilinmasa kandidat-so'rov yo'qolib,
+    // ekran abadiy «Yuklanmoqda»da qolardi (o'lchandi).
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(100);
+    });
+    // Keyingi interaksiyalar (karta bosish, so'rovlar) real taymerlarda.
+    vi.useRealTimers();
+  });
+
+  afterEach(async () => {
+    localStorage.removeItem('sherset.pos-device');
+    const { api } = await import('@/lib/api-client');
+    vi.mocked(api.get).mockImplementation(async () => ({ hasPin: true }));
+  });
+
+  it('qulf o`rnida kassir-tanlash ekrani, PIN-maydon YO`Q', async () => {
+    expect(screen.getByTestId('pos-pin-lock')).toBeTruthy();
+    expect(await screen.findByTestId('cashier-select-screen')).toBeTruthy();
+    expect(screen.queryByTestId('pos-pin-input')).toBeNull();
+    // Karta-ekranida qobiq taniydigan maydon ham yo'q.
+    expect(usableFields(document.body)).toHaveLength(0);
+  });
+
+  it('🔴 karta bosilsa PIN bosqichi: sahifa tugmalari BOR, <input> YO`Q', async () => {
+    const card = await screen.findByText('Alisher Kassir');
+    await act(async () => {
+      card.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    });
+    expect(pageDigitButtons(document.body).length).toBe(10);
+    expect(document.querySelectorAll('input, textarea')).toHaveLength(0);
+  });
+});
+
 describe('umumiy invariant — kiritish yo`li AYNAN BITTA', () => {
   it('preload ro`yxatlari haqiqatan o`qildi (qo`riqchi bo`sh qolmasin)', () => {
     // Regex parse'i jimgina bo'sh ro'yxat qaytarsa yuqoridagi testlar

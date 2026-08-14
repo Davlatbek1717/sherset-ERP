@@ -15,9 +15,10 @@
  * noto'g'ri odamni ko'rsatadi.
  */
 
+import { CashierSelectScreen } from '@/components/pos/cashier-select-screen';
 import { api } from '@/lib/api-client';
 import { logout } from '@/lib/auth-store';
-import { isShersetShell, readPosDevice } from '@/lib/pos-device';
+import { isPosWorkstation, isShersetShell, readPosDevice } from '@/lib/pos-device';
 import { Button, Input } from '@moysklad/ui';
 import { useTranslations } from 'next-intl';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -35,6 +36,11 @@ export function PosPinLock() {
   const [pin, setPin] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  // F8 (spec §8.4): qulf tushganda kassirning OCHIQ sessiyasi bo'lmasa —
+  // PIN-maydon o'rniga kassir-tanlash ekrani (smena yopiq, ekran «egasiz»:
+  // istalgan kassir o'z PIN'i bilan ishga tushadi). Sessiya BOR bo'lsa
+  // xulq o'zgarmaydi: faqat egasining PIN'i ochadi, lockout ham o'sha.
+  const [noSession, setNoSession] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // PIN o'rnatilmagan bo'lsa qulf umuman ishlamaydi — kassirni o'z ekranidan
@@ -49,6 +55,24 @@ export function PosPinLock() {
       alive = false;
     };
   }, []);
+
+  // Sessiya holati qulf TUSHGAN paytda bir marta so'raladi (polling emas).
+  // So'rov yiqilsa — fail-safe: oddiy PIN-qulf qoladi (lockout xulqi buziladigan
+  // yo'l yo'q). `noSession` qulf ochilganda tozalanadi.
+  useEffect(() => {
+    if (!locked) {
+      setNoSession(false);
+      return;
+    }
+    let alive = true;
+    api
+      .get<{ id: string } | null>('/cashier-sessions/current')
+      .then((r) => alive && setNoSession(r === null))
+      .catch(() => alive && setNoSession(false));
+    return () => {
+      alive = false;
+    };
+  }, [locked]);
 
   const arm = useCallback(() => {
     if (timer.current) clearTimeout(timer.current);
@@ -96,6 +120,20 @@ export function PosPinLock() {
   };
 
   if (!locked) return null;
+
+  // F8 — smena yopiq: qulf o'rnida kassir-tanlash (faqat kassa ish o'rnida;
+  // muvaffaqiyatli almashinuvdan keyin qulf ochiladi, taymer effekt orqali
+  // qayta quriladi). Bekor-yo'li ATAYLAB yo'q — bu hamon qulf.
+  if (noSession && isPosWorkstation()) {
+    return (
+      <div
+        className="fixed inset-0 z-[100] flex flex-col items-center justify-center overflow-y-auto bg-[var(--ms-bg-navbar)]/95 backdrop-blur-sm"
+        data-test-id="pos-pin-lock"
+      >
+        <CashierSelectScreen onSwitched={() => setLocked(false)} />
+      </div>
+    );
+  }
 
   return (
     <div
