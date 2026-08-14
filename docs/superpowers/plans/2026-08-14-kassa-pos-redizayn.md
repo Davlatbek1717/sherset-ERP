@@ -240,7 +240,18 @@ yangilaydi) — bu fazada ular shunchaki to'liq-en konteynerga tushadi.
   va 1920×1080 da sidebar yig'ilish/ochilishi, badge'lar. Commit.
 - [ ] **2.6** Hisobot va TO'XTASH. CHALA ro'yxatiga: mode ichlari hali eski dizaynda (F3–F5).
 
-**Hisobot (F2):** _[bo'sh]_
+**Hisobot (F2, 2026-08-14, `78399d7b`·`39ee95e3`·`4f31368e`·`bedd03cd`·`e8c5df83`):** Qobiq qurildi:
+PosSidebar (PosMode unioni shu yerda, 240↔72px, localStorage, badge'lar) + PosHeader (SHERSET
+matn-logotip, smena-chip stale bilan, soat, useServerLink aloqa-indikatori, F6 uchun children-slot)
++ `.pos-theme` tokenlari; eski tab-bar/CFD-satr/«SOTUV» h1 o'chdi, rejimlar to'liq-ekran (navbat =
+ikkala eski blok yonma-yon). Gate har commitda to'liq: typecheck 0 · lint 0 error · i18n 19/19 ·
+web test 3898 passed (22 yangi; MK32 qayta yozilganlar Edit bilan, niyat izohda). Ko'z-tekshiruv
+1366×768+1920×1080 (konsol 0 xato); jonli o'lchov 2 bug tutdi: ildiz font 12px → px-tokenlar,
+useFillViewport birinchi mount'da o'lchamasligi → remeasure. **Phase-1: strukturaviy,
+runtime-tasdiqlanmagan** (browser-smoke lokal BOR, qurilma-sinov YO'Q — F9). CHALA: rejim ichlari
+eski dizaynda (F3–F5); ShellVersionBadge headerga singdirilmagan (F6); sotuv-mode'dagi eski
+smena-strip dublikati (F3 olib tashlasin). Yangi qoida: POS o'lchamlar faqat px (rem 0.75× kichik).
+To'liq: `docs/audits/pos-redizayn-F2-hisobot.md`.
 
 ---
 
