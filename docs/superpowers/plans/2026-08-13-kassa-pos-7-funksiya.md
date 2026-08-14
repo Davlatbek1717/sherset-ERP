@@ -1056,5 +1056,39 @@ ham SHART (operator ruxsati bilan) — aks holda prod kassirlarda ruxsat bo'lmay
 **Deploy:** YO'Q (operator buyrug'i kutilyapti — web+api deploy va ops-skript `--apply` birga ketishi kerak).
 **TO'XTADIM.**
 
-### 📝 F7 hisoboti
-_(hali yozilmagan)_
+### 📝 F7 hisoboti — 2026-08-14 · `475a3463`
+**Holat:** ✅ Phase-1 complete (strukturaviy, qurilmada runtime-tasdiqlanmagan)
+**Nima o'zgardi:** O'ng panelda yangi «Mijozlar» tabi — AYNAN Cheklar va Smena orasida (P07, egasi:
+«mijoz qarzidan pul to'lasa yoki nimadir qaytarsa, qulay ishlash»). Yangi `CustomersPanel`
+komponenti (page.tsx'ni bo'kirtirmaslik uchun alohida faylda, MK33 qarzi hisobga olindi):
+qidiruv (`GET /counterparties?search=`) → tanlangan mijoz kartochkasi — BITTA HALOL RAQAM
+(`payableMinor`, `GET /debts/pos/summary/:id`; `balanceMinor === null` → «o'lchanmagan» qatori
+OCHIQ, xotira `pos-customer-card-one-number`) → uch amal: **«Qarzni to'lash»** (mavjud
+`DebtPaymentDialog` `initialAgent` bilan — qidiruv qadamisiz), **«Mijoz kartasi»** (mavjud
+`CustomerCardPanel`), **«Cheklari»** (`GET /retail-sales?agentId=&limit=50` — chek bosilsa mavjud
+`ChekDetailPanel` ochiladi, u yerdan F6 qaytarish oqimi ishlaydi). Panel o'zi pul amali bajarmaydi —
+faqat callback'lar. Yangi backend YO'Q (reja taqig'i) — uch mavjud endpoint, hammasi kiosk-policy'da ochiq.
+**Fayllar:** | Yo'l | Nima qilindi |
+| `apps/web/src/components/pos/customers-panel.tsx` | YANGI komponent (qidiruv/kartochka/3 amal/cheklar ro'yxati) |
+| `apps/web/src/components/pos/__tests__/customers-panel.test.tsx` | YANGI: 8 komponent-test (`debt-payment-balance` patterni) |
+| `apps/web/src/app/(app)/sotuv/page.tsx` | `type Tab`ga `mijozlar`; tab tugmasi Cheklar↔Smena orasida; panel mount + 3 callback mavjud modal-mount'larga |
+| `apps/web/src/app/(app)/sotuv/__tests__/sales-screen-customers.test.tsx` | YANGI: 4 sahifa-test (tab joylashuvi, qidiruv, DebtPaymentDialog/ChekDetailPanel wiring) |
+| `apps/web/src/__tests__/i18n-no-hardcoded.test.ts` | yangi komponent `POS_DONE_FILES` reyestriga (gate talabi — teshiksiz skaner) |
+| `apps/web/src/messages/{uz,ru}.json` | `pages.sotuv.tab_customers` (Mijozlar/Клиенты), `pages.pos.customers_cheks` (Cheklari/Чеки) — qolgan matnlar mavjud customer-card kalitlaridan qayta ishlatildi |
+**Testlar:** 12 yangi (8 komponent + 4 sahifa). RED ko'rildi: komponent — modul yo'qligida import-fail;
+sahifa — 4/4 failed («Mijozlar» tabi yo'q edi). GREEN: 12/12. Rejadan ongli qo'shimcha: sahifa-testlarga
+2 wiring-testi (DebtPaymentDialog tanlangan mijoz bilan, qidiruv qadamisiz; chek → ChekDetailPanel + F6
+qaytarish tugmasi) — aks holda page.tsx callback'lari testsiz qolardi.
+**Gate:** typecheck 0 ✓ (turbo 10/10) · lint:product 0 ✓ (2 yangi fayl format tuzatildi) ·
+i18n:gate 19/19 ✓ · web test 271 fayl / 3869 pass ✓ (api'ga tegilmagan — api test shart emas)
+**O'LCHANGAN vs O'LCHANMAGAN:** O'lchandi — happy-dom'da komponent xulqi (qidiruv `search=`, summary
+URL/valyuta, NULL-balans qatori, 3 callback argumentlari, `agentId=` so'rovi, mijoz almashtirishda
+holat tozalanishi), sahifa-wiring (tab tartibi DOM'da, dialog `initialAgent` oqimi, chek-detal ochilishi),
+to'liq web suite, commit tarkibi (`git show --stat HEAD`: 7 o'z fayl + `docs/progress.json` hook'i —
+normal). O'LCHANMADI — real brauzer/monoblokda tab ko'rinishi va sensorli ishlash, jonli serverda
+`payableMinor`/`agentId` javoblari. **Phase-1: strukturaviy, runtime-tasdiqlanmagan.**
+**Nima QILINMADI va nega:** `CustomerCardPanel`/`DebtPaymentDialog` qayta yozilmadi (reja taqig'i —
+qayta ishlatildi); «Mijoz kartasi» tugmasi kartani qidiruv qadamidan ochadi (panelda `initialAgent`
+prop'i yo'q — unga tegish taqiq edi). Yangi backend yo'q. Deploy yo'q.
+**Deploy:** YO'Q (operator buyrug'i kutilyapti — web deploy xohlasa).
+**TO'XTADIM.**
