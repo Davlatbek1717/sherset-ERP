@@ -331,7 +331,8 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
-> **🕒 2026-08-14b (KASSA — chek o'ngga surilib «Summa» kesilishi tuzatildi, `c867eb65`) —**
+> **🕒 2026-08-14b (KASSA — chek o'ngga surilib «Summa» kesilishi tuzatildi, `c867eb65` + ✅ DEPLOYED
+> `673ea1c9→c93113b0`, site/health 200, yangi CSS 2 chunk'da grep-tasdiq, eski `margin:0 auto` chunk'larda YO'Q) —**
 > egasining fotosi (TPH-2026-00073): exe'dan chiqqan chekda kontent o'ngga surilib, Summa
 > ustuni qog'ozdan chiqib ketgan. **Ildiz sabab ikki qavatli:** exe sukut sahifani **80mm**
 > deb e'lon qiladi (`DEFAULT_WIDTH_MICRONS`), 80mm termal printerning BOSILADIGAN eni esa
