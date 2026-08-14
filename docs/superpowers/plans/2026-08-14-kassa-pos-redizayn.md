@@ -476,7 +476,21 @@ yoziladi, versiya 1.7.0. Kanalga YUKLANMAYDI (F9).
   Commit.
 - [ ] **6.5** Hisobot va TO'XTASH. Versiya-moslik matritsasi (spec §7) hisobotda takrorlansin.
 
-**Hisobot (F6):** _[bo'sh]_
+**Hisobot (F6, 2026-08-14, `a6061799`·`a68ffed0`·`5040c31d`):** preload: electronAPI'ga
+`minimize/toggleWindowed/requestQuit` (kanallar W1/E1 bilan bir xil, `shell:quit` metodi yo'q) +
+marker-suppression (`<html data-sherset-window-controls="page">` → suzuvchi uchlik chizilmaydi/
+olib tashlanadi, MutationObserver, idempotent — dublikat taqiq); web: `window-controls.tsx` —
+FAQAT `electronAPI.minimize` bo'lsa header eng o'ngida — ❐ ✕ (56px, ✕ hover qizil, fixed EMAS),
+PosHeader'ga ulandi, i18n `win_*` (ru+uz), qo'riqchi-reyestrlar yangilandi; qo'riqchi-test Edit
+bilan qayta yozildi (W5/W6/W7 + preload nom-moslik tetheri, E1–E4/W1/W2 saqlanadi, test-avval
+qizil). **MUHIM OG'ISH: versiya 1.8.0, reja «1.7.0» degan** — 1.7.0 binari (suppression'siz)
+2026-08-13 da allaqachon KANALDA, bitta raqamda ikki binar bo'lmasin (F9 shu raqamni yig'sin).
+Gate har commitda to'liq: typecheck 0 · lint 0 error · i18n 19/19 · web **3945 passed** (3925+20:
++9 qayta yozilgan qo'riqchi, +3 dinamik bridge-kanal, +8 yangi komponent-test). Kanalga HECH NARSA
+yuklanmadi; main.js'ga tegilmadi. **Phase-1: strukturaviy, runtime-tasdiqlanmagan** — haqiqiy
+Electron ishga tushirilmagan (suppression haqiqiy preload manbasida vitest-ijro bilan o'lchandi),
+vizual/qurilma-sinov YO'Q (F9). CHALA: ShellVersionBadge headerga singdirilmagan (ataylab — F6
+ro'yxatida yo'q edi, F9 hal qilsin). To'liq: `docs/audits/pos-redizayn-F6-hisobot.md`.
 
 ---
 
