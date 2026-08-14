@@ -1,7 +1,12 @@
 # Sherset Kassa — Electron o'rami (`desktop/`)
 
-> Holat: **`1.7.0` yig'ildi va KANALDA** (2026-08-13, `latest.yml`+exe HTTPS
-> orqali o'lchandi: sha512 mos, HEAD 200, 81 962 235 bayt). Yangilik: o'ng-yuqorida
+> Holat: repo'da **`1.8.0` — YIG'ILMAGAN, KANALDA EMAS** (F6, POS redizayn,
+> 2026-08-14): `electronAPI.minimize/toggleWindowed/requestQuit` + web-header
+> `data-sherset-window-controls="page"` markerini qo'yganda suzuvchi uchlik
+> bostiriladi (MutationObserver). Reliz — F9 da, operator ruxsati bilan.
+> Kanalda hozircha **`1.7.0`** (2026-08-13 yig'ilgan, `latest.yml`+exe HTTPS
+> orqali o'lchandi: sha512 mos, HEAD 200, 81 962 235 bayt; suppression'siz —
+> shu sababli F6 raqami 1.8.0 ga ko'tarildi). 1.7.0 yangiligi: o'ng-yuqorida
 > oyna boshqaruv uchligi — «—» (minimize), «❐» (kiosk ↔ oynali rejim), «✕»
 > (tasdiqli chiqish); close-qo'riqchi endi konfig bo'yicha (oynali rejimda ham
 > Alt+F4 yopmaydi). Qurilmada —/❐ xulqi va 1.6.0→1.7.0 o'tish jonli KUZATILMAGAN.
@@ -305,11 +310,11 @@ pnpm install            # bir marta (electron + electron-builder ≈ 200 MB)
 pnpm run dist           # = node check-build-assets.js && electron-builder --win nsis
 ```
 
-Natija (hozirgi `version: 1.7.0` uchun):
+Natija (hozirgi `version: 1.8.0` uchun):
 
 ```
-desktop/dist/Sherset-Kassa-Setup-1.7.0.exe
-desktop/dist/Sherset-Kassa-Setup-1.7.0.exe.blockmap
+desktop/dist/Sherset-Kassa-Setup-1.8.0.exe
+desktop/dist/Sherset-Kassa-Setup-1.8.0.exe.blockmap
 desktop/dist/latest.yml
 ```
 

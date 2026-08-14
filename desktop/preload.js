@@ -36,7 +36,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // ── Qurilma holati (kirish ekranidagi belgi) ─────────────────────────────
   shellStatus: () => ipcRenderer.invoke('shell:status'),
 
-  // ── Oyna boshqaruvi (F6, 1.7.0) — web-header o'z — ❐ ✕ tugmalarini shu
+  // ── Oyna boshqaruvi (F6, 1.8.0) — web-header o'z — ❐ ✕ tugmalarini shu
   // metodlar bilan chizadi (`window-controls.tsx`). Kanallar pastdagi suzuvchi
   // WINDOW_BUTTONS bilan BIR XIL; ✕ ham TASDIQLI yo'ldan (`shell:request-quit`,
   // `shell:quit` metodi ATAYLAB berilmaydi — E1). main.js ishlovchilari 1.6.0
@@ -130,7 +130,12 @@ function installExitGesture() {
 }
 
 /**
- * OYNA BOSHQARUV TUGMALARI — suzuvchi uchlik, endi MOSLIK ZAXIRASI (F6, 1.7.0).
+ * OYNA BOSHQARUV TUGMALARI — suzuvchi uchlik, endi MOSLIK ZAXIRASI (F6, 1.8.0).
+ *
+ * 🔴 NEGA 1.8.0, reja «1.7.0» degan bo'lsa ham: 1.7.0 raqami 2026-08-13 da
+ * (P01, suzuvchi uchlik bilan, SUPPRESSION'SIZ) allaqachon yig'ilib KANALGA
+ * chiqarilgan — bitta raqam ostida ikki xil binar bo'lmasin, updater ham
+ * o'sha qurilmalarga yangisini bera olsin.
  *
  * P01 (2026-08-13, egasi): «—» ilovadan chiqmasdan ish stoliga (minimize),
  * «❐» kiosk ↔ oynali rejim, «✕» tasdiq dialogli chiqish. Imo

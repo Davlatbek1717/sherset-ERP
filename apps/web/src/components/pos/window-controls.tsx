@@ -4,7 +4,7 @@
  * F6 (POS redizayn) — headerga singdirilgan oyna-tugmalari (spec §7).
  *
  * — ❐ ✕ uchligi endi ko'k headerning eng o'ng chetida, tekis tugmalar bo'lib
- * turadi (✕ hover qizil). FAQAT yangi qobiqda (exe 1.7.0+, `electronAPI.
+ * turadi (✕ hover qizil). FAQAT yangi qobiqda (exe 1.8.0+, `electronAPI.
  * minimize` mavjud) chiziladi; oddiy brauzerda va eski exe'da hech narsa
  * chizilmaydi — u yerda preload'ning suzuvchi uchligi o'zi turadi. Chizilganda
  * <html> ga `data-sherset-window-controls="page"` markeri qo'yiladi va yangi

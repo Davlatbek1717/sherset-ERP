@@ -6,7 +6,7 @@
  *  · electronAPI bor, lekin `minimize` YO'Q (eski exe ≤1.6.0) → chizilmaydi —
  *    eski qobiqda preload'ning suzuvchi uchligi o'zi turadi, ikkita uchlik
  *    bo'lmasin (spec §7 versiya-moslik matritsasi);
- *  · `minimize` bor (1.7.0+) → — ❐ ✕ chiziladi va <html> ga
+ *  · `minimize` bor (1.8.0+) → — ❐ ✕ chiziladi va <html> ga
  *    `data-sherset-window-controls="page"` markeri qo'yiladi (preload shu
  *    markerni ko'rib o'z uchligini bostiradi);
  *  · bosishlar to'g'ri metodlarga boradi; ✕ `requestQuit` — tasdiq dialogi
@@ -67,7 +67,7 @@ describe('WindowControls — versiya-moslik matritsasi (spec §7)', () => {
     expect(document.documentElement.getAttribute(MARKER_ATTR)).toBeNull();
   });
 
-  it('yangi exe (1.7.0+): — ❐ ✕ chiziladi va marker `page` qo`yiladi', () => {
+  it('yangi exe (1.8.0+): — ❐ ✕ chiziladi va marker `page` qo`yiladi', () => {
     setBridge(newBridge());
     renderWithProviders(<WindowControls />);
     expect(screen.getByTestId('pos-win-minimize')).toBeInTheDocument();

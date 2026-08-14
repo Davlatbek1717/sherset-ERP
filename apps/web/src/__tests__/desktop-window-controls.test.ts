@@ -9,7 +9,8 @@ import { beforeEach, describe, expect, it } from 'vitest';
  * tugmasini qulflardi. 2026-08-13 da egasi Chrome'dagi kabi UCHLIKNI so'radi
  * (P01): «—» ilovadan chiqmasdan ish stoliga (minimize), «❐» kiosk ↔ oynali
  * rejim, «✕» tasdiq dialogli chiqish — test yangi niyat bilan qayta yozildi.
- * 2026-08-14 (F6, POS redizayn, 1.7.0) niyat YANA kengaydi: uchlik endi
+ * 2026-08-14 (F6, POS redizayn, 1.8.0 — 1.7.0 raqami suppression'siz binar
+ * bilan allaqachon kanalda edi) niyat YANA kengaydi: uchlik endi
  * web-header ichiga singdiriladi (`components/pos/window-controls.tsx`),
  * preload'ning suzuvchi uchligi esa MOSLIK ZAXIRASI bo'lib qoladi — faqat
  * sahifa o'z tugmalarini chizmaganda (eski web, POS bo'lmagan sahifa)
