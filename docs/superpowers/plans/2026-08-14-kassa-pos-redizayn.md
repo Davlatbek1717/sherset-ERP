@@ -163,7 +163,17 @@ xulqiy o'zgarish NOL — 77 test o'zgarishsiz yashil qolishi shart (spec §6).
   zanjirda yo'qolib typecheck'dan jim o'tishi mumkin; har mode render qilinganini testda emas,
   brauzerda ham ko'r.
 
-**Hisobot (F1):** _[bo'sh — F1 agenti to'ldiradi]_
+**Hisobot (F1, 2026-08-14, `82222e29`·`0801a2ed`·`4d5479c4`·`392c0b40`):** page.tsx 3370→1607
+qator; 5 rejim-komponent + 2 ulashma fayl (`pos-types.ts`, `use-print-outcome.ts` — rejada yo'q
+edi, zarur bo'ldi) yaratildi; holat/so'rov/mutatsiyalar sahifada qoldi, JSX aynan ko'chirildi.
+Gate har commitda to'liq: typecheck 0 · lint 0 error · i18n 19/19 · web test 3876 passed
+(166/166 sotuv-test **o'zgarishsiz** yashil). 5 qo'riqchi-skaner yo'l/ro'yxati moslashtirildi
+(pos-cart-profit endi page+sotuv-mode; pos-refund-payout → cheklar-mode; page raw-input
+ro'yxatdan chiqdi). Lokal dev-brauzerda barcha 6 rejim + savat-qo'shish + drawer ko'z bilan
+tekshirildi, konsol 0 xato. **Phase-1: strukturaviy, runtime-tasdiqlanmagan** — qurilma/sensorli
+sinov YO'Q (F9). Keyingi agentga: tab-bar/CFD-satr/dialoglar ATAYLAB sahifada (F2 ishi); yangi
+POS-fayl ochsangiz pos-i18n-guard/i18n-no-hardcoded/raw-element ro'yxatlariga qo'shish MAJBURIY.
+To'liq: `docs/audits/pos-redizayn-F1-hisobot.md`.
 
 ---
 
