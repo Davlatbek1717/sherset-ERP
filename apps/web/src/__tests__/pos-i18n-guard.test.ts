@@ -48,6 +48,7 @@ const POS_FILES = [
   join(SRC, 'components', 'pos', 'rasmilashtirish-modal.tsx'),
   // F2 (POS redizayn) — sidebar/header qobiq komponentlari.
   join(SRC, 'components', 'pos', 'pos-sidebar.tsx'),
+  join(SRC, 'components', 'pos', 'pos-header.tsx'),
 ];
 
 const rel = (f: string) => f.replace(SRC, 'src').replace(/\\/g, '/');

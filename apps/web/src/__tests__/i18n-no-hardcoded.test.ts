@@ -268,6 +268,7 @@ const POS_DONE_FILES = [
   'components/pos/pos-pin-lock.tsx',
   // F2 (POS redizayn) — sidebar/header qobiq komponentlari.
   'components/pos/pos-sidebar.tsx',
+  'components/pos/pos-header.tsx',
   'components/pos/rasmilashtirish-modal.tsx',
   'components/pos/shell-version-badge.tsx',
   'app/(app)/sotuv/page.tsx',
@@ -321,6 +322,9 @@ const POS_ALLOWED: Record<string, string> = {
   // bog'lansa bir xil hujjat kim yaratganiga qarab turlicha yozilib qolardi va
   // hisobot/qidiruv buzilardi — `sotuv/page.tsx` dagi izohga qarang.
   'POS qaytarish': 'DB hujjat izohi, ekran matni emas',
+  // F2 — header matn-logotipi. Brend nomi ikkala tilda ham AYNAN shu yozuvda
+  // turadi (tarjima qilinsa brend buziladi); public/ da rasm-asset yo'q.
+  SHERSET: 'brend logotipi — tarjima qilinmaydi',
 };
 
 interface PosLeak {
