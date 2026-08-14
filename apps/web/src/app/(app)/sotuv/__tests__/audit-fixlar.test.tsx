@@ -165,7 +165,8 @@ describe('To‘lovdan keyin savat tozalanadi (dublikat sotuv xavfi)', () => {
     const user = userEvent.setup();
     renderWithProviders(<SotuvPage />);
 
-    await user.click(await screen.findByRole('button', { name: /Tayyor/ }));
+    // F2 (POS redizayn): «Tayyor» tab'i «Navbat» rejimiga qo'shildi (spec Q3).
+    await user.click(await screen.findByRole('button', { name: 'Navbat' }));
     await user.click(await screen.findByRole('button', { name: /To.lov/ }));
     const dialog = await screen.findByRole('dialog');
 

@@ -70,9 +70,14 @@ async function openChekDetail(user: ReturnType<typeof userEvent.setup>) {
   return await screen.findByText('CHEK-00001');
 }
 
-/** Qaytarish miqdori maydonlari (chap ustundagi qidiruvdan farqlanadi). */
+/** Qaytarish miqdori maydonlari (boshqa qidiruv maydonlaridan farqlanadi).
+ *  F2: chap setka endi faqat Sotuv rejimida — Cheklar rejimida (detal ochiq)
+ *  sahifada umuman textbox qolmasligi mumkin, shuning uchun `queryAll`
+ *  (`getAll` nol topilganda otilib, «0 ta» assertni ishlatib bo'lmasdi). */
 function refundQtyInputs(): HTMLElement[] {
-  return screen.getAllByRole('textbox').filter((el) => el.getAttribute('inputmode') === 'decimal');
+  return screen
+    .queryAllByRole('textbox')
+    .filter((el) => el.getAttribute('inputmode') === 'decimal');
 }
 
 beforeEach(() => {

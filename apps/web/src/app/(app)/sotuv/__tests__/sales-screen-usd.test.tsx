@@ -67,7 +67,10 @@ function readyRoutes(over: Record<string, unknown> = {}): Route[] {
 }
 
 async function openPaymentModal(user: ReturnType<typeof userEvent.setup>) {
-  await user.click(await screen.findByRole('button', { name: /Tayyor/ }));
+  // F2 (POS redizayn): eski «Tayyor» tab'i «Navbat» rejimiga qo'shildi —
+  // tayyor cheklar endi Navbat ekranining o'ng ustunida (eski niyat: alohida
+  // tab; spec Q3 ularni birlashtirdi). To'lov yo'li o'zgarmagan.
+  await user.click(await screen.findByRole('button', { name: 'Navbat' }));
   await user.click(await screen.findByRole('button', { name: /To.lov/ }));
   return await screen.findByRole('dialog');
 }

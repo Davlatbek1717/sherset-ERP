@@ -9051,7 +9051,7 @@
       "sidebar_collapse": "Свернуть меню",
       "sidebar_expand": "Развернуть меню",
       "header_shift_age": "открыта {age}",
-      "header_sales": "{n} шт · {sum}",
+      "header_sales": "{n} продаж · {sum}",
       "header_conn_ok": "Связь с сервером есть",
       "header_conn_lost": "Нет связи с сервером",
       "terminal": "Терминал",

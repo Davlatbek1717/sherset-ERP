@@ -279,10 +279,10 @@ describe('F7 — ruxsat', () => {
     );
     renderWithProviders(<SotuvPage />);
 
-    // Savat yorlig'i chizilgan bo'lsa ekran tayyor. Yorliq DASTLAB ko'rinadi
-    // (matritsa hali yo'q — fail-open), shuning uchun YO'QOLISHINI kutamiz;
-    // darhol tekshirish yolg'on-yashil bo'lardi.
-    await screen.findByRole('button', { name: /^Savat/ });
+    // Sotuv bo'limi (F2: sidebar) chizilgan bo'lsa ekran tayyor. Zakazlar
+    // yorlig'i DASTLAB ko'rinadi (matritsa hali yo'q — fail-open), shuning
+    // uchun YO'QOLISHINI kutamiz; darhol tekshirish yolg'on-yashil bo'lardi.
+    await screen.findByRole('button', { name: 'Sotuv' });
     await waitFor(() =>
       expect(screen.queryByRole('button', { name: /^Zakazlar/ })).not.toBeInTheDocument(),
     );

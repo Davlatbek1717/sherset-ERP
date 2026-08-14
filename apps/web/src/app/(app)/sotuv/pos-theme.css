@@ -1,0 +1,25 @@
+/**
+ * F2 (POS redizayn) — POS-qamrovli tema qatlami (spec §4).
+ *
+ * Faqat `/sotuv` ildizidagi `.pos-theme` klassi ostida amal qiladi —
+ * ERP'ning boshqa sahifalari va global `--ms-*` tokenlarga TEGILMAYDI.
+ * Ko'k-oq SHERSET palitrasi; yashil/qizil faqat semantik joylarda
+ * (to'lov/bekor/xavf) — ular mavjud utility-klasslarda qoladi.
+ */
+.pos-theme {
+  /* Header/aksent — SHERSET ko'ki */
+  --pos-brand: #1e5aa8;
+  /* Hover/aktiv */
+  --pos-brand-dark: #164a8f;
+  --pos-on-brand: #ffffff;
+  /* Minimal bosish nishoni (spec §4: ≥56px) */
+  --pos-touch-min: 56px;
+  /* Ro'yxat qatori balandligi */
+  --pos-row-h: 64px;
+
+  /* Sidebar palitrasi (spec §3.2: aktiv bo'lim oq fon + ko'k chiziq) */
+  --pos-surface: #ffffff;
+  --pos-sidebar-bg: #eef3fa;
+  --pos-sidebar-fg: #33517a;
+  --pos-sidebar-hover: #dfe9f6;
+}

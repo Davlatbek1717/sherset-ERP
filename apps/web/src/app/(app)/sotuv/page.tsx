@@ -1,5 +1,8 @@
 'use client';
 
+// F2 — POS-qamrovli tema tokenlari (`.pos-theme` ildiz klassi ostida).
+import './pos-theme.css';
+
 import { CheklarMode } from '@/app/(app)/sotuv/_components/cheklar-mode';
 import { NavbatMode } from '@/app/(app)/sotuv/_components/navbat-mode';
 import type { CartLine, SaleRow } from '@/app/(app)/sotuv/_components/pos-types';
@@ -18,7 +21,11 @@ import type { CustomerCardRow } from '@/components/pos/customer-card-panel';
 import { CustomerCardPanel } from '@/components/pos/customer-card-panel';
 import { CustomersPanel } from '@/components/pos/customers-panel';
 import { DebtPaymentDialog } from '@/components/pos/debt-payment-dialog';
+import { PosHeader } from '@/components/pos/pos-header';
+import { type PosMode, PosSidebar } from '@/components/pos/pos-sidebar';
 import { RasmiyashtirishModal } from '@/components/pos/rasmilashtirish-modal';
+import { ShellVersionBadge } from '@/components/pos/shell-version-badge';
+import { useServerLink } from '@/components/pos/use-server-link';
 import { useDestructiveMutation } from '@/hooks/use-destructive-mutation';
 import { useFillViewport } from '@/hooks/use-fill-viewport';
 import { usePermissions } from '@/hooks/use-permissions';
@@ -62,15 +69,6 @@ import { Money, lineFloorBreach, marginPercent, priceFloorMinor } from '@moyskla
 import { isCurrencyCode } from '@moysklad/money/currencies';
 import { Button, Input, useConfirm, useToast } from '@moysklad/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import {
-  CheckCircle,
-  ClipboardList,
-  Clock,
-  Receipt,
-  Settings,
-  ShoppingCart,
-  Users,
-} from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
@@ -298,9 +296,40 @@ function SalesScreen({
 
   const printZReport = usePrintZReport();
 
-  const [tab, setTab] = useState<
-    'savat' | 'jarayonda' | 'tayyor' | 'zakazlar' | 'cheklar' | 'mijozlar' | 'smena'
-  >('savat');
+  // F2 — eski `tab` unioni `PosMode`ga ko'chdi: 'savat'→'sotuv' (savat endi
+  // Sotuv rejimining doimiy qismi), 'jarayonda'/'tayyor'→'navbat' (bitta
+  // ekran, F4 kanban qiladi). Rejimlar TO'LIQ EKRAN (spec Q2).
+  const [mode, setMode] = useState<PosMode>('sotuv');
+
+  // F2 — sidebar holati. `localStorage` faqat foydalanuvchi qo'l bilan
+  // almashtirganda yoziladi; saqlanmagan bo'lsa tor ekran avto-yig'adi
+  // (spec §3.2). SSR'da `window` yo'q — kengaygan deb boshlaymiz (sahifa
+  // baribir sessiya so'rovi kelguncha chizilmaydi, mismatch bo'lmaydi).
+  const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    try {
+      const stored = window.localStorage.getItem('sherset.pos.sidebar');
+      if (stored === 'collapsed') return true;
+      if (stored === 'expanded') return false;
+    } catch {
+      /* localStorage yopiq (private mode) — sukut qiymat */
+    }
+    return window.innerWidth < 1280;
+  });
+  const toggleSidebar = useCallback(() => {
+    setSidebarCollapsed((prev) => {
+      const next = !prev;
+      try {
+        window.localStorage.setItem('sherset.pos.sidebar', next ? 'collapsed' : 'expanded');
+      } catch {
+        /* saqlanmasa ham ishlayveradi */
+      }
+      return next;
+    });
+  }, []);
+
+  // F2 — aloqa indikatori: mavjud polling oqimini kuzatadi, yangi so'rov yo'q.
+  const connectionOk = useServerLink();
   const [search, setSearch] = useState('');
   // Qidiruv maydoni savatga qo'shilgandan keyin tozalanadi VA fokusni
   // qaytaradi (`addToCart`) — shu ref o'sha fokus uchun.
@@ -481,7 +510,7 @@ function SalesScreen({
       chekQuery
         ? api.get(`/retail-sales?search=${encodeURIComponent(chekQuery)}&limit=50`)
         : api.get(`/retail-sales?sessionId=${session.id}&limit=100`),
-    enabled: tab === 'cheklar',
+    enabled: mode === 'cheklar',
   });
 
   // Ready state sales — polling every 8s so kassir sees when omborchi marks tayyor
@@ -518,7 +547,7 @@ function SalesScreen({
       api.get(
         `/customer-orders?state=${orderState}&storeId=${session.store?.id ?? ''}&limit=50&sortBy=moment&sortDir=desc`,
       ),
-    enabled: tab === 'zakazlar' && canSeeOrders,
+    enabled: mode === 'zakazlar' && canSeeOrders,
   });
   const orders = ordersData?.items ?? [];
 
@@ -811,7 +840,7 @@ function SalesScreen({
         const uniform = discounts.size === 1 ? Number([...discounts][0]) : Number.NaN;
         setDiscountPct(Number.isFinite(uniform) && uniform > 0 ? uniform : 0);
         setPayingSale({ id: d.id, sumMinor: BigInt(d.sumMinor) });
-        setTab('savat');
+        setMode('sotuv');
         setCheckoutOpen(true);
       } catch (e) {
         toast.error(e instanceof Error ? e.message : t('load_error'));
@@ -885,7 +914,7 @@ function SalesScreen({
       setPayingOrderId(order.id);
       setPayingSale({ id: saleId, sumMinor: BigInt(sumMinor) });
       setSelectedOrderId(null);
-      setTab('savat');
+      setMode('sotuv');
       setCheckoutOpen(true);
     },
     onError: (e: Error) => toast.error(e.message),
@@ -1155,292 +1184,219 @@ function SalesScreen({
   });
 
   return (
-    <div className="flex flex-1 min-h-0 gap-0 bg-[var(--ms-bg-app)]">
-      {/* Left — search + product grid */}
-      <SotuvSearchGrid
-        session={session}
-        shiftAge={shiftAge}
-        search={search}
-        setSearch={setSearch}
-        searchRef={searchRef}
-        products={products}
-        isLoading={isLoading}
-        addToCart={addToCart}
-      />
+    <div className="flex min-h-0 flex-1 flex-col bg-[var(--ms-bg-app)]">
+      {/* F2 — 64px ko'k header (spec §3.1). O'ng slotda CFD tugmasi (spec
+          §5.1: boshqaruv header'da qoladi); F6 oyna-tugmalari ham shu slotga
+          qo'shiladi. Eski CFD-satr va tab-bar o'chirildi (sidebar almashtirdi). */}
+      <PosHeader session={session} shiftAge={shiftAge} connectionOk={connectionOk}>
+        <button
+          type="button"
+          onClick={toggleCfd}
+          data-test-id="pos-cfd-toggle"
+          title={t('cfd_title')}
+          className={`flex h-11 shrink-0 items-center gap-1.5 rounded-lg px-3 font-semibold text-sm transition-colors ${
+            cfdOpen
+              ? 'bg-emerald-500 text-white hover:bg-emerald-600'
+              : 'bg-white/15 text-[var(--pos-on-brand)] hover:bg-white/25'
+          }`}
+        >
+          {cfdOpen ? `🟢 ${t('cfd_on')}` : `📺 ${t('cfd_off')}`}
+        </button>
+      </PosHeader>
 
-      {/* Right — cart (Savat) + Cheklar tabs */}
-      <div className="flex w-[600px] shrink-0 flex-col overflow-hidden border-[var(--ms-border)] border-l bg-[var(--ms-bg-surface)]">
-        {/* Mijoz-ekran (televizor) boshqaruvi — dasturda ham, brauzerda ham */}
-        <div className="flex shrink-0 items-center justify-between border-[var(--ms-border)] border-b px-3 py-1.5">
-          <span className="text-[var(--ms-text-muted)] text-xs">🖥 {t('cfd_title')}</span>
-          <button
-            type="button"
-            onClick={toggleCfd}
-            className={`rounded-lg border px-3 py-1 font-medium text-xs transition-colors ${
-              cfdOpen
-                ? 'border-green-600 bg-green-50 text-green-700 hover:bg-green-100'
-                : 'border-[var(--ms-border)] text-[var(--ms-text-muted)] hover:bg-[var(--ms-bg-hover)]'
-            }`}
-          >
-            {cfdOpen ? `🟢 ${t('cfd_on')}` : `📺 ${t('cfd_off')}`}
-          </button>
-        </div>
-        {/* Tab bar */}
-        <div className="flex border-[var(--ms-border)] border-b">
-          <button
-            type="button"
-            onClick={() => setTab('savat')}
-            className={`flex flex-1 items-center justify-center gap-1.5 py-2.5 text-sm font-medium transition-colors border-b-2 ${
-              tab === 'savat'
-                ? 'border-[var(--ms-text-brand)] text-[var(--ms-text-brand)]'
-                : 'border-transparent text-[var(--ms-text-muted)] hover:text-[var(--ms-text-primary)]'
-            }`}
-          >
-            <ShoppingCart className="h-4 w-4" />
-            {t('cart_title')}{' '}
-            {cartCount > 0 && (
-              <span className="rounded-full bg-[var(--ms-brand)] px-1.5 py-0.5 text-[10px] text-white">
-                {cartCount}
-              </span>
-            )}
-          </button>
-          <button
-            type="button"
-            onClick={() => setTab('jarayonda')}
-            className={`flex flex-1 items-center justify-center gap-1.5 py-2.5 text-sm font-medium transition-colors border-b-2 ${
-              tab === 'jarayonda'
-                ? 'border-[var(--ms-text-brand)] text-[var(--ms-text-brand)]'
-                : 'border-transparent text-[var(--ms-text-muted)] hover:text-[var(--ms-text-primary)]'
-            }`}
-          >
-            <Clock className="h-4 w-4" />
-            {t('tab_in_progress')}
-            {pickingSales.length > 0 && (
-              <span className="rounded-full bg-amber-500 px-1.5 py-0.5 text-[10px] text-white">
-                {pickingSales.length}
-              </span>
-            )}
-          </button>
-          <button
-            type="button"
-            onClick={() => setTab('tayyor')}
-            className={`flex flex-1 items-center justify-center gap-1.5 py-2.5 text-sm font-medium transition-colors border-b-2 ${
-              tab === 'tayyor'
-                ? 'border-[var(--ms-text-brand)] text-[var(--ms-text-brand)]'
-                : 'border-transparent text-[var(--ms-text-muted)] hover:text-[var(--ms-text-primary)]'
-            }`}
-          >
-            <CheckCircle className="h-4 w-4" />
-            {t('tab_ready')}
-            {readySales.length > 0 && (
-              <span className="rounded-full bg-emerald-500 px-1.5 py-0.5 text-[10px] text-white">
-                {readySales.length}
-              </span>
-            )}
-          </button>
-          {/* ── ZAKAZLAR (F7) ──
-              Yorliq `customerorder.view` bo'yicha yashiriladi. Bu FAQAT UX:
-              haqiqiy qulf serverda (`KioskGuard` allowlist'i +
-              `@RequirePermission`) — «UI yashirish yetarli emas» (TZ §3.1). */}
-          {canSeeOrders && (
-            <button
-              type="button"
-              onClick={() => setTab('zakazlar')}
-              className={`flex flex-1 items-center justify-center gap-1.5 py-2.5 text-sm font-medium transition-colors border-b-2 ${
-                tab === 'zakazlar'
-                  ? 'border-[var(--ms-text-brand)] text-[var(--ms-text-brand)]'
-                  : 'border-transparent text-[var(--ms-text-muted)] hover:text-[var(--ms-text-primary)]'
-              }`}
-            >
-              <ClipboardList className="h-4 w-4" />
-              {t('tab_orders')}
-            </button>
+      <div className="flex min-h-0 flex-1">
+        <PosSidebar
+          mode={mode}
+          onModeChange={setMode}
+          badges={{ savat: cartCount, navbat: pickingSales.length + readySales.length }}
+          canSeeOrders={canSeeOrders}
+          collapsed={sidebarCollapsed}
+          onToggleCollapsed={toggleSidebar}
+        />
+
+        {/* Ish maydoni — tanlangan rejim TO'LIQ enda (spec Q2). Rejim ichlari
+            hali eski ko'rinishda — F3–F5 yangilaydi. */}
+        <main className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
+          {/* ── SOTUV ── setka + savat (savat endi doimiy panel, tab emas) ── */}
+          {mode === 'sotuv' && (
+            <>
+              <SotuvSearchGrid
+                session={session}
+                shiftAge={shiftAge}
+                search={search}
+                setSearch={setSearch}
+                searchRef={searchRef}
+                products={products}
+                isLoading={isLoading}
+                addToCart={addToCart}
+              />
+              <div
+                data-test-id="pos-savat-panel"
+                className="flex w-[600px] shrink-0 flex-col overflow-hidden border-[var(--ms-border)] border-l bg-[var(--ms-bg-surface)]"
+              >
+                <SavatPanel
+                  cart={cart}
+                  cartLocked={cartLocked}
+                  onClearCart={() => {
+                    setCart([]);
+                    // F8 — savatni tozalash zakaz/chek bog'lanishini ham uzadi:
+                    // aks holda bo'sh-u QULFLANGAN savat qolib, kassir undan
+                    // chiqolmasdi.
+                    setPayingOrderId(null);
+                    setPayingSale(null);
+                  }}
+                  setEditingProductId={setEditingProductId}
+                  updateQty={updateQty}
+                  removeFromCart={removeFromCart}
+                  discountPct={discountPct}
+                  setDiscountPct={setDiscountPct}
+                  discountEditing={discountEditing}
+                  setDiscountEditing={setDiscountEditing}
+                  cartCount={cartCount}
+                  cartTotal={cartTotal}
+                  discountedTotal={discountedTotal}
+                  cartProfitMinor={cartProfitMinor}
+                  cartMarginPct={cartMarginPct}
+                  pricePolicyBlock={pricePolicyBlock}
+                  directSellPending={directSellMut.isPending}
+                  onDirectSell={() => directSellMut.mutate()}
+                  sendToPickingPending={sendToPickingMut.isPending}
+                  onSendToPicking={() => sendToPickingMut.mutate()}
+                />
+              </div>
+            </>
           )}
-          <button
-            type="button"
-            onClick={() => setTab('cheklar')}
-            className={`flex flex-1 items-center justify-center gap-1.5 py-2.5 text-sm font-medium transition-colors border-b-2 ${
-              tab === 'cheklar'
-                ? 'border-[var(--ms-text-brand)] text-[var(--ms-text-brand)]'
-                : 'border-transparent text-[var(--ms-text-muted)] hover:text-[var(--ms-text-primary)]'
-            }`}
-          >
-            <Receipt className="h-4 w-4" />
-            {t('tab_receipts')}
-          </button>
-          {/* ── MIJOZLAR (F7/P07, 2026-08-13 egasi) ── AYNAN Cheklar va Smena
-              orasida: qarz to'lash / karta / cheklar — savatga tegmasdan. */}
-          <button
-            type="button"
-            onClick={() => setTab('mijozlar')}
-            className={`flex flex-1 items-center justify-center gap-1.5 py-2.5 text-sm font-medium transition-colors border-b-2 ${
-              tab === 'mijozlar'
-                ? 'border-[var(--ms-text-brand)] text-[var(--ms-text-brand)]'
-                : 'border-transparent text-[var(--ms-text-muted)] hover:text-[var(--ms-text-primary)]'
-            }`}
-          >
-            <Users className="h-4 w-4" />
-            {t('tab_customers')}
-          </button>
-          <button
-            type="button"
-            onClick={() => setTab('smena')}
-            className={`flex flex-1 items-center justify-center gap-1.5 py-2.5 text-sm font-medium transition-colors border-b-2 ${
-              tab === 'smena'
-                ? 'border-[var(--ms-text-brand)] text-[var(--ms-text-brand)]'
-                : 'border-transparent text-[var(--ms-text-muted)] hover:text-[var(--ms-text-primary)]'
-            }`}
-          >
-            <Settings className="h-4 w-4" />
-            {t('tab_shift')}
-          </button>
-        </div>
 
-        {/* ── JARAYONDA TAB ── omborchi hozir yig'ayotgan savdolar ── */}
-        {tab === 'jarayonda' && (
-          <NavbatMode
-            which="jarayonda"
-            pickingSales={pickingSales}
-            readySales={readySales}
-            cancelSale={cancelSale}
-            markReady={markReady}
-            loadReadyToCart={loadReadyToCart}
-          />
-        )}
+          {/* ── NAVBAT ── jarayonda + tayyor yonma-yon (F4 haqiqiy kanban
+              qiladi; F2 da ikkala eski blok bitta to'liq ekranga tushdi) ── */}
+          {mode === 'navbat' && (
+            <>
+              <div className="flex min-w-0 flex-1 flex-col overflow-hidden border-[var(--ms-border)] border-r bg-[var(--ms-bg-surface)]">
+                <NavbatMode
+                  which="jarayonda"
+                  pickingSales={pickingSales}
+                  readySales={readySales}
+                  cancelSale={cancelSale}
+                  markReady={markReady}
+                  loadReadyToCart={loadReadyToCart}
+                />
+              </div>
+              <div className="flex min-w-0 flex-1 flex-col overflow-hidden bg-[var(--ms-bg-surface)]">
+                <NavbatMode
+                  which="tayyor"
+                  pickingSales={pickingSales}
+                  readySales={readySales}
+                  cancelSale={cancelSale}
+                  markReady={markReady}
+                  loadReadyToCart={loadReadyToCart}
+                />
+              </div>
+            </>
+          )}
 
-        {/* ── TAYYOR TAB ── omborchi yig'ib bo'lgan, to'lov kutayotgan savdolar ── */}
-        {tab === 'tayyor' && (
-          <NavbatMode
-            which="tayyor"
-            pickingSales={pickingSales}
-            readySales={readySales}
-            cancelSale={cancelSale}
-            markReady={markReady}
-            loadReadyToCart={loadReadyToCart}
-          />
-        )}
+          {/* ── ZAKAZLAR ── jarayondagi mijoz zakazlari ── */}
+          {mode === 'zakazlar' && (
+            <div className="flex min-w-0 flex-1 flex-col overflow-hidden bg-[var(--ms-bg-surface)]">
+              <ZakazlarMode
+                orders={orders}
+                orderState={orderState}
+                setOrderState={setOrderState}
+                selectedOrderId={selectedOrderId}
+                setSelectedOrderId={setSelectedOrderId}
+                onPay={(order) => payOrderMut.mutate(order)}
+                paying={payOrderMut.isPending}
+              />
+            </div>
+          )}
 
-        {/* ── ZAKAZLAR TAB ── jarayondagi mijoz zakazlari ── */}
-        {tab === 'zakazlar' && (
-          <ZakazlarMode
-            orders={orders}
-            orderState={orderState}
-            setOrderState={setOrderState}
-            selectedOrderId={selectedOrderId}
-            setSelectedOrderId={setSelectedOrderId}
-            onPay={(order) => payOrderMut.mutate(order)}
-            paying={payOrderMut.isPending}
-          />
-        )}
+          {/* ── CHEKLAR ── */}
+          {mode === 'cheklar' && (
+            <div className="flex min-w-0 flex-1 flex-col overflow-hidden bg-[var(--ms-bg-surface)]">
+              <CheklarMode
+                cheklar={cheklar}
+                chekSearch={chekSearch}
+                setChekSearch={setChekSearch}
+                selectedChekId={selectedChekId}
+                setSelectedChekId={setSelectedChekId}
+              />
+            </div>
+          )}
 
-        {/* ── CHEKLAR TAB ── */}
-        {tab === 'cheklar' && (
-          <CheklarMode
-            cheklar={cheklar}
-            chekSearch={chekSearch}
-            setChekSearch={setChekSearch}
-            selectedChekId={selectedChekId}
-            setSelectedChekId={setSelectedChekId}
-          />
-        )}
+          {/* ── MIJOZLAR (F7) ── panel faqat yo'naltiradi: uch callback
+              mavjud modal/panellarga ulanadi, pul amali panelda YO'Q. */}
+          {mode === 'mijozlar' && (
+            <div className="flex min-w-0 flex-1 flex-col overflow-hidden bg-[var(--ms-bg-surface)]">
+              <CustomersPanel
+                currency={tillCurrency}
+                onOpenCustomerCard={(cp) => {
+                  // F7-tuzatish: karta tanlangan mijoz bilan ochiladi (qidiruvsiz).
+                  setCustomerCardAgent(cp);
+                  setCustomerCardOpen(true);
+                }}
+                onPayDebt={(cp) => {
+                  setDebtPayAgent(cp);
+                  setDebtPayOpen(true);
+                }}
+                onOpenChek={(saleId) => {
+                  // Mavjud ChekDetailPanel «Cheklar» rejimida yashaydi — o'sha
+                  // yerga o'tamiz; F6 qaytarish oqimi o'z joyida ishlayveradi.
+                  setSelectedChekId(saleId);
+                  setMode('cheklar');
+                }}
+              />
+            </div>
+          )}
 
-        {/* ── MIJOZLAR TAB (F7) ── panel faqat yo'naltiradi: uch callback
-            mavjud modal/panellarga ulanadi, pul amali panelda YO'Q. */}
-        {tab === 'mijozlar' && (
-          <CustomersPanel
-            currency={tillCurrency}
-            onOpenCustomerCard={(cp) => {
-              // F7-tuzatish: karta tanlangan mijoz bilan ochiladi (qidiruvsiz).
-              setCustomerCardAgent(cp);
-              setCustomerCardOpen(true);
-            }}
-            onPayDebt={(cp) => {
-              setDebtPayAgent(cp);
-              setDebtPayOpen(true);
-            }}
-            onOpenChek={(saleId) => {
-              // Mavjud ChekDetailPanel «Cheklar» tabida yashaydi — o'sha yerga
-              // o'tamiz; F6 qaytarish oqimi o'z joyida ishlayveradi.
-              setSelectedChekId(saleId);
-              setTab('cheklar');
-            }}
-          />
-        )}
-
-        {/* ── SMENA TAB ── */}
-        {tab === 'smena' && (
-          <SmenaMode
-            session={session}
-            printZReport={printZReport}
-            drawerMode={drawerMode}
-            setDrawerMode={setDrawerMode}
-            drawerAmount={drawerAmount}
-            setDrawerAmount={setDrawerAmount}
-            drawerComment={drawerComment}
-            setDrawerComment={setDrawerComment}
-            drawerPending={drawerMut.isPending}
-            onDrawerSubmit={() => drawerMut.mutate()}
-            onOpenCustomerCard={() => {
-              // Bu yerda mijoz hali tanlanmagan — qidiruvdan boshlanadi.
-              setCustomerCardAgent(null);
-              setCustomerCardOpen(true);
-            }}
-            onOpenDebtPay={() => {
-              setDebtPayAgent(null);
-              setDebtPayOpen(true);
-            }}
-            onOpenCashOut={() => setCashOutOpen(true)}
-            showCloseForm={showCloseForm}
-            setShowCloseForm={setShowCloseForm}
-            closingCash={closingCash}
-            setClosingCash={setClosingCash}
-            closingCashUsd={closingCashUsd}
-            setClosingCashUsd={setClosingCashUsd}
-            usdInPlay={usdInPlay}
-            expectedCash={expectedCash}
-            closeVariance={closeVariance}
-            expectedCashUsd={expectedCashUsd}
-            closeVarianceUsd={closeVarianceUsd}
-            varianceNote={varianceNote}
-            setVarianceNote={setVarianceNote}
-            closePending={closeMut.isPending}
-            onCloseShift={() => closeMut.mutate()}
-          />
-        )}
-
-        {/* ── SAVAT TAB ── */}
-        {tab === 'savat' && (
-          <SavatPanel
-            cart={cart}
-            cartLocked={cartLocked}
-            onClearCart={() => {
-              setCart([]);
-              // F8 — savatni tozalash zakaz/chek bog'lanishini ham uzadi:
-              // aks holda bo'sh-u QULFLANGAN savat qolib, kassir undan
-              // chiqolmasdi.
-              setPayingOrderId(null);
-              setPayingSale(null);
-            }}
-            setEditingProductId={setEditingProductId}
-            updateQty={updateQty}
-            removeFromCart={removeFromCart}
-            discountPct={discountPct}
-            setDiscountPct={setDiscountPct}
-            discountEditing={discountEditing}
-            setDiscountEditing={setDiscountEditing}
-            cartCount={cartCount}
-            cartTotal={cartTotal}
-            discountedTotal={discountedTotal}
-            cartProfitMinor={cartProfitMinor}
-            cartMarginPct={cartMarginPct}
-            pricePolicyBlock={pricePolicyBlock}
-            directSellPending={directSellMut.isPending}
-            onDirectSell={() => directSellMut.mutate()}
-            sendToPickingPending={sendToPickingMut.isPending}
-            onSendToPicking={() => sendToPickingMut.mutate()}
-          />
-        )}
+          {/* ── SMENA ── */}
+          {mode === 'smena' && (
+            <div className="flex min-w-0 flex-1 flex-col overflow-hidden bg-[var(--ms-bg-surface)]">
+              <SmenaMode
+                session={session}
+                printZReport={printZReport}
+                drawerMode={drawerMode}
+                setDrawerMode={setDrawerMode}
+                drawerAmount={drawerAmount}
+                setDrawerAmount={setDrawerAmount}
+                drawerComment={drawerComment}
+                setDrawerComment={setDrawerComment}
+                drawerPending={drawerMut.isPending}
+                onDrawerSubmit={() => drawerMut.mutate()}
+                onOpenCustomerCard={() => {
+                  // Bu yerda mijoz hali tanlanmagan — qidiruvdan boshlanadi.
+                  setCustomerCardAgent(null);
+                  setCustomerCardOpen(true);
+                }}
+                onOpenDebtPay={() => {
+                  setDebtPayAgent(null);
+                  setDebtPayOpen(true);
+                }}
+                onOpenCashOut={() => setCashOutOpen(true)}
+                showCloseForm={showCloseForm}
+                setShowCloseForm={setShowCloseForm}
+                closingCash={closingCash}
+                setClosingCash={setClosingCash}
+                closingCashUsd={closingCashUsd}
+                setClosingCashUsd={setClosingCashUsd}
+                usdInPlay={usdInPlay}
+                expectedCash={expectedCash}
+                closeVariance={closeVariance}
+                expectedCashUsd={expectedCashUsd}
+                closeVarianceUsd={closeVarianceUsd}
+                varianceNote={varianceNote}
+                setVarianceNote={setVarianceNote}
+                closePending={closeMut.isPending}
+                onCloseShift={() => closeMut.mutate()}
+              />
+            </div>
+          )}
+        </main>
       </div>
+
+      {/* K06 — qobiq versiya-belgisi (brauzerda hech narsa chizmaydi).
+          Spec §3.1 uni header'da ko'rsatishni aytadi — komponent hozircha
+          o'zini fixed burchakka chizadi; header-integratsiya F6 bilan birga
+          (hisobotda CHALA sifatida qayd etilgan). */}
+      <ShellVersionBadge />
 
       <CashOutDialog
         open={cashOutOpen}
@@ -1476,7 +1432,7 @@ function SalesScreen({
         onOpenOrder={(orderId) => {
           setCustomerCardOpen(false);
           setSelectedOrderId(orderId);
-          setTab('zakazlar');
+          setMode('zakazlar');
         }}
         onReprintReceipt={(saleId) => {
           setCustomerCardOpen(false);
@@ -1595,10 +1551,10 @@ export default function SotuvPage() {
     // qara. Avval `calc(100dvh-58px)` edi (faqat navbar), climart'da esa subnav
     // ham bor → qobiq ~46px uzun bo'lib JAMI + to'lov tugmasi ekrandan chiqib
     // ketardi.
-    <div ref={shellRef} className="flex flex-col" style={{ height: shellHeight }}>
-      <div className="shrink-0 border-[var(--ms-border)] border-b px-4 py-2">
-        <h1 className="font-semibold text-[var(--ms-text-primary)] text-base">{t('title')}</h1>
-      </div>
+    // F2 — `.pos-theme` ildizda: POS tokenlari faqat shu daraxtga tegadi.
+    // Eski «SOTUV» sarlavha-satri o'chirildi — o'rnini SHERSET header oldi
+    // (u `SalesScreen` ichida, chunki smena-chip sessiyani talab qiladi).
+    <div ref={shellRef} className="pos-theme flex flex-col" style={{ height: shellHeight }}>
       <div className="flex min-h-0 flex-1 overflow-hidden">
         <SalesScreen session={session} onShiftClosed={setClosedSessionId} />
       </div>

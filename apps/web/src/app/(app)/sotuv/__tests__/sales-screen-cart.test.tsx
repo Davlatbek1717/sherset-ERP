@@ -548,7 +548,10 @@ describe('SalesScreen — savat va tovar ro‘yxati bog‘lanishi', () => {
     expect(norm(line.textContent)).toContain('Qolgan: 12');
   });
 
-  it('savatdagi tovarlar soni tab yorlig‘idagi rozetkada ko‘rinadi', async () => {
+  // F2 (POS redizayn): «Savat» tab'i yo'q — savat Sotuv rejimining doimiy
+  // paneli, soni esa sidebar'dagi «Sotuv» bo'limi badge'ida (eski niyat:
+  // tab-yorlig'idagi rozetka; sidebar tab-bar o'rnini oldi, spec §3.2).
+  it('savatdagi tovarlar soni sidebar «Sotuv» badge‘ida ko‘rinadi', async () => {
     const user = userEvent.setup();
     renderWithProviders(<SotuvPage />);
 
@@ -557,8 +560,8 @@ describe('SalesScreen — savat va tovar ro‘yxati bog‘lanishi', () => {
     await user.click(at(tiles, 0));
     await user.click(at(tiles, 1));
 
-    const cartTab = screen.getByRole('button', { name: /^Savat/ });
-    expect(within(cartTab).getByText('3')).toBeInTheDocument();
+    const sotuvItem = screen.getByTestId('pos-sidebar-item-sotuv');
+    expect(within(sotuvItem).getByText('3')).toBeInTheDocument();
   });
 });
 

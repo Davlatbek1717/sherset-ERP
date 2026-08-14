@@ -131,12 +131,14 @@ describe('SalesScreen — omborchiga yuborish', () => {
 // ── 2) «Tayyor» chekni savatga yuklash ──────────────────────────────────────
 
 describe('SalesScreen — «Tayyor» chekni to‘lovga olish', () => {
-  it('«Tayyor» yorlig‘ida chek ko‘rinadi va «To‘lov» oynani ochadi', async () => {
+  // F2 (POS redizayn): eski «Tayyor» tab'i «Navbat» rejimiga qo'shildi
+  // (spec Q3) — chek endi Navbat ekranida ko'rinadi, to'lov yo'li o'sha.
+  it('Navbat rejimida tayyor chek ko‘rinadi va «To‘lov» oynani ochadi', async () => {
     vi.mocked(api.get).mockImplementation(router(readyRoutes()));
     const user = userEvent.setup();
     renderWithProviders(<SotuvPage />);
 
-    await user.click(await screen.findByRole('button', { name: /Tayyor/ }));
+    await user.click(await screen.findByRole('button', { name: 'Navbat' }));
     expect(await screen.findByText('CHEK-00001')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: /To.lov/ }));
 
@@ -150,7 +152,7 @@ describe('SalesScreen — «Tayyor» chekni to‘lovga olish', () => {
     const user = userEvent.setup();
     renderWithProviders(<SotuvPage />);
 
-    await user.click(await screen.findByRole('button', { name: /Tayyor/ }));
+    await user.click(await screen.findByRole('button', { name: 'Navbat' }));
     await user.click(await screen.findByRole('button', { name: /To.lov/ }));
     await screen.findByRole('dialog');
 
@@ -179,7 +181,7 @@ describe('SalesScreen — «Tayyor» chekni to‘lovga olish', () => {
     const user = userEvent.setup();
     renderWithProviders(<SotuvPage />);
 
-    await user.click(await screen.findByRole('button', { name: /Tayyor/ }));
+    await user.click(await screen.findByRole('button', { name: 'Navbat' }));
     await user.click(await screen.findByRole('button', { name: /To.lov/ }));
     const dialog = await screen.findByRole('dialog');
 
@@ -193,9 +195,9 @@ describe('SalesScreen — «Tayyor» chekni to‘lovga olish', () => {
 
 // ── 3) Aralash to'lov oynasi ────────────────────────────────────────────────
 
-/** «Tayyor» chekni ochib to'lov oynasini qaytaradi. */
+/** Tayyor chekni (F2: Navbat rejimi, o'ng ustun) ochib to'lov oynasini qaytaradi. */
 async function openPaymentModal(user: ReturnType<typeof userEvent.setup>) {
-  await user.click(await screen.findByRole('button', { name: /Tayyor/ }));
+  await user.click(await screen.findByRole('button', { name: 'Navbat' }));
   await user.click(await screen.findByRole('button', { name: /To.lov/ }));
   return await screen.findByRole('dialog');
 }

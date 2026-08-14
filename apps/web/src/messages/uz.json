@@ -9051,7 +9051,7 @@
       "sidebar_collapse": "Menyuni yig'ish",
       "sidebar_expand": "Menyuni ochish",
       "header_shift_age": "{age} ochiq",
-      "header_sales": "{n} ta · {sum}",
+      "header_sales": "{n} ta savdo · {sum}",
       "header_conn_ok": "Server bilan aloqa bor",
       "header_conn_lost": "Server bilan aloqa yo'q",
       "terminal": "Terminal",

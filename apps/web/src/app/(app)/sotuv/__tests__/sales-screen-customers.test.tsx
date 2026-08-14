@@ -96,12 +96,22 @@ beforeEach(() => {
 });
 
 describe('«Mijozlar» tabi — joylashuv', () => {
-  it('tab bar’da Cheklar va Smena ORASIDA turadi', async () => {
+  // F2 (POS redizayn): tab-bar o'rnida sidebar (spec §3.2) — egasining
+  // «AYNAN Cheklar va Smena orasida» talabi (F7/P07) endi sidebar bo'lim
+  // TARTIBIda qulflanadi. Eski assert sibling-matnga bog'langan edi — yig'iq
+  // sidebar'da yozuv yo'q (aria-label), DOM-qo'shni Smena emas (u pastki,
+  // ajratilgan blokda), shuning uchun tartib test-id ro'yxati bilan tekshiriladi.
+  it('sidebar tartibida Cheklar va Smena ORASIDA turadi', async () => {
     renderWithProviders(<SotuvPage />);
 
-    const tab = await screen.findByRole('button', { name: 'Mijozlar' });
-    expect(tab.previousElementSibling?.textContent).toMatch(/Cheklar/);
-    expect(tab.nextElementSibling?.textContent).toMatch(/Smena/);
+    await screen.findByRole('button', { name: 'Mijozlar' });
+    const sidebar = screen.getByTestId('pos-sidebar');
+    const order = [...sidebar.querySelectorAll('button[data-test-id^="pos-sidebar-item-"]')].map(
+      (b) => b.getAttribute('data-test-id'),
+    );
+    const at = (k: string) => order.indexOf(`pos-sidebar-item-${k}`);
+    expect(at('mijozlar')).toBeGreaterThan(at('cheklar'));
+    expect(at('mijozlar')).toBeLessThan(at('smena'));
   });
 
   it('tab ochilsa mijoz qidiruvi ko‘rinadi', async () => {

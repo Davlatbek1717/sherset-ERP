@@ -62,7 +62,9 @@ describe('PosHeader — logotip va smena-chip', () => {
     const chip = screen.getByTestId('pos-header-shift-chip');
     expect(within(chip).getByText('Kassir Aliyev')).toBeInTheDocument();
     expect(norm(chip.textContent)).toContain('3 soat');
-    expect(norm(chip.textContent)).toContain('3 ta · 1 500,00 сум');
+    // «savdo» so'zi ATAYLAB: smena-mode'dagi «3 ta · …» yozuvi bilan matn
+    // to'qnashmasin — MK32 testi uni `getByText(/3 ta ·/)` bilan yakka topadi.
+    expect(norm(chip.textContent)).toContain('3 ta savdo · 1 500,00 сум');
   });
 
   it('`stale` da chip sariq holatga o‘tadi', () => {
