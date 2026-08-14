@@ -596,7 +596,26 @@ almashtirish» kiradi.
 - [ ] **8.4** Ko'z-tekshiruv (lokal DB'da 2 test-kassir bilan — `scripts/ops-create-test-cashiers.ts`
   bor). Hisobot va TO'XTASH.
 
-**Hisobot (F8):** _[bo'sh]_
+**Hisobot (F8, 2026-08-14/15, `d1038742`·`4d288ba1`·`b6e5b493`):** Ko'p-kassir UI tayyor,
+faqat web: (1) `CashierSelectScreen` — kandidat-kartalar (96px) → MAVJUD PinKeypad (4 raqam,
+input YO'Q — P6 invarianti testda) → switch → javob yangi `acceptAuthResponse` (auth-store;
+login/posLogin/refresh ham shu yagona yordamchiga o'tdi) → BUTUN react-query kesh invalidate
+(reja «smena-mine» degan — shaxs almashganda butun kesh to'g'riroq) → onSwitched; 401
+remaining/lockout xulqi pos-pin-lock bilan bir xil; muhit-mezon yangi `isPosWorkstation()`
+(pos-device). (2) Smena rejimida tugma DOIM nofaol + «avval smenani yoping» (SmenaMode faqat
+ochiq sessiyada chiziladi); yopiq ekranda xuddi shu nomli FAOL tugma formani almashtiradi —
+**og'ish (ochiq): rejadagi «Boshqa kassir» o'rniga bitta yorliq «Kassirni almashtirish»**
+(ikki nom bitta amalga chalg'itardi). (3) pos-pin-lock: qulfda sessiya bir marta so'raladi,
+yo'q bo'lsa qulf o'rnida tanlash ekrani; sessiya bor / so'rov yiqildi → eski xulq AYNAN
+(lockout buzilmagan, manba-qulflar tegilmagan). Gate har commitda to'liq: typecheck 0 ·
+lint 0 · i18n 19/19 · web **3962 passed** (F7-baseline 3945 +17; qayta yozishlar faqat Edit).
+Jonli ko'z-tekshiruv (headless chromium, qobiq-imitatsiya `electronAPI.isSherset`, 3 test-kassir
+`ops-create-test-cashiers --apply` lokal DB'da; api'ni o'zim ko'tarib-o'chirdim): **11/11 ✓** —
+noto'g'ri PIN remaining, switch, kassir2 smena ochish-yopish haqiqiy serverda. **Phase-1:
+strukturaviy, runtime-tasdiqlanmagan** — qurilma/sensorli sinov YO'Q (F9). Keyingi agentga:
+qulf→tanlash tarmog'i jonli kuzatilmagan (faqat vitest); kiosk'da `/tasks/badge-count` 403
+shovqini — F8'dan oldingi qarz; kandidatlarda PIN'li admin ham chiqadi (F7 mezoni, dev-DB
+holati). To'liq: `docs/audits/pos-redizayn-F8-hisobot.md`.
 
 ---
 
