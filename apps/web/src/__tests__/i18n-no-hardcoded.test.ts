@@ -261,6 +261,7 @@ const POS_DONE_FILES = [
   'components/pos/cart-line-edit-modal.tsx',
   'components/pos/cash-out-dialog.tsx',
   'components/pos/customer-card-panel.tsx',
+  'components/pos/customers-panel.tsx',
   'components/pos/debt-payment-dialog.tsx',
   'components/pos/payment-dialog.tsx',
   'components/pos/pin-keypad.tsx',

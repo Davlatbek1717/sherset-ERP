@@ -8082,6 +8082,7 @@
       "success_gifted": "Подарок оформлен",
       "success_ordered": "Заказ создан",
       "success_sold": "Продажа проведена",
+      "tab_customers": "Клиенты",
       "tab_in_progress": "В процессе",
       "tab_orders": "Заказы",
       "tab_ready": "Готово",
@@ -9084,7 +9085,8 @@
       "customer_card_edit": "Изменить данные",
       "customer_card_phone": "Телефон",
       "customer_card_comment": "Комментарий",
-      "customer_card_pay_debt": "Оплатить долг"
+      "customer_card_pay_debt": "Оплатить долг",
+      "customers_cheks": "Чеки"
     },
     "shiftAcceptance": {
       "accept": "Принять",

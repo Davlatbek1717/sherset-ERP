@@ -8082,6 +8082,7 @@
       "success_gifted": "Sovg'a qilindi",
       "success_ordered": "Buyurtma yaratildi",
       "success_sold": "Sotuv amalga oshirildi",
+      "tab_customers": "Mijozlar",
       "tab_in_progress": "Jarayonda",
       "tab_orders": "Zakazlar",
       "tab_ready": "Tayyor",
@@ -9084,7 +9085,8 @@
       "customer_card_edit": "Tahrirlash",
       "customer_card_phone": "Telefon",
       "customer_card_comment": "Izoh",
-      "customer_card_pay_debt": "Qarzni to'lash"
+      "customer_card_pay_debt": "Qarzni to'lash",
+      "customers_cheks": "Cheklari"
     },
     "shiftAcceptance": {
       "accept": "Qabul qilish",

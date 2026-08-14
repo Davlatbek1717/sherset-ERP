@@ -4,6 +4,7 @@ import { CartLineEditModal } from '@/components/pos/cart-line-edit-modal';
 import { CashOutDialog } from '@/components/pos/cash-out-dialog';
 import type { CustomerCardRow } from '@/components/pos/customer-card-panel';
 import { CustomerCardPanel } from '@/components/pos/customer-card-panel';
+import { CustomersPanel } from '@/components/pos/customers-panel';
 import { DebtPaymentDialog } from '@/components/pos/debt-payment-dialog';
 import { RasmiyashtirishModal } from '@/components/pos/rasmilashtirish-modal';
 import { useDestructiveMutation } from '@/hooks/use-destructive-mutation';
@@ -84,6 +85,7 @@ import {
   Settings,
   ShoppingCart,
   User,
+  Users,
 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -980,7 +982,7 @@ function SalesScreen({
   const printZReport = usePrintZReport();
 
   const [tab, setTab] = useState<
-    'savat' | 'jarayonda' | 'tayyor' | 'zakazlar' | 'cheklar' | 'smena'
+    'savat' | 'jarayonda' | 'tayyor' | 'zakazlar' | 'cheklar' | 'mijozlar' | 'smena'
   >('savat');
   const [search, setSearch] = useState('');
   // Qidiruv maydoni savatga qo'shilgandan keyin tozalanadi VA fokusni
@@ -2061,6 +2063,20 @@ function SalesScreen({
             <Receipt className="h-4 w-4" />
             {t('tab_receipts')}
           </button>
+          {/* ── MIJOZLAR (F7/P07, 2026-08-13 egasi) ── AYNAN Cheklar va Smena
+              orasida: qarz to'lash / karta / cheklar — savatga tegmasdan. */}
+          <button
+            type="button"
+            onClick={() => setTab('mijozlar')}
+            className={`flex flex-1 items-center justify-center gap-1.5 py-2.5 text-sm font-medium transition-colors border-b-2 ${
+              tab === 'mijozlar'
+                ? 'border-[var(--ms-text-brand)] text-[var(--ms-text-brand)]'
+                : 'border-transparent text-[var(--ms-text-muted)] hover:text-[var(--ms-text-primary)]'
+            }`}
+          >
+            <Users className="h-4 w-4" />
+            {t('tab_customers')}
+          </button>
           <button
             type="button"
             onClick={() => setTab('smena')}
@@ -2336,6 +2352,25 @@ function SalesScreen({
         {/* ── CHEK DETAIL ── */}
         {tab === 'cheklar' && selectedChekId && (
           <ChekDetailPanel saleId={selectedChekId} onBack={() => setSelectedChekId(null)} />
+        )}
+
+        {/* ── MIJOZLAR TAB (F7) ── panel faqat yo'naltiradi: uch callback
+            mavjud modal/panellarga ulanadi, pul amali panelda YO'Q. */}
+        {tab === 'mijozlar' && (
+          <CustomersPanel
+            currency={tillCurrency}
+            onOpenCustomerCard={() => setCustomerCardOpen(true)}
+            onPayDebt={(cp) => {
+              setDebtPayAgent(cp);
+              setDebtPayOpen(true);
+            }}
+            onOpenChek={(saleId) => {
+              // Mavjud ChekDetailPanel «Cheklar» tabida yashaydi — o'sha yerga
+              // o'tamiz; F6 qaytarish oqimi o'z joyida ishlayveradi.
+              setSelectedChekId(saleId);
+              setTab('cheklar');
+            }}
+          />
         )}
 
         {/* ── SMENA TAB ── */}
