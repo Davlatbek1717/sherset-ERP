@@ -331,6 +331,23 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-08-14b (KASSA — chek o'ngga surilib «Summa» kesilishi tuzatildi, `c867eb65`) —**
+> egasining fotosi (TPH-2026-00073): exe'dan chiqqan chekda kontent o'ngga surilib, Summa
+> ustuni qog'ozdan chiqib ketgan. **Ildiz sabab ikki qavatli:** exe sukut sahifani **80mm**
+> deb e'lon qiladi (`DEFAULT_WIDTH_MICRONS`), 80mm termal printerning BOSILADIGAN eni esa
+> ~72mm (drayver ortiqchani KESADI, masshtablamaydi) + HTML body 72mm bo'lib `margin:0 auto`
+> bilan markazlangan → chapdan ~4mm siljish, o'ngdan ~4mm (Summa) kesilgan. **Tuzatish
+> web-only (exe yangilash SHART EMAS):** uchala Electron-HTML renderer (savdo chek ·
+> Z-hisobot · ombor varag'i) body `width:72mm;margin:0` + `printSheet`ga `THERMAL_PAGE_MICRONS
+> {width:72000}` oshkora uzatiladi (balandliksiz — exe v1.4.0 `resolvePageSize` width-only
+> shaklda balandlikni mazmundan o'lchashi git `2851efbf` dan tasdiqlangan). Qulf:
+> `receipt-print-width.test.ts` (CSS + 3 chaqiruv; vakuum-testdan literal bilan himoyalangan).
+> Gate: web tc0 · biome0 · to'liq web vitest 3875 pass (sales-screen-cart flake izolyatsiyada
+> yashil, aloqasiz). **⚠️ Qog'oz sinovi QOLDI (Phase-1):** deploydan keyin real printerda chek +
+> Z-hisobot + ombor varag'i chiqarib chap/o'ng chekkalarni ko'rish.
+>
+> ---
+>
 > **🕒 2026-08-14a (KASSA POS 7-FUNKSIYA — kamchiliklar bartaraf + ✅ DEPLOYED `673ea1c9`) —**
 > 7 faza hisobotlaridagi ochiq kamchiliklar yopildi va F2–F7 birinchi marta prodga chiqdi:
 > (1) F7 kamchiligi — `CustomerCardPanel`ga `initialAgent` prop (TDD, 3 yangi test RED→GREEN):
