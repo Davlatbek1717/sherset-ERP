@@ -412,3 +412,22 @@ describe('F9 — telefon/izohni tahrirlash', () => {
     expect(paths.every((p) => String(p).endsWith('/pos-contact'))).toBe(true);
   });
 });
+
+describe('F7-tuzatish (2026-08-14) — `initialAgent` bilan ochilish', () => {
+  // F7 hisobotidagi ochiq kamchilik: Mijozlar panelidan «Mijoz kartasi»
+  // bosilganda karta QIDIRUV qadamidan ochilardi — mijoz allaqachon tanlangan
+  // edi. `DebtPaymentDialog` bilan bir naqsh: `initialAgent` berilsa qidiruv
+  // o'tkazib yuboriladi.
+  it('initialAgent berilsa qidiruv qadamisiz kartochka ochiladi', async () => {
+    renderPanel({ initialAgent: CP });
+
+    expect(await screen.findByTestId('customer-card-debt')).toBeInTheDocument();
+    expect(screen.queryByTestId('customer-card-search')).toBeNull();
+    expect(screen.getByText('Alisher')).toBeInTheDocument();
+  });
+
+  it('initialAgent YO`Q bo`lsa avvalgidek qidiruvdan boshlanadi', async () => {
+    renderPanel();
+    expect(await screen.findByTestId('customer-card-search')).toBeInTheDocument();
+  });
+});

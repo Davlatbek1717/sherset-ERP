@@ -136,6 +136,12 @@ interface Props {
   onOpenOrder: (orderId: string) => void;
   /** «Chekni qayta chop etish» — chaqiruvchi print-agentga yuboradi. */
   onReprintReceipt: (saleId: string) => void;
+  /**
+   * F7-tuzatish (2026-08-14): berilsa karta QIDIRUVSIZ shu mijoz bilan
+   * ochiladi — Mijozlar panelida mijoz allaqachon tanlangan, qidiruv qadamini
+   * takrorlash kassirni adashtirardi (`DebtPaymentDialog` bilan bir naqsh).
+   */
+  initialAgent?: CustomerCardRow | null;
 }
 
 /**
@@ -162,6 +168,7 @@ export function CustomerCardPanel({
   onPayDebt,
   onOpenOrder,
   onReprintReceipt,
+  initialAgent = null,
 }: Props) {
   const t = useTranslations('pages.pos');
   const tDoc = useTranslations('pages.pos.customer_card_doc');
@@ -185,6 +192,20 @@ export function CustomerCardPanel({
       setError(null);
     }
   }, [open]);
+
+  // F7-tuzatish (2026-08-14): tanlangan mijoz bilan ochilganda qidiruv qadami
+  // o'tkazib yuboriladi. Yopilganda yuqoridagi effekt tozalaydi; qayta
+  // ochilishda yangi `initialAgent` qo'llanadi (`DebtPaymentDialog` naqshi).
+  // «Mijozni almashtirish» tugmasi baribir ishlaydi — deps o'zgarmaguncha
+  // effekt qayta yugurmaydi.
+  useEffect(() => {
+    if (open && initialAgent) {
+      setAgent(initialAgent);
+      setPhoneInput(initialAgent.phone ?? '');
+      setCommentInput(initialAgent.description ?? '');
+      setError(null);
+    }
+  }, [open, initialAgent]);
 
   const { data: cpData, isLoading: cpLoading } = useQuery<ListEnvelope<CustomerCardRow>>({
     queryKey: ['customer-card-search', search],

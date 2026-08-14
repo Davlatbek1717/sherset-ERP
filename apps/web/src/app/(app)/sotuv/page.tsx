@@ -1089,6 +1089,10 @@ function SalesScreen({
   // F9 — mijoz kartasi. Panel alohida faylda (`customer-card-panel.tsx`);
   // bu yerda faqat holat va uch callback.
   const [customerCardOpen, setCustomerCardOpen] = useState(false);
+  // F7-tuzatish (2026-08-14): Mijozlar panelidan karta TANLANGAN mijoz bilan
+  // ochiladi (qidiruv qadamisiz); Smena tabidagi tugma esa null qoldiradi —
+  // u yerda mijoz hali tanlanmagan, qidiruvdan boshlanadi.
+  const [customerCardAgent, setCustomerCardAgent] = useState<CustomerCardRow | null>(null);
   const [debtPayAgent, setDebtPayAgent] = useState<CustomerCardRow | null>(null);
   const [cashOutOpen, setCashOutOpen] = useState(false);
   const [drawerAmount, setDrawerAmount] = useState('');
@@ -2359,7 +2363,11 @@ function SalesScreen({
         {tab === 'mijozlar' && (
           <CustomersPanel
             currency={tillCurrency}
-            onOpenCustomerCard={() => setCustomerCardOpen(true)}
+            onOpenCustomerCard={(cp) => {
+              // F7-tuzatish: karta tanlangan mijoz bilan ochiladi (qidiruvsiz).
+              setCustomerCardAgent(cp);
+              setCustomerCardOpen(true);
+            }}
             onPayDebt={(cp) => {
               setDebtPayAgent(cp);
               setDebtPayOpen(true);
@@ -2471,7 +2479,11 @@ function SalesScreen({
                   oxirgi cheklar, jarayondagi zakazlar. */}
               <button
                 type="button"
-                onClick={() => setCustomerCardOpen(true)}
+                onClick={() => {
+                  // Bu yerda mijoz hali tanlanmagan — qidiruvdan boshlanadi.
+                  setCustomerCardAgent(null);
+                  setCustomerCardOpen(true);
+                }}
                 data-test-id="pos-customer-card-open"
                 className="mb-3 w-full rounded-lg border border-[var(--ms-border)] py-2 text-sm font-medium text-[var(--ms-text-primary)] transition-colors hover:bg-[var(--ms-bg-hover)]"
               >
@@ -3218,6 +3230,7 @@ function SalesScreen({
         open={customerCardOpen}
         onOpenChange={setCustomerCardOpen}
         currency={tillCurrency}
+        initialAgent={customerCardAgent}
         onPayDebt={(cp) => {
           setCustomerCardOpen(false);
           setDebtPayAgent(cp);

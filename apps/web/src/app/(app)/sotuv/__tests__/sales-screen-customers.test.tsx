@@ -61,6 +61,20 @@ function customersRoutes() {
   return salesRoutes([
     { match: /^\/counterparties\?/, value: { items: [CP] } },
     { match: /^\/debts\/pos\/summary\//, value: SUMMARY },
+    // F7-tuzatish: `CustomerCardPanel` initialAgent bilan ochilganda tarix va
+    // zakazlarni ham so'raydi — routersiz jihoz istisno otardi.
+    {
+      match: /^\/debts\/pos\/history\//,
+      value: {
+        counterparty: CP,
+        currency: 'UZS',
+        openingMinor: '0',
+        totalCount: 0,
+        hasMore: false,
+        entries: [],
+      },
+    },
+    { match: /^\/customer-orders\?/, value: { items: [], total: 0 } },
     {
       match: /agentId=/,
       value: { items: [SALE_ROW({ state: 'posted', agent: CP })], total: 1 },
@@ -109,6 +123,19 @@ describe('«Mijozlar» tabi — mavjud modallarga ulanish', () => {
     // `initialAgent` oqimi: qidiruv qadamisiz to'g'ri mijozning qarz oynasi.
     expect(await screen.findByTestId('debt-pay-outstanding')).toBeInTheDocument();
     expect(screen.queryByTestId(`debt-pay-cp-${CP.id}`)).toBeNull();
+  });
+
+  it('«Mijoz kartasi» — CustomerCardPanel TANLANGAN mijoz bilan ochiladi (F7-tuzatish)', async () => {
+    // F7 hisobotidagi ochiq kamchilik (2026-08-14 da tuzatildi): karta
+    // qidiruv qadamidan ochilardi — endi `initialAgent` oqimi bilan to'g'ri
+    // mijozning kartasi darhol ochiladi.
+    const user = userEvent.setup();
+    renderWithProviders(<SotuvPage />);
+    await pickCustomer(user);
+
+    await user.click(screen.getByTestId('pos-customers-card'));
+    expect(await screen.findByTestId('customer-card-debt')).toBeInTheDocument();
+    expect(screen.queryByTestId('customer-card-search')).toBeNull();
   });
 
   it('mijoz cheki bosilsa ChekDetailPanel ochiladi (F6 qaytarish shu yerda)', async () => {
