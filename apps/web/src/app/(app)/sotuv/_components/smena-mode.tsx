@@ -33,6 +33,7 @@ import type { CurrentSession } from '@moysklad/contracts';
 import { formatMoney } from '@moysklad/ui';
 import { useTranslations } from 'next-intl';
 import { type Dispatch, type SetStateAction, useState } from 'react';
+import type { UnresolvedSaleRow } from './pos-types';
 
 /**
  * Dollar summani (sentda) ekranga chiqaradi — ishora `$` dan OLDIN: `-$10.00`
@@ -62,6 +63,12 @@ interface SmenaModeProps {
   onOpenDebtPay: () => void;
   /** Xarajat (RKO) / inkassatsiya oynasi. */
   onOpenCashOut: () => void;
+  /** F5 — smenani yopishga to'sqinlik qiluvchi cheklar (server ro'yxati). */
+  unresolvedSales: UnresolvedSaleRow[];
+  /** «To'lov» — mavjud `loadReadyToCart` yo'li (faqat `ready` kartada). */
+  onPayUnresolved: (saleId: string) => void | Promise<void>;
+  /** Bekor — mavjud `cancelSale` (tasdiq raqam+summa bilan sahifada). */
+  cancelSale: (saleId: string, saleName: string, sumMinor: string) => void | Promise<void>;
   showCloseForm: boolean;
   setShowCloseForm: Dispatch<SetStateAction<boolean>>;
   closingCash: string;
@@ -97,6 +104,9 @@ export function SmenaMode({
   onOpenCustomerCard,
   onOpenDebtPay,
   onOpenCashOut,
+  unresolvedSales,
+  onPayUnresolved,
+  cancelSale,
   showCloseForm,
   setShowCloseForm,
   closingCash,
@@ -323,23 +333,102 @@ export function SmenaMode({
         )}
       </div>
 
+      {/* F5 (spec §5.4) — yakunlanmagan cheklar STRUKTURALI ro'yxati.
+          Yopishdan OLDIN ham ko'rinadi: `draft` chek boshqa hech qaysi
+          rejimda yo'q edi («ko'rinmas bloklovchi»). Har karta — raqam ·
+          bosqich · summa + amal: to'lash faqat `ready` da (server `post()`
+          faqat ready'dan), bekor hammasida (mavjud `cancelSale`, tasdiqli). */}
+      {unresolvedSales.length > 0 && (
+        <div
+          data-test-id="smena-unresolved"
+          className="rounded-xl border border-amber-300 bg-amber-50/60 p-4"
+        >
+          <p className="mb-1 text-[16px] font-bold text-amber-800">
+            {t('unresolved_title', { n: unresolvedSales.length })}
+          </p>
+          <p className="mb-3 text-[14px] text-amber-800">{t('unresolved_hint')}</p>
+          <div className="flex flex-col gap-2">
+            {unresolvedSales.map((sale) => (
+              <div
+                key={sale.id}
+                data-test-id="smena-unresolved-card"
+                data-state={sale.state}
+                className="flex flex-col gap-2 rounded-xl border border-amber-200 bg-[var(--ms-bg-surface)] p-3"
+              >
+                <div className="flex items-baseline justify-between gap-2">
+                  <span className="truncate text-[18px] font-bold text-[var(--ms-text-primary)]">
+                    {sale.name}
+                  </span>
+                  <span className="shrink-0 text-[18px] font-semibold tabular-nums text-[var(--ms-text-primary)]">
+                    {formatMoney(BigInt(sale.sumMinor))}
+                  </span>
+                </div>
+                <div className="text-[14px] text-[var(--ms-text-muted)]">
+                  {/* Bosqich yorlig'i — server `state` dan STATIK kalitlar
+                      bilan (dinamik t(`…${state}`) ATAYLAB yo'q: pos-i18n-guard
+                      dinamik-kalit chegarasiga tegmaslik uchun). Notanish
+                      holat xom nomi bilan chiqadi — yolg'on emas. */}
+                  {sale.state === 'draft'
+                    ? t('unresolved_stage_draft')
+                    : sale.state === 'picking'
+                      ? t('unresolved_stage_picking')
+                      : sale.state === 'ready'
+                        ? t('unresolved_stage_ready')
+                        : sale.state}
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => cancelSale(sale.id, sale.name, sale.sumMinor)}
+                    className="flex h-[var(--pos-touch-min)] shrink-0 items-center rounded-xl border border-amber-300 px-4 text-[16px] font-semibold text-[var(--ms-text-muted)] transition-all hover:bg-[var(--ms-bg-hover)] active:scale-95"
+                  >
+                    {t('cancel_sale')}
+                  </button>
+                  {/* To'lash faqat `ready` — draft/picking'dan server `post()`
+                      qabul qilmaydi; yolg'on tugma ko'rsatilmaydi. */}
+                  {sale.state === 'ready' && (
+                    <button
+                      type="button"
+                      onClick={() => onPayUnresolved(sale.id)}
+                      className="flex h-[var(--pos-touch-min)] min-w-0 flex-1 items-center justify-center gap-2 rounded-xl bg-emerald-500 px-4 text-[18px] font-bold text-white transition-all hover:bg-emerald-600 active:scale-95"
+                    >
+                      💳 {t('pay')}
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Close shift */}
       <div className="rounded-xl border border-red-200 bg-[var(--ms-bg-surface)] p-4">
         <p className="mb-3 text-xs font-semibold uppercase tracking-widest text-[var(--ms-text-muted)]">
           {t('shift_close_section')}
         </p>
         {!showCloseForm ? (
-          <button
-            type="button"
-            onClick={() => {
-              setCloseStage('counting');
-              setCountField('som');
-              setShowCloseForm(true);
-            }}
-            className="h-[var(--pos-touch-min)] w-full rounded-xl border border-red-300 text-[18px] font-semibold text-red-600 hover:bg-red-50"
-          >
-            {t('shift_close_btn')}
-          </button>
+          <>
+            <button
+              type="button"
+              onClick={() => {
+                setCloseStage('counting');
+                setCountField('som');
+                setShowCloseForm(true);
+              }}
+              // F5: ro'yxat bo'sh bo'lgandagina yopish OCHIQ ko'rsatiladi —
+              // lekin bu faqat UI-signal, haqiqiy to'siq SERVERDA (close 400).
+              disabled={unresolvedSales.length > 0}
+              className="h-[var(--pos-touch-min)] w-full rounded-xl border border-red-300 text-[18px] font-semibold text-red-600 hover:bg-red-50 disabled:opacity-40"
+            >
+              {t('shift_close_btn')}
+            </button>
+            {unresolvedSales.length > 0 && (
+              <p className="mt-2 text-[14px] font-medium text-amber-700">
+                {t('unresolved_close_blocked')}
+              </p>
+            )}
+          </>
         ) : closeStage === 'counting' ? (
           /* ── COUNTING — YOPIQ sanoq (Q7): kutilgan summa bu bosqichda
                 DOM'da YO'Q. Faqat sanoq maydon(lar)i + katta numpad. */

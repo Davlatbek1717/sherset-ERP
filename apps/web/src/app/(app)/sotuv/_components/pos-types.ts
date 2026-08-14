@@ -38,6 +38,18 @@ export interface CartLine {
   basePriceMinor: bigint | null;
 }
 
+/**
+ * F5 — smenani yopishga to'sqinlik qiluvchi chek qatori
+ * (`GET /cashier-sessions/:id/unresolved` proyeksiyasi). `sumMinor` — satr
+ * (BigInt JSON'da satr bo'lib keladi, `SaleRow` bilan bir xil konvensiya).
+ */
+export interface UnresolvedSaleRow {
+  id: string;
+  name: string;
+  state: string;
+  sumMinor: string;
+}
+
 /** Chek ro'yxati qatori — `/retail-sales` list proyeksiyasi (cheklar/navbat). */
 export interface SaleRow {
   id: string;

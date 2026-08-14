@@ -18,7 +18,7 @@ import { api } from '@/lib/api-client';
 import { renderWithProviders, screen, userEvent, waitFor, within } from '@/test-utils';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import SotuvPage from '../page';
-import { type Route, norm, router, salesRoutes } from './harness';
+import { type Route, SALE_DETAIL, at, norm, router, salesRoutes } from './harness';
 
 vi.mock('@/lib/api-client', () => ({
   api: { get: vi.fn(), post: vi.fn(), put: vi.fn(), patch: vi.fn(), delete: vi.fn() },
@@ -95,13 +95,28 @@ function shiftRoutes(over: Route[] = []): Route[] {
     },
     {
       match: /^\/counterparties\?/,
-      value: { items: [{ id: 'cp-1', name: 'Usta Vali', phone: '+998 90 111 22 33' }] },
+      // `tags`/`companyType` SHART: to'lov oynasi (Rasmiyashtirish) mijoz
+      // qatorini chizishda `tags.includes(...)` o'qiydi — F5 ro'yxatidagi
+      // «To'lov» shu oynani ochadi.
+      value: {
+        items: [
+          {
+            id: 'cp-1',
+            name: 'Usta Vali',
+            phone: '+998 90 111 22 33',
+            tags: [],
+            companyType: 'individual',
+          },
+        ],
+      },
     },
     { match: /^\/debts\/pos\/summary\//, value: DEBT_SUMMARY },
   ]);
 }
 
 const POST_ROUTES: Route[] = [
+  // F5 — yakunlanmagan chekni bekor qilish (ro'yxat kartasidagi tugma).
+  { match: /\/cancel$/, value: { ok: true } },
   { match: /\/drawer-(in|out)$/, value: { ok: true } },
   {
     match: /\/cash-out$/,
@@ -525,5 +540,122 @@ describe('Smena yopish — YOPIQ (blind) sanoq (F5, spec §5.4 Q7)', () => {
       closingCashUsdMinor: '9000',
       varianceNote: '10$ yo‘qoldi',
     });
+  });
+});
+
+/**
+ * F5 (spec §5.4) — yakunlanmagan cheklar STRUKTURALI ro'yxati.
+ *
+ * Ilgari bu ro'yxat faqat close 400-xabarining MATNIDA yashardi; `draft`
+ * chek esa POS'ning hech qaysi bo'limida ko'rinmasdi — «ko'rinmas bloklovchi»
+ * shu edi. Endi «Smena» ekranida har chek karta: raqam · bosqich · summa +
+ * amal tugmalari. To'lash faqat `ready` da (server `post()` faqat ready'dan);
+ * bekor — mavjud `cancelSale` yo'li (tasdiq raqam+summa bilan). Server
+ * qoidalari O'ZGARMAGAN — UI ro'yxat bo'sh bo'lgandagina yopishni ochadi,
+ * lekin serverga baribir ishonadi (400 kelsa toast).
+ */
+describe('Yakunlanmagan cheklar ro‘yxati (F5, spec §5.4)', () => {
+  const UNRESOLVED = {
+    sales: [
+      { id: 'u-d', name: 'ТРН-00001', state: 'draft', sumMinor: '1000000' },
+      { id: 'u-p', name: 'ТРН-00002', state: 'picking', sumMinor: '2000000' },
+      { id: 'u-r', name: 'ТРН-00003', state: 'ready', sumMinor: '3000000' },
+    ],
+  };
+
+  function unresolvedRoutes(): Route[] {
+    return shiftRoutes([
+      { match: /\/unresolved$/, value: UNRESOLVED },
+      {
+        match: /^\/retail-sales\/u-r$/,
+        value: SALE_DETAIL({ id: 'u-r', name: 'ТРН-00003', state: 'ready', sumMinor: '3000000' }),
+      },
+    ]);
+  }
+
+  beforeEach(() => {
+    vi.mocked(api.get).mockImplementation(router(unresolvedRoutes()));
+  });
+
+  it('uch bosqich kartasi ko‘rinadi — DRAFT HAM (ilgari hech qaysi tabda yo‘q edi)', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<SotuvPage />);
+    await openShiftTab(user);
+
+    const cards = await screen.findAllByTestId('smena-unresolved-card');
+    expect(cards).toHaveLength(3);
+
+    const draft = at(cards, 0);
+    expect(norm(draft.textContent)).toContain('ТРН-00001');
+    expect(norm(draft.textContent)).toContain('Savatda');
+    expect(norm(draft.textContent)).toContain('10 000,00');
+    expect(norm(at(cards, 1).textContent)).toContain('Yig‘ilmoqda'.replace('‘', "'"));
+    expect(norm(at(cards, 2).textContent)).toContain('Yig‘ilgan'.replace('‘', "'"));
+  });
+
+  it('draft va picking kartada FAQAT bekor; ready kartada To‘lov HAM bor', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<SotuvPage />);
+    await openShiftTab(user);
+
+    const cards = await screen.findAllByTestId('smena-unresolved-card');
+    // draft — to'lab bo'lmaydi (`post()` faqat ready'dan) — faqat bekor.
+    expect(within(at(cards, 0)).queryByRole('button', { name: /To.lov/ })).toBeNull();
+    expect(within(at(cards, 0)).getByRole('button', { name: 'Bekor qilish' })).toBeInTheDocument();
+    // picking — hali yig'ilmagan — faqat bekor.
+    expect(within(at(cards, 1)).queryByRole('button', { name: /To.lov/ })).toBeNull();
+    expect(within(at(cards, 1)).getByRole('button', { name: 'Bekor qilish' })).toBeInTheDocument();
+    // ready — ikkalasi ham.
+    expect(within(at(cards, 2)).getByRole('button', { name: /To.lov/ })).toBeInTheDocument();
+    expect(within(at(cards, 2)).getByRole('button', { name: 'Bekor qilish' })).toBeInTheDocument();
+  });
+
+  it('ready «To‘lov» MAVJUD to‘lov yo‘lini ochadi (chek savatga yuklanadi)', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<SotuvPage />);
+    await openShiftTab(user);
+
+    const cards = await screen.findAllByTestId('smena-unresolved-card');
+    await user.click(within(at(cards, 2)).getByRole('button', { name: /To.lov/ }));
+
+    // `loadReadyToCart` yo'li: chek detali o'qiladi va to'lov oynasi ochiladi.
+    await waitFor(() => expect(api.get).toHaveBeenCalledWith('/retail-sales/u-r'));
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
+  });
+
+  it('bekor — mavjud cancelSale: tasdiqda raqam+summa, POST /cancel', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<SotuvPage />);
+    await openShiftTab(user);
+
+    const cards = await screen.findAllByTestId('smena-unresolved-card');
+    await user.click(within(at(cards, 0)).getByRole('button', { name: 'Bekor qilish' }));
+
+    const dialog = await screen.findByRole('dialog');
+    expect(norm(dialog.textContent)).toContain('ТРН-00001');
+    expect(norm(dialog.textContent)).toContain('10 000,00');
+    await user.click(within(dialog).getByRole('button', { name: 'Chekni bekor qilish' }));
+    await waitFor(() => expect(api.post).toHaveBeenCalledWith('/retail-sales/u-d/cancel', {}));
+  });
+
+  it('ro‘yxat bo‘sh bo‘lmaganda «Smenani yopish» BLOKLANGAN (sabab yozuvi bilan)', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<SotuvPage />);
+    await openShiftTab(user);
+
+    await screen.findAllByTestId('smena-unresolved-card');
+    expect(screen.getByRole('button', { name: 'Smenani yopish' })).toBeDisabled();
+    expect(screen.getByText(/avval ularni yoping/)).toBeInTheDocument();
+  });
+
+  it('ro‘yxat bo‘sh — blok chizilmaydi, yopish ochiq', async () => {
+    // Default marshrutlar: `/unresolved` → { sales: [] }.
+    vi.mocked(api.get).mockImplementation(router(shiftRoutes()));
+    const user = userEvent.setup();
+    renderWithProviders(<SotuvPage />);
+    await openShiftTab(user);
+
+    expect(screen.queryByTestId('smena-unresolved-card')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Smenani yopish' })).toBeEnabled();
   });
 });

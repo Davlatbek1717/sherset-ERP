@@ -5,7 +5,7 @@ import './pos-theme.css';
 
 import { CheklarMode } from '@/app/(app)/sotuv/_components/cheklar-mode';
 import { NavbatMode } from '@/app/(app)/sotuv/_components/navbat-mode';
-import type { CartLine, SaleRow } from '@/app/(app)/sotuv/_components/pos-types';
+import type { CartLine, SaleRow, UnresolvedSaleRow } from '@/app/(app)/sotuv/_components/pos-types';
 import { SmenaMode } from '@/app/(app)/sotuv/_components/smena-mode';
 import { SavatPanel, SotuvSearchGrid } from '@/app/(app)/sotuv/_components/sotuv-mode';
 import { usePrintOutcome } from '@/app/(app)/sotuv/_components/use-print-outcome';
@@ -531,6 +531,20 @@ function SalesScreen({
   });
   const pickingSales = pickingSalesData?.items ?? [];
 
+  // F5 — smenani yopishga to'sqinlik qiluvchi cheklar (draft|picking|ready)
+  // STRUKTURA sifatida. Mezon serverda `close()` bilan yagona yordamchida —
+  // FE o'zi «bloklovchimi?» deb hisoblamaydi (aks holda ikki mezon ajralib
+  // ketardi). `draft` bu ro'yxatda BOR — u boshqa hech qaysi rejimda
+  // ko'rinmasdi («ko'rinmas bloklovchi»). 8s polling — navbat so'rovlari
+  // bilan bir ohangda (boshqa terminal/omborchi holatni o'zgartirishi mumkin).
+  const { data: unresolvedData } = useQuery<{ sales: UnresolvedSaleRow[] }>({
+    queryKey: ['cashier-session-unresolved', session.id],
+    queryFn: () => api.get(`/cashier-sessions/${session.id}/unresolved`),
+    enabled: mode === 'smena',
+    refetchInterval: 8000,
+  });
+  const unresolvedSales = unresolvedData?.sales ?? [];
+
   // ── ZAKAZLAR (F7) ──────────────────────────────────────────────────────────
   // Holat filtri SERVERGA ketadi (`state=`), FE saralamaydi: aks holda
   // `limit` chegarasi «yangi» zakazlarni yopiq zakazlar bilan to'ldirib
@@ -788,6 +802,8 @@ function SalesScreen({
     qc.invalidateQueries({ queryKey: ['retail-sales-session', session.id] });
     qc.invalidateQueries({ queryKey: ['retail-sales-ready', session.id] });
     qc.invalidateQueries({ queryKey: ['retail-sales-picking', session.id] });
+    // F5 — to'langan chek yakunlanmagan-ro'yxatdan chiqadi (smena ekrani).
+    qc.invalidateQueries({ queryKey: ['cashier-session-unresolved', session.id] });
     toast.success(t('success_sold'));
     void printCustomerReceipt(saleId);
   };
@@ -1032,6 +1048,8 @@ function SalesScreen({
       if (ok) {
         qc.invalidateQueries({ queryKey: ['retail-sales-ready', session.id] });
         qc.invalidateQueries({ queryKey: ['retail-sales-picking', session.id] });
+        // F5 — bekor qilingan chek yakunlanmagan-ro'yxatdan ham chiqadi.
+        qc.invalidateQueries({ queryKey: ['cashier-session-unresolved', session.id] });
       }
     },
     [runDestructive, qc, session.id, t],
@@ -1368,6 +1386,9 @@ function SalesScreen({
                   setDebtPayOpen(true);
                 }}
                 onOpenCashOut={() => setCashOutOpen(true)}
+                unresolvedSales={unresolvedSales}
+                onPayUnresolved={loadReadyToCart}
+                cancelSale={cancelSale}
                 showCloseForm={showCloseForm}
                 setShowCloseForm={setShowCloseForm}
                 closingCash={closingCash}

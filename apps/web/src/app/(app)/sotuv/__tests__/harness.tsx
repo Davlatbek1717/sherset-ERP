@@ -190,6 +190,10 @@ export function salesRoutes(over: Route[] = []): Route[] {
     // shu yerda TURISHI SHART: yo'qligida router istisno otadi va har POS
     // testi kursi yo'q holatda ishlab, dollar tenderini jimgina o'chirardi.
     { match: /^\/exchange-rates\/rate/, value: USD_RATE },
+    // F5 — «Smena» rejimi yakunlanmagan cheklar ro'yxatini so'raydi. Marshrut
+    // shu yerda TURISHI SHART: yo'qligida router istisno otadi va smena
+    // yorlig'iga o'tadigan HAR test yiqilardi. Sukut — bo'sh (bloklovchi yo'q).
+    { match: /^\/cashier-sessions\/[^/]+\/unresolved$/, value: { sales: [] } },
     { match: /^\/price-types/, value: PRICE_TYPES },
     { match: /^\/products\?/, value: PRODUCTS },
     // Aniqrog'i umumiy `/retail-sales?` dan OLDIN.
