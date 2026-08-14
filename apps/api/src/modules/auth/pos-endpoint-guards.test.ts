@@ -129,6 +129,20 @@ describe('kassa endpointlari — ruxsat qo`riqchisi haqiqatan ulangan', () => {
     expect(block).not.toContain('JwtAuthGuard');
   });
 
+  /**
+   * F7 — kassir almashtirish (spec §8). Ikkala endpoint JWT talab qiladi
+   * (kiosk sharti va boshqa tekshiruvlar servisda), lekin `@RequirePermission`
+   * ATAYLAB yo'q: kiosk kassirining ruxsat matritsasida employee-huquqlari
+   * yo'q va bo'lmasligi kerak — bu endpointlar aynan shu kassir uchun.
+   */
+  for (const route of ["@Get('pos-pin/candidates')", "@Post('pos-pin/switch')"]) {
+    it(`${route} — JWT talab qiladi, admin-ruxsat talab qilmaydi`, () => {
+      const block = routeBlock(authController, route);
+      expect(block).toContain('JwtAuthGuard');
+      expect(block).not.toContain('@RequirePermission');
+    });
+  }
+
   it('nazorat: routeBlock haqiqatan tor kesadi (butun faylni emas)', () => {
     // Mutant-tekshiruv: agar kesish ishlamasa, pos-login bloki
     // pos-device/pair dekoratorini ham ushlardi va yuqoridagi test yolg'on

@@ -266,6 +266,20 @@ describe('PIN-kirish yo`llari kiosk allowlist bilan mos', () => {
   it('nazorat: kassaga aloqasiz yo`l HAMON yopiq', () => {
     expect(isKioskAllowed('GET', '/reports/profitability')).toBe(false);
   });
+
+  /**
+   * F7 — kassir almashtirish yo'llari (spec §8). Rejadagi «kiosk-allowlist +
+   * testlari» sharti F5 pretsedenti bilan hal: YANGI qoida KERAK EMAS
+   * (`/auth` qoidasi `['*']`), lekin shu fakt testsiz qolsa kimdir `/auth`
+   * qoidasini toraytirganda kassir almashtirish jimgina o'lardi.
+   */
+  it('/auth/pos-pin/candidates kiosk uchun ochiq (F7 — kassir-tanlash)', () => {
+    expect(isKioskAllowed('GET', '/auth/pos-pin/candidates')).toBe(true);
+  });
+
+  it('/auth/pos-pin/switch kiosk uchun ochiq (F7 — PIN bilan almashinuv)', () => {
+    expect(isKioskAllowed('POST', '/auth/pos-pin/switch')).toBe(true);
+  });
 });
 
 /**
