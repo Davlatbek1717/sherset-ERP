@@ -1,15 +1,18 @@
 'use client';
 
 /**
- * «Sotuv» rejimi — chap panel (qidiruv + tovar setkasi + smena-strip) va
- * savat paneli («Savat» tab tarkibi).
+ * «Sotuv» rejimi — chap panel (qidiruv + tovar setkasi) va savat paneli
+ * (Sotuv rejimining doimiy o'ng paneli).
  *
  * F1 (POS redizayn, 2026-08-14): JSX `page.tsx` dan XULQNI O'ZGARTIRMASDAN
  * ko'chirildi. Savat holati, so'rovlar va mutatsiyalar sahifada QOLADI —
  * bu fayl faqat chizadi; qator ichidagi sof hisob-kitoblar (band, foyda,
  * markdown) esa avvalgidek YAGONA manbadan (`cart-math` / `@moysklad/money`)
- * keladi. Ikkala blok bitta faylda, lekin ikki komponent: chap panel har
- * doim ko'rinadi, savat esa faqat «Savat» tabida (DOM tuzilishi o'zgarmagan).
+ * keladi.
+ *
+ * F3 (spec §5.1, Q6): sensorli qayta qurish — savat qatori butun-qator
+ * tahrir-trigger (± yo'q), o'lchamlar px'da (spec §4 shkalasi), eski
+ * smena-strip olib tashlandi (ma'lumot PosHeader chip'ida).
  */
 
 import {
@@ -31,7 +34,7 @@ import type {
   PosProductRow as ProductRow,
 } from '@moysklad/contracts';
 import { classifyPrice, formatPercent, marginPercent, priceFloorMinor } from '@moysklad/money';
-import { Alert, Badge, Button, Input, formatMoney } from '@moysklad/ui';
+import { Alert, Button, Input, formatMoney } from '@moysklad/ui';
 import { Search, ShoppingCart } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import type { Dispatch, RefObject, SetStateAction } from 'react';
@@ -80,25 +83,10 @@ export function SotuvSearchGrid({
         </Alert>
       )}
 
-      {/* Session strip */}
-      <div className="flex items-center gap-3 rounded-xl border border-[var(--ms-border)] bg-[var(--ms-bg-surface)] px-3 py-2 text-sm">
-        <Badge tone={session.stale ? 'warning' : 'success'}>{t('shift_open')}</Badge>
-        <span className="text-[var(--ms-text-muted)]">
-          {session.cashier.name}
-          {session.store ? ` · ${session.store.name}` : ''}
-        </span>
-        {/* Yosh HAR DOIM ko'rinadi — chegaragacha ham. Egasi shuni so'radi:
-            «ochildi degandan yopildi qilguncha» ko'rinib tursin. */}
-        <span data-test-id="sotuv-shift-age" className="text-[var(--ms-text-muted)]">
-          · {t('shift_open_age', { age: shiftAge })}
-        </span>
-        <span className="ml-auto font-medium">
-          {session.salesCount} · {formatMoney(BigInt(session.salesSumMinor))}
-        </span>
-        <Button asChild variant="link" className="ml-2 text-xs">
-          <a href="/retail">{t('shift_manage')}</a>
-        </Button>
-      </div>
+      {/* F3: eski smena-strip OLIB TASHLANDI — kassir ismi/yoshi/savdo jami
+          endi PosHeader smena-chip'ida (F2, spec §3.1); shu yerda turgani
+          ma'lumot dublikati edi. `stale` ogohlantirishi (yuqorida) qoladi —
+          u ma'lumot emas, HARAKAT talab qiladigan signal. */}
 
       {/* Search / barcode */}
       <Input
@@ -138,17 +126,19 @@ export function SotuvSearchGrid({
                   key={p.id}
                   onClick={() => addToCart(p)}
                   data-test-id="sotuv-product"
-                  className="flex flex-col items-start rounded-xl border border-[var(--ms-border)] bg-[var(--ms-bg-surface)] p-4 text-left shadow-sm transition-colors hover:bg-[var(--ms-bg-hover)]"
+                  className="flex min-h-[var(--pos-touch-min)] flex-col items-start rounded-xl border border-[var(--ms-border)] bg-[var(--ms-bg-surface)] p-4 text-left shadow-sm transition-colors hover:bg-[var(--ms-bg-hover)] active:scale-[0.99]"
                 >
                   {/* P04 (2026-08-13, egasi): mahsulot nomi boshqa xildagi
-                      kattaroq shriftda — font-pos (Segoe UI zanjiri). */}
-                  <span className="font-pos font-semibold text-[var(--ms-text-primary)] text-base">
+                      kattaroq shriftda — font-pos (Segoe UI zanjiri).
+                      F3 (spec §4): o'lchamlar px'da — ildiz font 12px,
+                      rem-klasslar 0.75× kichik chiqadi (F2 saboqi). */}
+                  <span className="font-pos font-semibold text-[18px] text-[var(--ms-text-primary)]">
                     {p.name}
                   </span>
-                  <span className="mt-1 font-bold text-[var(--ms-text-destructive)] text-base">
+                  <span className="mt-1 font-bold text-[18px] text-[var(--ms-text-destructive)]">
                     {sale != null ? formatMoney(BigInt(sale)) : '—'}
                   </span>
-                  <span className="mt-1 text-xs">
+                  <span className="mt-1 text-[14px]">
                     <span
                       className={
                         onHand <= 0
@@ -330,7 +320,7 @@ export function SavatPanel({
                         {formatMoney(line.priceMinor)}
                       </span>
                     </span>
-                    <span className="ml-auto flex flex-wrap items-center justify-end gap-x-1.5 text-[13px] text-[var(--ms-text-muted)]">
+                    <span className="ml-auto flex flex-wrap items-center justify-end gap-x-1.5 text-[14px] text-[var(--ms-text-muted)]">
                       {line.availableStock !== undefined && (
                         <span>
                           {t('cart_remaining')}:{' '}
@@ -456,12 +446,14 @@ export function SavatPanel({
             title={t('discount_dblclick_hint')}
           >
             {discountPct > 0 && (
-              <p className="text-sm tabular-nums text-[var(--ms-text-muted)] line-through">
+              <p className="text-[14px] tabular-nums text-[var(--ms-text-muted)] line-through">
                 {formatMoney(cartTotal)}
               </p>
             )}
+            {/* F3 (spec §4): jami summa 36–40px qalin — 1 metrdan o'qilsin.
+                px'da ataylab (`text-3xl` ildiz 12px da bor-yo'g'i 22.5px edi). */}
             <p
-              className={`font-bold tabular-nums leading-none text-3xl ${discountPct > 0 ? 'text-emerald-600' : 'text-[var(--ms-text-primary)]'}`}
+              className={`font-bold tabular-nums leading-none text-[38px] ${discountPct > 0 ? 'text-emerald-600' : 'text-[var(--ms-text-primary)]'}`}
             >
               {formatMoney(discountedTotal)}
             </p>
@@ -564,13 +556,16 @@ export function SavatPanel({
             «Omborchiga yuborish» pastda, ochiqroq rangda — katta zakaz
             uchun qoladi. Ikkalasi ham AYNI narx-siyosat qulfi ostida
             (P12): 0 narx yoki poldan past narx ikkalasini ham bloklaydi,
-            aks holda yangi tugma qulfni chetlab o'tish yo'li bo'lardi. */}
+            aks holda yangi tugma qulfni chetlab o'tish yo'li bo'lardi.
+            F3 (spec §4): asosiy tugma 72px, ikkilamchisi 56px
+            (`--pos-touch-min`), yozuv 18px — hammasi px'da (ildiz font
+            12px, rem-klasslar 0.75× kichik chiqadi — F2 saboqi). */}
         <button
           type="button"
           onClick={onDirectSell}
           disabled={cart.length === 0 || directSellPending || pricePolicyBlock != null}
           data-test-id="sotuv-sell-direct"
-          className="mb-2 flex h-14 w-full items-center justify-center gap-2 rounded-2xl bg-emerald-600 font-semibold text-base text-white shadow-lg transition-all hover:bg-emerald-700 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40"
+          className="mb-2 flex h-[72px] w-full items-center justify-center gap-2 rounded-2xl bg-emerald-600 font-semibold text-[18px] text-white shadow-lg transition-all hover:bg-emerald-700 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40"
         >
           {directSellPending ? (
             <span className="flex items-center gap-2">
@@ -606,7 +601,7 @@ export function SavatPanel({
           onClick={onSendToPicking}
           disabled={cart.length === 0 || sendToPickingPending || pricePolicyBlock != null}
           data-test-id="sotuv-pay"
-          className="flex h-14 w-full items-center justify-center gap-2 rounded-2xl bg-emerald-500 font-semibold text-base text-white shadow-lg transition-all hover:bg-emerald-600 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40"
+          className="flex h-[var(--pos-touch-min)] w-full items-center justify-center gap-2 rounded-2xl bg-emerald-500 font-semibold text-[18px] text-white shadow-lg transition-all hover:bg-emerald-600 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40"
         >
           {sendToPickingPending ? (
             <span className="flex items-center gap-2">

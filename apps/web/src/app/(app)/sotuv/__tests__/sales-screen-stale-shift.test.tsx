@@ -57,11 +57,14 @@ beforeEach(() => {
 });
 
 describe('P4 — smena yoshi ekranda', () => {
-  it('yangi smenada yosh ko`rinadi, ogohlantirish YO`Q', async () => {
+  // F3 (POS redizayn): yosh endi setka ustidagi strip'da EMAS — strip olib
+  // tashlandi (header-chip bilan dublikat edi, F2 hisoboti №3). Niyat
+  // O'ZGARMADI: yosh HAR DOIM ko'rinadi — endi PosHeader smena-chip'ida.
+  it('yangi smenada yosh ko`rinadi (header-chip), ogohlantirish YO`Q', async () => {
     mountWith({ openMinutes: 125, stale: false });
-    const age = await screen.findByTestId('sotuv-shift-age');
+    const chip = await screen.findByTestId('pos-header-shift-chip');
     // 2 soat 5 daqiqa.
-    expect(age.textContent).toContain('2');
+    expect(chip.textContent).toContain('2');
     expect(screen.queryByTestId('sotuv-shift-stale')).toBeNull();
   });
 
@@ -85,7 +88,7 @@ describe('P4 — smena yoshi ekranda', () => {
     // Chegara o'chirilgan yoki kattaroq qilib sozlangan holat. Ekran o'zi
     // «12 soatdan oshdi» deb qaror QILMAYDI.
     mountWith({ openMinutes: 5 * 24 * 60, stale: false, staleWarnHours: null });
-    await screen.findByTestId('sotuv-shift-age');
+    await screen.findByTestId('pos-header-shift-chip');
     expect(screen.queryByTestId('sotuv-shift-stale')).toBeNull();
   });
 });

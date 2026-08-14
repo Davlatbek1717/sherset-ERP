@@ -129,10 +129,13 @@ describe('SalesScreen — tovar setkasi', () => {
     // P04 (2026-08-13, egasi): «shriftlarni o'zgartirish kerak — mahsulot nomi
     // boshqa xildagi kattaroq shriftda». `font-pos` = `--pos-font-product`
     // (Segoe UI zanjiri, global --ms-font-sans'ga TEGILMAGAN).
+    // F3 (spec §4): o'lcham endi px'da — 18px (`text-base` ildiz 12px da
+    // 12px chiqib «kattaroq» degan niyatning o'zini buzardi); karta ≥56px.
     const tiles = await screen.findAllByTestId('sotuv-product');
+    expect(at(tiles, 0).className).toContain('min-h-[var(--pos-touch-min)]');
     const name = at(tiles, 0).querySelector('.font-pos');
     expect(name, 'qidiruv kartasi nomi font-pos emas').not.toBeNull();
-    expect(name?.className).toContain('text-base');
+    expect(name?.className).toContain('text-[18px]');
     expect(norm(name?.textContent)).toContain('Kabel 2×2.5');
   });
 
