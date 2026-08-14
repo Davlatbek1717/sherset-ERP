@@ -36,6 +36,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // ── Qurilma holati (kirish ekranidagi belgi) ─────────────────────────────
   shellStatus: () => ipcRenderer.invoke('shell:status'),
 
+  // ── Oyna boshqaruvi (F6, 1.7.0) — web-header o'z — ❐ ✕ tugmalarini shu
+  // metodlar bilan chizadi (`window-controls.tsx`). Kanallar pastdagi suzuvchi
+  // WINDOW_BUTTONS bilan BIR XIL; ✕ ham TASDIQLI yo'ldan (`shell:request-quit`,
+  // `shell:quit` metodi ATAYLAB berilmaydi — E1). main.js ishlovchilari 1.6.0
+  // dan beri mavjud, unga tegilmagan.
+  minimize: () => ipcRenderer.send('shell:minimize'),
+  toggleWindowed: () => ipcRenderer.send('shell:toggle-windowed'),
+  requestQuit: () => ipcRenderer.send('shell:request-quit'),
+
   // ── Qurilma kaliti (DPAPI, device-store.js) ──────────────────────────────
   getDevice: () => ipcRenderer.sendSync('device:get'),
   setDevice: (creds) => ipcRenderer.sendSync('device:set', creds),
@@ -121,10 +130,20 @@ function installExitGesture() {
 }
 
 /**
- * OYNA BOSHQARUV TUGMALARI — o'ng-yuqorida uchlik (P01, 2026-08-13 egasi):
- * «—» ilovadan chiqmasdan ish stoliga (minimize), «❐» kiosk ↔ oynali rejim,
- * «✕» tasdiq dialogli chiqish (1.6.0 dagi tugma — o'sha yilgi «bitta ✕»
- * niyati shu kuni uchlikka kengaydi). Imo (installExitGesture) o'rnida qoladi.
+ * OYNA BOSHQARUV TUGMALARI — suzuvchi uchlik, endi MOSLIK ZAXIRASI (F6, 1.7.0).
+ *
+ * P01 (2026-08-13, egasi): «—» ilovadan chiqmasdan ish stoliga (minimize),
+ * «❐» kiosk ↔ oynali rejim, «✕» tasdiq dialogli chiqish. Imo
+ * (installExitGesture) o'rnida qoladi.
+ *
+ * F6 (2026-08-14, POS redizayn): web-header o'z tugmalarini o'zi chizadi
+ * (`window-controls.tsx`, yuqoridagi electronAPI metodlari orqali) va
+ * `<html data-sherset-window-controls="page">` markerini qo'yadi. Marker
+ * turganda suzuvchi uchlik CHIZILMAYDI/OLIB TASHLANADI — ikkita uchlik bir
+ * ekranda turmasin. Marker yo'q bo'lsa (eski web-deploy, POS bo'lmagan sahifa,
+ * marker olib tashlangani) uchlik avvalgidek chiziladi — versiya-moslik
+ * matritsasi (spec §7): hech qaysi kombinatsiyada tugmalar yo'qolmaydi ham,
+ * ikkilanmaydi ham. Kuzatuv — MutationObserver `documentElement` atributida.
  *
  * ✕ bosilganda xuddi imo kabi `shell:request-quit` ketadi: main tomonda
  * TASDIQ dialogi bor, tasodifiy bosish savdoni yo'qotmaydi (`shell:quit`
@@ -146,34 +165,61 @@ const WINDOW_BUTTONS = [
   { label: '✕', channel: 'shell:request-quit', right: '8px' },
 ];
 
+/** Web sahifasi o'z tugmalarini chizayotganining belgisi (`window-controls.tsx`). */
+const WINDOW_CONTROLS_MARKER = 'data-sherset-window-controls';
+
 function installWindowControls() {
   if (location.protocol === 'file:') return;
-  for (const cfg of WINDOW_BUTTONS) {
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.tabIndex = -1;
-    b.textContent = cfg.label;
-    const styles = {
-      position: 'fixed',
-      top: '8px',
-      right: cfg.right,
-      // Klaviatura (2147483647) dan bitta past — klaviatura pastda, kesishmaydi.
-      zIndex: '2147483646',
-      width: '40px',
-      height: '40px',
-      lineHeight: '1',
-      fontSize: '20px',
-      color: '#ffffff',
-      background: 'rgba(15, 23, 42, 0.45)',
-      border: '0',
-      borderRadius: '20px',
-      cursor: 'pointer',
-      opacity: '0.7',
-    };
-    for (const k of Object.keys(styles)) b.style[k] = styles[k];
-    b.addEventListener('click', () => ipcRenderer.send(cfg.channel));
-    document.body.appendChild(b);
-  }
+
+  /** Bizning tugmalarimiz — boshqa fixed tugmalar (klaviatura) aralashmasin. */
+  const drawn = () => document.querySelectorAll('button[data-sherset-window-button]');
+
+  const draw = () => {
+    // Idempotent: observer/navigatsiya nechta marta chaqirsa ham dublikat yo'q.
+    if (drawn().length > 0) return;
+    for (const cfg of WINDOW_BUTTONS) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.tabIndex = -1;
+      b.textContent = cfg.label;
+      b.dataset.shersetWindowButton = 'true';
+      const styles = {
+        position: 'fixed',
+        top: '8px',
+        right: cfg.right,
+        // Klaviatura (2147483647) dan bitta past — klaviatura pastda, kesishmaydi.
+        zIndex: '2147483646',
+        width: '40px',
+        height: '40px',
+        lineHeight: '1',
+        fontSize: '20px',
+        color: '#ffffff',
+        background: 'rgba(15, 23, 42, 0.45)',
+        border: '0',
+        borderRadius: '20px',
+        cursor: 'pointer',
+        opacity: '0.7',
+      };
+      for (const k of Object.keys(styles)) b.style[k] = styles[k];
+      b.addEventListener('click', () => ipcRenderer.send(cfg.channel));
+      document.body.appendChild(b);
+    }
+  };
+
+  const remove = () => {
+    for (const b of drawn()) b.remove();
+  };
+
+  const sync = () => {
+    if (document.documentElement.getAttribute(WINDOW_CONTROLS_MARKER) === 'page') remove();
+    else draw();
+  };
+
+  sync();
+  new MutationObserver(sync).observe(document.documentElement, {
+    attributes: true,
+    attributeFilter: [WINDOW_CONTROLS_MARKER],
+  });
 }
 
 /**
