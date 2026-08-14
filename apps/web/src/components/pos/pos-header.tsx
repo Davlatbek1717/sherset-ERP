@@ -20,6 +20,7 @@ import type { CurrentSession } from '@moysklad/contracts';
 import { formatMoney } from '@moysklad/ui';
 import { useTranslations } from 'next-intl';
 import { type ReactNode, useEffect, useState } from 'react';
+import { WindowControls } from './window-controls';
 
 export interface PosHeaderProps {
   session: CurrentSession;
@@ -117,8 +118,11 @@ export function PosHeader({ session, shiftAge, connectionOk, children }: PosHead
           {now}
         </span>
 
-        {/* F6 sloti — oyna-tugmalari / sahifaning CFD tugmasi. */}
+        {/* Sahifa sloti (CFD tugmasi va b.). */}
         {children}
+
+        {/* F6 — oyna-tugmalari ENG o'ngda (faqat yangi exe qobig'ida chiziladi). */}
+        <WindowControls />
       </div>
     </header>
   );

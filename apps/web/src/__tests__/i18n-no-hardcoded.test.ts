@@ -269,6 +269,8 @@ const POS_DONE_FILES = [
   // F2 (POS redizayn) — sidebar/header qobiq komponentlari.
   'components/pos/pos-sidebar.tsx',
   'components/pos/pos-header.tsx',
+  // F6 (POS redizayn) — headerga singdirilgan oyna-tugmalari.
+  'components/pos/window-controls.tsx',
   'components/pos/rasmilashtirish-modal.tsx',
   'components/pos/shell-version-badge.tsx',
   'app/(app)/sotuv/page.tsx',
