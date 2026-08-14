@@ -1379,6 +1379,8 @@ function SalesScreen({
                 closeVariance={closeVariance}
                 expectedCashUsd={expectedCashUsd}
                 closeVarianceUsd={closeVarianceUsd}
+                countedCash={countedCash}
+                countedCashUsd={countedCashUsd}
                 varianceNote={varianceNote}
                 setVarianceNote={setVarianceNote}
                 closePending={closeMut.isPending}

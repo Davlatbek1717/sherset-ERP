@@ -8,12 +8,31 @@
  * ko'chirildi. Holat, so'rovlar va mutatsiyalar sahifada QOLADI — bu komponent
  * faqat props orqali oladi va chizadi. Barcha props MAJBURIY (prop-drop
  * bug-klassi typecheck'da tutilsin — [[documenteditor-prop-drop-bug]]).
+ *
+ * F5 (spec §5.4, Q7 — egasi qarori): smena yopish sanog'i YOPIQ (blind).
+ * Holat mashinasi SHU komponentda: `idle → counting → review → closing`.
+ * `counting` da kutilgan summa DOM'ga UMUMAN chizilmaydi (so'rov sahifada
+ * yuradi, lekin natijasi faqat `review` da ko'rinadi) — kassir sanoqni
+ * kutilgan raqamga moslab yoza olmasin. `review` dan sanoqqa qaytish YO'Q:
+ * faqat butun oqimni bekor qilish (sanoq tozalanadi). Farq≠0 → izoh MAJBURIY.
+ * Server smena-qoidalari O'ZGARMAGAN — u baribir o'zi hisoblaydi.
  */
+
+/**
+ * Sanoq numpad tugmalari — `cart-line-edit-modal` naqshi, lekin `.` o'rniga
+ * `000`: so'm sanog'i butun son, uch nol esa naqd pul dastalarida eng ko'p
+ * bosiladigan qadam. Dollar maydoni faolida `000` → `.` (sent kiritish uchun).
+ */
+const COUNT_NUMPAD_SOM = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '000', '0', '⌫'];
+const COUNT_NUMPAD_USD = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '⌫'];
+
+/** Maydon uzunligi chegarasi — 13 xonali summa `bigint` da ham xavfsiz. */
+const COUNT_MAX_LEN = 12;
 
 import type { CurrentSession } from '@moysklad/contracts';
 import { formatMoney } from '@moysklad/ui';
 import { useTranslations } from 'next-intl';
-import type { Dispatch, SetStateAction } from 'react';
+import { type Dispatch, type SetStateAction, useState } from 'react';
 
 /**
  * Dollar summani (sentda) ekranga chiqaradi — ishora `$` dan OLDIN: `-$10.00`
@@ -54,6 +73,10 @@ interface SmenaModeProps {
   closeVariance: bigint | null;
   expectedCashUsd: bigint | null;
   closeVarianceUsd: bigint | null;
+  /** Kassir sanagan so'm (minor) — review'dagi «Sanadingiz» qatori. */
+  countedCash: bigint | null;
+  /** Kassir sanagan dollar (sent) — `null` = sanalmagan (0 EMAS). */
+  countedCashUsd: bigint | null;
   varianceNote: string;
   setVarianceNote: Dispatch<SetStateAction<string>>;
   closePending: boolean;
@@ -85,6 +108,8 @@ export function SmenaMode({
   closeVariance,
   expectedCashUsd,
   closeVarianceUsd,
+  countedCash,
+  countedCashUsd,
   varianceNote,
   setVarianceNote,
   closePending,
@@ -95,6 +120,46 @@ export function SmenaMode({
   // F9 — mijoz kartasi yorliqlari POS komponentlari bilan bir joyda
   // (`pages.pos`), chunki panelning o'zi shu namespace'ni o'qiydi.
   const tPos = useTranslations('pages.pos');
+
+  // ── F5 — yopiq sanoq holat mashinasi ──────────────────────────────────────
+  // `idle` = showCloseForm false. Bosqich SHU yerda: sahifa faqat qiymatlarni
+  // biladi (sanoq satri, kutilgan, farq), ko'rsatish TARTIBI esa Q7 qarori —
+  // ko'rinish qatlamining ishi.
+  const [closeStage, setCloseStage] = useState<'counting' | 'review'>('counting');
+  // Numpad qaysi maydonga yozadi (dollar maydoni bor smenada).
+  const [countField, setCountField] = useState<'som' | 'usd'>('som');
+
+  const setCount = countField === 'som' ? setClosingCash : setClosingCashUsd;
+  const handleCountKey = (key: string) => {
+    if (key === '⌫') {
+      setCount((prev) => prev.slice(0, -1));
+      return;
+    }
+    setCount((prev) => {
+      if (key === '.') {
+        if (prev.includes('.')) return prev;
+        return prev === '' ? '0.' : `${prev}.`;
+      }
+      const next = prev + key;
+      return next.length > COUNT_MAX_LEN ? prev : next;
+    });
+  };
+
+  /** Butun oqimni bekor qilish — sanoq TOZALANADI (review'dan qaytish yo'li YO'Q). */
+  const cancelCloseFlow = () => {
+    setShowCloseForm(false);
+    setClosingCash('');
+    setClosingCashUsd('');
+    setVarianceNote('');
+    setCloseStage('counting');
+    setCountField('som');
+  };
+
+  // Farq≠0 (so'm YOKI dollar) → izoh MAJBURIY. Farq noma'lum (preview kelmadi)
+  // bo'lsa majburlanmaydi — server baribir o'zi hisoblaydi (mavjud shartnoma).
+  const noteRequired =
+    (closeVariance !== null && closeVariance !== 0n) ||
+    (closeVarianceUsd !== null && closeVarianceUsd !== 0n);
 
   return (
     <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-4">
@@ -266,27 +331,40 @@ export function SmenaMode({
         {!showCloseForm ? (
           <button
             type="button"
-            onClick={() => setShowCloseForm(true)}
-            className="w-full rounded-lg border border-red-300 py-2 text-sm font-medium text-red-600 hover:bg-red-50"
+            onClick={() => {
+              setCloseStage('counting');
+              setCountField('som');
+              setShowCloseForm(true);
+            }}
+            className="h-[var(--pos-touch-min)] w-full rounded-xl border border-red-300 text-[18px] font-semibold text-red-600 hover:bg-red-50"
           >
             {t('shift_close_btn')}
           </button>
-        ) : (
+        ) : closeStage === 'counting' ? (
+          /* ── COUNTING — YOPIQ sanoq (Q7): kutilgan summa bu bosqichda
+                DOM'da YO'Q. Faqat sanoq maydon(lar)i + katta numpad. */
           <div className="flex flex-col gap-2">
             <input
               type="number"
               min="0"
               value={closingCash}
               onChange={(e) => setClosingCash(e.target.value)}
+              onFocus={() => setCountField('som')}
               placeholder={t('closing_cash_placeholder')}
               // biome-ignore lint/a11y/noAutofocus: intentional POS focus — cashier enters the closing cash count immediately when this dialog opens.
               autoFocus
-              className="h-10 w-full rounded-lg border border-[var(--ms-border)] bg-[var(--ms-bg-input)] px-3 text-sm focus:outline-none focus:border-[var(--ms-border-focus)]"
+              data-count-active={countField === 'som' || undefined}
+              className={`h-[56px] w-full rounded-xl border bg-[var(--ms-bg-input)] px-3 text-[20px] tabular-nums focus:outline-none ${
+                countField === 'som'
+                  ? 'border-[var(--ms-border-focus)]'
+                  : 'border-[var(--ms-border)]'
+              }`}
             />
 
             {/* MK31 — sanalgan DOLLAR (§8.4). Faqat smenada dollar
                 oqimi bo'lgan holatda; server bu holatda sanoqni
-                MAJBURIY qiladi. */}
+                MAJBURIY qiladi. Maydonning BORLIGI kutilgan summani
+                oshkor qilmaydi — faqat «dollar oqimi bo'lgan» faktini. */}
             {usdInPlay && (
               <input
                 type="number"
@@ -294,111 +372,165 @@ export function SmenaMode({
                 step="0.01"
                 value={closingCashUsd}
                 onChange={(e) => setClosingCashUsd(e.target.value)}
+                onFocus={() => setCountField('usd')}
                 placeholder={t('closing_cash_usd_placeholder')}
                 data-test-id="close-cash-usd"
-                className="h-10 w-full rounded-lg border border-[var(--ms-border)] bg-[var(--ms-bg-input)] px-3 text-sm focus:outline-none focus:border-[var(--ms-border-focus)]"
+                className={`h-[56px] w-full rounded-xl border bg-[var(--ms-bg-input)] px-3 text-[20px] tabular-nums focus:outline-none ${
+                  countField === 'usd'
+                    ? 'border-[var(--ms-border-focus)]'
+                    : 'border-[var(--ms-border)]'
+                }`}
               />
             )}
 
-            {/* Kutilgan naqd va farq — TASDIQLASHDAN OLDIN.
-                Kassir raqamni ko'rmasdan yopsa, farqni faqat menejer
-                ertaga ko'radi va sababini hech kim eslamaydi. */}
-            {expectedCash !== null && (
-              <div className="rounded-lg border border-[var(--ms-border)] bg-[var(--ms-bg-input)] px-3 py-2 text-xs">
-                <div className="flex justify-between">
+            {/* Katta numpad (spec §5.4) — sensorli sanoq. Faol maydonga
+                yozadi; dollar faolida `000` o'rniga `.` (sent). */}
+            <div className="grid grid-cols-3 gap-2" data-test-id="close-count-numpad">
+              {(countField === 'usd' ? COUNT_NUMPAD_USD : COUNT_NUMPAD_SOM).map((key) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => handleCountKey(key)}
+                  className="h-[64px] rounded-xl border border-[var(--ms-border)] bg-[var(--ms-bg-surface)] text-[22px] font-semibold tabular-nums text-[var(--ms-text-primary)] transition-all hover:bg-[var(--ms-bg-hover)] active:scale-95"
+                >
+                  {key}
+                </button>
+              ))}
+            </div>
+
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setCloseStage('review')}
+                disabled={closingCash.trim() === ''}
+                data-test-id="close-continue"
+                className="h-[var(--pos-touch-min)] flex-1 rounded-xl bg-red-600 text-[18px] font-bold text-white hover:bg-red-700 disabled:opacity-40"
+              >
+                {t('close_continue')}
+              </button>
+              <button
+                type="button"
+                onClick={cancelCloseFlow}
+                data-test-id="close-cancel"
+                className="h-[var(--pos-touch-min)] rounded-xl border border-[var(--ms-border)] px-5 text-[16px] text-[var(--ms-text-muted)] hover:bg-[var(--ms-bg-hover)]"
+              >
+                {tCommon('cancel')}
+              </button>
+            </div>
+          </div>
+        ) : (
+          /* ── REVIEW — Sanadingiz · Kutilgan · Farq. Sanoqqa QAYTISH YO'Q
+                (Q7): farqni ko'rib raqamni «to'g'irlab qo'yish» yopiq —
+                faqat butun oqimni bekor qilish (sanoq tozalanadi). */
+          <div className="flex flex-col gap-2">
+            <div className="rounded-xl border border-[var(--ms-border)] bg-[var(--ms-bg-input)] px-3 py-2 text-[16px]">
+              <div className="flex justify-between">
+                <span className="text-[var(--ms-text-muted)]">{t('close_counted')}</span>
+                <span className="font-semibold tabular-nums">{formatMoney(countedCash ?? 0n)}</span>
+              </div>
+              {expectedCash !== null && (
+                <div className="mt-1 flex justify-between">
                   <span className="text-[var(--ms-text-muted)]">{t('expected_cash')}</span>
                   <span className="font-medium tabular-nums">{formatMoney(expectedCash)}</span>
                 </div>
-                {closeVariance !== null && (
-                  <div
-                    className={`mt-1 flex justify-between font-semibold ${
-                      closeVariance === 0n
-                        ? 'text-emerald-700'
-                        : closeVariance < 0n
-                          ? 'text-red-700'
-                          : 'text-amber-700'
-                    }`}
-                    data-test-id="close-variance"
-                  >
-                    <span>
-                      {closeVariance === 0n
-                        ? t('variance_none')
-                        : closeVariance < 0n
-                          ? t('variance_shortage')
-                          : t('variance_surplus')}
-                    </span>
-                    <span className="tabular-nums">
-                      {closeVariance === 0n ? '0' : formatMoney(closeVariance)}
+              )}
+              {closeVariance !== null && (
+                <div
+                  className={`mt-1 flex justify-between text-[18px] font-bold ${
+                    closeVariance === 0n
+                      ? 'text-emerald-700'
+                      : closeVariance < 0n
+                        ? 'text-red-700'
+                        : 'text-amber-700'
+                  }`}
+                  data-test-id="close-variance"
+                >
+                  <span>
+                    {closeVariance === 0n
+                      ? t('variance_none')
+                      : closeVariance < 0n
+                        ? t('variance_shortage')
+                        : t('variance_surplus')}
+                  </span>
+                  <span className="tabular-nums">
+                    {closeVariance === 0n ? '0' : formatMoney(closeVariance)}
+                  </span>
+                </div>
+              )}
+
+              {/* Dollar bloki — SENTDA, so'mga o'girilmaydi (§8.4).
+                  O'girilsa yo'qolgan dollar «taxminiy so'm»ga aylanib,
+                  farq dalil bo'lishdan to'xtardi. */}
+              {usdInPlay && expectedCashUsd !== null && (
+                <>
+                  <div className="mt-1 flex justify-between border-t border-[var(--ms-border)] pt-1">
+                    <span className="text-[var(--ms-text-muted)]">{t('close_counted')}</span>
+                    <span className="font-medium tabular-nums">
+                      {countedCashUsd === null ? '—' : formatUsd(countedCashUsd)}
                     </span>
                   </div>
-                )}
-
-                {/* Dollar qatori — SENTDA, so'mga o'girilmaydi (§8.4).
-                    O'girilsa yo'qolgan dollar «taxminiy so'm»ga
-                    aylanib, farq dalil bo'lishdan to'xtardi. */}
-                {usdInPlay && expectedCashUsd !== null && (
-                  <>
-                    <div className="mt-1 flex justify-between border-t border-[var(--ms-border)] pt-1">
-                      <span className="text-[var(--ms-text-muted)]">{t('expected_cash_usd')}</span>
-                      <span className="font-medium tabular-nums">{formatUsd(expectedCashUsd)}</span>
+                  <div className="mt-1 flex justify-between">
+                    <span className="text-[var(--ms-text-muted)]">{t('expected_cash_usd')}</span>
+                    <span className="font-medium tabular-nums">{formatUsd(expectedCashUsd)}</span>
+                  </div>
+                  {closeVarianceUsd !== null && (
+                    <div
+                      className={`mt-1 flex justify-between text-[18px] font-bold ${
+                        closeVarianceUsd === 0n
+                          ? 'text-emerald-700'
+                          : closeVarianceUsd < 0n
+                            ? 'text-red-700'
+                            : 'text-amber-700'
+                      }`}
+                      data-test-id="close-variance-usd"
+                    >
+                      <span>
+                        {closeVarianceUsd === 0n
+                          ? t('variance_none')
+                          : closeVarianceUsd < 0n
+                            ? t('variance_shortage')
+                            : t('variance_surplus')}
+                      </span>
+                      <span className="tabular-nums">{formatUsd(closeVarianceUsd)}</span>
                     </div>
-                    {closeVarianceUsd !== null && (
-                      <div
-                        className={`mt-1 flex justify-between font-semibold ${
-                          closeVarianceUsd === 0n
-                            ? 'text-emerald-700'
-                            : closeVarianceUsd < 0n
-                              ? 'text-red-700'
-                              : 'text-amber-700'
-                        }`}
-                        data-test-id="close-variance-usd"
-                      >
-                        <span>
-                          {closeVarianceUsd === 0n
-                            ? t('variance_none')
-                            : closeVarianceUsd < 0n
-                              ? t('variance_shortage')
-                              : t('variance_surplus')}
-                        </span>
-                        <span className="tabular-nums">{formatUsd(closeVarianceUsd)}</span>
-                      </div>
-                    )}
-                  </>
-                )}
-              </div>
-            )}
+                  )}
+                </>
+              )}
+            </div>
 
-            {/* Izoh maydoni FAQAT farq bo'lganda: farqsiz smenada u
-                ortiqcha savol bo'lardi va kassir uni e'tiborsiz
-                qoldirishga o'rganib qolardi. */}
-            {((closeVariance !== null && closeVariance !== 0n) ||
-              (closeVarianceUsd !== null && closeVarianceUsd !== 0n)) && (
-              <input
-                type="text"
-                value={varianceNote}
-                onChange={(e) => setVarianceNote(e.target.value)}
-                placeholder={t('variance_note_placeholder')}
-                data-test-id="close-variance-note"
-                className="h-10 w-full rounded-lg border border-amber-300 bg-amber-50 px-3 text-sm focus:outline-none focus:border-amber-500"
-              />
+            {/* Farq bor → izoh MAJBURIY (F5; ilgari ixtiyoriy edi). Sabab
+                ayni damda yoziladi — ertaga hech kim eslay olmaydi. */}
+            {noteRequired && (
+              <>
+                <input
+                  type="text"
+                  value={varianceNote}
+                  onChange={(e) => setVarianceNote(e.target.value)}
+                  placeholder={t('variance_note_placeholder')}
+                  data-test-id="close-variance-note"
+                  className="h-[56px] w-full rounded-xl border border-amber-300 bg-amber-50 px-3 text-[16px] focus:outline-none focus:border-amber-500"
+                />
+                {varianceNote.trim() === '' && (
+                  <p className="text-[14px] font-medium text-amber-700">
+                    {t('close_note_required')}
+                  </p>
+                )}
+              </>
             )}
             <div className="flex gap-2">
               <button
                 type="button"
                 onClick={onCloseShift}
-                disabled={closePending}
-                className="flex-1 h-10 rounded-lg bg-red-600 font-semibold text-sm text-white hover:bg-red-700 disabled:opacity-40"
+                disabled={closePending || (noteRequired && varianceNote.trim() === '')}
+                className="h-[var(--pos-touch-min)] flex-1 rounded-xl bg-red-600 text-[18px] font-bold text-white hover:bg-red-700 disabled:opacity-40"
               >
                 {closePending ? t('closing') : t('confirm')}
               </button>
               <button
                 type="button"
-                onClick={() => {
-                  setShowCloseForm(false);
-                  setClosingCash('');
-                  setVarianceNote('');
-                }}
-                className="h-10 rounded-lg border border-[var(--ms-border)] px-4 text-sm text-[var(--ms-text-muted)] hover:bg-[var(--ms-bg-hover)]"
+                onClick={cancelCloseFlow}
+                data-test-id="close-cancel"
+                className="h-[var(--pos-touch-min)] rounded-xl border border-[var(--ms-border)] px-5 text-[16px] text-[var(--ms-text-muted)] hover:bg-[var(--ms-bg-hover)]"
               >
                 {tCommon('cancel')}
               </button>

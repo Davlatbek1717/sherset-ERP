@@ -112,8 +112,10 @@ describe('Smena yopilgandan keyin', () => {
     await openShiftTab(user);
 
     await user.click(screen.getByRole('button', { name: 'Smenani yopish' }));
-    await screen.findByText('Kutilgan naqd');
+    // F5 (blind sanoq): kutilgan endi sanoq bosqichida ko'rinmaydi — sanoq
+    // teriladi va «Davom etish» bilan review'ga o'tiladi, tasdiq o'sha yerda.
     await user.type(screen.getByPlaceholderText(/Kassadagi naqd pul/), '50000');
+    await user.click(screen.getByTestId('close-continue'));
 
     // Smena yopilgach ekran «smena ochish» holatiga qaytadi — shu paytda
     // ham chop tugmasi ko'rinib turishi kerak.

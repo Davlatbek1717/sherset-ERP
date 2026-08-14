@@ -7,6 +7,11 @@
  *  · chiqim hujjatida faqat O'Z turiga tegishli maydon yuboriladi;
  *  · sanalmagan dollar `null` bo'lib QOLADI — 0 bilan aralashmaydi;
  *  · izoh maydoni FAQAT farq bo'lganda ko'rinadi.
+ *
+ * F5 (2026-08-14, spec §5.4 Q7): smena yopish bo'limi YOPIQ (blind) sanoqqa
+ * o'tdi — o'sha bo'limning eski «kutilgan oldindan ko'rinadi» testlari yangi
+ * niyat bilan qayta yozildi (sabab o'z describe'ida); farq≠0 da izoh endi
+ * MAJBURIY.
  */
 
 import { api } from '@/lib/api-client';
@@ -328,54 +333,149 @@ describe('Kassadan chiqim oynasi (kassa TZ §8.2/§8.3)', () => {
   });
 });
 
-describe('Smena yopish (kassa TZ §8.4/§8.5)', () => {
-  it('kutilgan naqd TASDIQLASHDAN OLDIN ko‘rsatiladi', async () => {
+/**
+ * F5 (spec §5.4, Q7 — egasi qarori): smena yopish sanog'i endi YOPIQ (blind).
+ *
+ * ESKI NIYAT BEKOR: «kutilgan naqd TASDIQLASHDAN OLDIN ko'rsatiladi» degan
+ * testlar shu yerda turardi — kassir sanashdan oldin kutilgan raqamni ko'rib,
+ * sanoqni RAQAMGA MOSLAB yozishi mumkin edi (kamomad hech qachon ko'rinmasdi).
+ * Yangi shartnoma: `counting` bosqichida kutilgan summa DOM'da YO'Q; kutilgan
+ * va farq faqat `review` da chiqadi; farq≠0 bo'lsa izoh MAJBURIY; review'dan
+ * sanoqni «to'g'irlab qo'yish»ga qaytish YO'Q (faqat butun oqimni bekor
+ * qilish). Server o'zgarmagan — u baribir o'zi hisoblaydi.
+ */
+describe('Smena yopish — YOPIQ (blind) sanoq (F5, spec §5.4 Q7)', () => {
+  /** Sanoq bosqichini ochadi va preview so'rovi KETGANini kutadi. */
+  async function openCounting(user: ReturnType<typeof userEvent.setup>) {
+    await user.click(screen.getByRole('button', { name: 'Smenani yopish' }));
+    // Kutilgan-naqd so'rovi allaqachon JS xotirasida — quyidagi DOM-assertlar
+    // «hali kelmagani uchun ko'rinmayapti» degan bo'sh holatni tekshirmasin.
+    await waitFor(() =>
+      expect(api.get).toHaveBeenCalledWith(`/cashier-sessions/${SESSION_ID}/z-report`),
+    );
+  }
+
+  it('sanoq bosqichida kutilgan summa DOM‘da YO‘Q (blind — Q7 yadrosi)', async () => {
     const user = userEvent.setup();
     renderWithProviders(<SotuvPage />);
     await openShiftTab(user);
+    await openCounting(user);
 
-    await user.click(screen.getByRole('button', { name: 'Smenani yopish' }));
-    expect(norm((await screen.findByText('Kutilgan naqd')).parentElement?.textContent)).toBe(
+    expect(screen.queryByText('Kutilgan naqd')).not.toBeInTheDocument();
+    expect(screen.queryByText(/50 000,00/)).not.toBeInTheDocument();
+    expect(screen.queryByTestId('close-variance')).not.toBeInTheDocument();
+  });
+
+  it('«Davom etish» sanoq kiritilmaguncha bloklangan', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<SotuvPage />);
+    await openShiftTab(user);
+    await openCounting(user);
+
+    expect(screen.getByTestId('close-continue')).toBeDisabled();
+    await user.type(screen.getByPlaceholderText(/Kassadagi naqd pul/), '45000');
+    expect(screen.getByTestId('close-continue')).toBeEnabled();
+  });
+
+  it('numpad sanoq maydoniga yozadi (sensorli kiritish)', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<SotuvPage />);
+    await openShiftTab(user);
+    await openCounting(user);
+
+    await user.click(screen.getByRole('button', { name: '4' }));
+    await user.click(screen.getByRole('button', { name: '5' }));
+    await user.click(screen.getByRole('button', { name: '000' }));
+    expect(screen.getByPlaceholderText(/Kassadagi naqd pul/)).toHaveValue(45000);
+  });
+
+  it('review: Sanadingiz · Kutilgan · Farq; farq≠0 → izoh MAJBURIY', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<SotuvPage />);
+    await openShiftTab(user);
+    await openCounting(user);
+
+    await user.type(screen.getByPlaceholderText(/Kassadagi naqd pul/), '45000');
+    await user.click(screen.getByTestId('close-continue'));
+
+    expect(norm(screen.getByText('Sanadingiz').parentElement?.textContent)).toBe(
+      'Sanadingiz45 000,00 сум',
+    );
+    expect(norm(screen.getByText('Kutilgan naqd').parentElement?.textContent)).toBe(
       'Kutilgan naqd50 000,00 сум',
     );
-  });
-
-  it('sanoq kam bo‘lsa — «Kamomad» va izoh maydoni CHIQADI', async () => {
-    const user = userEvent.setup();
-    renderWithProviders(<SotuvPage />);
-    await openShiftTab(user);
-
-    await user.click(screen.getByRole('button', { name: 'Smenani yopish' }));
-    await screen.findByText('Kutilgan naqd');
-    await user.type(screen.getByPlaceholderText(/Kassadagi naqd pul/), '45000');
-
     expect(norm(screen.getByTestId('close-variance').textContent)).toBe('Kamomad-5 000,00 сум');
+
+    // Farq bor — izohsiz yopib BO'LMAYDI (ilgari izoh ixtiyoriy edi; blind
+    // oqimda farq sababi ayni damda yozilishi shart, ertaga hech kim eslamaydi).
     expect(screen.getByTestId('close-variance-note')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Tasdiqlash' })).toBeDisabled();
+    await user.type(screen.getByTestId('close-variance-note'), 'qaytim xato berildi');
+    expect(screen.getByRole('button', { name: 'Tasdiqlash' })).toBeEnabled();
+    await user.click(screen.getByRole('button', { name: 'Tasdiqlash' }));
+
+    await waitFor(() => expect(api.post).toHaveBeenCalled());
+    expect(api.post).toHaveBeenCalledWith(`/cashier-sessions/${SESSION_ID}/close`, {
+      closingCashMinor: '4500000',
+      varianceNote: 'qaytim xato berildi',
+    });
   });
 
-  it('farq yo‘q — izoh maydoni ko‘rsatilmaydi', async () => {
+  it('farq yo‘q — izoh so‘ralmaydi va close darhol mumkin', async () => {
     const user = userEvent.setup();
     renderWithProviders(<SotuvPage />);
     await openShiftTab(user);
+    await openCounting(user);
 
-    await user.click(screen.getByRole('button', { name: 'Smenani yopish' }));
-    await screen.findByText('Kutilgan naqd');
     await user.type(screen.getByPlaceholderText(/Kassadagi naqd pul/), '50000');
+    await user.click(screen.getByTestId('close-continue'));
 
     expect(norm(screen.getByTestId('close-variance').textContent)).toBe("Farq yo'q0");
     expect(screen.queryByTestId('close-variance-note')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Tasdiqlash' }));
+
+    await waitFor(() => expect(api.post).toHaveBeenCalled());
+    expect(api.post).toHaveBeenCalledWith(`/cashier-sessions/${SESSION_ID}/close`, {
+      closingCashMinor: '5000000',
+      varianceNote: null,
+    });
+  });
+
+  it('review‘dan sanoqqa QAYTIB BO‘LMAYDI — faqat «Bekor» (sanoq tozalanadi)', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<SotuvPage />);
+    await openShiftTab(user);
+    await openCounting(user);
+
+    await user.type(screen.getByPlaceholderText(/Kassadagi naqd pul/), '45000');
+    await user.click(screen.getByTestId('close-continue'));
+
+    // Review'da sanoq maydoni ham, «Davom etish» ham YO'Q — farqni ko'rib
+    // raqamni «to'g'irlab qo'yish» yo'li yopiq (Q7).
+    expect(screen.queryByPlaceholderText(/Kassadagi naqd pul/)).not.toBeInTheDocument();
+    expect(screen.queryByTestId('close-continue')).not.toBeInTheDocument();
+
+    await user.click(screen.getByTestId('close-cancel'));
+
+    // Oqim boshiga qaytdi: tugma qayta ko'rinadi, sanoq BO'SH boshlanadi.
+    expect(screen.getByRole('button', { name: 'Smenani yopish' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Smenani yopish' }));
+    expect(screen.getByPlaceholderText(/Kassadagi naqd pul/)).toHaveValue(null);
+    expect(api.post).not.toHaveBeenCalledWith(
+      `/cashier-sessions/${SESSION_ID}/close`,
+      expect.anything(),
+    );
   });
 
   it('dollar oqimi YO‘Q smenada dollar maydoni chizilmaydi va so‘rovda ham yo‘q', async () => {
     const user = userEvent.setup();
     renderWithProviders(<SotuvPage />);
     await openShiftTab(user);
+    await openCounting(user);
 
-    await user.click(screen.getByRole('button', { name: 'Smenani yopish' }));
-    await screen.findByText('Kutilgan naqd');
     expect(screen.queryByTestId('close-cash-usd')).not.toBeInTheDocument();
-
     await user.type(screen.getByPlaceholderText(/Kassadagi naqd pul/), '50000');
+    await user.click(screen.getByTestId('close-continue'));
     await user.click(screen.getByRole('button', { name: 'Tasdiqlash' }));
 
     await waitFor(() => expect(api.post).toHaveBeenCalled());
@@ -385,7 +485,7 @@ describe('Smena yopish (kassa TZ §8.4/§8.5)', () => {
     });
   });
 
-  it('dollar oqimi BOR — maydon chiqadi; sanalmasa `closingCashUsdMinor` YUBORILMAYDI', async () => {
+  it('dollar BOR: sanoqda maydon bor, kutilgan dollar KO‘RINMAYDI; review‘da sentda farq', async () => {
     vi.mocked(api.get).mockImplementation(
       router(
         shiftRoutes([
@@ -399,45 +499,23 @@ describe('Smena yopish (kassa TZ §8.4/§8.5)', () => {
     const user = userEvent.setup();
     renderWithProviders(<SotuvPage />);
     await openShiftTab(user);
-
     await user.click(screen.getByRole('button', { name: 'Smenani yopish' }));
+
+    // Dollar maydoni sanoq bosqichida BOR (usdInPlay — mavjud shart)…
     expect(await screen.findByTestId('close-cash-usd')).toBeInTheDocument();
+    // …lekin kutilgan dollar (blind!) KO'RINMAYDI.
+    expect(screen.queryByText('Kutilgan dollar')).not.toBeInTheDocument();
+
+    await user.type(screen.getByTestId('close-cash-usd'), '90');
+    await user.type(screen.getByPlaceholderText(/Kassadagi naqd pul/), '50000');
+    await user.click(screen.getByTestId('close-continue'));
+
+    // K-2 shartnomasi saqlangan: minus `$` dan OLDIN («-$10.00»).
     expect(screen.getByText('Kutilgan dollar').parentElement?.textContent).toContain('$100.00');
-
-    await user.type(screen.getByPlaceholderText(/Kassadagi naqd pul/), '50000');
-    await user.click(screen.getByRole('button', { name: 'Tasdiqlash' }));
-
-    await waitFor(() => expect(api.post).toHaveBeenCalled());
-    // Sanalmagan dollar `0` EMAS — kalitning O'ZI yuborilmaydi.
-    expect(api.post).toHaveBeenCalledWith(`/cashier-sessions/${SESSION_ID}/close`, {
-      closingCashMinor: '5000000',
-      varianceNote: null,
-    });
-  });
-
-  it('sanalgan dollar farqi SENTDA ko‘rsatiladi va so‘rovga tushadi', async () => {
-    vi.mocked(api.get).mockImplementation(
-      router(
-        shiftRoutes([
-          {
-            match: /\/z-report$/,
-            value: { expectedCashMinor: '5000000', expectedUsdCashMinor: '10000' },
-          },
-        ]),
-      ),
-    );
-    const user = userEvent.setup();
-    renderWithProviders(<SotuvPage />);
-    await openShiftTab(user);
-
-    await user.click(screen.getByRole('button', { name: 'Smenani yopish' }));
-    await user.type(await screen.findByTestId('close-cash-usd'), '90');
-    await user.type(screen.getByPlaceholderText(/Kassadagi naqd pul/), '50000');
-
-    // K-2 TUZATILDI (audit-fixlar): minus endi `$` dan OLDIN («-$10.00») —
-    // so'm qatoridagi «-5 000,00 сум» bilan bir xil o'qiladi.
     expect(norm(screen.getByTestId('close-variance-usd').textContent)).toBe('Kamomad-$10.00');
-    // Dollar farqi ham izoh maydonini ochadi.
+
+    // Dollar farqi ham izohni MAJBURIY qiladi.
+    expect(screen.getByRole('button', { name: 'Tasdiqlash' })).toBeDisabled();
     await user.type(screen.getByTestId('close-variance-note'), '10$ yo‘qoldi');
     await user.click(screen.getByRole('button', { name: 'Tasdiqlash' }));
 

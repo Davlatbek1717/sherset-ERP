@@ -205,11 +205,22 @@ function usdShiftRoutes(): Route[] {
   ]);
 }
 
-/** «Smena» yorlig'iga o'tib, yopish formasini ochadi. */
+/**
+ * «Smena» yorlig'iga o'tib, yopish SANOG'ini ochadi.
+ *
+ * F5 (blind, Q7): eski `await screen.findByText('Kutilgan naqd')` kutish
+ * nuqtasi BEKOR — kutilgan endi sanoq bosqichida chizilmaydi; tayyorlik
+ * signali «Davom etish» tugmasi.
+ */
 async function openCloseForm(user: ReturnType<typeof userEvent.setup>) {
   await user.click(await screen.findByRole('button', { name: /^Smena/ }));
   await user.click(screen.getByRole('button', { name: 'Smenani yopish' }));
-  await screen.findByText('Kutilgan naqd');
+  await screen.findByTestId('close-continue');
+}
+
+/** Sanoqni tasdiqlab review'ga o'tadi (farq FAQAT shu bosqichda ko'rinadi). */
+async function goReview(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(screen.getByTestId('close-continue'));
 }
 
 describe('Smena yopish — `5e3` kiritmasi sahifani yiqitmaydi', () => {
@@ -228,6 +239,7 @@ describe('Smena yopish — `5e3` kiritmasi sahifani yiqitmaydi', () => {
     fireEvent.change(screen.getByPlaceholderText(/Kassadagi naqd pul/), {
       target: { value: '5e3' },
     });
+    await goReview(user);
 
     // Sahifa tirik va farq 0 sanoqdan hisoblangan: 0 − 50 000 = kamomad.
     expect(norm(screen.getByTestId('close-variance').textContent)).toBe('Kamomad-50 000,00 сум');
@@ -238,9 +250,15 @@ describe('Smena yopish — `5e3` kiritmasi sahifani yiqitmaydi', () => {
     renderWithProviders(<SotuvPage />);
     await openCloseForm(user);
 
+    // So'm sanoqsiz review'ga o'tib bo'lmaydi (F5) — farqsiz 50 000 teriladi,
+    // sinov nishoni esa dollar maydonidagi `5e3` bo'lib qoladi.
+    fireEvent.change(screen.getByPlaceholderText(/Kassadagi naqd pul/), {
+      target: { value: '50000' },
+    });
     fireEvent.change(await screen.findByTestId('close-cash-usd'), {
       target: { value: '5e3' },
     });
+    await goReview(user);
 
     // 0 − $100 = −$100 kamomad; minus `$` dan OLDIN (K-2 bilan bir formatda).
     expect(norm(screen.getByTestId('close-variance-usd').textContent)).toBe('Kamomad-$100.00');
@@ -257,6 +275,9 @@ describe('K-2 — dollar farqida minus `$` dan OLDIN', () => {
     await openCloseForm(user);
 
     await user.type(await screen.findByTestId('close-cash-usd'), '90');
+    // F5: farq endi review bosqichida — so'm sanog'i (farqsiz) ham kerak.
+    await user.type(screen.getByPlaceholderText(/Kassadagi naqd pul/), '50000');
+    await goReview(user);
 
     expect(norm(screen.getByTestId('close-variance-usd').textContent)).toBe('Kamomad-$10.00');
     // Musbat «kutilgan» qatori esa oddiy `$100.00` bo'lib qoladi.
