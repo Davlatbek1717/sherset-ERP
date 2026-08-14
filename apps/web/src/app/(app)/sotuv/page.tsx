@@ -1194,7 +1194,7 @@ function SalesScreen({
           onClick={toggleCfd}
           data-test-id="pos-cfd-toggle"
           title={t('cfd_title')}
-          className={`flex h-11 shrink-0 items-center gap-1.5 rounded-lg px-3 font-semibold text-sm transition-colors ${
+          className={`flex h-[44px] shrink-0 items-center gap-1.5 rounded-lg px-3 font-semibold text-sm transition-colors ${
             cfdOpen
               ? 'bg-emerald-500 text-white hover:bg-emerald-600'
               : 'bg-white/15 text-[var(--pos-on-brand)] hover:bg-white/25'
@@ -1509,7 +1509,15 @@ export default function SotuvPage() {
 
   // DIQQAT: hook erta `return`dan YUQORIDA — pastga qo'yilsa React #310
   // («Rendered more hooks…») butun sahifani yiqitadi (2026-08-01 saboqi).
-  const { ref: shellRef, height: shellHeight } = useFillViewport<HTMLDivElement>();
+  const { ref: shellRef, height: shellHeight, remeasure } = useFillViewport<HTMLDivElement>();
+  // F2 da o'lchandi: birinchi mount'da sahifa hali «loading» bo'lib, `ref`
+  // bog'lanmagan — o'lchov ishlamay balandlik `100dvh` fallback'da qolardi
+  // (qobiq navbar+subnav bo'yi ~99px oshib, sidebar'ning pastki «Smena»
+  // tugmasi fold ostida yashirinardi). Sessiya kelib qobiq chizilgach qayta
+  // o'lchaymiz. Hook ham erta `return`dan YUQORIDA (React #310).
+  useEffect(() => {
+    if (session) remeasure();
+  }, [session, remeasure]);
   // F11 — yopilgan smenaning Z-hisobotini chop etish yo'li. Holat AYNAN shu
   // yerda turadi: `SalesScreen` smena yopilishi bilan unmount bo'ladi, ya'ni
   // ichkarida saqlangan id o'sha zahoti yo'qolardi.

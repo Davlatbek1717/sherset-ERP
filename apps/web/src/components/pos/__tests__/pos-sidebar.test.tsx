@@ -102,10 +102,14 @@ describe('PosSidebar — yig‘ish', () => {
 });
 
 describe('PosSidebar — sensorli o‘lchamlar (spec §4)', () => {
-  it('har bo‘lim 64px balandlikda (`h-16`)', () => {
+  // `h-16` EMAS: ildiz font-size 12px (ERP zichligi) — 4rem real 48px chiqib
+  // spec buziladi. 64px token (`--pos-row-h`, pos-theme.css) px'da qulflanadi.
+  it('har bo‘lim 64px balandlikda (`--pos-row-h` px-token)', () => {
     renderSidebar();
     for (const key of ['sotuv', 'navbat', 'zakazlar', 'cheklar', 'mijozlar', 'smena']) {
-      expect(screen.getByTestId(`pos-sidebar-item-${key}`).className).toContain('h-16');
+      expect(screen.getByTestId(`pos-sidebar-item-${key}`).className).toContain(
+        'h-[var(--pos-row-h)]',
+      );
     }
   });
 });

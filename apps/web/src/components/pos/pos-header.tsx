@@ -52,9 +52,11 @@ export function PosHeader({ session, shiftAge, connectionOk, children }: PosHead
   const now = useMinuteClock();
 
   return (
+    // 64px — px bilan ATAYLAB: ildiz font-size 12px (ERP zichligi), rem-asosli
+    // `h-16` real 48px chiqadi va spec §3.1 balandligini buzadi.
     <header
       data-test-id="pos-header"
-      className="flex h-16 shrink-0 items-center gap-4 bg-[var(--pos-brand)] px-4 text-[var(--pos-on-brand)]"
+      className="flex h-[64px] shrink-0 items-center gap-4 bg-[var(--pos-brand)] px-4 text-[var(--pos-on-brand)]"
     >
       {/* SHERSET — matn-logotip (brend nomi, tarjima qilinmaydi — POS_ALLOWED). */}
       <span
@@ -96,7 +98,7 @@ export function PosHeader({ session, shiftAge, connectionOk, children }: PosHead
           className="flex items-center gap-2"
         >
           <span
-            className={`h-3 w-3 rounded-full ${
+            className={`h-[12px] w-[12px] rounded-full ${
               connectionOk ? 'bg-emerald-400' : 'animate-pulse bg-red-500'
             }`}
           />

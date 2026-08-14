@@ -67,6 +67,9 @@ function SidebarButton({
 }) {
   const Icon = item.icon;
   const showBadge = (item.badge ?? 0) > 0;
+  // O'lchamlar px'da ATAYLAB (`--pos-row-h`, 24/28px ikonka): ildiz font-size
+  // 12px (ERP zichligi) — rem-asosli `h-16`/`h-6` real 48/18px chiqib,
+  // spec §4 sensorli nishonlarini buzadi (jonli brauzerda o'lchab topildi).
   return (
     <button
       type="button"
@@ -74,7 +77,7 @@ function SidebarButton({
       aria-current={active ? 'page' : undefined}
       data-test-id={`pos-sidebar-item-${item.key}`}
       onClick={onClick}
-      className={`relative flex h-16 w-full shrink-0 items-center gap-3 px-4 text-left transition-colors ${
+      className={`relative flex h-[var(--pos-row-h)] w-full shrink-0 items-center gap-3 px-4 text-left transition-colors ${
         active
           ? 'bg-[var(--pos-surface)] text-[var(--pos-brand)]'
           : 'text-[var(--pos-sidebar-fg)] hover:bg-[var(--pos-sidebar-hover)]'
@@ -83,12 +86,15 @@ function SidebarButton({
       {/* Aktiv bo'lim — chap ko'k chiziq (spec §3.2). */}
       {active && <span className="absolute inset-y-0 left-0 w-1 bg-[var(--pos-brand)]" />}
       <span className="relative">
-        <Icon className={collapsed ? 'h-7 w-7' : 'h-6 w-6'} strokeWidth={active ? 2.4 : 2} />
+        <Icon
+          className={collapsed ? 'h-[28px] w-[28px]' : 'h-[24px] w-[24px]'}
+          strokeWidth={active ? 2.4 : 2}
+        />
         {/* Yig'iq holatda badge ikonka burchagida turadi — spec: «badge'lar
             yig'iq holatda ham ko'rinadi». */}
         {showBadge && collapsed && (
           <span
-            className={`absolute -right-2.5 -top-2 min-w-5 rounded-full px-1 py-0.5 text-center font-bold text-[11px] leading-none text-white ${
+            className={`absolute -right-2.5 -top-2 min-w-[20px] rounded-full px-1 py-0.5 text-center font-bold text-[11px] leading-none text-white ${
               item.badgeTone === 'amber' ? 'bg-amber-500' : 'bg-[var(--pos-brand)]'
             }`}
           >
@@ -101,7 +107,7 @@ function SidebarButton({
           <span className="min-w-0 flex-1 truncate font-semibold text-[17px]">{item.label}</span>
           {showBadge && (
             <span
-              className={`min-w-6 rounded-full px-1.5 py-1 text-center font-bold text-[13px] leading-none text-white ${
+              className={`min-w-[24px] rounded-full px-1.5 py-1 text-center font-bold text-[13px] leading-none text-white ${
                 item.badgeTone === 'amber' ? 'bg-amber-500' : 'bg-[var(--pos-brand)]'
               }`}
             >
@@ -144,7 +150,7 @@ export function PosSidebar({
     <nav
       data-test-id="pos-sidebar"
       className={`flex shrink-0 flex-col border-[var(--ms-border)] border-r bg-[var(--pos-sidebar-bg)] transition-[width] duration-150 ${
-        collapsed ? 'w-[72px]' : 'w-60'
+        collapsed ? 'w-[72px]' : 'w-[240px]'
       }`}
     >
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
@@ -172,9 +178,13 @@ export function PosSidebar({
           data-test-id="pos-sidebar-toggle"
           aria-label={collapsed ? t('sidebar_expand') : t('sidebar_collapse')}
           onClick={onToggleCollapsed}
-          className="flex h-12 w-full items-center justify-center text-[var(--pos-sidebar-fg)] transition-colors hover:bg-[var(--pos-sidebar-hover)]"
+          className="flex h-[48px] w-full items-center justify-center text-[var(--pos-sidebar-fg)] transition-colors hover:bg-[var(--pos-sidebar-hover)]"
         >
-          {collapsed ? <ChevronRight className="h-6 w-6" /> : <ChevronLeft className="h-6 w-6" />}
+          {collapsed ? (
+            <ChevronRight className="h-[24px] w-[24px]" />
+          ) : (
+            <ChevronLeft className="h-[24px] w-[24px]" />
+          )}
         </button>
       </div>
     </nav>
