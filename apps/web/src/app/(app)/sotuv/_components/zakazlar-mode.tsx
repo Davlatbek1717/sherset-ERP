@@ -226,74 +226,85 @@ export function ZakazlarMode({
 }: ZakazlarModeProps) {
   const t = useTranslations('pages.sotuv');
 
-  if (selectedOrderId) {
-    return (
-      <ZakazDetailPanel
-        orderId={selectedOrderId}
-        onBack={() => setSelectedOrderId(null)}
-        onPay={onPay}
-        paying={paying}
-      />
-    );
-  }
-
+  // F4 (spec §5.3) — to'liq-ekran: chapda holat-filtri + ro'yxat (64px
+  // qatorlar), o'ngda detal-panel. Detal ilgari ro'yxat O'RNIGA chizilardi;
+  // endi yonma-yon — funksional 1:1 (filtr, tasdiqlash, to'lash o'sha).
   return (
-    <div className="flex flex-1 flex-col overflow-hidden">
-      {/* Holat filtri — har chip serverga boshqa `state` yuboradi. */}
-      <div className="flex shrink-0 gap-1.5 border-[var(--ms-border)] border-b p-2">
-        {POS_ORDER_STATES.map((s) => (
-          <button
-            key={s}
-            type="button"
-            onClick={() => setOrderState(s)}
-            className={`flex-1 rounded-lg border px-2 py-1.5 font-medium text-xs transition-colors ${
-              orderState === s
-                ? 'border-[var(--ms-brand)] bg-[var(--ms-brand)] text-white'
-                : 'border-[var(--ms-border)] text-[var(--ms-text-muted)] hover:bg-[var(--ms-bg-hover)]'
-            }`}
-          >
-            {t(`orders_filter_${s === 'awaiting_payment' ? 'awaiting' : s}`)}
-          </button>
-        ))}
-      </div>
-      <div className="flex-1 overflow-y-auto p-3">
+    <div className="flex min-h-0 flex-1 overflow-hidden">
+      {/* ── Chap: filtr + ro'yxat ── */}
+      <div className="flex w-[400px] shrink-0 flex-col overflow-hidden border-[var(--ms-border)] border-r">
+        {/* Holat filtri — har chip serverga boshqa `state` yuboradi. */}
+        <div className="flex shrink-0 gap-1.5 border-[var(--ms-border)] border-b p-2">
+          {POS_ORDER_STATES.map((s) => (
+            <button
+              key={s}
+              type="button"
+              onClick={() => setOrderState(s)}
+              className={`h-[48px] min-w-0 flex-1 rounded-lg border px-2 font-medium text-[15px] transition-colors ${
+                orderState === s
+                  ? 'border-[var(--ms-brand)] bg-[var(--ms-brand)] text-white'
+                  : 'border-[var(--ms-border)] text-[var(--ms-text-muted)] hover:bg-[var(--ms-bg-hover)]'
+              }`}
+            >
+              {t(`orders_filter_${s === 'awaiting_payment' ? 'awaiting' : s}`)}
+            </button>
+          ))}
+        </div>
         {orders.length === 0 ? (
-          <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-[var(--ms-text-muted)]">
+          <div className="flex flex-1 flex-col items-center justify-center gap-2 text-center text-[var(--ms-text-muted)]">
             <ClipboardList className="h-10 w-10 opacity-30" />
-            <p className="text-sm">{t('orders_empty')}</p>
-            <p className="text-xs">{t('orders_empty_hint')}</p>
+            <p className="text-[16px]">{t('orders_empty')}</p>
+            <p className="text-[14px]">{t('orders_empty_hint')}</p>
           </div>
         ) : (
-          <div className="flex flex-col gap-1.5">
+          <div className="flex flex-1 flex-col divide-y divide-[var(--ms-border)] overflow-y-auto">
             {orders.map((o) => (
               <button
                 type="button"
                 key={o.id}
                 onClick={() => setSelectedOrderId(o.id)}
-                className="flex items-center gap-2 rounded-xl border border-[var(--ms-border)] bg-[var(--ms-bg-app)] px-3 py-2.5 text-left hover:bg-[var(--ms-bg-hover)]"
+                data-selected={selectedOrderId === o.id || undefined}
+                className="flex min-h-[var(--pos-row-h)] w-full shrink-0 items-center gap-2 px-4 text-left hover:bg-[var(--ms-bg-hover)] active:bg-[var(--ms-bg-hover)] data-[selected]:bg-[var(--pos-brand)]/10"
               >
                 <div className="min-w-0 flex-1">
-                  <div className="truncate font-semibold text-[var(--ms-text-primary)] text-sm">
+                  <div className="truncate font-semibold text-[18px] text-[var(--ms-text-primary)]">
                     {o.name}
                   </div>
-                  <div className="truncate text-[var(--ms-text-muted)] text-xs">
+                  <div className="truncate text-[14px] text-[var(--ms-text-muted)]">
                     {o.agent?.name ?? t('orders_no_agent')}
                   </div>
                 </div>
                 <div className="shrink-0 text-right">
-                  <div className="font-semibold text-[var(--ms-text-primary)] text-sm tabular-nums">
+                  <div className="font-semibold text-[18px] text-[var(--ms-text-primary)] tabular-nums">
                     {formatMoney(BigInt(o.sumMinor))}
                   </div>
-                  <div className="text-[var(--ms-text-muted)] text-xs tabular-nums">
+                  <div className="text-[14px] text-[var(--ms-text-muted)] tabular-nums">
                     {new Date(o.moment).toLocaleDateString('uz-UZ', {
                       day: '2-digit',
                       month: '2-digit',
                     })}
                   </div>
                 </div>
-                <span className="shrink-0 text-[var(--ms-text-muted)] text-xs">›</span>
+                <span className="shrink-0 text-[14px] text-[var(--ms-text-muted)]">›</span>
               </button>
             ))}
+          </div>
+        )}
+      </div>
+
+      {/* ── O'ng: detal-panel yoki tanlov-taklif ── */}
+      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+        {selectedOrderId ? (
+          <ZakazDetailPanel
+            orderId={selectedOrderId}
+            onBack={() => setSelectedOrderId(null)}
+            onPay={onPay}
+            paying={paying}
+          />
+        ) : (
+          <div className="flex flex-1 flex-col items-center justify-center gap-2 text-[var(--ms-text-muted)]">
+            <ClipboardList className="h-12 w-12 opacity-30" />
+            <span className="text-[18px]">{t('orders_detail_placeholder')}</span>
           </div>
         )}
       </div>

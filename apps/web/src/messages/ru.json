@@ -8001,6 +8001,7 @@
       "not_found": "Не найдено",
       "opened_at": "Открыта",
       "orders_confirm": "Подтвердить",
+      "orders_detail_placeholder": "Выберите заказ из списка",
       "orders_confirm_success": "Заказ подтверждён — резерв установлен",
       "orders_empty": "Заказов нет",
       "orders_empty_hint": "В этом статусе заказов не найдено",

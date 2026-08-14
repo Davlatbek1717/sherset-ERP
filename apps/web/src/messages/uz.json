@@ -8001,6 +8001,7 @@
       "not_found": "Topilmadi",
       "opened_at": "Ochilgan",
       "orders_confirm": "Tasdiqlash",
+      "orders_detail_placeholder": "Ro'yxatdan zakazni tanlang",
       "orders_confirm_success": "Zakaz tasdiqlandi — rezerv qo‘yildi",
       "orders_empty": "Zakaz yo‘q",
       "orders_empty_hint": "Bu holatda zakaz topilmadi",
