@@ -345,7 +345,20 @@ skaner-javob kerak bo'lsa o'sha modul. To'liq: `docs/audits/pos-redizayn-F3-hiso
 - [ ] **4.4** `customers-panel` o'lcham-pass. Commit.
 - [ ] **4.5** Ko'z-tekshiruv + hisobot va TO'XTASH.
 
-**Hisobot (F4):** _[bo'sh]_
+**Hisobot (F4, 2026-08-14, `101ee667`·`8ba6e461`·`fc338e3f`·`3af37078`):** Navbat endi haqiqiy
+ikki ustunli kanban (`which` prop ketdi, karta: raqam 20px · summa · mijoz · o'tgan vaqt 30s-puls;
+To'lov faqat tayyorda; **markReady yig'ilmoqdada ATAYLAB QOLDI** — egasi 2026-08-11 yo'li, reja
+kartada sanamagan edi); bekor tasdig'ida raqam+summa (`cancelSale` endi `sumMinor` oladi, tasdiq
+tugmasi farqli nomlanadi); cheklar/zakazlar to'liq-ekran: chap 400px ro'yxat (64px qatorlar,
+tanlov belgisi) + o'ng detal/placeholder, funksionalga tegilmagan; customers-panel faqat o'lcham
+(56-64px, 640px ustun). Gate har commitda to'liq: typecheck 0 · lint 0 error · i18n 19/19 · web
+test **3917 passed** (F3-baseline 3912 + 5 yangi `navbat-mode.test.tsx`; mavjud chek/zakaz/to'lov
+suitelari TEGILMASDAN yashil). Ko'z-tekshiruv: izolyatsiyalangan headless chromium (MCP band) —
+9/9 jonli o'lchov, konsol 0 xato, skrinshotlar ko'rildi. **Phase-1: strukturaviy,
+runtime-tasdiqlanmagan** — bekor/to'lov jonli BOSILMADI, qurilma-sinov YO'Q (F9). Keyingi agentga:
+ready-tugma yorlig'i mavjud «To'lov» kaliti (reja «TO'LASH» degan — 6 test-chaqiruv evaziga
+almashtirilmadi, F9 qarori); F5 yakunlanmagan-cheklar ro'yxati `cancelSale(id, name, sumMinor)`
+imzosini ishlatsin. To'liq: `docs/audits/pos-redizayn-F4-hisobot.md`.
 
 ---
 
