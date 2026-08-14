@@ -21,6 +21,7 @@ import {
   cartLineRevenueMinor,
   normalizeQtyDecimal,
 } from '@/lib/pos/cart-math';
+import { scanFeedback } from '@/lib/pos/scan-feedback';
 // Ekranga nima chiqishi (hisob-kitobga tegmaydi) — izohi shu faylda.
 import {
   SHOW_COST_IN_SEARCH,
@@ -38,6 +39,7 @@ import { Alert, Button, Input, formatMoney } from '@moysklad/ui';
 import { Search, ShoppingCart } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import type { Dispatch, RefObject, SetStateAction } from 'react';
+import { useEffect, useRef } from 'react';
 import type { CartLine } from './pos-types';
 
 // ── Chap panel: qidiruv + tovar setkasi ─────────────────────────────────────
@@ -66,6 +68,26 @@ export function SotuvSearchGrid({
   addToCart,
 }: SotuvSearchGridProps) {
   const t = useTranslations('pages.sotuv');
+
+  // F3 — skaner-javob (spec §5.1): qidiruv/skan hech narsa topmasa PAST ton.
+  // Xabar («not_found») allaqachon setkada turadi — bu faqat OVOZ qatlami.
+  // Dedup ikki qavat: (1) bir so'rov matni uchun bir marta; (2) 800ms ichida
+  // qayta chalinmaydi — qidiruv har tugma-bosishda so'rov yuboradi (debounce
+  // yo'q) va qo'l bilan terganda har prefiks «topilmadi» bo'lib qolardi.
+  const lastMissRef = useRef<{ q: string; at: number } | null>(null);
+  const missNow = !isLoading && search.trim() !== '' && (products?.items.length ?? 0) === 0;
+  useEffect(() => {
+    if (!missNow) {
+      if (search.trim() === '') lastMissRef.current = null;
+      return;
+    }
+    const q = search.trim();
+    const now = Date.now();
+    const last = lastMissRef.current;
+    if (last && (last.q === q || now - last.at < 800)) return;
+    lastMissRef.current = { q, at: now };
+    scanFeedback.notFound();
+  }, [missNow, search]);
 
   return (
     <div className="flex flex-1 flex-col gap-3 overflow-hidden p-4">
@@ -177,6 +199,8 @@ interface SavatPanelProps {
   /** Savatni tozalash — zakaz/chek bog'lanishini ham uzadi (sahifada). */
   onClearCart: () => void;
   setEditingProductId: Dispatch<SetStateAction<string | null>>;
+  /** F3 — skaner-javob: hozirgina qo'shilgan qator (600ms yashil flash). */
+  flashProductId: string | null;
   discountPct: number;
   setDiscountPct: Dispatch<SetStateAction<number>>;
   discountEditing: boolean;
@@ -199,6 +223,7 @@ export function SavatPanel({
   cartLocked,
   onClearCart,
   setEditingProductId,
+  flashProductId,
   discountPct,
   setDiscountPct,
   discountEditing,
@@ -273,6 +298,10 @@ export function SavatPanel({
               // when the cashier actually went below the card price; a sale
               // at or above it needs no annotation.
               const markdown = cartLineMarkdownMinor(line);
+              // F3 — skaner-javob: hozirgina qo'shilgan qator yashil yonadi.
+              // ZARAR/optom tasmalarining fonini flash BOSMAYDI (ular nazorat
+              // signali) — u yerda faqat yashil halqa ko'rinadi.
+              const flashing = line.productId === flashProductId;
               return (
                 /* F3 (spec Q6, 2026-08-14): BUTUN QATOR — bitta 64px tugma,
                    bosilsa mavjud tahrir oynasi (`cart-line-edit-modal`)
@@ -288,14 +317,19 @@ export function SavatPanel({
                   data-price-band={band}
                   onClick={() => setEditingProductId(line.productId)}
                   title={t('line_edit_open')}
+                  data-flash={flashing ? 'true' : undefined}
                   className={`block w-full min-h-[var(--pos-row-h)] px-3 py-2 text-left transition-colors ${
+                    flashing ? 'ring-2 ring-inset ring-emerald-400 ' : ''
+                  }${
                     band === 'loss'
                       ? 'bg-red-50 hover:bg-red-100'
                       : band === 'below-wholesale'
                         ? 'bg-amber-50 hover:bg-amber-100'
-                        : cartLocked
-                          ? ''
-                          : 'hover:bg-[var(--ms-bg-hover)]'
+                        : flashing
+                          ? 'bg-emerald-50'
+                          : cartLocked
+                            ? ''
+                            : 'hover:bg-[var(--ms-bg-hover)]'
                   }`}
                 >
                   {/* Qator 1: nom + qator jamisi (spec §4: 18px) */}

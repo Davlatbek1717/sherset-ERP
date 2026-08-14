@@ -46,6 +46,7 @@ import {
 } from '@/lib/pos/cart-math';
 // Smena yopish sanog'i uchun xavfsiz pul-parse (buzuq kiritma → 0n, crash emas).
 import { parseAmountToMinor } from '@/lib/pos/parse-amount';
+import { scanFeedback } from '@/lib/pos/scan-feedback';
 import {
   printPickingViaAgent,
   printReceiptViaAgent,
@@ -647,6 +648,16 @@ function SalesScreen({
     [defaultPriceTypeId, wholesalePriceTypeId],
   );
 
+  // F3 — skaner-javob flash'i: qo'shilgan qator 600ms yashil yonadi. `seq`
+  // ketma-ket skanlarda taymerni QAYTA boshlatadi (holat qiymati o'zgarmasa
+  // effekt qayta ishlamasdi).
+  const [cartFlash, setCartFlash] = useState<{ productId: string; seq: number } | null>(null);
+  useEffect(() => {
+    if (!cartFlash) return;
+    const timer = setTimeout(() => setCartFlash(null), 600);
+    return () => clearTimeout(timer);
+  }, [cartFlash]);
+
   const addToCart = useCallback(
     (product: ProductRow) => {
       setCart((prev) => {
@@ -679,6 +690,10 @@ function SalesScreen({
       // ya'ni tozalangan maydonga yozib bo'lmasdi (skaner ham «yozolmasdi»).
       setSearch('');
       searchRef.current?.focus();
+      // F3 — skaner-javob (spec §5.1): bip + qo'shilgan qator bir lahza yashil.
+      // Aynan shu yerda — bu barcha qo'shish yo'llarining yagona kirish nuqtasi.
+      scanFeedback.ok();
+      setCartFlash((f) => ({ productId: product.id, seq: (f?.seq ?? 0) + 1 }));
     },
     [cardPrices, defaultPriceTypeId],
   );
@@ -1236,6 +1251,7 @@ function SalesScreen({
                     setPayingSale(null);
                   }}
                   setEditingProductId={setEditingProductId}
+                  flashProductId={cartFlash?.productId ?? null}
                   discountPct={discountPct}
                   setDiscountPct={setDiscountPct}
                   discountEditing={discountEditing}

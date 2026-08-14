@@ -16,6 +16,7 @@
  */
 
 import { api } from '@/lib/api-client';
+import { scanFeedback } from '@/lib/pos/scan-feedback';
 import { renderWithProviders, screen, userEvent, waitFor, within } from '@/test-utils';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import SotuvPage from '../page';
@@ -686,6 +687,41 @@ describe('SalesScreen — savat qatori tahrir oynasi (F2)', () => {
     await user.click(screen.getByTestId('pos-line-edit-save'));
 
     await waitFor(() => expect(screen.queryByTestId('sotuv-cart-line')).not.toBeInTheDocument());
+  });
+});
+
+/**
+ * F3 — skaner-javob (spec §5.1): savatga tushganda «bip» + qator bir lahza
+ * yashil yonadi; hech narsa topilmasa past ton (xabar allaqachon bor edi).
+ * Tovushning O'Z shartnomasi `lib/pos/scan-feedback.test.ts` da — bu yerda
+ * faqat ULANISH qulflanadi (happy-dom'da AudioContext yo'q, modul jim no-op;
+ * spy chaqiruv faktini ko'radi).
+ */
+describe('SalesScreen — skaner-javob (F3)', () => {
+  it('savatga qo‘shilganda ok() chalinadi va qator flash oladi', async () => {
+    const okSpy = vi.spyOn(scanFeedback, 'ok');
+    const user = userEvent.setup();
+    renderWithProviders(<SotuvPage />);
+
+    const line = await addFirstProduct(user);
+    expect(okSpy).toHaveBeenCalledTimes(1);
+    expect(line).toHaveAttribute('data-flash', 'true');
+  });
+
+  it('qidiruv hech narsa topmasa notFound() chalinadi (xabar bilan birga)', async () => {
+    const missSpy = vi.spyOn(scanFeedback, 'notFound');
+    const user = userEvent.setup();
+    renderWithProviders(<SotuvPage />);
+    await screen.findAllByTestId('sotuv-product');
+
+    vi.mocked(api.get).mockImplementation(
+      router(salesRoutes([{ match: /^\/products\?/, value: { items: [], total: 0 } }])),
+    );
+    await user.type(screen.getByTestId('sotuv-search'), 'yoq-tovar');
+
+    expect(await screen.findByText('Topilmadi')).toBeInTheDocument();
+    // Dedup (bir so'rov = bir marta, 800ms oynasi) tufayli aynan 1 marta.
+    await waitFor(() => expect(missSpy).toHaveBeenCalledTimes(1));
   });
 });
 
