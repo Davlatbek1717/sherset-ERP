@@ -274,6 +274,7 @@ const POS_DONE_FILES = [
   'app/(app)/sotuv/_components/cheklar-mode.tsx',
   'app/(app)/sotuv/_components/zakazlar-mode.tsx',
   'app/(app)/sotuv/_components/navbat-mode.tsx',
+  'app/(app)/sotuv/_components/sotuv-mode.tsx',
   'app/(app)/sotuv/_components/use-print-outcome.ts',
   'app/kassa-kirish/page.tsx',
 ];

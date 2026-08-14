@@ -2,8 +2,9 @@
 
 import { CheklarMode } from '@/app/(app)/sotuv/_components/cheklar-mode';
 import { NavbatMode } from '@/app/(app)/sotuv/_components/navbat-mode';
-import type { SaleRow } from '@/app/(app)/sotuv/_components/pos-types';
+import type { CartLine, SaleRow } from '@/app/(app)/sotuv/_components/pos-types';
 import { SmenaMode } from '@/app/(app)/sotuv/_components/smena-mode';
+import { SavatPanel, SotuvSearchGrid } from '@/app/(app)/sotuv/_components/sotuv-mode';
 import { usePrintOutcome } from '@/app/(app)/sotuv/_components/use-print-outcome';
 import {
   type OrderDetail,
@@ -29,9 +30,6 @@ import { useAuth } from '@/lib/auth-store';
 import {
   addQtyDecimal,
   cartCostMinor,
-  cartLineMarkdownMinor,
-  cartLineProfitMinor,
-  cartLineRevenueMinor,
   cartTotalMinor,
   discountedCartTotalMinor,
   normalizeQtyDecimal,
@@ -41,12 +39,6 @@ import {
 } from '@/lib/pos/cart-math';
 // Smena yopish sanog'i uchun xavfsiz pul-parse (buzuq kiritma → 0n, crash emas).
 import { parseAmountToMinor } from '@/lib/pos/parse-amount';
-// Ekranga nima chiqishi (hisob-kitobga tegmaydi) — izohi shu faylda.
-import {
-  SHOW_COST_IN_SEARCH,
-  SHOW_MARGIN_ON_SCREEN,
-  SHOW_WHOLESALE_IN_CART,
-} from '@/lib/pos/ui-flags';
 import {
   printPickingViaAgent,
   printReceiptViaAgent,
@@ -66,23 +58,15 @@ import type {
   ListEnvelope as ListResponse,
   PosProductRow as ProductRow,
 } from '@moysklad/contracts';
-import {
-  Money,
-  classifyPrice,
-  formatPercent,
-  lineFloorBreach,
-  marginPercent,
-  priceFloorMinor,
-} from '@moysklad/money';
+import { Money, lineFloorBreach, marginPercent, priceFloorMinor } from '@moysklad/money';
 import { isCurrencyCode } from '@moysklad/money/currencies';
-import { Alert, Badge, Button, Input, formatMoney, useConfirm, useToast } from '@moysklad/ui';
+import { Button, Input, useConfirm, useToast } from '@moysklad/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   CheckCircle,
   ClipboardList,
   Clock,
   Receipt,
-  Search,
   Settings,
   ShoppingCart,
   Users,
@@ -104,35 +88,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 // load-bearing; they are left in place because removing them changes render
 // paths for no behavioural gain.
 //
-// `CartLine` stays local: it is this page's own UI state, not an API payload.
-
-interface CartLine {
-  productId: string;
-  productName: string;
-  /**
-   * Miqdor — **DECIMAL SATR** (`Decimal(20,6)`), `number` EMAS (F8 audit).
-   *
-   * Server sxemasi `/^\d+(\.\d{1,6})?$/` qabul qiladi, ya'ni og'irlik bilan
-   * sotiladigan tovar (yoki zakaz pozitsiyasi) savatga `1.5` bo'lib tushishi
-   * MUMKIN. Ilgari bu `number` edi va savat jamisi `BigInt(l.quantity)` bilan
-   * hisoblanardi — `BigInt(1.5)` **RangeError** otadi. React render'i ichida
-   * otilgan xato butun POS ni OQ EKRANGA aylantiradi: chek ham, pul ham
-   * yo'qoladi. Hisob endi `scaleMinorByQty` / `cart-math` orqali — serverning
-   * fixed-point yo'li bilan bir xil.
-   */
-  quantity: string;
-  priceMinor: bigint;
-  priceStr: string; // user-editable price string (major units)
-  availableStock?: number;
-  // Kassa TZ §5 — the two floors and the starting price, read off the product
-  // card when the line is added. NULL means the card carries no such number;
-  // the row then shows «—» and raises no warning, because an absent floor is
-  // not evidence that the price is wrong. These are LIVE values for the
-  // cashier's benefit — `post()` re-reads and freezes them server-side.
-  costMinor: bigint | null;
-  wholesaleMinor: bigint | null;
-  basePriceMinor: bigint | null;
-}
+// `CartLine` — sahifaning o'z UI holati; F1 da `_components/pos-types.ts` ga
+// ko'chdi (savat paneli ham o'qiydi), izohi o'sha yerda.
 
 // ── Open Shift Form ─────────────────────────────────────────────────────────
 
@@ -1200,121 +1157,16 @@ function SalesScreen({
   return (
     <div className="flex flex-1 min-h-0 gap-0 bg-[var(--ms-bg-app)]">
       {/* Left — search + product grid */}
-      <div className="flex flex-1 flex-col gap-3 overflow-hidden p-4">
-        {/* P4 — «unutilgan smena» ogohlantirishi.
-            Bayroqni SERVER qo'yadi (`stale`): chegara MK13 registrida turadi,
-            ekran uni bilmaydi. Avto-yopish YO'Q — sanoqsiz yopilgan smena
-            kassa hisobini yolg'onlashtiradi (egasi qarori, 2026-08-12). */}
-        {session.stale && (
-          <Alert
-            tone="warning"
-            title={t('shift_stale_title', { age: shiftAge })}
-            data-test-id="sotuv-shift-stale"
-          >
-            {t('shift_stale_action')}
-          </Alert>
-        )}
-
-        {/* Session strip */}
-        <div className="flex items-center gap-3 rounded-xl border border-[var(--ms-border)] bg-[var(--ms-bg-surface)] px-3 py-2 text-sm">
-          <Badge tone={session.stale ? 'warning' : 'success'}>{t('shift_open')}</Badge>
-          <span className="text-[var(--ms-text-muted)]">
-            {session.cashier.name}
-            {session.store ? ` · ${session.store.name}` : ''}
-          </span>
-          {/* Yosh HAR DOIM ko'rinadi — chegaragacha ham. Egasi shuni so'radi:
-              «ochildi degandan yopildi qilguncha» ko'rinib tursin. */}
-          <span data-test-id="sotuv-shift-age" className="text-[var(--ms-text-muted)]">
-            · {t('shift_open_age', { age: shiftAge })}
-          </span>
-          <span className="ml-auto font-medium">
-            {session.salesCount} · {formatMoney(BigInt(session.salesSumMinor))}
-          </span>
-          <Button asChild variant="link" className="ml-2 text-xs">
-            <a href="/retail">{t('shift_manage')}</a>
-          </Button>
-        </div>
-
-        {/* Search / barcode */}
-        <Input
-          ref={searchRef}
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') {
-              e.preventDefault();
-              // Maydonni `addToCart` o'zi tozalaydi — bu yerda takrorlanmaydi.
-              const first = products?.items?.[0];
-              if (first) addToCart(first);
-            }
-          }}
-          placeholder={t('search_placeholder')}
-          data-test-id="sotuv-search"
-          leading={<Search className="h-4 w-4" />}
-          className="h-11 rounded-xl text-sm shadow-sm"
-        />
-
-        {/* Product grid */}
-        <div className="flex-1 overflow-y-auto">
-          {isLoading ? (
-            <div className="p-8 text-center text-[var(--ms-text-muted)] text-sm">
-              {t('loading')}
-            </div>
-          ) : (products?.items.length ?? 0) === 0 ? (
-            <div className="p-8 text-center text-[var(--ms-text-muted)] text-sm">
-              {t('not_found')}
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-              {products?.items.map((p) => {
-                const sale = resolveDefaultSalePrice(p.salePrices);
-                const onHand = Number(p.stock?.onHand ?? '0');
-                return (
-                  <button
-                    type="button"
-                    key={p.id}
-                    onClick={() => addToCart(p)}
-                    data-test-id="sotuv-product"
-                    className="flex flex-col items-start rounded-xl border border-[var(--ms-border)] bg-[var(--ms-bg-surface)] p-4 text-left shadow-sm transition-colors hover:bg-[var(--ms-bg-hover)]"
-                  >
-                    {/* P04 (2026-08-13, egasi): mahsulot nomi boshqa xildagi
-                        kattaroq shriftda — font-pos (Segoe UI zanjiri). */}
-                    <span className="font-pos font-semibold text-[var(--ms-text-primary)] text-base">
-                      {p.name}
-                    </span>
-                    <span className="mt-1 font-bold text-[var(--ms-text-destructive)] text-base">
-                      {sale != null ? formatMoney(BigInt(sale)) : '—'}
-                    </span>
-                    <span className="mt-1 text-xs">
-                      <span
-                        className={
-                          onHand <= 0
-                            ? 'text-[var(--ms-text-destructive)]'
-                            : 'text-[var(--ms-text-muted)]'
-                        }
-                      >
-                        {t('stock')}: {onHand.toLocaleString('uz-UZ')} {t('pieces')}
-                      </span>
-                      {/* «Kelgan» — ekranda KO'RSATILMAYDI (P02, 2026-08-13,
-                          egasi): mijoz ko'zi oldida tan narx ochiq turmasin.
-                          Markup bayroq bilan to'silgan (`lib/pos/ui-flags.ts`). */}
-                      {SHOW_COST_IN_SEARCH && p.buyPrice != null && (
-                        <span
-                          data-test-id="sotuv-grid-cost"
-                          className="text-[var(--ms-text-muted)]"
-                        >
-                          {' '}
-                          · {t('cost')}: {formatMoney(BigInt(p.buyPrice))}
-                        </span>
-                      )}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      </div>
+      <SotuvSearchGrid
+        session={session}
+        shiftAge={shiftAge}
+        search={search}
+        setSearch={setSearch}
+        searchRef={searchRef}
+        products={products}
+        isLoading={isLoading}
+        addToCart={addToCart}
+      />
 
       {/* Right — cart (Savat) + Cheklar tabs */}
       <div className="flex w-[600px] shrink-0 flex-col overflow-hidden border-[var(--ms-border)] border-l bg-[var(--ms-bg-surface)]">
@@ -1558,498 +1410,35 @@ function SalesScreen({
 
         {/* ── SAVAT TAB ── */}
         {tab === 'savat' && (
-          <>
-            <div className="flex shrink-0 items-center gap-2 border-[var(--ms-border)] border-b px-4 py-2">
-              <span className="text-sm text-[var(--ms-text-muted)]">{t('cart_title')}</span>
-              {cart.length > 0 && (
-                <Button
-                  variant="link"
-                  className="ml-auto text-xs"
-                  onClick={() => {
-                    setCart([]);
-                    // F8 — savatni tozalash zakaz/chek bog'lanishini ham uzadi:
-                    // aks holda bo'sh-u QULFLANGAN savat qolib, kassir undan
-                    // chiqolmasdi.
-                    setPayingOrderId(null);
-                    setPayingSale(null);
-                  }}
-                  data-test-id="sotuv-cart-clear"
-                >
-                  {t('clear')}
-                </Button>
-              )}
-            </div>
-
-            <div className="min-h-0 flex-1 overflow-y-auto">
-              {cart.length === 0 ? (
-                <div className="flex h-full flex-col items-center justify-center gap-1 text-[var(--ms-text-muted)]">
-                  <ShoppingCart className="h-8 w-8 opacity-40" />
-                  <span className="font-medium text-sm">{t('cart_empty_title')}</span>
-                  <span className="text-xs">{t('cart_empty_hint')}</span>
-                </div>
-              ) : (
-                <div className="flex flex-col divide-y divide-[var(--ms-border)]">
-                  {cart.map((line) => {
-                    // Kassa TZ §5.2 — the row's own profit is taken at the price
-                    // the cashier typed (the cart-level discount is a separate,
-                    // footer-level figure), so editing the price moves this number
-                    // immediately and visibly.
-                    // P12 — tasma POLga nisbatan (tan narxga emas): karta
-                    // narxining o'zi tan narxdan past bo'lgan tovarlarda
-                    // (prodda 46 ta) o'z narxida sotish RUXSAT etilgan, ya'ni
-                    // ularni qizil «zarar» deb belgilash yolg'on signal edi.
-                    const lineFloor = priceFloorMinor({
-                      costMinor: line.costMinor,
-                      basePriceMinor: line.basePriceMinor,
-                    });
-                    const band = classifyPrice({
-                      priceMinor: line.priceMinor,
-                      costMinor: lineFloor,
-                      wholesaleMinor: line.wholesaleMinor,
-                    });
-                    // 🔴 Ilgari `BigInt(line.quantity)` edi — kasr miqdorda
-                    // RangeError otib butun sahifani oq ekranga aylantirardi.
-                    // Formulalar sahifada QAYTA YOZILMAYDI: ular
-                    // `lib/pos/cart-math.ts` da, sof va sinalgan holda
-                    // (`@moysklad/money` variantlari `bigint` miqdor talab
-                    // qiladi, ya'ni 1.5 kg ni ifodalay olmaydi).
-                    const qty = normalizeQtyDecimal(line.quantity);
-                    const lineRevenue = cartLineRevenueMinor(line);
-                    const lineProfit = cartLineProfitMinor(line);
-                    const linePct = marginPercent(lineProfit, lineRevenue);
-                    // «Kassir qancha tushirib berdi» (kassa TZ §5.3) — shown only
-                    // when the cashier actually went below the card price; a sale
-                    // at or above it needs no annotation.
-                    const markdown = cartLineMarkdownMinor(line);
-                    return (
-                      <div
-                        key={line.productId}
-                        data-test-id="sotuv-cart-line"
-                        data-price-band={band}
-                        className={`px-3 py-2 ${
-                          band === 'loss'
-                            ? 'bg-red-50 hover:bg-red-100'
-                            : band === 'below-wholesale'
-                              ? 'bg-amber-50 hover:bg-amber-100'
-                              : 'hover:bg-[var(--ms-bg-hover)]'
-                        }`}
-                      >
-                        {/* Qator 1: Nom + soni + o'chirish */}
-                        <div className="flex items-center gap-2">
-                          {/* F2 — nomni bosish katta tahrir oynasini ochadi
-                              (sensorli monoblokda 24px tugmalar yetmaydi).
-                              Trigger AYNAN nom: butun qator bosiladigan
-                              bo'lsa, ichidagi narx maydoniga tegish ham
-                              oynani ochib yuborardi. Qulflangan savatda
-                              oyna FAQAT KO'RISH rejimida ochiladi. */}
-                          <button
-                            type="button"
-                            data-test-id="sotuv-cart-line-edit"
-                            onClick={() => setEditingProductId(line.productId)}
-                            title={t('line_edit_open')}
-                            className="min-w-0 flex-1 truncate text-left font-pos font-semibold text-base text-[var(--ms-text-primary)] hover:underline"
-                          >
-                            {line.productName}
-                          </button>
-                          {/* Soni — zakazga bog'langan savatda QULFLANGAN */}
-                          {cartLocked ? (
-                            <span
-                              data-test-id="sotuv-cart-qty"
-                              className="shrink-0 px-1 text-center text-sm tabular-nums"
-                            >
-                              {qty}
-                            </span>
-                          ) : (
-                            <div className="flex shrink-0 items-center gap-0.5">
-                              <button
-                                type="button"
-                                onClick={() => updateQty(line.productId, -1)}
-                                className="flex h-6 w-6 items-center justify-center rounded border border-[var(--ms-border)] bg-[var(--ms-bg-input)] text-sm leading-none hover:bg-[var(--ms-bg-hover)]"
-                              >
-                                −
-                              </button>
-                              <span
-                                data-test-id="sotuv-cart-qty"
-                                className="w-8 text-center text-sm tabular-nums"
-                              >
-                                {qty}
-                              </span>
-                              <button
-                                type="button"
-                                onClick={() => updateQty(line.productId, 1)}
-                                className="flex h-6 w-6 items-center justify-center rounded border border-[var(--ms-border)] bg-[var(--ms-bg-input)] text-sm leading-none hover:bg-[var(--ms-bg-hover)]"
-                              >
-                                +
-                              </button>
-                            </div>
-                          )}
-                          {/* O'chirish */}
-                          {!cartLocked && (
-                            <button
-                              type="button"
-                              onClick={() => removeFromCart(line.productId)}
-                              className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-[var(--ms-text-muted)] text-xs hover:bg-red-50 hover:text-red-500"
-                            >
-                              ✕
-                            </button>
-                          )}
-                        </div>
-
-                        {/* Qator 2: Qolgan · Tan · Min + narx input + summa */}
-                        <div className="mt-1.5 flex items-center gap-3">
-                          {/* Qolgan · Tan narx · Optom chegara (kassa TZ §5.2) */}
-                          <span className="flex flex-wrap items-center gap-x-1.5 text-xs text-[var(--ms-text-muted)]">
-                            {line.availableStock !== undefined && (
-                              <span>
-                                {t('cart_remaining')}:{' '}
-                                <span
-                                  className={
-                                    line.availableStock <= 0
-                                      ? 'text-red-500 font-medium'
-                                      : 'tabular-nums'
-                                  }
-                                >
-                                  {line.availableStock}
-                                </span>
-                              </span>
-                            )}
-                            {/* Tan narx — ekranda KO'RSATILMAYDI (egasining
-                                qarori): mijoz kassir yoniga kelganda marja
-                                ochiq turardi. Hisob-kitob joyida
-                                (`lib/pos/ui-flags.ts` izohiga qara). */}
-                            {SHOW_MARGIN_ON_SCREEN && (
-                              <span data-test-id="sotuv-cart-cost">
-                                · {t('cart_cost')}:{' '}
-                                <span className="tabular-nums">
-                                  {line.costMinor != null ? formatMoney(line.costMinor) : '—'}
-                                </span>
-                              </span>
-                            )}
-                            {/* «Optom» — savat qatorida KO'RSATILMAYDI (P02,
-                                2026-08-13, egasi): faqat qator-tahrir oynasida
-                                qoladi (F3). Bayroq — `lib/pos/ui-flags.ts`. */}
-                            {SHOW_WHOLESALE_IN_CART && line.wholesaleMinor != null && (
-                              <span data-test-id="sotuv-cart-min">
-                                · {t('cart_min')}:{' '}
-                                <span className="tabular-nums">
-                                  {formatMoney(line.wholesaleMinor)}
-                                </span>
-                              </span>
-                            )}
-                          </span>
-                          <div className="flex flex-1 items-center justify-end gap-2">
-                            {/* Narx (tahrir qilsa bo'ladi) */}
-                            <div className="flex items-center gap-1">
-                              <span className="text-xs text-[var(--ms-text-muted)]">
-                                {t('cart_price')}:
-                              </span>
-                              {/* Narxni bosish — TAHRIR OYNASI (nom bilan bir xil).
-                                  Ilgari bu yerda 96px input turardi: barmoq bilan
-                                  aniq tegib bo'lmasdi va kassir narxga bosganda
-                                  oyna ochilishini kutardi (jonli sinov, 2026-08-11).
-                                  Qulflangan savatda oyna FAQAT KO'RISH rejimida. */}
-                              <button
-                                type="button"
-                                data-test-id="sotuv-cart-price-edit"
-                                onClick={() => setEditingProductId(line.productId)}
-                                title={t('line_edit_open')}
-                                className={`w-24 rounded border px-1.5 py-1 text-right text-sm tabular-nums ${
-                                  cartLocked
-                                    ? 'border-transparent'
-                                    : 'border-[var(--ms-border)] bg-[var(--ms-bg-input)] hover:bg-[var(--ms-bg-hover)]'
-                                }`}
-                              >
-                                {formatMoney(line.priceMinor)}
-                              </button>
-                            </div>
-                            {/* Summa */}
-                            <div className="w-28 text-right text-sm font-semibold tabular-nums text-[var(--ms-text-primary)]">
-                              {formatMoney(lineRevenue)}
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Qator 3: chegara ogohlantirishi + qator foydasi */}
-                        <div className="mt-1 flex items-center gap-2 text-xs">
-                          {/* P12 — narxsiz qator JIM qolmaydi: prodda 488 tovarda
-                              chakana narx yo'q va ular savatga 0 so'm bilan
-                              tushardi. Chek bunday qator bilan yuborilmaydi. */}
-                          {line.priceMinor <= 0n && (
-                            <span
-                              data-test-id="sotuv-cart-no-price"
-                              className="rounded bg-red-600 px-1.5 py-0.5 font-bold text-[10px] text-white"
-                            >
-                              {t('cart_no_price')}
-                            </span>
-                          )}
-                          {band === 'loss' && (
-                            <span
-                              data-test-id="sotuv-cart-loss"
-                              className="rounded bg-red-600 px-1.5 py-0.5 font-bold text-[10px] text-white uppercase tracking-wide"
-                            >
-                              {t('cart_loss')}
-                            </span>
-                          )}
-                          {band === 'below-wholesale' && (
-                            <span className="rounded bg-amber-500 px-1.5 py-0.5 font-semibold text-[10px] text-white">
-                              {t('cart_below_wholesale')}
-                            </span>
-                          )}
-                          {markdown != null && markdown > 0n && (
-                            <span
-                              data-test-id="sotuv-cart-markdown"
-                              className="text-[var(--ms-text-muted)] tabular-nums"
-                            >
-                              −{formatMoney(markdown)} {t('cart_markdown')}
-                            </span>
-                          )}
-                          {/* Qator foydasi — ekranda KO'RSATILMAYDI (yuqoridagi
-                              tan narx bilan bir qaror). ZARAR va «optomdan past»
-                              tasmalari qoladi: ular raqam emas, NAZORAT. */}
-                          {SHOW_MARGIN_ON_SCREEN && (
-                            <span
-                              data-test-id="sotuv-cart-profit"
-                              className={`ml-auto tabular-nums ${
-                                lineProfit == null
-                                  ? 'text-[var(--ms-text-muted)]'
-                                  : lineProfit < 0n
-                                    ? 'font-semibold text-red-600'
-                                    : 'font-medium text-emerald-600'
-                              }`}
-                            >
-                              {t('cart_profit')}:{' '}
-                              {lineProfit == null ? (
-                                // Tan narx kartochkada yo'q — «0 foyda» EMAS, «noma'lum».
-                                <span title={t('cart_cost_missing')}>—</span>
-                              ) : (
-                                <>
-                                  {lineProfit > 0n ? '+' : ''}
-                                  {formatMoney(lineProfit)}
-                                  {linePct != null && ` (${formatPercent(linePct)})`}
-                                </>
-                              )}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-
-            {/* Footer — mijoz turi + Rasmilashtirish */}
-            <div className="shrink-0 border-[var(--ms-border)] border-t bg-[var(--ms-bg-surface)] px-4 pt-4 pb-5">
-              {/* Jami summa — ikki marta bosib chegirma */}
-              <div className="mb-4 text-center">
-                <p className="mb-0.5 text-[10px] font-semibold uppercase tracking-widest text-[var(--ms-text-muted)]">
-                  {t('total')}
-                </p>
-
-                {/* Summa — ikki marta bosish chegirmani ochadi */}
-                <div
-                  className="cursor-default select-none"
-                  onDoubleClick={() => setDiscountEditing((v) => !v)}
-                  title={t('discount_dblclick_hint')}
-                >
-                  {discountPct > 0 && (
-                    <p className="text-sm tabular-nums text-[var(--ms-text-muted)] line-through">
-                      {formatMoney(cartTotal)}
-                    </p>
-                  )}
-                  <p
-                    className={`font-bold tabular-nums leading-none text-3xl ${discountPct > 0 ? 'text-emerald-600' : 'text-[var(--ms-text-primary)]'}`}
-                  >
-                    {formatMoney(discountedTotal)}
-                  </p>
-                  {discountPct > 0 && (
-                    <p className="mt-0.5 text-xs font-medium text-emerald-600">
-                      {t('discount_applied', { pct: discountPct })}
-                    </p>
-                  )}
-                </div>
-
-                {cartCount > 0 && (
-                  <p className="mt-1 text-xs text-[var(--ms-text-muted)]">
-                    {t('products_count', { n: cartCount })}
-                  </p>
-                )}
-
-                {/* Chek bo'yicha foyda — ekranda KO'RSATILMAYDI (egasining
-                    qarori, `lib/pos/ui-flags.ts`). Bu eng ko'zga tashlanadigan
-                    raqam edi: mijoz to'lov paytida ekranga qarasa marjani
-                    o'qib olardi. */}
-                {SHOW_MARGIN_ON_SCREEN && cartCount > 0 && (
-                  <p
-                    data-test-id="sotuv-cart-total-profit"
-                    className={`mt-1 text-xs tabular-nums ${
-                      cartProfitMinor == null
-                        ? 'text-[var(--ms-text-muted)]'
-                        : cartProfitMinor < 0n
-                          ? 'font-semibold text-red-600'
-                          : 'font-medium text-emerald-600'
-                    }`}
-                  >
-                    {t('cart_total_profit')}:{' '}
-                    {cartProfitMinor == null ? (
-                      t('cart_cost_missing')
-                    ) : (
-                      <>
-                        {cartProfitMinor > 0n ? '+' : ''}
-                        {formatMoney(cartProfitMinor)}
-                        {cartMarginPct != null && ` (${formatPercent(cartMarginPct)})`}
-                      </>
-                    )}
-                  </p>
-                )}
-
-                {/* Inline chegirma input */}
-                {discountEditing && (
-                  <div className="mt-2 flex items-center justify-center gap-2">
-                    <span className="text-xs text-[var(--ms-text-muted)]">{t('discount')}:</span>
-                    <div className="flex items-center gap-1 rounded-lg border border-emerald-300 bg-emerald-50 px-2.5 py-1.5">
-                      <input
-                        type="number"
-                        min="0"
-                        max="100"
-                        // biome-ignore lint/a11y/noAutofocus: intentional POS focus — cashier types the discount percent immediately when this popover opens.
-                        autoFocus
-                        value={discountPct === 0 ? '' : discountPct}
-                        onChange={(e) =>
-                          setDiscountPct(
-                            Math.min(100, Math.max(0, Number.parseInt(e.target.value, 10) || 0)),
-                          )
-                        }
-                        onBlur={() => setDiscountEditing(false)}
-                        onKeyDown={(e) => e.key === 'Enter' && setDiscountEditing(false)}
-                        placeholder="0"
-                        className="w-10 bg-transparent text-center text-sm font-bold text-emerald-700 outline-none"
-                      />
-                      <span className="text-sm font-bold text-emerald-600">%</span>
-                    </div>
-                    {discountPct > 0 && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setDiscountPct(0);
-                          setDiscountEditing(false);
-                        }}
-                        className="text-xs text-[var(--ms-text-muted)] hover:text-red-500"
-                      >
-                        ✕
-                      </button>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              {/* P12 — sabab tugmadan OLDIN: kassir nega yubora olmayotganini
-                  ko'rmasa, o'chgan tugmani nosozlik deb o'ylardi. */}
-              {pricePolicyBlock != null && (
-                <div
-                  data-test-id="sotuv-price-blocked"
-                  className="mb-2 rounded-xl bg-red-600 px-3 py-2 font-bold text-sm text-white"
-                >
-                  {pricePolicyBlock.priceMinor <= 0n
-                    ? `${pricePolicyBlock.productName}: ${t('cart_no_price')}`
-                    : `${pricePolicyBlock.productName}: ${t('cart_floor_blocked')}`}
-                </div>
-              )}
-
-              {/* P3 — TO'G'RIDAN-TO'G'RI SOTISH (yig'ishsiz, darhol to'lov).
-                  Yuqorida turadi va to'q rangda: kichik xaridda ASOSIY yo'l shu.
-                  «Omborchiga yuborish» pastda, ochiqroq rangda — katta zakaz
-                  uchun qoladi. Ikkalasi ham AYNI narx-siyosat qulfi ostida
-                  (P12): 0 narx yoki poldan past narx ikkalasini ham bloklaydi,
-                  aks holda yangi tugma qulfni chetlab o'tish yo'li bo'lardi. */}
-              <button
-                type="button"
-                onClick={() => directSellMut.mutate()}
-                disabled={cart.length === 0 || directSellMut.isPending || pricePolicyBlock != null}
-                data-test-id="sotuv-sell-direct"
-                className="mb-2 flex h-14 w-full items-center justify-center gap-2 rounded-2xl bg-emerald-600 font-semibold text-base text-white shadow-lg transition-all hover:bg-emerald-700 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                {directSellMut.isPending ? (
-                  <span className="flex items-center gap-2">
-                    <svg
-                      className="h-4 w-4 animate-spin"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      aria-hidden="true"
-                    >
-                      <circle
-                        className="opacity-25"
-                        cx="12"
-                        cy="12"
-                        r="10"
-                        stroke="currentColor"
-                        strokeWidth="4"
-                      />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
-                    </svg>
-                    {t('sending')}
-                  </span>
-                ) : (
-                  <>
-                    <span>{t('sell_direct')}</span>
-                    <span className="font-normal text-emerald-100 text-xs">
-                      {t('sell_direct_hint')}
-                    </span>
-                  </>
-                )}
-              </button>
-
-              {/* Omborchiga yuborish */}
-              <button
-                type="button"
-                onClick={() => sendToPickingMut.mutate()}
-                disabled={
-                  cart.length === 0 || sendToPickingMut.isPending || pricePolicyBlock != null
-                }
-                data-test-id="sotuv-pay"
-                className="flex h-14 w-full items-center justify-center gap-2 rounded-2xl bg-emerald-500 font-semibold text-base text-white shadow-lg transition-all hover:bg-emerald-600 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                {sendToPickingMut.isPending ? (
-                  <span className="flex items-center gap-2">
-                    <svg
-                      className="h-4 w-4 animate-spin"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      aria-hidden="true"
-                    >
-                      <circle
-                        className="opacity-25"
-                        cx="12"
-                        cy="12"
-                        r="10"
-                        stroke="currentColor"
-                        strokeWidth="4"
-                      />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
-                    </svg>
-                    {t('sending')}
-                  </span>
-                ) : (
-                  <>
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      className="h-5 w-5"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2.5"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      aria-hidden="true"
-                    >
-                      <path d="M5 12h14M12 5l7 7-7 7" />
-                    </svg>
-                    {t('send_to_picker')}
-                  </>
-                )}
-              </button>
-            </div>
-          </>
+          <SavatPanel
+            cart={cart}
+            cartLocked={cartLocked}
+            onClearCart={() => {
+              setCart([]);
+              // F8 — savatni tozalash zakaz/chek bog'lanishini ham uzadi:
+              // aks holda bo'sh-u QULFLANGAN savat qolib, kassir undan
+              // chiqolmasdi.
+              setPayingOrderId(null);
+              setPayingSale(null);
+            }}
+            setEditingProductId={setEditingProductId}
+            updateQty={updateQty}
+            removeFromCart={removeFromCart}
+            discountPct={discountPct}
+            setDiscountPct={setDiscountPct}
+            discountEditing={discountEditing}
+            setDiscountEditing={setDiscountEditing}
+            cartCount={cartCount}
+            cartTotal={cartTotal}
+            discountedTotal={discountedTotal}
+            cartProfitMinor={cartProfitMinor}
+            cartMarginPct={cartMarginPct}
+            pricePolicyBlock={pricePolicyBlock}
+            directSellPending={directSellMut.isPending}
+            onDirectSell={() => directSellMut.mutate()}
+            sendToPickingPending={sendToPickingMut.isPending}
+            onSendToPicking={() => sendToPickingMut.mutate()}
+          />
         )}
       </div>
 

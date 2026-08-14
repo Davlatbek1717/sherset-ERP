@@ -7,6 +7,37 @@
  * uchun shu faylga ko'chdi.
  */
 
+/**
+ * Savat qatori — sahifaning O'Z UI holati, API payload emas.
+ *
+ * `quantity` — **DECIMAL SATR** (`Decimal(20,6)`), `number` EMAS (F8 audit).
+ *
+ * Server sxemasi `/^\d+(\.\d{1,6})?$/` qabul qiladi, ya'ni og'irlik bilan
+ * sotiladigan tovar (yoki zakaz pozitsiyasi) savatga `1.5` bo'lib tushishi
+ * MUMKIN. Ilgari bu `number` edi va savat jamisi `BigInt(l.quantity)` bilan
+ * hisoblanardi — `BigInt(1.5)` **RangeError** otadi. React render'i ichida
+ * otilgan xato butun POS ni OQ EKRANGA aylantiradi: chek ham, pul ham
+ * yo'qoladi. Hisob endi `scaleMinorByQty` / `cart-math` orqali — serverning
+ * fixed-point yo'li bilan bir xil.
+ */
+export interface CartLine {
+  productId: string;
+  productName: string;
+  quantity: string;
+  priceMinor: bigint;
+  /** user-editable price string (major units) */
+  priceStr: string;
+  availableStock?: number;
+  // Kassa TZ §5 — the two floors and the starting price, read off the product
+  // card when the line is added. NULL means the card carries no such number;
+  // the row then shows «—» and raises no warning, because an absent floor is
+  // not evidence that the price is wrong. These are LIVE values for the
+  // cashier's benefit — `post()` re-reads and freezes them server-side.
+  costMinor: bigint | null;
+  wholesaleMinor: bigint | null;
+  basePriceMinor: bigint | null;
+}
+
 /** Chek ro'yxati qatori — `/retail-sales` list proyeksiyasi (cheklar/navbat). */
 export interface SaleRow {
   id: string;

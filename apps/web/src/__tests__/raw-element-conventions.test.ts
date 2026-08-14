@@ -119,13 +119,15 @@ const EXEMPT_INPUT_TEXTNUM = [
   // sherset.biznesjon.uz bilan 1:1 saqlanadi, shuning uchun DS Input'ga
   // ko'chirish uni ataylab o'zgartirgan bo'lardi. Faqat text/number —
   // taqiqlangan turlar (date/password/…) yo'q.
-  'app/(app)/sotuv/page.tsx',
-  // F1 (POS redizayn) — smena/cheklar bloklari page.tsx dan ko'chdi, mikro-
-  // maydonlari (kirim/chiqim summasi, yopish sanog'i, farq izohi; chek qidiruv,
-  // qaytarish miqdori) ham birga ketdi. Sabab o'zgargani yo'q: teginish uchun
-  // zich kassa terisi.
+  //
+  // F1 (POS redizayn): `page.tsx` dagi barcha mikro-maydonlar rejim-
+  // komponentlarga ko'chdi (kirim/chiqim summasi, yopish sanog'i, farq izohi —
+  // smena; chek qidiruv, qaytarish miqdori — cheklar; chegirma — sotuv), sahifa
+  // o'zi endi raw input tutmaydi va ro'yxatdan CHIQARILDI. Sabab o'zgargani
+  // yo'q: teginish uchun zich kassa terisi.
   'app/(app)/sotuv/_components/smena-mode.tsx',
   'app/(app)/sotuv/_components/cheklar-mode.tsx',
+  'app/(app)/sotuv/_components/sotuv-mode.tsx',
   'components/pos/rasmilashtirish-modal.tsx',
   // F2 — savat qatorining sensorli tahrir oynasi. Yagona maydon: numpad
   // yozadigan faol qiymat (`type="text"` ATAYLAB — `type="number"` oraliq

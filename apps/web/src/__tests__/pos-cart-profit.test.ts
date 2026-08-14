@@ -21,7 +21,20 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
+// F1 (POS redizayn): savat JSX'i `_components/sotuv-mode.tsx` ga ko'chdi,
+// hisob-manbalar (`cardPrices`, `revenueBaseMinor`, …) sahifada qoldi — qulf
+// endi IKKALA faylni birga skanerlaydi (wiring qaysi tomonda bo'lsa ham
+// yo'qolishi mumkin emas; taqiqlar ham ikkalasiga tegishli).
 const PAGE = path.join(process.cwd(), 'src', 'app', '(app)', 'sotuv', 'page.tsx');
+const SOTUV_MODE = path.join(
+  process.cwd(),
+  'src',
+  'app',
+  '(app)',
+  'sotuv',
+  '_components',
+  'sotuv-mode.tsx',
+);
 
 /** Izohlar skanerdan olib tashlanadi — repo konventsiyasi (pos-shell-height). */
 function stripComments(s: string): string {
@@ -29,7 +42,9 @@ function stripComments(s: string): string {
 }
 
 describe('/sotuv savat foydasi', () => {
-  const src = stripComments(fs.readFileSync(PAGE, 'utf8'));
+  const src = stripComments(
+    `${fs.readFileSync(PAGE, 'utf8')}\n${fs.readFileSync(SOTUV_MODE, 'utf8')}`,
+  );
 
   it('savat qatori tan narx / optom / asos narxni olib yuradi', () => {
     for (const field of ['costMinor', 'wholesaleMinor', 'basePriceMinor']) {

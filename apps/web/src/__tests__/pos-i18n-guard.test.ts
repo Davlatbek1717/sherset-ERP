@@ -39,6 +39,7 @@ const POS_FILES = [
   join(SRC, 'app', '(app)', 'sotuv', '_components', 'cheklar-mode.tsx'),
   join(SRC, 'app', '(app)', 'sotuv', '_components', 'zakazlar-mode.tsx'),
   join(SRC, 'app', '(app)', 'sotuv', '_components', 'navbat-mode.tsx'),
+  join(SRC, 'app', '(app)', 'sotuv', '_components', 'sotuv-mode.tsx'),
   join(SRC, 'app', '(app)', 'sotuv', '_components', 'use-print-outcome.ts'),
   join(SRC, 'components', 'pos', 'cash-out-dialog.tsx'),
   join(SRC, 'components', 'pos', 'debt-payment-dialog.tsx'),
