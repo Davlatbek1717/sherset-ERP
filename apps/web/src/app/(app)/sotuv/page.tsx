@@ -691,18 +691,8 @@ function SalesScreen({
     cfdChannelRef.current?.postMessage({ type: 'cart', payload: cfdPayload });
   }, [cfdPayload]);
 
-  const updateQty = useCallback((productId: string, delta: number) => {
-    setCart((prev) =>
-      prev
-        .map((l) =>
-          l.productId === productId ? { ...l, quantity: addQtyDecimal(l.quantity, delta) } : l,
-        )
-        // `addQtyDecimal` manfiy natijani `'0'` ga qisadi — 0 li qator olib
-        // tashlanadi (avvalgi `quantity > 0` filtri bilan bir xil xulq).
-        .filter((l) => l.quantity !== '0'),
-    );
-  }, []);
-
+  // F3 (spec Q6): qatordagi −/+ tugmalar bilan birga `updateQty` ham ketdi —
+  // miqdorning yagona tahrir yo'li endi qator-oynasi (`applyLineEdit`).
   const removeFromCart = useCallback((productId: string) => {
     setCart((prev) => prev.filter((l) => l.productId !== productId));
   }, []);
@@ -1246,8 +1236,6 @@ function SalesScreen({
                     setPayingSale(null);
                   }}
                   setEditingProductId={setEditingProductId}
-                  updateQty={updateQty}
-                  removeFromCart={removeFromCart}
                   discountPct={discountPct}
                   setDiscountPct={setDiscountPct}
                   discountEditing={discountEditing}

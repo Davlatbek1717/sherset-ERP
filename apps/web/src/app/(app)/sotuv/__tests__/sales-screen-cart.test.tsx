@@ -5,9 +5,14 @@
  * **Xulq O'ZGARTIRILMAYDI** — bu testlar hozirgi ekran nima qilayotganini
  * qulflaydi, shundan keyingina (MK33) fayl uch komponentga bo'linadi.
  *
- * Qamrov: setka · savatga qo'shish/takrorlash · miqdor ±/o'chirish · tozalash ·
- * narx tahriri · narx tasmalari (ZARAR / optomdan past) · tan narx YO'Q holati ·
- * «tushirildi» · chek foydasi · chegirma (ochish, qo'llanishi, qisilishi).
+ * Qamrov: setka · savatga qo'shish/takrorlash · qator-tahrir oynasi (miqdor/
+ * narx/o'chirish) · tozalash · narx tasmalari (ZARAR / optomdan past) · tan narx
+ * YO'Q holati · «tushirildi» · chek foydasi · chegirma (ochish, qo'llanishi,
+ * qisilishi).
+ *
+ * F3 (POS redizayn, 2026-08-14, spec Q6): qatordagi −/+/✕ tugmalar OLIB
+ * TASHLANDI — butun qator BITTA tugma bo'lib tahrir oynasini ochadi. ± xulqini
+ * qulflagan eski testlar yangi niyat bilan qayta yozildi (pastda, izohlari bilan).
  */
 
 import { api } from '@/lib/api-client';
@@ -96,7 +101,7 @@ async function tryPrice(
   await user.click(within(modal).getByTestId('pos-line-edit-save'));
 }
 
-/** Qatordagi narx (endi bosiladigan tugma, input emas). */
+/** Qatordagi narx (F3: qator ichidagi span — bosish qator-tugmaga ko'tariladi). */
 function priceText(line: HTMLElement): string {
   return norm(within(line).getByTestId('sotuv-cart-price-edit').textContent);
 }
@@ -199,10 +204,12 @@ describe('SalesScreen — savat qatorlari', () => {
     renderWithProviders(<SotuvPage />);
 
     const line = await addFirstProduct(user);
-    // Nom-tugma (`sotuv-cart-line-edit`) — qidiruv kartasi bilan bir siyosat (P04).
+    // Nom (`sotuv-cart-line-edit` — endi span, butun qator tugma bo'ldi, F3).
+    // F3 (spec §4): o'lcham px'da — 18px (ildiz font 12px, rem-klasslar 0.75×
+    // kichik chiqadi; F2 saboqi). Eski `text-base` asserti shu sababdan bekor.
     const name = within(line).getByTestId('sotuv-cart-line-edit');
     expect(name.className, 'savat qatori nomi font-pos emas').toContain('font-pos');
-    expect(name.className).toContain('text-base');
+    expect(name.className).toContain('text-[18px]');
   });
 
   it('bir tovarni ikki marta bosish — YANGI qator emas, miqdor 2 bo‘ladi', async () => {
@@ -220,25 +227,31 @@ describe('SalesScreen — savat qatorlari', () => {
     expect(norm(screen.getByText(/ta mahsulot/).textContent)).toBe('2 ta mahsulot');
   });
 
-  it('«−» miqdorni kamaytiradi; 1 dan pastga tushsa qator YO‘QOLADI', async () => {
+  /**
+   * F3 (spec Q6, 2026-08-14): qatordagi −/+/✕ tugmalar OLIB TASHLANDI —
+   * sensorli monoblokda 24px nishonlar barmoq bilan xato bosilardi. Miqdor
+   * endi FAQAT katta tahrir oynasida (numpad) o'zgaradi; «soni 0 = qator
+   * o'chadi» xulqi oyna testlarida qulflangan. Eski niyat («−» qatorda turadi
+   * va 1 dan pastda qatorni o'chiradi) shu qaror bilan bekor bo'ldi.
+   */
+  it('F3 — qator ICHIDA tugma yo‘q (−/+/✕ ketdi), qator O‘ZI tahrir-trigger', async () => {
     const user = userEvent.setup();
     renderWithProviders(<SotuvPage />);
 
-    const tiles = await screen.findAllByTestId('sotuv-product');
-    await user.click(at(tiles, 0));
-    await user.click(at(tiles, 0));
-    let line = screen.getByTestId('sotuv-cart-line');
+    const line = await addFirstProduct(user);
+    expect(line.tagName).toBe('BUTTON');
+    expect(within(line).queryAllByRole('button')).toHaveLength(0);
 
-    await user.click(within(line).getByRole('button', { name: '−' }));
-    line = screen.getByTestId('sotuv-cart-line');
-    expect(norm(line.textContent)).toContain('10 000,00 сум');
-
-    await user.click(within(line).getByRole('button', { name: '−' }));
-    expect(screen.queryByTestId('sotuv-cart-line')).not.toBeInTheDocument();
-    expect(await screen.findByText(/Savat bo.sh/)).toBeInTheDocument();
+    await user.click(line);
+    expect(await screen.findByTestId('pos-line-edit')).toBeInTheDocument();
   });
 
-  it('«✕» qatorni o‘chiradi, «Tozalash» butun savatni bo‘shatadi', async () => {
+  /**
+   * F3: «✕» ham qatordan ketdi (Q6 bilan bir qaror) — o'chirish yo'li endi
+   * tahrir oynasidagi «O'chirish» (yoki soni 0). «Tozalash» butun savatni
+   * bo'shatishi O'ZGARMADI.
+   */
+  it('o‘chirish tahrir oynasi orqali; «Tozalash» butun savatni bo‘shatadi', async () => {
     const user = userEvent.setup();
     renderWithProviders(<SotuvPage />);
 
@@ -247,12 +260,10 @@ describe('SalesScreen — savat qatorlari', () => {
     await user.click(at(tiles, 1));
     expect(screen.getAllByTestId('sotuv-cart-line')).toHaveLength(2);
 
-    await user.click(
-      within(at(screen.getAllByTestId('sotuv-cart-line'), 0)).getByRole('button', {
-        name: '✕',
-      }),
-    );
-    expect(screen.getAllByTestId('sotuv-cart-line')).toHaveLength(1);
+    await user.click(at(screen.getAllByTestId('sotuv-cart-line'), 0));
+    const modal = await screen.findByTestId('pos-line-edit');
+    await user.click(within(modal).getByTestId('pos-line-edit-remove'));
+    await waitFor(() => expect(screen.getAllByTestId('sotuv-cart-line')).toHaveLength(1));
 
     await user.click(screen.getByTestId('sotuv-cart-clear'));
     expect(screen.queryByTestId('sotuv-cart-line')).not.toBeInTheDocument();
@@ -572,10 +583,11 @@ describe('SalesScreen — savat va tovar ro‘yxati bog‘lanishi', () => {
  * da qulflangan; bu yerda qulflanadigan narsa — SAHIFA bilan ulanishi: qator
  * qanday ochadi va oynaning natijasi savatga qanday qo'llanadi.
  *
- * Mavjud −/+ tugmalari QOLDI (sichqonchali ish o'rni ham shu ekranni
- * ishlatadi), qatordagi narx INPUTi esa 2026-08-11 da olib tashlandi: egasining
- * jonli sinovida kassir narxga bosib oyna kutgan edi. Ya'ni soni uchun ikki
- * yo'l bor, narx uchun — bitta.
+ * F3 (spec Q6): qatordagi −/+ tugmalar ham olib tashlandi — endi miqdor va
+ * narxning YAGONA tahrir yo'li shu oyna (butun qator uni ochadi). Eski holat
+ * («soni uchun ikki yo'l bor, narx uchun bitta») shu qaror bilan bekor bo'ldi.
+ * `sotuv-cart-line-edit`/`sotuv-cart-price-edit` endi qator ichidagi SPAN'lar —
+ * bosish qator-tugmaga ko'tarilib (bubbling) o'sha oynani ochadi.
  */
 describe('SalesScreen — savat qatori tahrir oynasi (F2)', () => {
   /** Qator nomini bosib oynani ochadi. */
@@ -660,7 +672,9 @@ describe('SalesScreen — savat qatori tahrir oynasi (F2)', () => {
     expect(screen.queryByTestId('pos-line-edit')).not.toBeInTheDocument();
   });
 
-  it('oynada soni 0 qilinsa qator o‘chadi (savatdagi «−» bilan bir xil)', async () => {
+  // F3: «savatdagi „−“ bilan bir xil» taqqoslama bekor — «−» endi yo'q,
+  // 0-miqdor esa qatorni o'chirishning oynadagi yo'li bo'lib qoldi.
+  it('oynada soni 0 qilinsa qator o‘chadi', async () => {
     const user = userEvent.setup();
     renderWithProviders(<SotuvPage />);
 
