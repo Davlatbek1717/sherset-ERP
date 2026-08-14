@@ -296,7 +296,19 @@ to'lovda tez-summa tugmalari.
 - [ ] **3.5** `pnpm dev`da ko'z-tekshiruv (savat oqimi, to'lov, skaner-simulyatsiya sifatida
   qidiruv+Enter). Hisobot va TO'XTASH.
 
-**Hisobot (F3):** _[bo'sh]_
+**Hisobot (F3, 2026-08-14, `df8700d4`·`cace9a54`·`5f05b51f`·`42a095c9`):** Sotuv rejimi sensorli:
+savat qatori butun-qator tahrir-trigger (±/✕ ketdi, 64px, nom/jami 18px; eski test-id'lar span
+bo'lib qoldi — boshqa suite'lar tegilmadi), Sotish 72px / jami 38px / setka ≥56px (px-qoida),
+eski smena-strip o'chdi (header-chip dublikati); `scan-feedback.ts` (WebAudio bip, happy-dom'da
+jim no-op; test co-located — `__tests__/` emas, `lib/pos` konvensiyasi) + addToCart'da ok()+flash,
+topilmaganda notFound() (so'rov+800ms dedup); payment-dialog'da «Aniq summa»/100k/200k/500k —
+qiymatni O'RNATADI (eski +qo'shish bekor; /retail ham shu dialog). Gate har commitda to'liq:
+typecheck 0 · lint 0 error · i18n 19/19 · web test 3912 passed (F2-baseline 3898 + 14 yangi;
+qayta yozishlar faqat Edit, niyat izohda). Ko'z-tekshiruv: izolyatsiyalangan Playwright (MCP-brauzer
+parallel sessiyada band edi) 13/13 ✓, konsol 0 xato. **Phase-1: strukturaviy, runtime-tasdiqlanmagan**
+— tovush jonli ESHITILMAGAN, PaymentDialog jonli OCHILMAGAN (dev'da tayyor chek yo'q edi), qurilma-sinov
+YO'Q (F9). Keyingi agentga: savat qatori BUTTON — ichiga yangi tugma qo'shib bo'lmaydi (span+bubbling);
+skaner-javob kerak bo'lsa o'sha modul. To'liq: `docs/audits/pos-redizayn-F3-hisobot.md`.
 
 ---
 
