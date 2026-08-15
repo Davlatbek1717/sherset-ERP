@@ -354,6 +354,18 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 > Egasining «POS mijozlar o'rniga web kontragentlar qarz-undirish qismini chiqaraylik» savoliga javob
 > foydalanuvchiga yozildi (tavsiya: panel qoladi, avval shu fix'lar qurilmada sinalsin).
 >
+> **🔴 15a-DAVOMI (egasining 2-skrinshoti — QARZ TO'LASH TUGMASI KO'RINMAS EDI, `6b562b46`,
+> ✅ DEPLOYED `07ae9d3d → 6b562b46`, sayt 200, built CSS'da `--ms-brand:var(--ms-brand-500)` grep-tasdiq):**
+> «To'lovni qabul qilish» tugmasi `bg-[var(--ms-brand)] text-white` — `--ms-brand`/`--ms-brand-hover`/
+> `--ms-bg-brand` tokenlari CSS'da HECH QAYERDA aniqlanmagan edi (faqat -50..900 shkala bor) → fon
+> shaffof, oq yozuv oq fonda KO'RINMAS. Kassada «qarz to'lab bo'lmayapti»ning ASL sababi shu. DS
+> globals.css'ga 3 alias qo'shildi (18 fayl davolanadi), qulf `ms-brand-token-defined.test.ts`.
+> **⚠️ FOLLOW-UP (alohida sessiya):** yana ~30 ishlatilgan-u ANIQLANMAGAN `--ms-*` token bor
+> (`--ms-border`, `--ms-bg-input`, `--ms-danger`, `--ms-accent`… — currentColor/inherit'ga tushib
+> «ko'rinadi», lekin niyat emas; ro'yxat: used-vs-defined diff, `comm -23`). Token-audit + umumiy
+> guard-test kerak. **Qurilma-QA hali ham QOLDI** (OSK modal ichida · savat ✕ · ko'k tugma · to'liq
+> qarz-to'lash oqimi).
+>
 > ---
 >
 > **🕒 2026-08-14b (KASSA — chek o'ngga surilib «Summa» kesilishi tuzatildi, `c867eb65` + ✅ DEPLOYED
