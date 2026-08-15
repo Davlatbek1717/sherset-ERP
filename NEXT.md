@@ -331,6 +331,32 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-08-16a (KASSA POS — kassir so'rovlari: qidiruv PERSIST + «Tozalash» · savat header 2× +
+> QORALAMA (hold order) · OSK katta harflar; Phase-1: strukturaviy, runtime-tasdiqlanmagan, browser-smoke
+> YO'Q) —** egasi 2 skrinshot bilan keldi. **Web qismi (deploy bilan kassaga yetadi, exe SHART EMAS):**
+> (1) qidiruv input 44→88px/20px, oxirida «Tozalash» (`sotuv-search-clear`, matn bo'lgandagina);
+> (2) 🔴 qidiruv natijalari endi tanlashdan keyin TOZALANMAYDI — `addToCart` `setSearch('')` o'rniga
+> `focus()+select()`: yangi nom/skan eski matn USTIDAN yoziladi (2026-08-12 «harflar qo'shilardi»
+> shikoyati bilan murosa shu select'da); (3) savat header ~37→72px; (4) **QORALAMA yangi**: park →
+> savat (+chegirma %) chipga tushadi, ikkinchi mijozga xizmat; chip bosilsa qaytadi (savat band bo'lsa
+> u AVVAL avto-qoralanadi — almashish), ✕ o'chiradi; saqlash `lib/pos/cart-drafts.ts` →
+> `localStorage sherset.pos.drafts` (bigint `{$bigint}` replacer/reviver, fail-safe parse, o'z testlari);
+> qulflangan savat (zakaz/tayyor-chek) park/tiklashdan CHETLANGAN (bog'lanish yo'qolardi); i18n
+> `draft_*` ru+uz. **Exe qismi (`desktop/preload.js` — kanalga chiqqanda HAMMA maydonlarda):** OSK harf
+> 19→29px (+50%), tugma 46→60px; belgilar (@ . - _ / : ') pastki qatordan YUQORI (raqamlar) qatoriga;
+> probel flex 3→6, ⌫ 1.4→3; РУС/Yashirish 20px; K8 qulflari (`desktop-touch-keyboard.test.ts`).
+> **⚠️ EXE VERSIYA ATAYLAB KO'TARILMADI (1.8.0 qoldi):** parallel F9-sessiya 1.8.0 ni KANALGA chiqarib
+> `desktop/README.md`ni yangilagan (COMMIT QILINMAGAN) — README'ga tegish/stage begona ishni commit'imga
+> aralashtirardi (§6.7B). **RELIZ sessiyasi: `desktop/package.json` → 1.9.0 + README (installer-config
+> guard majburlaydi); preload o'zgargani uchun 1.8.0 ni QAYTA YIG'MASLIK — avval bump** (bitta raqam
+> ostida ikki binar bo'lmasin). Diff'im path-cheklangan; README'ga tegilmadi. Gate: web tc0 · biome 0 err
+> (22 nursery warn eski) · uz/ru JSON OK · **TO'LIQ web vitest 283 fayl / 4002 pass** (yagona red
+> `kassa-installer-config` versiya-revert bilan yashil; cart 46 · OSK 44 · cart-drafts 9). **⚠️ KEYINGI
+> QADAM: WEB-DEPLOY + qurilma-QA** (qidiruv persist/Tozalash · qoralama oqimi · header); OSK o'zgarishi
+> qurilmaga FAQAT 1.9.0 relizi bilan yetadi.
+>
+> ---
+>
 > **🕒 2026-08-15a (KASSA POS — egasining 5 shikoyati: savat ✕ · OSK×modal · tel-qidiruv, `f2036cc0`,
 > ✅ DEPLOYED `44970745 → 07ae9d3d`: sayt/health 200, `sherset-v2-web` restart, sotuv-chunk'da
 > `sotuv-cart-line-remove` + `pos-amount-display` grep-tasdiq; api restart YO'Q — web-only, to'g'ri.

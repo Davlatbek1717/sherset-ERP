@@ -32,6 +32,13 @@ import { usePermissions } from '@/hooks/use-permissions';
 import { api } from '@/lib/api-client';
 import { useAuth } from '@/lib/auth-store';
 import { isPosWorkstation } from '@/lib/pos-device';
+import {
+  CART_DRAFTS_STORAGE_KEY,
+  type CartDraft,
+  newDraftId,
+  parseCartDrafts,
+  serializeCartDrafts,
+} from '@/lib/pos/cart-drafts';
 // B8 — savat matematikasi sof modulda (20 test). Ilgari bu qoidalar shu
 // faylda edi va ularni sinash uchun butun POS ekranini render qilish
 // kerak bo'lardi, shuning uchun ular umuman sinalmagan edi.
@@ -337,6 +344,30 @@ function SalesScreen({
   // qaytaradi (`addToCart`) — shu ref o'sha fokus uchun.
   const searchRef = useRef<HTMLInputElement>(null);
   const [cart, setCart] = useState<CartLine[]>([]);
+
+  // ── QORALAMA (hold order, 2026-08-16 egasi so'rovi) ────────────────────────
+  // Kassir savatni chetga olib ikkinchi mijozga xizmat ko'rsatadi. Ro'yxat
+  // `localStorage`da — sahifa yangilansa yo'qolmaydi. Serializatsiya (bigint!)
+  // va fail-safe parse `lib/pos/cart-drafts.ts` da (o'z testlari bilan).
+  // Parse `CartDraftLine` qaytaradi — `CartLine` bilan strukturaviy mos va
+  // replacer NOMA'LUM maydonlarni ham roundtrip qiladi, ya'ni bu cast xavfsiz.
+  const [cartDrafts, setCartDrafts] = useState<CartDraft<CartLine>[]>(() => {
+    if (typeof window === 'undefined') return [];
+    try {
+      return parseCartDrafts(
+        window.localStorage.getItem(CART_DRAFTS_STORAGE_KEY),
+      ) as CartDraft<CartLine>[];
+    } catch {
+      return []; // localStorage yopiq (private mode) — qoralamasiz ishlayveradi
+    }
+  });
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(CART_DRAFTS_STORAGE_KEY, serializeCartDrafts(cartDrafts));
+    } catch {
+      /* saqlanmasa ham joriy sessiyada ishlaydi */
+    }
+  }, [cartDrafts]);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [discountPct, setDiscountPct] = useState(0);
   const [discountEditing, setDiscountEditing] = useState(false);
@@ -696,15 +727,16 @@ function SalesScreen({
           },
         ];
       });
-      // Qidiruv HAR DOIM shu yerda tozalanadi — qaysi yo'l bilan qo'shilganidan
-      // qat'i nazar (Enter · setkadan bosish · kelajakdagi skaner yo'li).
-      // Ilgari tozalash faqat Enter ishlovchisida turardi va kassir setkadan
-      // bosganda eski so'rov maydonda qolib ketardi: ikkinchi tovar nomi
-      // birinchisining ustiga yozilardi (egasining jonli sinovi, 2026-08-12).
-      // Fokus ham qaytariladi — bosishdan keyin u tovar tugmasida qoladi,
-      // ya'ni tozalangan maydonga yozib bo'lmasdi (skaner ham «yozolmasdi»).
-      setSearch('');
+      // Qidiruv matni endi TOZALANMAYDI (kassirlar so'rovi, 2026-08-16):
+      // keyingi tovar nomi ko'pincha shu qidiruvga o'xshash bo'ladi, natijalar
+      // «Tozalash» bosilguncha turadi. Buning o'rniga fokus qaytadi va matn
+      // TO'LIQ BELGILANADI — kassir yangi nom tersa (yoki skaner o'qisa) eski
+      // matn ustidan yoziladi. Bu 2026-08-12 dagi teskari shikoyatni («yangi
+      // harflar eskisining ustiga qo'shilardi») qaytarmaydi: ikkala talab ham
+      // shu select() bilan qanoatlanadi. Har qo'shish yo'lida bir xil (Enter ·
+      // setkadan bosish · skaner) — shuning uchun aynan shu yerda.
       searchRef.current?.focus();
+      searchRef.current?.select();
       // F3 — skaner-javob (spec §5.1): bip + qo'shilgan qator bir lahza yashil.
       // Aynan shu yerda — bu barcha qo'shish yo'llarining yagona kirish nuqtasi.
       scanFeedback.ok();
@@ -726,6 +758,71 @@ function SalesScreen({
   const removeFromCart = useCallback((productId: string) => {
     setCart((prev) => prev.filter((l) => l.productId !== productId));
   }, []);
+
+  // ── Qoralama amallari ──────────────────────────────────────────────────────
+  // Park — joriy savat (+chek chegirmasi) ro'yxatga tushadi, savat bo'shaydi.
+  // Zakazga bog'langan (qulflangan) savat va to'lanayotgan tayyor chek
+  // qoralamaga OLINMAYDI: bog'lanish (payingOrderId/payingSale) qoralamada
+  // saqlanmaydi va tiklashda chek summasi zakazsiz «oddiy savdo» bo'lib
+  // ketardi — pul olingan, zakaz esa to'lanmagan qolardi (F8 sababi bilan bir).
+  const parkCart = useCallback(() => {
+    if (cart.length === 0 || cartLocked || payingSale != null) return;
+    setCartDrafts((prev) => [
+      ...prev,
+      { id: newDraftId(), createdAt: Date.now(), discountPct, lines: cart },
+    ]);
+    setCart([]);
+    setDiscountPct(0);
+    setDiscountEditing(false);
+    toast.success(t('draft_saved'));
+  }, [cart, cartLocked, payingSale, discountPct, toast, t]);
+
+  // Tiklash — chip bosilganda. Savatda tovar bo'lsa u AVVAL avtomatik
+  // qoralamaga olinadi (almashish): kassir hech qachon «tiklasam savatim
+  // o'chib ketadimi?» deb o'ylamasin.
+  const restoreDraft = useCallback(
+    (draftId: string) => {
+      if (cartLocked || payingSale != null) return;
+      const draft = cartDrafts.find((d) => d.id === draftId);
+      if (!draft) return;
+      const rest = cartDrafts.filter((d) => d.id !== draftId);
+      if (cart.length > 0) {
+        rest.push({ id: newDraftId(), createdAt: Date.now(), discountPct, lines: cart });
+      }
+      setCartDrafts(rest);
+      setCart(draft.lines);
+      setDiscountPct(draft.discountPct);
+      setDiscountEditing(false);
+    },
+    [cartDrafts, cart, cartLocked, payingSale, discountPct],
+  );
+
+  const deleteDraft = useCallback((draftId: string) => {
+    setCartDrafts((prev) => prev.filter((d) => d.id !== draftId));
+  }, []);
+
+  // Chipda ko'rinadigan qiymatlar. Summa — SERVER formulasi bilan
+  // (`discountedCartTotalMinor`, har qator alohida half-up): chipdagi raqam
+  // tiklangandan keyin footerda chiqadigan raqam bilan AYNAN teng bo'lsin.
+  const draftChips = useMemo(
+    () =>
+      cartDrafts.map((d) => ({
+        id: d.id,
+        timeLabel: new Date(d.createdAt).toLocaleTimeString('uz-UZ', {
+          hour: '2-digit',
+          minute: '2-digit',
+        }),
+        count: d.lines.length,
+        totalMinor: discountedCartTotalMinor(
+          d.lines.map((l) => ({
+            quantity: l.quantity,
+            priceMinor: l.priceMinor,
+            discount: d.discountPct,
+          })),
+        ),
+      })),
+    [cartDrafts],
+  );
 
   /**
    * Savat qatorining narxi — endi FAQAT tahrir oynasi orqali o'zgaradi.
@@ -1268,6 +1365,12 @@ function SalesScreen({
                 <SavatPanel
                   cart={cart}
                   cartLocked={cartLocked}
+                  canPark={cart.length > 0 && !cartLocked && payingSale == null}
+                  onPark={parkCart}
+                  drafts={draftChips}
+                  draftsLocked={cartLocked || payingSale != null}
+                  onRestoreDraft={restoreDraft}
+                  onDeleteDraft={deleteDraft}
                   onClearCart={() => {
                     setCart([]);
                     // F8 — savatni tozalash zakaz/chek bog'lanishini ham uzadi:

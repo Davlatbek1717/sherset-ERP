@@ -52,6 +52,8 @@ beforeEach(() => {
   vi.mocked(api.get).mockReset();
   vi.mocked(api.post).mockReset();
   vi.mocked(api.get).mockImplementation(router(salesRoutes()));
+  // Qoralamalar localStorage'da saqlanadi — testlar bir-biriga oqmasin.
+  window.localStorage.clear();
 });
 
 /** Ekranni ko'taradi va birinchi tovarni savatga qo'shadi. */
@@ -148,7 +150,14 @@ describe('SalesScreen — tovar setkasi', () => {
     expect(screen.queryByTestId('sotuv-cart-line')).not.toBeInTheDocument();
   });
 
-  it('qidiruvda Enter — birinchi topilgan tovarni qo‘shadi va maydonni tozalaydi', async () => {
+  /**
+   * 2026-08-16 (kassirlar so'rovi): qidiruv natijalari tanlashdan keyin
+   * TOZALANMAYDI — keyingi tovar nomi ko'pincha o'xshash bo'ladi. Matn
+   * TO'LIQ BELGILANADI: yangi nom terilsa (yoki skaner o'qisa) eski matn
+   * ustidan yoziladi — 2026-08-12 dagi teskari shikoyat («yangi harflar
+   * eskisiga qo'shilardi») ham qaytmaydi.
+   */
+  it('qidiruvda Enter — birinchi topilgan tovarni qo‘shadi, matn QOLADI va belgilanadi', async () => {
     const user = userEvent.setup();
     renderWithProviders(<SotuvPage />);
     await screen.findAllByTestId('sotuv-product');
@@ -161,20 +170,17 @@ describe('SalesScreen — tovar setkasi', () => {
 
     const line = await screen.findByTestId('sotuv-cart-line');
     expect(norm(line.textContent)).toContain('Kabel 2×2.5');
-    expect(search).toHaveValue('');
+    const input = search as HTMLInputElement;
+    expect(input).toHaveValue('kab');
+    expect(input.selectionStart).toBe(0);
+    expect(input.selectionEnd).toBe('kab'.length);
   });
 
   /**
-   * 🔴 Egasining jonli sinovi (2026-08-12): kassir qidirib topgan tovarni
-   * SETKADAN bosadi — Enter bosmaydi. Enter yo'li maydonni tozalardi, bosish
-   * yo'li esa yo'q: ikkinchi tovarni yozmoqchi bo'lganda eski so'rov turardi
-   * (va yangi harflar eskisining ustiga qo'shilardi).
-   *
-   * Fokus ham qaytariladi — aks holda tozalangan maydonga yozish uchun
-   * kassir yana sichqoncha bilan bosishi kerak bo'lardi, skaner esa
-   * tugmada qolgan fokusga «yozib» hech narsa qidirmasdi.
+   * Setkadan bosish yo'li ham xuddi shu shartnomada: matn qoladi, fokus
+   * maydonga qaytadi (skaner uchun) va matn belgilanadi.
    */
-  it('🔴 setkadan bosilganda ham maydon tozalanadi va fokus qaytadi', async () => {
+  it('🔴 setkadan bosilganda matn qoladi, fokus qaytadi va belgilanadi', async () => {
     const user = userEvent.setup();
     renderWithProviders(<SotuvPage />);
     await screen.findAllByTestId('sotuv-product');
@@ -186,8 +192,27 @@ describe('SalesScreen — tovar setkasi', () => {
     await user.click(at(screen.getAllByTestId('sotuv-product'), 0));
 
     expect(await screen.findByTestId('sotuv-cart-line')).toBeInTheDocument();
+    const input = search as HTMLInputElement;
+    expect(input).toHaveValue('kab');
+    expect(input).toHaveFocus();
+    expect(input.selectionEnd).toBe('kab'.length);
+  });
+
+  it('«Tozalash» (input ichida) — matn bo‘lganda chiqadi, bosilsa tozalaydi va fokus qoladi', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<SotuvPage />);
+    await screen.findAllByTestId('sotuv-product');
+
+    // Matn yo'q — tugma ham yo'q.
+    expect(screen.queryByTestId('sotuv-search-clear')).not.toBeInTheDocument();
+
+    const search = screen.getByTestId('sotuv-search');
+    await user.type(search, 'kab');
+    await user.click(screen.getByTestId('sotuv-search-clear'));
+
     expect(search).toHaveValue('');
     expect(search).toHaveFocus();
+    expect(screen.queryByTestId('sotuv-search-clear')).not.toBeInTheDocument();
   });
 });
 
@@ -759,4 +784,109 @@ describe('SalesScreen — skaner-javob (F3)', () => {
 /** PRODUCTS fikstura ikki tovarli — testlar shunga tayanadi. */
 it('fikstura tekshiruvi: setkada aynan ikki tovar bor', () => {
   expect(PRODUCTS.items).toHaveLength(2);
+});
+
+/**
+ * QORALAMA (hold order) — 2026-08-16, egasi so'rovi: kassir savatni chetga
+ * olib ikkinchi mijozga xizmat ko'rsatadi. Holat `localStorage`da
+ * (`lib/pos/cart-drafts.ts` — serializatsiya o'z testlarida qulflangan);
+ * bu yerda EKRAN oqimi: park → chip → tiklash/almashish/o'chirish.
+ */
+describe('SalesScreen — qoralama (hold order)', () => {
+  it('savat bo‘sh — «Qoralama» tugmasi ham, chip qatori ham yo‘q', async () => {
+    renderWithProviders(<SotuvPage />);
+    await screen.findAllByTestId('sotuv-product');
+
+    expect(screen.queryByTestId('sotuv-cart-park')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('sotuv-drafts')).not.toBeInTheDocument();
+  });
+
+  it('park — savat bo‘shaydi, chip chiqadi (soni + summa), localStorage yoziladi', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<SotuvPage />);
+    await addFirstProduct(user);
+
+    await user.click(screen.getByTestId('sotuv-cart-park'));
+
+    // Savat bo'shadi, tugma yo'qoldi (park qilinadigan narsa qolmadi).
+    expect(screen.queryByTestId('sotuv-cart-line')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('sotuv-cart-park')).not.toBeInTheDocument();
+
+    // Chip: 1 tovar + server-formula summasi.
+    const chip = screen.getByTestId('sotuv-cart-draft');
+    expect(norm(chip.textContent)).toContain('1 tovar');
+    expect(norm(chip.textContent)).toContain('10 000,00 сум');
+
+    // Sahifa yangilansa yo'qolmasin — localStorage'da turibdi.
+    expect(window.localStorage.getItem('sherset.pos.drafts')).toContain('Kabel');
+  });
+
+  it('chip bosilsa savat QAYTADI (narx/miqdor bilan) va chip yo‘qoladi', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<SotuvPage />);
+    await addFirstProduct(user);
+
+    await user.click(screen.getByTestId('sotuv-cart-park'));
+    await user.click(screen.getByTestId('sotuv-cart-draft'));
+
+    const line = await screen.findByTestId('sotuv-cart-line');
+    expect(norm(line.textContent)).toContain('Kabel 2×2.5');
+    expect(norm(line.textContent)).toContain('10 000,00 сум');
+    expect(screen.queryByTestId('sotuv-drafts')).not.toBeInTheDocument();
+  });
+
+  it('🔴 savatda tovar TURGANDA tiklash — joriy savat avval AVTOMATIK qoralanadi (almashish)', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<SotuvPage />);
+
+    // A: Kabel → park.
+    const tiles = await screen.findAllByTestId('sotuv-product');
+    await user.click(at(tiles, 0));
+    await user.click(screen.getByTestId('sotuv-cart-park'));
+
+    // B: Rozetka savatda turganda A chipini bosamiz.
+    await user.click(at(screen.getAllByTestId('sotuv-product'), 1));
+    await user.click(screen.getByTestId('sotuv-cart-draft'));
+
+    // Savatda A (Kabel); B (Rozetka) yo'qolmadi — u endi qoralamada.
+    const lines = screen.getAllByTestId('sotuv-cart-line');
+    expect(lines).toHaveLength(1);
+    expect(norm(at(lines, 0).textContent)).toContain('Kabel 2×2.5');
+    const chips = screen.getAllByTestId('sotuv-cart-draft');
+    expect(chips).toHaveLength(1);
+    expect(norm(at(chips, 0).textContent)).toContain('1 tovar');
+  });
+
+  it('chipdagi ✕ — qoralamani o‘chiradi, savatga tegmaydi', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<SotuvPage />);
+    await addFirstProduct(user);
+
+    await user.click(screen.getByTestId('sotuv-cart-park'));
+    await user.click(screen.getByTestId('sotuv-cart-draft-delete'));
+
+    expect(screen.queryByTestId('sotuv-drafts')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('sotuv-cart-line')).not.toBeInTheDocument();
+  });
+
+  it('chek chegirmasi qoralama bilan birga saqlanadi va tiklashda qaytadi', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<SotuvPage />);
+    await addFirstProduct(user);
+
+    // 10% chegirma (summa ustiga ikki bosish → inline input).
+    await user.dblClick(screen.getByTitle('Chegirma uchun ikki marta bosing'));
+    await user.type(screen.getByPlaceholderText('0'), '10');
+    await user.keyboard('{Enter}');
+    expect(norm(screen.getByText(/9 000,00/).textContent)).toContain('9 000,00 сум');
+
+    await user.click(screen.getByTestId('sotuv-cart-park'));
+    // Chip summasi chegirmali (server formulasi bilan).
+    expect(norm(screen.getByTestId('sotuv-cart-draft').textContent)).toContain('9 000,00 сум');
+    // Yangi (bo'sh) savat chegirmasiz boshlanadi.
+
+    await user.click(screen.getByTestId('sotuv-cart-draft'));
+    // Tiklangan savatda chegirma qaytdi.
+    expect(norm(screen.getByText(/−10% chegirma/).textContent)).toContain('−10%');
+  });
 });

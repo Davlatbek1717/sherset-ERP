@@ -391,6 +391,73 @@ describe('ko`rinish/yashirish xulqi', () => {
  * qizaradi — o'shanda `pin-entry-single-numpad.test.tsx` dagi «kiritish yo'li
  * aynan bitta» invarianti qayta ko'rib chiqilsin (ikkisi bog'liq).
  */
+/**
+ * K8 — 2026-08-16 (egasi): «harflar juda ingichka» qayta-o'lchovi.
+ *  • harf shrifti 29px (+50%), tugma bo'yi 60px;
+ *  • belgilar (@ . - _ / : ') PASTKI qatordan YUQORI (raqamlar) qatoriga ko'chdi;
+ *  • bo'shagan pastki qatorda PROBEL va ⌫ uzun (flex 6 / 3).
+ */
+describe('K8 — harf o`lchamlari va belgilar qatori (2026-08-16)', () => {
+  const at = <T>(arr: T[], i: number): T => {
+    const v = arr[i];
+    if (v === undefined) throw new Error(`element [${i}] yo'q (bor: ${arr.length})`);
+    return v;
+  };
+  /** Panel qatorlari — klaviatura ildizi ichidagi flex-div'lar. */
+  const panelRows = (): HTMLElement[] => {
+    const root = keyboardRoot();
+    const panel = root?.firstElementChild as HTMLElement | null;
+    return [...(panel?.children ?? [])] as HTMLElement[];
+  };
+  const rowLabels = (row: HTMLElement): string[] =>
+    [...row.querySelectorAll('button')].map((b) => (b.textContent ?? '').trim());
+
+  it('harf tugmasi shrifti 29px, bo`yi 60px', () => {
+    focusField({ type: 'text' });
+    const a = keyButton('a');
+    expect(a.style.fontSize).toBe('29px');
+    expect(a.style.height).toBe('60px');
+  });
+
+  it('belgilar YUQORI (raqamlar) qatorida — lotin', () => {
+    focusField({ type: 'text' });
+    const top = rowLabels(at(panelRows(), 0));
+    for (const s of ['@', '.', '-', '_', '/', ':', "'"]) {
+      expect(top, `«${s}» yuqori qatorda emas`).toContain(s);
+    }
+    expect(top).toContain('1');
+    expect(top).toContain('0');
+  });
+
+  it('belgilar kirill layoutida ham yuqori qatorda', () => {
+    focusField({ type: 'text' });
+    press('РУС');
+    expect(rowLabels(at(panelRows(), 0))).toContain('@');
+  });
+
+  it('pastki qatorda belgilar QOLMAGAN (probel/⌫ uchun bo`shatilgan)', () => {
+    focusField({ type: 'text' });
+    const rows = panelRows();
+    const footer = rowLabels(at(rows, rows.length - 1));
+    for (const s of ['@', '-', '_', '/', ':']) {
+      expect(footer, `«${s}» hamon pastki qatorda`).not.toContain(s);
+    }
+  });
+
+  it('probel va ⌫ uzun (flex kattalashgan)', () => {
+    focusField({ type: 'text' });
+    expect(Number.parseFloat(keyButton('␣').style.flex)).toBeGreaterThanOrEqual(5);
+    expect(Number.parseFloat(keyButton('⌫').style.flex)).toBeGreaterThanOrEqual(2.5);
+  });
+
+  it('belgi yuqori qatordan bosilsa ham `kbd:key` ga o`zi ketadi', () => {
+    focusField({ type: 'text' });
+    press('@');
+    expect(shell.sends).toEqual([{ channel: 'kbd:key', payload: '@' }]);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 describe('K6 — `readOnly` maydon (P6 o`lchovi)', () => {
   it('readOnly raqamli maydonda klaviatura BARIBIR chiqadi', () => {
     focusField({ type: 'password', inputmode: 'numeric', readonly: 'readonly' });

@@ -246,8 +246,13 @@ function installWindowControls() {
  * 🔴 Uslublar faqat CSSOM (`el.style.x = …`) orqali: `<style>` tegi sahifaning
  * `style-src` siyosatiga tushardi, CSSOM esa CSP'dan tashqarida.
  */
+// `'` — o'zbek lotinidagi `o'`/`g'` uchun SHART (ism/nom yozib bo'lmasdi).
+// 2026-08-16 (egasi): belgilar pastki qatordan YUQORI (raqamlar) qatoriga
+// ko'chdi — pastda probel/⌫ uchun joy bo'shadi.
+const KB_SYMBOLS = ['@', '.', '-', '_', '/', ':', "'"];
+const KB_TOP_ROW = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0', ...KB_SYMBOLS];
 const KB_LATIN_ROWS = [
-  ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0'],
+  KB_TOP_ROW,
   ['q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p'],
   ['a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l'],
   ['z', 'x', 'c', 'v', 'b', 'n', 'm'],
@@ -258,7 +263,7 @@ const KB_LATIN_ROWS = [
  * bo'lmasdi (2026-08-11, real qurilma).
  */
 const KB_CYRILLIC_ROWS = [
-  ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0'],
+  KB_TOP_ROW,
   ['й', 'ц', 'у', 'к', 'е', 'н', 'г', 'ш', 'щ', 'з', 'х', 'ъ'],
   ['ф', 'ы', 'в', 'а', 'п', 'р', 'о', 'л', 'д', 'ж', 'э'],
   ['я', 'ч', 'с', 'м', 'и', 'т', 'ь', 'б', 'ю', 'ё', 'ў', 'қ', 'ғ', 'ҳ'],
@@ -273,15 +278,16 @@ const KB_NUMBER_ROWS = [
   ['1', '2', '3'],
   ['.', '0', '⌫'],
 ];
-// `'` — o'zbek lotinidagi `o'`/`g'` uchun SHART (ism/nom yozib bo'lmasdi).
-const KB_SYMBOLS = ['@', '.', '-', '_', '/', ':', "'"];
 /** Klaviatura chiqadigan maydon turlari. */
 const KB_TYPES = ['text', 'password', 'email', 'url', 'search', 'tel', 'number', ''];
 /** Shu turlar/rejimlarda QWERTY emas, numpad chiqadi (reja F3 §1). */
 const KB_NUMERIC_TYPES = ['number', 'tel'];
 const KB_NUMERIC_MODES = ['decimal', 'numeric', 'tel'];
 
-const KEY_H = '46px'; // harf tugmasi
+// 2026-08-16 (egasi): «harflar juda ingichka» — shrift 19→29px (+50%),
+// tugma bo'yi 46→60px (harf sig'ishi uchun). Numpad avvalgidek (68px/26px).
+const KEY_H = '60px'; // harf tugmasi
+const KEY_FONT = '29px'; // harf shrifti
 const NUM_KEY_H = '68px'; // raqam tugmasi — barmoq uchun ataylab kattaroq
 const BACKSPACE = '⌫';
 // F5 boshqaruv tugmalari: klaviaturasiz qurilmada tasdiqlash (K13) va matn
@@ -347,7 +353,7 @@ function installTouchKeyboard() {
       minWidth: '0',
       height: o.height || KEY_H,
       margin: '2px',
-      fontSize: o.fontSize || '19px',
+      fontSize: o.fontSize || KEY_FONT,
       fontWeight: '600',
       color: '#0f172a',
       background: o.active ? '#cbd5e1' : '#ffffff',
@@ -387,7 +393,13 @@ function installTouchKeyboard() {
     clearInset();
   };
 
-  /** Harf layoutining pastki qatori: shift · til · belgilar · probel · ⌫ · yashirish. */
+  /**
+   * Harf layoutining pastki qatori: shift · til · probel · ⌫ · o'qlar · ⏎ · yashirish.
+   * 2026-08-16 (egasi): belgilar yuqori qatorga ko'chdi (KB_TOP_ROW), bo'shagan
+   * joy PROBEL va ⌫ ga berildi — ikkalasi eng ko'p bosiladigan tugmalar edi-yu,
+   * eng tor turardi. Matnli yorliqlar (РУС/Yashirish) 20px — 29px da ular
+   * tugmaga sig'may kesilardi.
+   */
   const letterFooter = () => {
     const r = makeRow();
     r.appendChild(
@@ -410,16 +422,15 @@ function installTouchKeyboard() {
           writeKeyboardLang(lang);
           render();
         },
-        { flex: 1.6 },
+        { flex: 1.6, fontSize: '20px' },
       ),
     );
-    for (const s of KB_SYMBOLS) r.appendChild(makeKey(s, () => send(s)));
-    r.appendChild(makeKey('␣', () => send(' '), { flex: 3 }));
-    r.appendChild(makeKey(BACKSPACE, () => send('Backspace'), { flex: 1.4 }));
+    r.appendChild(makeKey('␣', () => send(' '), { flex: 6 }));
+    r.appendChild(makeKey(BACKSPACE, () => send('Backspace'), { flex: 3 }));
     r.appendChild(makeKey(ARROW_LEFT, () => send('Left'), { flex: 1 }));
     r.appendChild(makeKey(ARROW_RIGHT, () => send('Right'), { flex: 1 }));
     r.appendChild(makeKey(ENTER, () => send('Enter'), { flex: 1.6 }));
-    r.appendChild(makeKey('Yashirish', hide, { flex: 2 }));
+    r.appendChild(makeKey('Yashirish', hide, { flex: 2, fontSize: '20px' }));
     return r;
   };
 
@@ -442,7 +453,7 @@ function installTouchKeyboard() {
     // barmoq nishoni emas, «taxta» bo'lib qolardi.
     styles(panel, { maxWidth: numeric ? '520px' : 'none', margin: '0 auto' });
     const height = numeric ? NUM_KEY_H : KEY_H;
-    const fontSize = numeric ? '26px' : '19px';
+    const fontSize = numeric ? '26px' : KEY_FONT;
     for (const row of rows) {
       const r = makeRow();
       for (const ch of row) {

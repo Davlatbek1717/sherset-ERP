@@ -110,7 +110,10 @@ export function SotuvSearchGrid({
           ma'lumot dublikati edi. `stale` ogohlantirishi (yuqorida) qoladi —
           u ma'lumot emas, HARAKAT talab qiladigan signal. */}
 
-      {/* Search / barcode */}
+      {/* Search / barcode — 2026-08-16 (egasi): bo'yi 2× (44→88px, sensorli
+          nishon), matn 20px. Natijalar tanlashdan keyin TOZALANMAYDI (matn
+          `addToCart`da select bo'ladi) — ochiq tozalash yo'li shu «Tozalash»
+          tugmasi. U matn bor bo'lgandagina chiziladi. */}
       <Input
         ref={searchRef}
         value={search}
@@ -118,15 +121,33 @@ export function SotuvSearchGrid({
         onKeyDown={(e) => {
           if (e.key === 'Enter') {
             e.preventDefault();
-            // Maydonni `addToCart` o'zi tozalaydi — bu yerda takrorlanmaydi.
+            // Maydon matni `addToCart`da to'liq belgilanadi (tozalanmaydi).
             const first = products?.items?.[0];
             if (first) addToCart(first);
           }
         }}
         placeholder={t('search_placeholder')}
         data-test-id="sotuv-search"
-        leading={<Search className="h-4 w-4" />}
-        className="h-11 rounded-xl text-sm shadow-sm"
+        leading={<Search className="h-6 w-6" />}
+        trailing={
+          search !== '' ? (
+            <button
+              type="button"
+              data-test-id="sotuv-search-clear"
+              onClick={() => {
+                setSearch('');
+                searchRef.current?.focus();
+              }}
+              // Fokus maydonda qolsin (OSK yopilib-ochilmasin) — savat
+              // «Tozalash»idan farqli, bu faqat matnni o'chiradi.
+              onMouseDown={(e) => e.preventDefault()}
+              className="flex h-[56px] items-center rounded-xl border border-[var(--ms-border)] bg-[var(--ms-bg-surface)] px-5 font-medium text-[16px] text-[var(--ms-text-muted)] transition-colors hover:bg-[var(--ms-bg-hover)] hover:text-[var(--ms-text-primary)] active:scale-[0.98]"
+            >
+              {t('clear')}
+            </button>
+          ) : undefined
+        }
+        className="h-[88px] rounded-xl pr-[150px] text-[20px] shadow-sm"
       />
 
       {/* Product grid */}
@@ -202,6 +223,18 @@ interface SavatPanelProps {
    *  olib tashlaydi, bitta tovarni esa faqat qator-oynasi ichidan o'chirish
    *  mumkin edi — kassir bu yo'lni topolmadi. Endi har qatorda ochiq ✕ bor. */
   onRemoveLine: (productId: string) => void;
+  // ── Qoralama (hold order, 2026-08-16 egasi so'rovi) ────────────────────────
+  // Savat chetga olinadi, ikkinchi mijozga xizmat davom etadi. Holat va
+  // saqlash sahifada (`cart-drafts.ts`) — panel faqat chizadi.
+  /** Park mumkinmi — bo'sh/qulflangan/to'lanayotgan savat qoralanmaydi. */
+  canPark: boolean;
+  onPark: () => void;
+  /** Chip qiymatlari sahifada tayyorlanadi (summa — server formulasi bilan). */
+  drafts: Array<{ id: string; timeLabel: string; count: number; totalMinor: bigint }>;
+  /** Qulflangan savat ustida tiklash yo'q (almashish bog'lanishni uzardi). */
+  draftsLocked: boolean;
+  onRestoreDraft: (draftId: string) => void;
+  onDeleteDraft: (draftId: string) => void;
   setEditingProductId: Dispatch<SetStateAction<string | null>>;
   /** F3 — skaner-javob: hozirgina qo'shilgan qator (600ms yashil flash). */
   flashProductId: string | null;
@@ -227,6 +260,12 @@ export function SavatPanel({
   cartLocked,
   onClearCart,
   onRemoveLine,
+  canPark,
+  onPark,
+  drafts,
+  draftsLocked,
+  onRestoreDraft,
+  onDeleteDraft,
   setEditingProductId,
   flashProductId,
   discountPct,
@@ -249,19 +288,77 @@ export function SavatPanel({
 
   return (
     <>
-      <div className="flex shrink-0 items-center gap-2 border-[var(--ms-border)] border-b px-4 py-2">
-        <span className="text-sm text-[var(--ms-text-muted)]">{t('cart_title')}</span>
-        {cart.length > 0 && (
-          <Button
-            variant="link"
-            className="ml-auto text-xs"
-            onClick={onClearCart}
-            data-test-id="sotuv-cart-clear"
-          >
-            {t('clear')}
-          </Button>
-        )}
+      {/* 2026-08-16 (egasi): header 2× baland (~37→72px), tugmalar barmoq
+          o'lchamida. «Qoralama» — savatni chetga olib ikkinchi mijozga xizmat. */}
+      <div className="flex h-[72px] shrink-0 items-center gap-2 border-[var(--ms-border)] border-b px-4">
+        <span className="font-semibold text-[18px] text-[var(--ms-text-muted)]">
+          {t('cart_title')}
+        </span>
+        <div className="ml-auto flex items-center gap-2">
+          {canPark && (
+            <button
+              type="button"
+              onClick={onPark}
+              data-test-id="sotuv-cart-park"
+              className="flex h-[52px] items-center rounded-xl border border-[var(--ms-border)] bg-[var(--ms-bg-surface)] px-5 font-medium text-[16px] text-[var(--ms-text-primary)] transition-colors hover:bg-[var(--ms-bg-hover)] active:scale-[0.98]"
+            >
+              {t('draft_hold')}
+            </button>
+          )}
+          {cart.length > 0 && (
+            <Button
+              variant="link"
+              className="text-[16px]"
+              onClick={onClearCart}
+              data-test-id="sotuv-cart-clear"
+            >
+              {t('clear')}
+            </Button>
+          )}
+        </div>
       </div>
+
+      {/* Qoralama chiplari — bor bo'lsagina chiziladi. Chip = vaqt · N tovar ·
+          summa; bosish savatga qaytaradi (joriy savat bo'sh bo'lmasa u avval
+          avtomatik qoralamaga olinadi — sahifadagi `restoreDraft`). */}
+      {drafts.length > 0 && (
+        <div
+          data-test-id="sotuv-drafts"
+          className="flex shrink-0 gap-2 overflow-x-auto border-[var(--ms-border)] border-b bg-[var(--ms-bg-app)] px-4 py-2"
+        >
+          {drafts.map((d) => (
+            <div
+              key={d.id}
+              className="flex shrink-0 items-stretch overflow-hidden rounded-xl border border-[var(--ms-border)] bg-[var(--ms-bg-surface)]"
+            >
+              <button
+                type="button"
+                data-test-id="sotuv-cart-draft"
+                onClick={() => onRestoreDraft(d.id)}
+                disabled={draftsLocked}
+                title={t('draft_restore')}
+                className="px-4 py-1.5 text-left transition-colors hover:bg-[var(--ms-bg-hover)] disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <span className="block text-[13px] text-[var(--ms-text-muted)]">
+                  {d.timeLabel} · {t('items_count', { n: d.count })}
+                </span>
+                <span className="block font-semibold text-[16px] tabular-nums text-[var(--ms-text-primary)]">
+                  {formatMoney(d.totalMinor)}
+                </span>
+              </button>
+              <button
+                type="button"
+                data-test-id="sotuv-cart-draft-delete"
+                aria-label={t('draft_delete')}
+                onClick={() => onDeleteDraft(d.id)}
+                className="flex w-[44px] items-center justify-center border-[var(--ms-border)] border-l text-[16px] text-[var(--ms-text-muted)] transition-colors hover:bg-red-50 hover:text-red-600"
+              >
+                ✕
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
 
       <div className="min-h-0 flex-1 overflow-y-auto">
         {cart.length === 0 ? (
