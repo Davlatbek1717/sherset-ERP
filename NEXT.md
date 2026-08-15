@@ -331,6 +331,29 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-08-15a (KASSA POS — egasining 5 shikoyati: savat ✕ · OSK×modal · tel-qidiruv, `f2036cc0`,
+> ⚠️ DEPLOY QILINMAGAN) —** egasi 3 skrinshot bilan keldi (exe v1.8.0). Ildiz sabablar va tuzatishlar:
+> (1) savatda bitta tovarni o'chirish yo'li ko'rinmas edi (faqat qator-oynasi ichida) → har qatorga 56px ✕
+> (`sotuv-mode.tsx`, `onRemoveLine`); (2) to'lov oynasi ustidan qobiq raqam-klaviaturasi chiqardi — summa
+> maydoni haqiqiy `<input autoFocus>` edi → qobiqda ko'rsatkich-DIV (`isShersetShell`, rasmilashtirish +
+> cart-line-edit); (3) 🔴 ASOSIY: **Radix modal rejimi `body`ga `pointer-events:none` qo'yadi, qobiq OSK'si
+> esa body'da** (`desktop/preload.js`) — modal ichida OSK tugmalari o'lik, bosish overlay'ga tushib fokus
+> inputdan chiqib ketardi → 5 POS dialogi `modal={false}` + o'z fon-div (statik qulf `pos-shell-osk.test`);
+> (4) mijozlar qidiruvi `inputMode="tel"` — OSK faqat raqam ko'rsatardi → olib tashlandi (panel + karta);
+> (5) rasmilashtirish mijoz ustuni 2× (15rem→30rem, oyna 57rem). **Bonus bug (jonli topildi):** qarz
+> to'langach panel eski raqamni ko'rsatardi — `DebtPaymentDialog.onSuccess` endi `pos-customers-debt` +
+> `customer-card-*` keshlarini invalidatsiya qiladi. **«Qarz to'lab bo'lmayapti» diagnostikasi:** prod nginx
+> logida qurilmadan `GET /debts/pos/summary` bor, `POST /debts/pos/pay` UMUMAN YO'Q — to'siq mijoz tomonda
+> (OSK/kiritish zanjiri), server yo'li sog'lom. **Runtime-verify (lokal brauzer, Playwright):** savat ✕ faqat
+> o'z qatorini o'chiradi · to'liq-qarz sotish · Mijozlar→Qarzni to'lash E2E (balans 80 000→0, DB'da tasdiq) ·
+> panel yangilanishi. Gate: web tc0 · lint 0 err · TO'LIQ web vitest 281 fayl yashil. **⚠️ KEYINGI QADAM:
+> WEB-DEPLOY** (`deploy-smart.sh DS_TARGET=v2`; exe yangilash SHART EMAS) + qurilmada QA: OSK modal ichida
+> harf yozadimi · to'lov oynasida OSK chiqmasligi · mijoz qidiruvida harflar · qarz to'lash to'liq oqimi.
+> Egasining «POS mijozlar o'rniga web kontragentlar qarz-undirish qismini chiqaraylik» savoliga javob
+> foydalanuvchiga yozildi (tavsiya: panel qoladi, avval shu fix'lar qurilmada sinalsin).
+>
+> ---
+>
 > **🕒 2026-08-14b (KASSA — chek o'ngga surilib «Summa» kesilishi tuzatildi, `c867eb65` + ✅ DEPLOYED
 > `673ea1c9→c93113b0`, site/health 200, yangi CSS 2 chunk'da grep-tasdiq, eski `margin:0 auto` chunk'larda YO'Q) —**
 > egasining fotosi (TPH-2026-00073): exe'dan chiqqan chekda kontent o'ngga surilib, Summa
