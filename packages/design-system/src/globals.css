@@ -121,6 +121,18 @@
    * a blue border on focus and NO outer ring — matched in the control classes. */
   --ms-border-input: #333333;
 
+  /* 🔴 QISQA BRAND ALIASLARI (2026-08-15, kassa monoblokida topildi).
+   * POS/menejer sahifalari `bg-[var(--ms-brand)]` / `bg-[var(--ms-bg-brand)]` /
+   * `hover:bg-[var(--ms-brand-hover)]` deb yozadi — bu nomlar shu paytgacha
+   * HECH QAYERDA aniqlanmagan edi: fon shaffof bo'lib, `text-white` yozuvli
+   * tugmalar oq fonda KO'RINMAS edi. Eng og'ir oqibati — POS «Qarz to'lovi»
+   * oynasidagi «To'lovni qabul qilish» tugmasi: kassir uni umuman ko'rmagani
+   * uchun kassada qarz to'lab bo'lmasdi (egasining jonli skrinshoti bilan
+   * tasdiqlangan). Aliaslarni o'chirма — avval ishlatilishlarini grep qil. */
+  --ms-brand: var(--ms-brand-500);
+  --ms-brand-hover: var(--ms-brand-600);
+  --ms-bg-brand: var(--ms-brand-500);
+
   --ms-action-primary: var(--ms-brand-500);
   --ms-action-primary-hover: var(--ms-brand-600);
   --ms-action-primary-active: var(--ms-brand-700);
