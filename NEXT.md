@@ -332,8 +332,10 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
 > **🕒 2026-08-16a (KASSA POS — kassir so'rovlari: qidiruv PERSIST + «Tozalash» · savat header 2× +
-> QORALAMA (hold order) · OSK katta harflar; Phase-1: strukturaviy, runtime-tasdiqlanmagan, browser-smoke
-> YO'Q) —** egasi 2 skrinshot bilan keldi. **Web qismi (deploy bilan kassaga yetadi, exe SHART EMAS):**
+> QORALAMA (hold order) · OSK katta harflar, `3a275a80`,
+> ✅ DEPLOYED `6b562b46 → 3a275a80` (2026-08-16): sayt/health 200, sotuv-chunk'da
+> `sotuv-cart-park`+`sotuv-search-clear`+`sherset.pos.drafts` grep-tasdiq, web build 298 sahifa;
+> Phase-1: strukturaviy, runtime-tasdiqlanmagan, browser-smoke YO'Q, qurilma-QA QOLDI) —** egasi 2 skrinshot bilan keldi. **Web qismi (deploy bilan kassaga yetadi, exe SHART EMAS):**
 > (1) qidiruv input 44→88px/20px, oxirida «Tozalash» (`sotuv-search-clear`, matn bo'lgandagina);
 > (2) 🔴 qidiruv natijalari endi tanlashdan keyin TOZALANMAYDI — `addToCart` `setSearch('')` o'rniga
 > `focus()+select()`: yangi nom/skan eski matn USTIDAN yoziladi (2026-08-12 «harflar qo'shilardi»
