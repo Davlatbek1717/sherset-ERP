@@ -102,9 +102,12 @@ export function CustomersPanel({
           640px ustunga yig'ilgan. Mantiq/DOM-tuzilma o'zgarmagan. */}
       {!agent && (
         <div className="mx-auto flex w-full max-w-[640px] flex-col gap-2 p-3">
+          {/* 🔴 `inputMode="tel"` OLIB TASHLANDI (2026-08-15, monoblokda):
+              qobiq ekran-klaviaturasi `tel` rejimda FAQAT raqam panelini
+              chiqaradi — «Telefon YOKI ISM» qidiruvida harf yozib bo'lmasdi.
+              Matn rejimida raqam qatori baribir bor. */}
           <Input
             type="text"
-            inputMode="tel"
             data-test-id="pos-customers-search"
             value={search}
             onChange={(e) => setSearch(e.target.value)}

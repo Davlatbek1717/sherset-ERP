@@ -251,10 +251,29 @@ describe('SalesScreen — savat qatorlari', () => {
   });
 
   /**
-   * F3: «✕» ham qatordan ketdi (Q6 bilan bir qaror) — o'chirish yo'li endi
-   * tahrir oynasidagi «O'chirish» (yoki soni 0). «Tozalash» butun savatni
-   * bo'shatishi O'ZGARMADI.
+   * F3: «✕» qatordan ketgan edi (Q6) — 2026-08-15 (egasi, monoblokda) KATTA
+   * ✕ qaytdi: bitta tovarni o'chirish uchun oynani ochish yo'lini kassir
+   * topolmadi. Nishon 56px (F3 shikoyatidagi 24px emas) va qator-tugmadan
+   * TASHQARIDA (nested-button emas). Oynadagi «O'chirish» ham qoladi.
    */
+  it('qator yonidagi ✕ FAQAT o‘sha qatorni o‘chiradi', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<SotuvPage />);
+
+    const tiles = await screen.findAllByTestId('sotuv-product');
+    await user.click(at(tiles, 0));
+    await user.click(at(tiles, 1));
+    expect(screen.getAllByTestId('sotuv-cart-line')).toHaveLength(2);
+
+    await user.click(at(screen.getAllByTestId('sotuv-cart-line-remove'), 0));
+
+    const lines = screen.getAllByTestId('sotuv-cart-line');
+    expect(lines).toHaveLength(1);
+    expect(norm(at(lines, 0).textContent)).toContain('Rozetka Legrand');
+    // Oyna ochilib ketmadi — ✕ tahrir-triggerga ko'tarilmaydi.
+    expect(screen.queryByTestId('pos-line-edit')).not.toBeInTheDocument();
+  });
+
   it('o‘chirish tahrir oynasi orqali; «Tozalash» butun savatni bo‘shatadi', async () => {
     const user = userEvent.setup();
     renderWithProviders(<SotuvPage />);

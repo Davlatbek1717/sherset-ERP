@@ -282,9 +282,12 @@ export function CustomerCardPanel({
   const balanceMissing = !!summary && summary.balanceMinor === null;
 
   return (
-    <Dialog.Root open={open} onOpenChange={onOpenChange}>
+    /* 🔴 `modal={false}` ATAYLAB — sabab `rasmilashtirish-modal.tsx` dagi izohda
+       (Radix modal rejimi qobiq ekran-klaviaturasini bosib qo'yardi). Tashqi
+       bosishdan `noAccidentalClose` himoya qiladi; fon — o'z qatlamimiz. */
+    <Dialog.Root modal={false} open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-50 bg-black/40" />
+        <div aria-hidden className="fixed inset-0 z-50 bg-black/40" />
         {/* Tasodifiy yopilish yo'q — faqat ✕ / «Yopish» tugmasi. */}
         <Dialog.Content
           {...noAccidentalClose}
@@ -305,9 +308,12 @@ export function CustomerCardPanel({
           <div className="flex-1 overflow-y-auto px-5 py-4">
             {!agent && (
               <div className="flex flex-col gap-3">
+                {/* 🔴 `inputMode="tel"` OLIB TASHLANDI (2026-08-15, monoblokda):
+                    qobiq ekran-klaviaturasi `tel` rejimda FAQAT raqam panelini
+                    chiqaradi — «Telefon YOKI ISM» qidiruvida harf yozib
+                    bo'lmasdi. Matn rejimida raqam qatori baribir bor. */}
                 <Input
                   type="text"
-                  inputMode="tel"
                   data-test-id="customer-card-search"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}

@@ -1276,6 +1276,7 @@ function SalesScreen({
                     setPayingOrderId(null);
                     setPayingSale(null);
                   }}
+                  onRemoveLine={removeFromCart}
                   setEditingProductId={setEditingProductId}
                   flashProductId={cartFlash?.productId ?? null}
                   discountPct={discountPct}

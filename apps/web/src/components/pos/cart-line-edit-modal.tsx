@@ -16,6 +16,7 @@
  * manba. Ikkinchi nusxa yozilsa oynadagi raqam savatdagidan farq qilardi.
  */
 
+import { isShersetShell } from '@/lib/pos-device';
 import { cartLineRevenueMinor, normalizeQtyDecimal } from '@/lib/pos/cart-math';
 import { parseAmountToMinor } from '@/lib/pos/parse-amount';
 import { SHOW_MARGIN_ON_SCREEN } from '@/lib/pos/ui-flags';
@@ -25,7 +26,7 @@ import { formatMoney, noAccidentalClose } from '@moysklad/ui';
 import * as Dialog from '@radix-ui/react-dialog';
 import { Lock, X } from 'lucide-react';
 import { useTranslations } from 'next-intl';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 /**
  * Tahrirlanayotgan savat qatori.
@@ -108,6 +109,14 @@ export function CartLineEditModal({
    * Qulf mantiqqa (`belowFloor`/`blocked`) TEGILMAGAN — bu faqat ko'rsatish.
    */
   const [floorRevealed, setFloorRevealed] = useState(false);
+  /** Kassa qobig'imi (exe)? Effektda — SSR/hydration xavfsiz. Qobiqda faol
+   *  maydon haqiqiy input EMAS (`rasmilashtirish-modal.tsx` bilan bir sabab:
+   *  input fokusi qobiq ekran-klaviaturasini chaqirib, oynaning o'z numpadini
+   *  bosib qo'yardi). */
+  const [shell, setShell] = useState(false);
+  useEffect(() => {
+    setShell(isShersetShell());
+  }, []);
 
   /**
    * Boshqa qatorga o'tilganda (yoki oyna qayta ochilganda) maydonlar qayta
@@ -216,14 +225,18 @@ export function CartLineEditModal({
         : 'border-[var(--ms-border)] bg-[var(--ms-bg-app)]';
 
   return (
+    /* 🔴 `modal={false}` ATAYLAB — sabab `rasmilashtirish-modal.tsx` dagi izohda
+       (Radix modal rejimi qobiq ekran-klaviaturasini bosib qo'yardi). Tashqi
+       bosishdan `noAccidentalClose` himoya qiladi; fon — o'z qatlamimiz. */
     <Dialog.Root
+      modal={false}
       open
       onOpenChange={(o) => {
         if (!o) onClose();
       }}
     >
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm" />
+        <div aria-hidden className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm" />
         {/* K-1: tavsif matni ataylab yo'q — Radix'ning rasmiy opt-out'i. */}
         <Dialog.Content
           {...noAccidentalClose}
@@ -417,22 +430,33 @@ export function CartLineEditModal({
               </div>
             ) : (
               <>
-                {/* Faol maydon — haqiqiy input: qurilma klaviaturasi ham ishlasin.
-                    `type="text"` ATAYLAB: `type="number"` oraliq holatni
-                    («1.») yeydi va kasr miqdor kiritib bo'lmasdi (FE-02). */}
-                <input
-                  type="text"
-                  inputMode="decimal"
-                  data-test-id="pos-line-edit-input"
-                  aria-label={activeField === 'qty' ? t('line_edit_qty') : t('cart_price')}
-                  value={activeValue}
-                  onChange={(e) => {
-                    setActive(e.target.value);
-                    setReplaceNext(false);
-                  }}
-                  placeholder="0"
-                  className="w-full rounded-xl border-2 border-[var(--ms-brand)] bg-white px-4 py-3 text-right font-bold text-3xl tabular-nums outline-none"
-                />
+                {/* Faol maydon — brauzerda haqiqiy input: qurilma klaviaturasi
+                    ham ishlasin. `type="text"` ATAYLAB: `type="number"` oraliq
+                    holatni («1.») yeydi va kasr miqdor kiritib bo'lmasdi
+                    (FE-02). QOBIQDA esa ko'rsatkich-div (yuqoridagi `shell`
+                    izohi) — kiritish faqat oynaning o'z numpadidan. */}
+                {shell ? (
+                  <div
+                    data-test-id="pos-line-edit-display"
+                    className="w-full rounded-xl border-2 border-[var(--ms-brand)] bg-white px-4 py-3 text-right font-bold text-3xl tabular-nums"
+                  >
+                    {activeValue || '0'}
+                  </div>
+                ) : (
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    data-test-id="pos-line-edit-input"
+                    aria-label={activeField === 'qty' ? t('line_edit_qty') : t('cart_price')}
+                    value={activeValue}
+                    onChange={(e) => {
+                      setActive(e.target.value);
+                      setReplaceNext(false);
+                    }}
+                    placeholder="0"
+                    className="w-full rounded-xl border-2 border-[var(--ms-brand)] bg-white px-4 py-3 text-right font-bold text-3xl tabular-nums outline-none"
+                  />
+                )}
 
                 <div className="grid grid-cols-3 gap-2">
                   {NUMPAD_KEYS.map((k) => (

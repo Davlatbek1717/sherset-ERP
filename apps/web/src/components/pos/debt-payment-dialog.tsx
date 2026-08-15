@@ -302,6 +302,12 @@ export function DebtPaymentDialog({
       // Smena yig'indilari o'zgardi: naqd to'lov «kutilgan naqd»ga kiradi.
       qc.invalidateQueries({ queryKey: ['cashier-session-current'] });
       qc.invalidateQueries({ queryKey: ['debt-pos-summary'] });
+      // «Mijozlar» paneli va mijoz kartasi O'Z kalitlari bilan o'qiydi —
+      // ular ham yangilanmasa, to'langan qarz ekranda ESKI raqam bo'lib
+      // qolardi (2026-08-15, jonli brauzerda o'lchandi: balans 0, panel 80k).
+      qc.invalidateQueries({ queryKey: ['pos-customers-debt'] });
+      qc.invalidateQueries({ queryKey: ['customer-card-debt'] });
+      qc.invalidateQueries({ queryKey: ['customer-card-history'] });
       onPaid?.(result);
       onOpenChange(false);
     },
@@ -362,9 +368,12 @@ export function DebtPaymentDialog({
   const oldestDays = daysSince(summary?.oldestAt ?? null);
 
   return (
-    <Dialog.Root open={open} onOpenChange={onOpenChange}>
+    /* 🔴 `modal={false}` ATAYLAB — sabab `rasmilashtirish-modal.tsx` dagi izohda
+       (Radix modal rejimi qobiq ekran-klaviaturasini bosib qo'yardi). Tashqi
+       bosishdan `noAccidentalClose` himoya qiladi; fon — o'z qatlamimiz. */
+    <Dialog.Root modal={false} open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-50 bg-black/50" />
+        <div aria-hidden className="fixed inset-0 z-50 bg-black/50" />
         {/* K-1: tavsif matni ataylab yo'q — Radix'ning rasmiy opt-out'i
             (`aria-describedby={undefined}`) console warning'ni o'chiradi. */}
         <Dialog.Content

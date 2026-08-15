@@ -1,6 +1,7 @@
 'use client';
 
 import { api } from '@/lib/api-client';
+import { isShersetShell } from '@/lib/pos-device';
 import { formatAmountInput, parseAmountToMinor } from '@/lib/pos/parse-amount';
 import { formatForeignMajor } from '@/lib/pos/receipt-payments';
 import { RATE_SCALE, convertByRateE8 } from '@moysklad/money';
@@ -104,6 +105,14 @@ export function RasmiyashtirishModal({
 }: Props) {
   const t = useTranslations('pages.pos');
   const tCommon = useTranslations('common');
+  /**
+   * Kassa qobig'imi (exe)? Effektda — SSR/hydration xavfsiz (kassa-kirish
+   * naqshi). Qobiqda summa maydoni HAQIQIY input EMAS (pastdagi izoh).
+   */
+  const [shell, setShell] = useState(false);
+  useEffect(() => {
+    setShell(isShersetShell());
+  }, []);
   // ── Counterparty ──────────────────────────────────────────────────────────
   const [search, setSearch] = useState('');
   const [agent, setAgent] = useState<CounterpartyRow | null>(null);
@@ -304,7 +313,15 @@ export function RasmiyashtirishModal({
   };
 
   return (
+    /* 🔴 `modal={false}` ATAYLAB (2026-08-15, exe'da o'lchandi): Radix modal
+       rejimi butun `<body>`ga `pointer-events:none` qo'yadi, kassa qobig'ining
+       ekran-klaviaturasi esa AYNAN body'ga chizilgan (`desktop/preload.js`) —
+       tugmalari bosilmay, bosish overlay'ga tushib fokus inputdan chiqib
+       ketardi (mijoz qidiruvida harf yozib bo'lmasdi). Non-modal rejimda
+       tashqi bosishdan `noAccidentalClose` himoya qiladi; orqa fonni pastdagi
+       o'z qatlamimiz to'sadi (Radix `Overlay` modal={false} da chizilmaydi). */
     <Dialog.Root
+      modal={false}
       open={open}
       onOpenChange={(o) => {
         if (!o) reset();
@@ -312,13 +329,13 @@ export function RasmiyashtirishModal({
       }}
     >
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm" />
+        <div aria-hidden className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm" />
         {/* K-1: tavsif matni ataylab yo'q — Radix'ning rasmiy opt-out'i
             (`aria-describedby={undefined}`) console warning'ni o'chiradi. */}
         <Dialog.Content
           {...noAccidentalClose}
           aria-describedby={undefined}
-          className="fixed left-1/2 top-1/2 z-50 w-[min(96vw,42rem)] -translate-x-1/2 -translate-y-1/2 rounded-2xl bg-[var(--ms-bg-surface)] shadow-2xl outline-none flex flex-col max-h-[92dvh]"
+          className="fixed left-1/2 top-1/2 z-50 w-[min(96vw,57rem)] -translate-x-1/2 -translate-y-1/2 rounded-2xl bg-[var(--ms-bg-surface)] shadow-2xl outline-none flex flex-col max-h-[92dvh]"
         >
           {/* Header */}
           <div className="shrink-0 bg-[var(--ms-bg-app)] px-6 py-4 border-b border-[var(--ms-border)] rounded-t-2xl">
@@ -344,8 +361,10 @@ export function RasmiyashtirishModal({
 
           {/* Two-column body */}
           <div className="flex flex-1 min-h-0">
-            {/* LEFT — payment summary, confirm pinned at bottom */}
-            <div className="flex w-60 shrink-0 flex-col border-r border-[var(--ms-border)]">
+            {/* LEFT — payment summary, confirm pinned at bottom.
+                2026-08-15 (egasi): ustun 2× kengaytirildi (15rem → 30rem) —
+                mijoz qidiruvi/ro'yxati sensorda juda tor edi. */}
+            <div className="flex w-[30rem] shrink-0 flex-col border-r border-[var(--ms-border)]">
               {/* Scrollable area */}
               <div className="flex-1 overflow-y-auto flex flex-col">
                 {/* Counterparty — always shown; optional for oddiy, required for usta/dokon */}
@@ -771,25 +790,43 @@ export function RasmiyashtirishModal({
 
             {/* RIGHT — numpad panel */}
             <div className="flex flex-1 flex-col gap-2 p-4 bg-[var(--ms-bg-app)]">
-              {/* Active field — real input, keyboard + numpad both work */}
+              {/* Active field. Brauzerda — haqiqiy input (qurilma klaviaturasi
+                  ham ishlasin). QOBIQDA (exe) esa KO'RSATKICH-DIV: haqiqiy
+                  input fokus olishi bilan qobiq o'z ekran-klaviaturasini
+                  chiqarib, oynaning O'Z numpadini bosib qo'yardi (2026-08-15,
+                  monoblokda). Kiritish yo'li qobiqda faqat shu numpad —
+                  `DebtPaymentDialog` dagi summa maydoni bilan bir naqsh. */}
               <div
                 className={`rounded-xl border-2 px-4 py-2 transition-colors ${colors.border} bg-white`}
               >
                 <div className="text-[10px] font-bold uppercase tracking-widest text-[var(--ms-text-muted)] mb-0.5">
                   {fieldLabel[activeField]}
                 </div>
-                <input
-                  key={activeField}
-                  type="number"
-                  inputMode="decimal"
-                  min="0"
-                  value={INPUTS[activeField]}
-                  onChange={(e) => setActive(e.target.value)}
-                  placeholder="0"
-                  // biome-ignore lint/a11y/noAutofocus: intentional POS focus — cashier types the payment amount immediately when this modal opens.
-                  autoFocus
-                  className="w-full bg-transparent text-2xl font-bold tabular-nums text-[var(--ms-text-primary)] leading-none outline-none placeholder:text-[var(--ms-text-muted)] placeholder:font-normal placeholder:text-lg [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-                />
+                {shell ? (
+                  <div
+                    data-test-id="pos-amount-display"
+                    className={`w-full text-2xl font-bold tabular-nums leading-none ${
+                      INPUTS[activeField]
+                        ? 'text-[var(--ms-text-primary)]'
+                        : 'font-normal text-lg text-[var(--ms-text-muted)]'
+                    }`}
+                  >
+                    {INPUTS[activeField] || '0'}
+                  </div>
+                ) : (
+                  <input
+                    key={activeField}
+                    type="number"
+                    inputMode="decimal"
+                    min="0"
+                    value={INPUTS[activeField]}
+                    onChange={(e) => setActive(e.target.value)}
+                    placeholder="0"
+                    // biome-ignore lint/a11y/noAutofocus: intentional POS focus — cashier types the payment amount immediately when this modal opens.
+                    autoFocus
+                    className="w-full bg-transparent text-2xl font-bold tabular-nums text-[var(--ms-text-primary)] leading-none outline-none placeholder:text-[var(--ms-text-muted)] placeholder:font-normal placeholder:text-lg [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                  />
+                )}
               </div>
 
               {/* Aniq summa */}

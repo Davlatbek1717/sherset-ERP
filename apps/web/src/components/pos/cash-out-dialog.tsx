@@ -122,9 +122,12 @@ export function CashOutDialog({ open, onOpenChange, sessionId, currency = 'UZS',
   const pick = kind === 'expense' ? setExpenseItemId : setRecipientId;
 
   return (
-    <Dialog.Root open={open} onOpenChange={onOpenChange}>
+    /* 🔴 `modal={false}` ATAYLAB — sabab `rasmilashtirish-modal.tsx` dagi izohda
+       (Radix modal rejimi qobiq ekran-klaviaturasini bosib qo'yardi). Tashqi
+       bosishdan `noAccidentalClose` himoya qiladi; fon — o'z qatlamimiz. */
+    <Dialog.Root modal={false} open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-50 bg-black/50" />
+        <div aria-hidden className="fixed inset-0 z-50 bg-black/50" />
         {/* K-1: tavsif matni ataylab yo'q — Radix'ning rasmiy opt-out'i
             (`aria-describedby={undefined}`) console warning'ni o'chiradi. */}
         <Dialog.Content
