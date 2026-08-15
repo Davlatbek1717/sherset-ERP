@@ -332,7 +332,9 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
 > **🕒 2026-08-15a (KASSA POS — egasining 5 shikoyati: savat ✕ · OSK×modal · tel-qidiruv, `f2036cc0`,
-> ⚠️ DEPLOY QILINMAGAN) —** egasi 3 skrinshot bilan keldi (exe v1.8.0). Ildiz sabablar va tuzatishlar:
+> ✅ DEPLOYED `44970745 → 07ae9d3d`: sayt/health 200, `sherset-v2-web` restart, sotuv-chunk'da
+> `sotuv-cart-line-remove` + `pos-amount-display` grep-tasdiq; api restart YO'Q — web-only, to'g'ri.
+> SSH ~40 daq yopiq turdi (22-port timeout, sayt tirik edi) — keyin o'zi ochildi) —** egasi 3 skrinshot bilan keldi (exe v1.8.0). Ildiz sabablar va tuzatishlar:
 > (1) savatda bitta tovarni o'chirish yo'li ko'rinmas edi (faqat qator-oynasi ichida) → har qatorga 56px ✕
 > (`sotuv-mode.tsx`, `onRemoveLine`); (2) to'lov oynasi ustidan qobiq raqam-klaviaturasi chiqardi — summa
 > maydoni haqiqiy `<input autoFocus>` edi → qobiqda ko'rsatkich-DIV (`isShersetShell`, rasmilashtirish +
