@@ -97,6 +97,25 @@ export const KIOSK_ALLOWED: readonly Rule[] = [
     exact: true,
     why: "omborga chiqadigan chek mazmuni (yig'ish varag'i)",
   },
+  // ── Hisob-kitob cheki (egasi, 2026-08-16): kassir mijoz panelidan ────────
+  // 🔴 IKKALA yo'l birga: bugun ertalab aynan «bir funksiya, ikki endpoint,
+  // ro'yxatda bittasi» sinfi kuydirgan edi (marshrut ochiq, varaq yopiq → 403).
+  // Ikkinchi qulf (ruxsat matritsasi) allaqachon ochiq — kassirda
+  // `counterparty.update` bor (u `pos-contact` uchun berilgan), shuning uchun
+  // bu qator o'sha ruxsatning kiosk qamrovini ATAYLAB kengaytiradi: egasi
+  // «kassirga ham ruxsat» dedi va xabar uning shaxsiy raqamidan ketadi.
+  {
+    prefix: '/counterparty-debt-receipts/:id/preview',
+    methods: ['GET'],
+    exact: true,
+    why: 'mijozga ketadigan hisob-kitob chekini KO`RISH',
+  },
+  {
+    prefix: '/counterparty-debt-receipts/:id/send',
+    methods: ['POST'],
+    exact: true,
+    why: 'hisob-kitob chekini mijozga yuborish',
+  },
 
   // ── Mijoz: o'qish + YARATISH + TOR tahrir (F9 mijoz kartasi) ─────────────
   // 🔴 To'rt AYNIQ qator — ilgari bu yerda bitta PREFIKS qoida turardi

@@ -3,8 +3,8 @@
 import { api } from '@/lib/api-client';
 import type { ListEnvelope } from '@moysklad/contracts';
 import type { CurrencyCode } from '@moysklad/money/currencies';
-import { Input, formatMoney } from '@moysklad/ui';
-import { useQuery } from '@tanstack/react-query';
+import { Input, formatMoney, useToast } from '@moysklad/ui';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { ChevronRight, Receipt } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useState } from 'react';
@@ -38,6 +38,14 @@ interface DebtSummaryLite {
   balanceMinor: string | null;
 }
 
+/** `GET /counterparty-debt-receipts/:id/preview` — mijozga ketadigan matn. */
+interface DebtReceiptPreview {
+  messages: string[];
+  canSend: boolean;
+  reason: string | null;
+  phone: string | null;
+}
+
 interface ChekRow {
   id: string;
   name: string;
@@ -68,6 +76,15 @@ export function CustomersPanel({
   const [search, setSearch] = useState('');
   const [agent, setAgent] = useState<CustomerCardRow | null>(null);
   const [cheksOpen, setCheksOpen] = useState(false);
+  /**
+   * «Hisob-kitob cheki» — mijozning BUTUN hisobi Telegramga (egasi,
+   * 2026-08-16). Panel naqshi «Cheklari» bilan bir xil: modal EMAS, ichki
+   * ochiluvchi blok — qobiqda Radix modali ekran-klaviaturasini o'ldiradi
+   * (xotira: `radix-modal-kills-shell-osk`) va sensorli ekranda ichki blok
+   * qulayroq.
+   */
+  const [receiptOpen, setReceiptOpen] = useState(false);
+  const { toast } = useToast();
 
   const { data: cpData, isLoading: cpLoading } = useQuery<ListEnvelope<CustomerCardRow>>({
     queryKey: ['pos-customers-search', search],
@@ -89,10 +106,30 @@ export function CustomersPanel({
     enabled: !!agent && cheksOpen,
   });
 
+  // Matn SERVERDAN keladi — mijoz ko'radigan xabarning O'ZI. Bu yerda ikkinchi
+  // format nusxasi YO'Q: bo'lsa, u eskirib haqiqatdan ajralib qolardi.
+  const receiptPreview = useQuery<DebtReceiptPreview>({
+    queryKey: ['pos-debt-receipt-preview', agent?.id],
+    queryFn: () => api.get(`/counterparty-debt-receipts/${agent?.id}/preview`),
+    enabled: !!agent && receiptOpen,
+    staleTime: 0,
+  });
+
+  const sendReceipt = useMutation({
+    mutationFn: () =>
+      api.post<{ queued: number }>(`/counterparty-debt-receipts/${agent?.id}/send`, {}),
+    onSuccess: (r) => {
+      setReceiptOpen(false);
+      toast.success(t('debt_receipt_queued', { n: r?.queued ?? 1 }));
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
   function selectAgent(row: CustomerCardRow) {
     setAgent(row);
-    // Oldingi mijozning ochiq cheklar ro'yxati yangisiga «meros» qolmasin.
+    // Oldingi mijozning ochiq bloklari yangisiga «meros» qolmasin.
     setCheksOpen(false);
+    setReceiptOpen(false);
   }
 
   return (
@@ -218,7 +255,70 @@ export function CustomersPanel({
                 {t('customers_cheks')}
               </button>
             </div>
+            <button
+              type="button"
+              data-test-id="pos-customers-debt-receipt"
+              onClick={() => setReceiptOpen((v) => !v)}
+              className={`h-[var(--pos-touch-min)] rounded-xl border text-[16px] ${
+                receiptOpen
+                  ? 'border-[var(--ms-text-brand)] text-[var(--ms-text-brand)]'
+                  : 'border-[var(--ms-border)] hover:bg-[var(--ms-bg-hover)]'
+              }`}
+            >
+              {t('debt_receipt_btn')}
+            </button>
           </div>
+
+          {/* ── Hisob-kitob cheki: KO'RIB CHIQIB, keyin yuborish ────────── */}
+          {receiptOpen && (
+            <div
+              data-test-id="pos-debt-receipt"
+              className="flex flex-col gap-2 rounded-xl border border-[var(--ms-border)] p-3"
+            >
+              {receiptPreview.isLoading && (
+                <p className="text-[16px] text-[var(--ms-text-muted)]">
+                  {t('debt_receipt_loading')}
+                </p>
+              )}
+              {receiptPreview.error && (
+                <p className="text-[16px] text-[var(--ms-text-destructive)]">
+                  {(receiptPreview.error as Error).message}
+                </p>
+              )}
+              {receiptPreview.data && (
+                <>
+                  {/* Yuborib bo'lmasa SABAB ko'rinadi — «tugma ishlamadi»
+                      eng qimmat shikoyat (telefon yo'q / raqam ulanmagan). */}
+                  {!receiptPreview.data.canSend && receiptPreview.data.reason && (
+                    <p
+                      data-test-id="pos-debt-receipt-reason"
+                      className="rounded-lg bg-amber-50 px-3 py-2 text-[15px] text-amber-800"
+                    >
+                      {receiptPreview.data.reason}
+                    </p>
+                  )}
+                  {receiptPreview.data.messages.map((m, i) => (
+                    <pre
+                      // biome-ignore lint/suspicious/noArrayIndexKey: bo'laklar tartibli va o'zgarmaydi
+                      key={i}
+                      className="max-h-[280px] overflow-auto whitespace-pre-wrap rounded-lg bg-[var(--ms-bg-hover)] p-3 text-[14px] leading-relaxed"
+                    >
+                      {m}
+                    </pre>
+                  ))}
+                  <button
+                    type="button"
+                    data-test-id="pos-debt-receipt-send"
+                    disabled={!receiptPreview.data.canSend || sendReceipt.isPending}
+                    onClick={() => sendReceipt.mutate()}
+                    className="h-[var(--pos-touch-min)] rounded-xl bg-[var(--ms-bg-brand)] font-semibold text-[17px] text-white disabled:opacity-50"
+                  >
+                    {t('debt_receipt_send')}
+                  </button>
+                </>
+              )}
+            </div>
+          )}
 
           {/* ── Cheklari (F6 qaytarish shu yerdan ochiladi) ────────────── */}
           {cheksOpen &&

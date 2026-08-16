@@ -80,6 +80,12 @@ describe('isKioskAllowed — RUXSAT ETILGANLAR', () => {
     // ikkinchi 403. Printer marshruti (`/sklad-keepers`) ochiq bo'lgani holda
     // varaqning o'zi yopiq qolgan edi — ro'yxat yarim to'ldirilgan.
     ['GET', '/restock-tasks/picking-sheets/retailsale/8f7d1c22-0000-4000-8000-000000000001'],
+    // 🔴 «Hisob-kitob cheki» kassadan (egasi, 2026-08-16): kassir mijoz
+    // panelida matnni KO'RADI va yuboradi. Ro'yxatga IKKALA yo'l ham
+    // qo'shilishi shart — ertalabki yig'ish-varag'i hodisasi aynan «bir
+    // funksiya, ikki endpoint, ro'yxatda bittasi» sinfida edi.
+    ['GET', '/counterparty-debt-receipts/8f7d1c22-0000-4000-8000-000000000001/preview'],
+    ['POST', '/counterparty-debt-receipts/8f7d1c22-0000-4000-8000-000000000001/send'],
     ['GET', '/products?q=viko'],
     ['GET', '/counterparties'],
     ['POST', '/counterparties'],
@@ -116,6 +122,9 @@ describe('isKioskAllowed — DEFAULT DENY', () => {
     // ni chaqirmaydi va ruxsat ham qolmadi. Bu qator ro'yxat «ehtiyot uchun»
     // kengayib ketmasligini qo'riqlaydi.
     ['GET', '/sklad-keepers'],
+    // Hisob-kitob cheki: FAQAT ko'rish + yuborish. Boshqa metod/yo'l yopiq.
+    ['DELETE', '/counterparty-debt-receipts/8f7d1c22-0000-4000-8000-000000000001/send'],
+    ['GET', '/counterparty-debt-receipts'],
     // 🔴 `/restock-tasks` ostidan FAQAT chop-varag'i ochilgan. Omborchi
     // navbati, vazifa detali va qator-tasdiqlash kassirga TEGISHLI EMAS —
     // bitta keng prefiks qoidasi ularni jimgina ochib yuborardi.
