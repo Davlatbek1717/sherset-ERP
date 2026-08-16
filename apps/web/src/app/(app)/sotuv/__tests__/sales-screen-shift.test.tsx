@@ -541,6 +541,56 @@ describe('Smena yopish — YOPIQ (blind) sanoq (F5, spec §5.4 Q7)', () => {
       varianceNote: '10$ yo‘qoldi',
     });
   });
+
+  // 2026-08-16 prod-hodisa: kassir dollar maydonini BO'SH qoldirib «Davom
+  // etish»ga o'tdi — review'da esa input ham, sanoqqa qaytish ham yo'q (Q7),
+  // server 400 «sanalgan dollarni kiriting» deb 5 marta rad etdi. Kassir
+  // «kiritadigan joy yo'q» holatida qolib ketdi. Shartnoma: server dollar
+  // sanog'ini MAJBURIY qilgan holatda FE ham review'ga sanoqsiz O'TKAZMAYDI.
+  it('dollar BOR, sanalmagan — «Davom etish» BLOKLANGAN va sabab ko‘rinadi', async () => {
+    vi.mocked(api.get).mockImplementation(
+      router(
+        shiftRoutes([
+          {
+            match: /\/z-report$/,
+            value: { expectedCashMinor: '5000000', expectedUsdCashMinor: '100' },
+          },
+        ]),
+      ),
+    );
+    const user = userEvent.setup();
+    renderWithProviders(<SotuvPage />);
+    await openShiftTab(user);
+    await user.click(screen.getByRole('button', { name: 'Smenani yopish' }));
+    expect(await screen.findByTestId('close-cash-usd')).toBeInTheDocument();
+
+    await user.type(screen.getByPlaceholderText(/Kassadagi naqd pul/), '50000');
+    // So'm sanaldi, dollar YO'Q — tugma yopiq, sabab yozuvi ko'rinadi.
+    expect(screen.getByTestId('close-continue')).toBeDisabled();
+    expect(screen.getByTestId('close-usd-required')).toBeInTheDocument();
+
+    // «Sanadim, dollar qolmagan» = 0 ham qabul (null bilan aralashmaydi).
+    await user.type(screen.getByTestId('close-cash-usd'), '0');
+    expect(screen.getByTestId('close-continue')).toBeEnabled();
+    expect(screen.queryByTestId('close-usd-required')).not.toBeInTheDocument();
+  });
+
+  // Xuddi shu hodisaning ikkinchi qirrasi: preview hali KELMAGAN payt
+  // usdInPlay noma'lum — kassir tez terib «Davom etish»ni bossa, dollar
+  // maydoni ko'rinmasdan review'ga o'tib qolardi. Preview kelmaguncha
+  // davom etish yopiq (kutilgan summa baribir DOM'da YO'Q — blind buzilmaydi).
+  it('preview kelmaguncha «Davom etish» ochilmaydi', async () => {
+    vi.mocked(api.get).mockImplementation(
+      router(shiftRoutes([{ match: /\/z-report$/, value: () => new Promise(() => {}) }])),
+    );
+    const user = userEvent.setup();
+    renderWithProviders(<SotuvPage />);
+    await openShiftTab(user);
+    await openCounting(user);
+
+    await user.type(screen.getByPlaceholderText(/Kassadagi naqd pul/), '50000');
+    expect(screen.getByTestId('close-continue')).toBeDisabled();
+  });
 });
 
 /**

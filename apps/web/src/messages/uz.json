@@ -7946,6 +7946,7 @@
       "close_continue": "Davom etish",
       "close_counted": "Sanadingiz",
       "close_note_required": "Farq bor — izoh majburiy",
+      "close_usd_required": "Dollarga savdo bo'lgan — kassadagi naqd dollarni ham sanab kiriting (dollar qolmagan bo'lsa 0 yozing)",
       "closing": "Yopilmoqda...",
       "closing_cash_placeholder": "Kassadagi naqd pul (so'm)",
       "closing_cash_usd_placeholder": "Kassadagi naqd dollar",

@@ -163,6 +163,16 @@ export function SmenaMode({
     });
   };
 
+  // 2026-08-16 prod-hodisa: dollar oqimi bor smenada kassir dollar maydonini
+  // bo'sh qoldirib review'ga o'tdi — u yerda input ham, qaytish ham yo'q (Q7),
+  // server esa yopishni 400 bilan rad etaverdi («sanalgan dollarni kiriting»).
+  // Server sanoqni MAJBURIY qilgan holatda FE ham review'ga o'tkazmaydi:
+  // «sanadim, dollar yo'q» = 0 OSHKORA yoziladi (null bilan aralashmaydi).
+  const usdCountMissing = usdInPlay && closingCashUsd.trim() === '';
+  // Preview kelmaguncha usdInPlay noma'lum — o'sha oynada davom etish ham
+  // yopiq turadi (kutilgan summa DOM'ga chiqmaydi, blind-Q7 buzilmaydi).
+  const closePreviewPending = expectedCash === null;
+
   /** Butun oqimni bekor qilish — sanoq TOZALANADI (review'dan qaytish yo'li YO'Q). */
   const cancelCloseFlow = () => {
     setShowCloseForm(false);
@@ -516,11 +526,22 @@ export function SmenaMode({
               ))}
             </div>
 
+            {/* Dollar sanalmagan — nega tugma yopiqligini kassir KO'RADI
+                (jim disabled «tizim qotib qoldi» deb o'qilardi). */}
+            {usdCountMissing && (
+              <p
+                className="text-[14px] font-medium text-amber-700"
+                data-test-id="close-usd-required"
+              >
+                {t('close_usd_required')}
+              </p>
+            )}
+
             <div className="flex gap-2">
               <button
                 type="button"
                 onClick={() => setCloseStage('review')}
-                disabled={closingCash.trim() === ''}
+                disabled={closingCash.trim() === '' || closePreviewPending || usdCountMissing}
                 data-test-id="close-continue"
                 className="h-[var(--pos-touch-min)] flex-1 rounded-xl bg-red-600 text-[18px] font-bold text-white hover:bg-red-700 disabled:opacity-40"
               >

@@ -239,6 +239,11 @@ describe('Smena yopish — `5e3` kiritmasi sahifani yiqitmaydi', () => {
     fireEvent.change(screen.getByPlaceholderText(/Kassadagi naqd pul/), {
       target: { value: '5e3' },
     });
+    // 2026-08-16 shartnoma: dollar oqimi bor smenada dollar sanalmaguncha
+    // review'ga o'tib bo'lmaydi — sinov nishoni so'm maydonidagi `5e3`.
+    fireEvent.change(await screen.findByTestId('close-cash-usd'), {
+      target: { value: '100' },
+    });
     await goReview(user);
 
     // Sahifa tirik va farq 0 sanoqdan hisoblangan: 0 − 50 000 = kamomad.
