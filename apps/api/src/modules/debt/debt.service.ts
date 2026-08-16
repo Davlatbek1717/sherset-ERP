@@ -221,7 +221,13 @@ export class DebtService {
       accountId,
       debtId,
       nextContactAt,
-      meta: { docType: 'debtpayment', docId, organizationId: null },
+      meta: {
+        docType: 'debtpayment',
+        docId,
+        organizationId: null,
+        // Mijozga «✅ To'lovingiz qabul qilindi» xabari shundan ketadi.
+        source: 'debtpayment',
+      },
     });
   }
 
@@ -727,7 +733,13 @@ export class DebtService {
         input.currency,
         BigInt(input.totalMinor),
         // Qarz kartochkasida organizatsiya o'lchovi yo'q ⇒ jurnalda `null`.
-        { docType: 'debt', docId: debt.id, organizationId: null },
+        {
+          docType: 'debt',
+          docId: debt.id,
+          organizationId: null,
+          // Mijozga «🛒 Qarzga qo'shildi» xabari shundan ketadi.
+          source: 'debt',
+        },
       );
 
       // §3.3 — izoh muloqot tarixiga «Kassir» yozuvi bo'lib tushadi.
@@ -2188,7 +2200,14 @@ export class DebtService {
           debt.currency,
           -debt.totalMinor,
           // Jurnal (Faza 9) — teskari yozuv o'sha qarz kartochkasiga havola qiladi.
-          { docType: 'debt', docId: id, organizationId: null },
+          {
+            docType: 'debt',
+            docId: id,
+            organizationId: null,
+            // Delta MANFIY ⇒ mijozga «↩️ Qarzingizdan ayirildi» ketadi:
+            // qarz o'chirilgani undan yashirilmasligi kerak.
+            source: 'debt',
+          },
         );
       }
     });

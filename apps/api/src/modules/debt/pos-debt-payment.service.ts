@@ -455,7 +455,13 @@ export class PosDebtPaymentService {
             accountId,
             debtId: alloc.debtId,
             // `Debt`da organizatsiya o'lchovi yo'q ⇒ jurnalda `organizationId` null.
-            meta: { docType: 'debtpayment', docId: batchId, organizationId: null },
+            meta: {
+              docType: 'debtpayment',
+              docId: batchId,
+              organizationId: null,
+              // Mijozga «✅ To'lovingiz qabul qilindi» xabari shundan ketadi.
+              source: 'debtpayment',
+            },
           });
 
           receipts.push({

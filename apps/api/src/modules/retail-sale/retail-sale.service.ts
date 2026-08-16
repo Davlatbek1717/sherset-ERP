@@ -1206,7 +1206,15 @@ export class RetailSaleService {
           debtAgentId,
           sale.session.cashDesk.currency,
           debtAmount,
-          { docType: 'retailsale', docId: id, organizationId: sale.organizationId },
+          {
+            docType: 'retailsale',
+            docId: id,
+            organizationId: sale.organizationId,
+            // Mijozga Telegram xabari shu `source` orqali ketadi. U OPTIONAL —
+            // unutilsa typecheck jim o'tadi va xabar oqimi o'chib qoladi
+            // (qo'riqchi: `counterparty-debt-notify/debt-source-wiring.test.ts`).
+            source: 'retailsale',
+          },
         );
         // Yangi balansni O'QIYMIZ va hodisaga yozamiz — «kimning qarzi tez
         // o'sadi» savoliga keyin javob berish uchun o'sha ondagi holat kerak.
@@ -1807,7 +1815,15 @@ export class RetailSaleService {
           debtorId,
           original.session.cashDesk.currency,
           -debtReturn,
-          { docType: 'retailsale', docId: refundSale.id, organizationId: original.organizationId },
+          {
+            docType: 'retailsale',
+            docId: refundSale.id,
+            organizationId: original.organizationId,
+            // Delta MANFIY ⇒ mijozga «↩️ Qarzingizdan ayirildi» ketadi. Bu
+            // ataylab: qaytarish jim qolsa, mijozdagi oxirgi xabar «qarzga
+            // qo'shildi» bo'lib qolardi va raqami haqiqatdan uzilardi.
+            source: 'retailsale',
+          },
         );
       }
 
