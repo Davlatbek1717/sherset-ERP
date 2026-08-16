@@ -331,6 +331,28 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-08-16m (QARZ — mijoz havolani bosib O'Z CHEKINI ko'radi; `ec82f7da`) —**
+> ✅ DEPLOYED `98c1e245 → ec82f7da`: sayt/health 200, `POST /p/:token/document` jonli
+> (noma'lum token → 404), build chunk'ida chek renderer BOR va eski «keyingi sprint»
+> yozuvi **0 marta**. Egasi boshqa tizim xabarini namuna qilib ko'rsatdi (har chek uchun
+> «Chek: <havola>» qatori).
+> 🔴 **O'LCHANGAN: havola BEFOYDA edi** — `/p/<token>` sahifasi hujjat TANASINI umuman
+> ko'rsatmasdi («To'liq hujjat ko'rinishi keyingi sprintda» + hujjat UUID'i). Ya'ni
+> 16l dagi «🧾 Chek» havolasi mijozga ichki identifikatorni ko'rsatardi.
+> **Endi:** `POST /p/:token/document` (GET emas — parolli havolada parol so'rov qatorida
+> va nginx logida ketmasin; guard-coverage allowlist'ida sababi bilan) + sahifa haqiqiy
+> chekni chizadi — do'kon, raqam, sana, sotuvchi/xaridor, har tovar (nomi · soni × narxi ·
+> summa), jamilar, to'lovlar, «Sizning qarzingiz». Telefonda o'qish uchun KARTA ko'rinishi
+> (72mm lenta emas), raqamlar `buildReceiptModel` dan — qog'oz chek/Electron/ESC-POS bilan
+> AYNI manba, bu faylda hech nima hisoblanmaydi.
+> Xabarda havola shakli «🧾 Chek: <havola>»; token 43 → **12 belgi** (mijoz ko'radigan URL
+> qisqa bo'lsin; umumiy `Publication` tokeni 43 ligicha qoladi).
+> Gate: tc 0 · lint 0 · web 4055 · api 8406. Begona qizil o'zgarmadi.
+> **QOLDI:** egasi tugmani bosib yuborsin — shundan keyin publication'lar tug'iladi va
+> havolani brauzerda ochib ko'rish mumkin (hozir prodda 0 ta).
+>
+> ---
+>
 > **🕒 2026-08-16l (QARZ — mijoz kartasidan «HISOB-KITOB CHEKI» Telegramga; `98c1e245`) —**
 > ✅ DEPLOYED `64d1c244 → 98c1e245`: sayt/health 200, yangi endpoint tokensiz **401** (ya'ni
 > marshrut bor va qo'riqlangan), prod HEAD `98c1e245`. Prodda `PUBLIC_APP_URL` ham qo'shildi
