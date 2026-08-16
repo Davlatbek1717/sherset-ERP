@@ -3,7 +3,7 @@
 // F2 — POS-qamrovli tema tokenlari (`.pos-theme` ildiz klassi ostida).
 import './pos-theme.css';
 
-import { CheklarMode } from '@/app/(app)/sotuv/_components/cheklar-mode';
+import { type ChekDetailPosition, CheklarMode } from '@/app/(app)/sotuv/_components/cheklar-mode';
 import { NavbatMode } from '@/app/(app)/sotuv/_components/navbat-mode';
 import type { CartLine, SaleRow, UnresolvedSaleRow } from '@/app/(app)/sotuv/_components/pos-types';
 import { SmenaMode } from '@/app/(app)/sotuv/_components/smena-mode';
@@ -904,6 +904,45 @@ function SalesScreen({
     toast.success(t('draft_saved'));
   }, [cart, cartLocked, payingSale, discountPct, toast, t]);
 
+  // TO'LANGAN CHEKNI «TAHRIRLASH» = SAVATGA NUSXALASH (2026-08-16, egasi).
+  // Chekning o'zi O'ZGARMAYDI (buxgalteriya/ombor — buning uchun qaytarish
+  // bor): pozitsiyalar savatga ko'chadi, kassir o'zgartirib yangi sotuv
+  // qiladi yoki sotuvsiz chek chiqaradi. Joriy savat bo'sh bo'lmasa avval
+  // avto-qoralamaga olinadi (restoreDraft naqshi — hech nima yo'qolmaydi).
+  const copyChekToCart = useCallback(
+    (positions: ChekDetailPosition[]) => {
+      if (cartLocked || payingSale != null) {
+        toast.error(t('chek_copy_blocked'));
+        return;
+      }
+      if (positions.length === 0) return;
+      if (cart.length > 0) {
+        setCartDrafts((prev) => [
+          ...prev,
+          { id: newDraftId(), createdAt: Date.now(), discountPct, lines: cart },
+        ]);
+      }
+      setCart(
+        positions.map((p) => ({
+          productId: p.product.id,
+          productName: p.product.name,
+          quantity: p.quantity,
+          // Chekdagi BIRLIK narxi (chegirma foizi ko'chirilmaydi — kassir
+          // baribir o'zgartirgani ochyapti).
+          priceMinor: BigInt(p.priceMinor),
+          priceStr: (Number(p.priceMinor) / 100).toString(),
+          ...cardPrices(p.product.buyPrice ?? null, (p.product.salePrices ?? []) as never),
+        })),
+      );
+      setDiscountPct(0);
+      setDiscountEditing(false);
+      setSelectedChekId(null);
+      setMode('sotuv');
+      toast.success(t('chek_copied'));
+    },
+    [cart, cartLocked, payingSale, discountPct, cardPrices, toast, t],
+  );
+
   // SOTUVSIZ CHEK (2026-08-16, egasi): savatdan chek — sotuv/hujjat YO'Q,
   // serverga hech nima yozilmaydi. Chek raqami vaqtdan (haqiqiy cheklar
   // bilan to'qnashmaydi). Muvaffaqiyatda savat qoralamaga o'tadi — «chekni
@@ -1605,6 +1644,7 @@ function SalesScreen({
                 setChekSearch={setChekSearch}
                 selectedChekId={selectedChekId}
                 setSelectedChekId={setSelectedChekId}
+                onCopyToCart={copyChekToCart}
               />
             </div>
           )}

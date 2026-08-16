@@ -37,8 +37,18 @@ interface ChekDetailPosition {
   priceMinor: string;
   sumMinor: string;
   discount: string;
-  product: { id: string; name: string; code: string | null };
+  product: {
+    id: string;
+    name: string;
+    code: string | null;
+    /** Savatga nusxalashda narx-pol/foyda uchun (server `findById` yuboradi). */
+    buyPrice?: string | null;
+    salePrices?: Array<{ priceTypeId: string; value: string }> | null;
+  };
 }
+
+/** Sahifaga eksport — «Savatga nusxalash» mapping'i o'sha yerda. */
+export type { ChekDetailPosition };
 interface ChekDetailData {
   id: string;
   name: string;
@@ -62,7 +72,15 @@ interface ChekDetailData {
   positions: ChekDetailPosition[];
 }
 
-function ChekDetailPanel({ saleId, onBack }: { saleId: string; onBack: () => void }) {
+function ChekDetailPanel({
+  saleId,
+  onBack,
+  onCopyToCart,
+}: {
+  saleId: string;
+  onBack: () => void;
+  onCopyToCart: (positions: ChekDetailPosition[]) => void;
+}) {
   const t = useTranslations('pages.sotuv');
   const tCommon = useTranslations('common');
   const { data, isLoading } = useQuery<ChekDetailData>({
@@ -209,6 +227,19 @@ function ChekDetailPanel({ saleId, onBack }: { saleId: string; onBack: () => voi
           className="flex h-8 items-center gap-1.5 rounded-lg border border-[var(--ms-border)] px-3 text-xs font-medium text-[var(--ms-text-muted)] hover:bg-[var(--ms-bg-hover)]"
         >
           🖨 {t('receipt')}
+        </button>
+        {/* «TAHRIRLASH» = SAVATGA NUSXALASH (2026-08-16, egasi). To'langan
+            chekning O'ZI o'zgartirilmaydi (buxgalteriya/ombor buziladi —
+            buning uchun qaytarish bor): pozitsiyalar savatga ko'chadi,
+            kassir o'zgartirib yangi sotuv qiladi yoki sotuvsiz chek
+            chiqaradi. Asl chekka yozuv so'rovi KETMAYDI. */}
+        <button
+          type="button"
+          data-test-id="chek-copy-to-cart"
+          onClick={() => onCopyToCart(data.positions)}
+          className="flex h-8 items-center gap-1.5 rounded-lg border border-[var(--ms-border)] px-3 font-medium text-[var(--ms-text-brand)] text-xs hover:bg-[var(--ms-bg-hover)]"
+        >
+          ✎ {t('chek_copy_to_cart')}
         </button>
         {/* F6 (egasi qarori, 2026-08-13) — QAYTARISH KIOSKDA HAM OCHIQ.
             2026-08-12 dagi «kassadan pul chiqishi menejer qarori» yashirishi
@@ -436,6 +467,8 @@ interface CheklarModeProps {
   /** Tanlangan chek — holat sahifada (Mijozlar paneli ham shu yerga yo'naltiradi). */
   selectedChekId: string | null;
   setSelectedChekId: Dispatch<SetStateAction<string | null>>;
+  /** «Savatga nusxalash» (2026-08-16) — savat sahifada, panel faqat uzatadi. */
+  onCopyToCart: (positions: ChekDetailPosition[]) => void;
 }
 
 export function CheklarMode({
@@ -444,6 +477,7 @@ export function CheklarMode({
   setChekSearch,
   selectedChekId,
   setSelectedChekId,
+  onCopyToCart,
 }: CheklarModeProps) {
   const t = useTranslations('pages.sotuv');
   const chekQuery = chekSearch.trim();
@@ -533,7 +567,11 @@ export function CheklarMode({
       {/* ── O'ng: detal-panel yoki tanlov-taklif ── */}
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
         {selectedChekId ? (
-          <ChekDetailPanel saleId={selectedChekId} onBack={() => setSelectedChekId(null)} />
+          <ChekDetailPanel
+            saleId={selectedChekId}
+            onBack={() => setSelectedChekId(null)}
+            onCopyToCart={onCopyToCart}
+          />
         ) : (
           <div className="flex flex-1 flex-col items-center justify-center gap-2 text-[var(--ms-text-muted)]">
             <Receipt className="h-12 w-12 opacity-30" />

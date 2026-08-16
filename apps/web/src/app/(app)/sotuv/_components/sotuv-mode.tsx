@@ -369,6 +369,12 @@ export function SavatPanel({
                 <span className="block font-semibold text-[16px] tabular-nums text-[var(--ms-text-primary)]">
                   {formatMoney(d.totalMinor)}
                 </span>
+                {/* 2026-08-16 (egasi): «tahrirlash yo'q-ku» — chip tahrir
+                    yo'li ekani endi OCHIQ yozilgan (vaqt+summa yolg'iz o'zi
+                    buni bildirmasdi). */}
+                <span className="block text-[12px] text-[var(--ms-text-brand)]">
+                  ✎ {t('draft_edit')}
+                </span>
               </button>
               <button
                 type="button"

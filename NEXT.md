@@ -331,6 +331,24 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-08-16f (KASSA POS — CHEK TAHRIRLASH ochiq yo'llari; Phase-1: strukturaviy,
+> runtime-tasdiqlanmagan, browser-smoke YO'Q, qurilma-QA QOLDI) —** egasi: «tahrirlash yo'q-ku
+> hech qayerda». Ildiz: tahrir yo'li BOR edi (qoralama chipi), lekin yozuvsiz — kassir topa olmasdi.
+> Uch nuqta ochildi (TDD, RED ko'rildi): (1) qoralama chipida endi OCHIQ «✎ Tahrirlash» yozuvi
+> (sotuv-mode; chip bosilsa savatga qaytadi — mavjud mexanizm); (2) TO'LANGAN chek detalida
+> «✎ Savatga nusxalash» (`chek-copy-to-cart`, cheklar-mode→page `copyChekToCart`): pozitsiyalar
+> savatga (chekdagi birlik narxi bilan, chegirma-% ko'chirilmaydi), joriy savat avval avto-qoralama,
+> rejim Sotuvga, ASL CHEKKA YOZUV KETMAYDI (buxgalteriya uchun tahrir emas — nusxa; qaytarish alohida
+> turibdi); (3) savat qatori tahriri allaqachon bor edi (qatorga bosish oynasi) — tegilmadi. i18n:
+> `draft_edit`/`chek_copy_to_cart`/`chek_copied`/`chek_copy_blocked` uz+ru. Testlar: yangi
+> `chek-copy-to-cart.test.tsx` (2) + proforma-testga chip-yorliq testi; sotuv-papka 20 fayl/205
+> yashil. Gate: web tc0 · lint 0 err. §6.6: parallel sessiya qarz-xabar (publication) ishida;
+> u orada proforma 0-narx cheklovini bekor qilgan (test yangi niyatda) — diffim path-cheklangan,
+> commit blob-retsept. **⚠️ KEYINGI QADAM: DEPLOY + qurilma-QA** (chip «Tahrirlash» · chekdan
+> savatga nusxalash · narxsiz tovar cheki).
+>
+> ---
+>
 > **🕒 2026-08-16e (KASSA POS — SOTUVSIZ CHEK «Chek chiqarish» + chekda base-CHEGIRMA;
 > Phase-1: strukturaviy, runtime-tasdiqlanmagan, browser-smoke YO'Q, qurilma-QA QOLDI) —** egasi:
 > (1) savatdan sotuv qilmasdan chek chiqarish tugmasi; (2) «har bir chekni o'zgartirish»; (3) qator

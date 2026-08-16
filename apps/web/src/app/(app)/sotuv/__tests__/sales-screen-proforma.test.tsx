@@ -15,7 +15,7 @@ import { printProformaReceiptViaAgent } from '@/lib/print-agent';
 import { renderWithProviders, screen, userEvent, waitFor } from '@/test-utils';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import SotuvPage from '../page';
-import { PRODUCT, PRODUCTS, router, salesRoutes } from './harness';
+import { PRODUCT, PRODUCTS, norm, router, salesRoutes } from './harness';
 
 vi.mock('@/lib/api-client', () => ({
   api: { get: vi.fn(), post: vi.fn(), put: vi.fn(), patch: vi.fn(), delete: vi.fn() },
@@ -89,6 +89,23 @@ describe('Chek chiqarish (sotuvsiz) — tugma va oqim', () => {
     // Savat bo'shadi va qoralama chipi paydo bo'ldi («chekni o'zgartirish» yo'li).
     await waitFor(() => expect(screen.queryByTestId('sotuv-cart-line')).not.toBeInTheDocument());
     expect(screen.getByTestId('sotuv-cart-draft')).toBeInTheDocument();
+  });
+
+  it('chiqarilgan chek chipida OCHIQ «Tahrirlash» yozuvi bor; bosilsa savatga qaytadi', async () => {
+    // 2026-08-16 (egasi): «tahrirlash yo'q-ku» — chip bor edi, lekin yozuvsiz
+    // (faqat vaqt+summa) kassir uni tahrir yo'li deb bilmasdi. Endi ochiq yozuv.
+    const user = userEvent.setup();
+    renderWithProviders(<SotuvPage />);
+    await addFirstProduct(user);
+
+    await user.click(screen.getByTestId('sotuv-proforma'));
+
+    const chip = await screen.findByTestId('sotuv-cart-draft');
+    expect(norm(chip.textContent)).toContain('Tahrirlash');
+
+    await user.click(chip);
+    expect(await screen.findByTestId('sotuv-cart-line')).toBeInTheDocument();
+    expect(screen.queryByTestId('sotuv-cart-draft')).not.toBeInTheDocument();
   });
 
   it('🔴 narxsiz tovar (0 so‘m) savatda — tugma OCHIQ (2026-08-16: cheklov yo‘q)', async () => {
