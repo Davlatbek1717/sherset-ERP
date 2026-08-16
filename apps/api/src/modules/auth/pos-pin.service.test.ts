@@ -6,7 +6,11 @@ import { PosPinService } from './pos-pin.service.js';
 function makePrisma(overrides: Record<string, unknown> = {}) {
   const updates: Array<Record<string, unknown>> = [];
   const employee = {
-    findFirst: vi.fn().mockResolvedValue({ id: 'emp-1', posPinHash: null }),
+    // `roles` — 2026-08-16 qo'riqchisi uchun: PIN faqat rolli xodimga
+    // beriladi (defolt — rolli, «normal» kassir).
+    findFirst: vi
+      .fn()
+      .mockResolvedValue({ id: 'emp-1', posPinHash: null, roles: [{ roleId: 'r-1' }] }),
     update: vi.fn().mockImplementation(async (args: { data: Record<string, unknown> }) => {
       updates.push(args.data);
       return args.data;
@@ -28,6 +32,17 @@ describe('PosPinService.setPin', () => {
     expect(updates[0]).toHaveProperty('posPinHash');
     // Lookup — 64 belgili hex, PIN matni emas.
     expect(updates[0]?.posPinLookup).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it('🔴 ROLSIZ xodimga PIN BERILMAYDI — aniq 400 (2026-08-16: «Umid»/«Shavkat» klassi)', async () => {
+    // Prod-hodisa ikki marta: egasi yangi kassir yaratdi, rol tanlamadi, PIN
+    // berdi — kassir smena ochishda tushunarsiz 403 oldi («cash no…»). Yagona
+    // tugun-nuqta shu: PIN = kassir bo'lish qadami, rolsiz kassir yaroqsiz.
+    const { prisma } = makePrisma({
+      findFirst: vi.fn().mockResolvedValue({ id: 'emp-1', posPinHash: null, roles: [] }),
+    });
+    const svc = new PosPinService(prisma, CONFIG);
+    await expect(svc.setPin('acc-1', 'emp-1', '1234')).rejects.toThrow(/rol biriktir/i);
   });
 
   it('noto`g`ri shakldagi PIN rad etiladi (3 raqam)', async () => {

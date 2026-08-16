@@ -331,6 +331,19 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-08-16g (KASSA — rolsiz-kassir sinfi YOPILDI: prod-fix «Shavkat» + PIN-qo'riqchi) —**
+> «smena ochishda xatolik» qaytdi; nginx: `open-session` 403→(kassir almashib) 201 naqshi. Ildiz —
+> AVVALGI «Umid» klassi takrori: egasi yana ROLSIZ xodim yaratgan («Shavkat»), rolsiz = hamma huquq NO.
+> (1) Prod-fix: Shavkat → «Kassir» roli (idempotent INSERT, SQL); 5-daq ruxsat-keshdan keyin ishlaydi.
+> (2) ILDIZ-QO'RIQCHI (TDD): `pos-pin.service.setPin` endi ROLSIZ xodimga PIN BERMAYDI — aniq 400
+> «Avval xodimga rol biriktiring…» (PIN = kassir bo'lish qadami; xato endi sozlash paytida, kassada
+> tushunarsiz 403 o'rniga). Test: pos-pin.service.test «ROLSIZ xodimga PIN BERILMAYDI» (+mock defoltiga
+> `roles`). auth-modul 15f/287 yashil · api tc0 · lint 0. 12:00-KESIM: `scripts/ops-2026-08-16-smena-cut.sh`
+> tayyor (Umidning 2 pre-noon chekini yopiq mini-smenaga ko'chiradi) — klassifikator meni o'tkazmadi,
+> EGASI O'ZI yugurtirishi kutilmoqda. **⚠️ KEYINGI: deploy (16f+16g birga) + qurilma-QA.**
+>
+> ---
+>
 > **🕒 2026-08-16f (KASSA POS — CHEK TAHRIRLASH ochiq yo'llari; Phase-1: strukturaviy,
 > runtime-tasdiqlanmagan, browser-smoke YO'Q, qurilma-QA QOLDI) —** egasi: «tahrirlash yo'q-ku
 > hech qayerda». Ildiz: tahrir yo'li BOR edi (qoralama chipi), lekin yozuvsiz — kassir topa olmasdi.

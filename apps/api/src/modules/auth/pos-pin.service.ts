@@ -63,9 +63,18 @@ export class PosPinService {
     }
     const employee = await this.prisma.client.employee.findFirst({
       where: { id: employeeId, accountId },
-      select: { id: true },
+      select: { id: true, roles: { select: { roleId: true }, take: 1 } },
     });
     if (!employee) throw new BadRequestException('Xodim topilmadi');
+    // 2026-08-16 qo'riqchisi («Umid»/«Shavkat» prod-hodisalari): PIN — xodimni
+    // KASSIR qiladigan qadam, rolsiz kassir esa smena ocholmay tushunarsiz
+    // 403 oladi («Ruxsat yo'q: cashiersession.create… (sizda: NO)»). Xatoni
+    // sozlash paytida, tushunarli tilda beramiz — kassada emas.
+    if (employee.roles.length === 0) {
+      throw new BadRequestException(
+        'Avval xodimga rol biriktiring (masalan «Kassir») — rolsiz xodim kassada ishlay olmaydi',
+      );
+    }
 
     try {
       await this.prisma.client.employee.update({
