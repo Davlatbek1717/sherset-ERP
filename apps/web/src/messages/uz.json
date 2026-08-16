@@ -10322,6 +10322,9 @@
     "write_placeholder": "Xabar yozing… (sizning nomingizdan ketadi)",
     "delivery_queued": "navbatda",
     "delivery_sent": "yuborildi",
-    "delivery_failed": "yetmadi"
+    "delivery_failed": "yetmadi",
+    "reach_never_contacted": "Mijoz hali o‘zi yozmagan — avtomatik xabar unga yuborilmaydi (spamdan himoya). Siz qo‘lda yozsangiz, keyingi xabarlar avtomatik ketadi.",
+    "reach_no_phone": "Telefon raqami yo‘q — Telegram xabari yuborib bo‘lmaydi.",
+    "reach_unreachable": "Oxirgi xabar yetkazilmadi"
   }
 }

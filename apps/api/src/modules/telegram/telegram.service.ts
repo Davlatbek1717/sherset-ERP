@@ -1067,6 +1067,56 @@ export class TelegramService implements MtprotoInboundHandler {
     };
   }
 
+  /**
+   * ALOQA HOLATI — «shu mijozga xabar ketadimi, ketmasa nega?» (2026-08-16).
+   *
+   * Nega kerak: karta ilgari faqat «chat bor/yo'q» derdi. Natijada «birinchi
+   * to'lqin» qulfi chetlab o'tgan mijozlar (prodda 608 qarzdordan 357 tasi)
+   * JIM qolardi — operator xabar nega ketmaganini bilmasdi va uni tizim
+   * nosozligi deb o'ylardi.
+   *
+   * Tartib MUHIM: telefonsizlik eng qattiq to'siq, undan keyin ijobiy
+   * signal (tgid/chat), keyin oxirgi urinish natijasi.
+   * Hech qachon throw qilmaydi — bu ko'rsatish qatlami.
+   */
+  async counterpartyReachability(
+    accountId: string,
+    counterpartyId: string,
+  ): Promise<{ state: 'reachable' | 'never_contacted' | 'unreachable'; reason: string | null }> {
+    const cp = await this.prisma.client.counterparty.findFirst({
+      where: { id: counterpartyId, accountId },
+      select: { phone: true, attributes: true },
+    });
+    if (!cp) return { state: 'unreachable', reason: 'not_found' };
+    if (!cp.phone?.trim()) return { state: 'unreachable', reason: 'no_phone' };
+
+    const attrs =
+      cp.attributes && typeof cp.attributes === 'object' && !Array.isArray(cp.attributes)
+        ? (cp.attributes as Record<string, unknown>)
+        : {};
+    const tgid = attrs.tgid;
+    if (tgid !== undefined && tgid !== null && tgid !== '') {
+      return { state: 'reachable', reason: null };
+    }
+    const chats = await this.prisma.client.telegramChat.count({
+      where: { accountId, counterpartyId },
+    });
+    if (chats > 0) return { state: 'reachable', reason: null };
+
+    // Ijobiy signal yo'q — urinish bo'lganmi?
+    const last = await this.prisma.client.hrTelegramOutbox.findFirst({
+      where: { accountId, counterpartyId },
+      orderBy: { createdAt: 'desc' },
+      select: { status: true, failReason: true },
+    });
+    if (last?.status === 'failed') {
+      return { state: 'unreachable', reason: last.failReason ?? 'failed' };
+    }
+    // Urinish yo'q yoki hali navbatda ⇒ «birinchi to'lqin» qulfi uni
+    // chetlab o'tadi. Bu NOSOZLIK EMAS — siyosat, va shunday aytiladi.
+    return { state: 'never_contacted', reason: null };
+  }
+
   async listChatMessages(accountId: string, chatRefId: string, raw: Record<string, unknown>) {
     const limit = Math.min(Number(raw.limit) || 30, 200);
     const chat = await this.prisma.client.telegramChat.findFirst({

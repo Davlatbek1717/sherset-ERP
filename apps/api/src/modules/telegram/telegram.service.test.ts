@@ -445,6 +445,70 @@ const msgRow = (over: Record<string, unknown> = {}) => ({
   ...over,
 });
 
+/**
+ * Aloqa holati (2026-08-16). Karta ilgari faqat «chat bor/yo'q» derdi —
+ * shuning uchun «birinchi to'lqin» qulfi chetlab o'tgan 357 qarzdor JIM
+ * qolardi: operator nega xabar ketmaganini bilmasdi.
+ */
+function makeReachService(opts: {
+  cp?: { phone: string | null; attributes: unknown } | null;
+  chats?: number;
+  lastOutbox?: { status: string; failReason: string | null } | null;
+}) {
+  const prisma = {
+    client: {
+      counterparty: {
+        findFirst: vi.fn(async () =>
+          opts.cp === undefined ? { phone: '+998901234567', attributes: {} } : opts.cp,
+        ),
+      },
+      telegramChat: { count: vi.fn(async () => opts.chats ?? 0) },
+      hrTelegramOutbox: { findFirst: vi.fn(async () => opts.lastOutbox ?? null) },
+    },
+  };
+  return new TelegramService(prisma as never, {} as never, {} as never);
+}
+
+describe('counterpartyReachability — nega xabar ketadi yoki ketmaydi', () => {
+  it('tgid bor → reachable', async () => {
+    const svc = makeReachService({ cp: { phone: '+998901234567', attributes: { tgid: '77' } } });
+    expect((await svc.counterpartyReachability('acc', 'cp-1')).state).toBe('reachable');
+  });
+
+  it("tgid yo'q, lekin bog'langan chat bor → reachable", async () => {
+    const svc = makeReachService({ cp: { phone: '+998901234567', attributes: {} }, chats: 1 });
+    expect((await svc.counterpartyReachability('acc', 'cp-1')).state).toBe('reachable');
+  });
+
+  it("telefon YO'Q → unreachable (sababi bilan)", async () => {
+    const svc = makeReachService({ cp: { phone: null, attributes: {} } });
+    const r = await svc.counterpartyReachability('acc', 'cp-1');
+    expect(r.state).toBe('unreachable');
+    expect(r.reason).toBe('no_phone');
+  });
+
+  it('oxirgi urinish failed → unreachable + Telegram sababi', async () => {
+    const svc = makeReachService({
+      cp: { phone: '+998901234567', attributes: {} },
+      lastOutbox: { status: 'failed', failReason: 'raqam Telegramda yoq' },
+    });
+    const r = await svc.counterpartyReachability('acc', 'cp-1');
+    expect(r.state).toBe('unreachable');
+    expect(r.reason).toBe('raqam Telegramda yoq');
+  });
+
+  it("telefoni bor, tarix yo'q → never_contacted (birinchi to'lqin qulfi)", async () => {
+    const svc = makeReachService({ cp: { phone: '+998901234567', attributes: {} } });
+    const r = await svc.counterpartyReachability('acc', 'cp-1');
+    expect(r.state).toBe('never_contacted');
+  });
+
+  it('kontragent topilmasa → unreachable, throw QILMAYDI', async () => {
+    const svc = makeReachService({ cp: null });
+    expect((await svc.counterpartyReachability('acc', 'yo-q')).state).toBe('unreachable');
+  });
+});
+
 describe('listChatMessages — yetkazish holati', () => {
   it("status pending → 'queued' (yuborildi deb KO'RSATILMAYDI)", async () => {
     const { svc } = makeMessagesService(

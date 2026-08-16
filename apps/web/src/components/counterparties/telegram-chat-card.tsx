@@ -104,6 +104,25 @@ export function TelegramChatCard({ counterpartyId }: { counterpartyId: string })
     enabled: !!status?.configured && bound != null && !chat,
   });
 
+  /**
+   * ALOQA HOLATI — «xabar ketadimi, ketmasa nega?». Ilgari karta faqat «chat
+   * bor/yo'q» derdi, shuning uchun «birinchi to'lqin» qulfi chetlab o'tgan
+   * mijozlar jim qolardi va operator buni nosozlik deb o'ylardi.
+   */
+  const { data: reach } = useQuery<{
+    state: 'reachable' | 'never_contacted' | 'unreachable';
+    reason: string | null;
+  }>({
+    queryKey: ['tg-reach', counterpartyId],
+    queryFn: () =>
+      api.get<{
+        state: 'reachable' | 'never_contacted' | 'unreachable';
+        reason: string | null;
+      }>(`/telegram/counterparties/${counterpartyId}/reachability`),
+    enabled: !!status?.configured,
+    staleTime: 30_000,
+  });
+
   const { data: messages } = useQuery<{ items: MessageRow[] }>({
     queryKey: ['tg-messages', chat?.id],
     queryFn: () =>
@@ -159,6 +178,25 @@ export function TelegramChatCard({ counterpartyId }: { counterpartyId: string })
           data-test-id="tg-webhook-secret-warn"
         >
           {t('webhook_secret_missing')}
+        </p>
+      )}
+
+      {/* ALOQA HOLATI — «reachable» bo'lsa chizilmaydi (shovqin qilmasin);
+          qolgan ikki holatda SABABI ochiq aytiladi, jim qolmasin. */}
+      {reach && reach.state !== 'reachable' && (
+        <p
+          className={`mb-2 rounded px-2 py-1 text-[11px] ${
+            reach.state === 'unreachable'
+              ? 'bg-[var(--ms-row-overdue-bg)] text-[var(--ms-row-overdue-accent)]'
+              : 'bg-[var(--ms-row-partial-bg)] text-[var(--ms-row-partial-accent)]'
+          }`}
+          data-test-id="tg-reachability"
+        >
+          {reach.state === 'never_contacted'
+            ? t('reach_never_contacted')
+            : reach.reason === 'no_phone'
+              ? t('reach_no_phone')
+              : `${t('reach_unreachable')}${reach.reason ? ` — ${reach.reason}` : ''}`}
         </p>
       )}
 

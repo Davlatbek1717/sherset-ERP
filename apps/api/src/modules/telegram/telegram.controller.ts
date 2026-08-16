@@ -97,6 +97,16 @@ export class TelegramController {
     return this.svc.listChats(user.accountId, query);
   }
 
+  /**
+   * «Bu mijozga xabar ketadimi, ketmasa nega?» — kartochkadagi aloqa bandi.
+   * Ruxsat kontragent ko'rish bilan bir xil (yangi ruxsat turi kiritilmaydi).
+   */
+  @Get('counterparties/:id/reachability')
+  @RequirePermission({ entity: 'counterparty', action: 'view' })
+  async reachability(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    return this.svc.counterpartyReachability(user.accountId, id);
+  }
+
   @Get('chats/:id/messages')
   @RequirePermission({ entity: 'counterparty', action: 'view' })
   async chatMessages(

@@ -73,6 +73,49 @@ describe('TelegramChatCard — webhook secret ogohlantirishi', () => {
  * bo'lganda HECH NARSA chizilmaydi: «yuborildi» deb taxmin qilish bu
  * loyihada allaqachon xato qilingan klass (`pending` dalil emas).
  */
+describe('TelegramChatCard — aloqa holati', () => {
+  function mockReach(state: string, reason: string | null = null) {
+    vi.mocked(api.get).mockImplementation(async (url: string) => {
+      if (url.startsWith('/telegram/business-status')) return BASE_STATUS;
+      if (url.includes('/reachability')) return { state, reason };
+      if (url.startsWith('/telegram/chats')) return { items: [] };
+      return { items: [] };
+    });
+  }
+
+  beforeEach(() => {
+    vi.mocked(api.get).mockReset();
+  });
+
+  it('never_contacted → sabab OCHIQ aytiladi (jim qolmaydi)', async () => {
+    mockReach('never_contacted');
+    renderWithProviders(<TelegramChatCard counterpartyId="cp-1" />);
+    const el = await screen.findByTestId('tg-reachability');
+    expect(el.textContent ?? '').toMatch(/yozmagan/);
+  });
+
+  it('no_phone → aniq sabab', async () => {
+    mockReach('unreachable', 'no_phone');
+    renderWithProviders(<TelegramChatCard counterpartyId="cp-1" />);
+    const el = await screen.findByTestId('tg-reachability');
+    expect(el.textContent ?? '').toMatch(/Telefon/);
+  });
+
+  it('failed → Telegram sababi ko`rsatiladi', async () => {
+    mockReach('unreachable', 'raqam Telegramda yoq');
+    renderWithProviders(<TelegramChatCard counterpartyId="cp-1" />);
+    const el = await screen.findByTestId('tg-reachability');
+    expect(el.textContent ?? '').toMatch(/raqam Telegramda yoq/);
+  });
+
+  it('reachable → banner UMUMAN chizilmaydi (shovqin qilmasin)', async () => {
+    mockReach('reachable');
+    renderWithProviders(<TelegramChatCard counterpartyId="cp-1" />);
+    await screen.findByTestId('cp-card-telegram');
+    expect(screen.queryByTestId('tg-reachability')).toBeNull();
+  });
+});
+
 describe('TelegramChatCard — yetkazish holati', () => {
   const CHAT = {
     id: 'chat-1',
