@@ -331,6 +331,18 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-08-16h (KASSA — MANUAL dollar kursi CBRU'dan USTUN; egasi: «12 000 deb hisobla») —**
+> `getRate` endi avval source='MANUAL' qatorini qidiradi (sana lte, latest) — topilsa CBRU'ga
+> qaramaydi; kunlik 09:00 CBRU-cron yangi sana qo'shsa ham MANUAL o'chirilmaguncha kassa kursi
+> o'zgarmaydi (docstring'dagi «per-tenant override» qatlamining minimal ko'rinishi). MANUAL yo'q —
+> eski carry-forward. TDD: canonical-scale testiga 2 test (manual-wins + fallback), modul 24 yashil.
+> Prod: `INSERT exchange_rates (CURRENT_DATE,'USD',12000,1,'MANUAL')` — deploydan KEYIN kiritiladi
+> (eski kod tie-breaksiz, bir kunda 2 qator nondeterministik bo'lardi). Kursni KEYIN o'zgartirish:
+> MANUAL qatorni UPDATE/DELETE (UI yo'q — ochiq qarz, kichik settings-forma keyingi sessiyada).
+> POS to'lov oynasi kursni /exchange-rates/rate'dan oladi → avtomatik 12 000 bo'ladi.
+>
+> ---
+>
 > **🕒 2026-08-16g (KASSA — rolsiz-kassir sinfi YOPILDI: prod-fix «Shavkat» + PIN-qo'riqchi) —**
 > «smena ochishda xatolik» qaytdi; nginx: `open-session` 403→(kassir almashib) 201 naqshi. Ildiz —
 > AVVALGI «Umid» klassi takrori: egasi yana ROLSIZ xodim yaratgan («Shavkat»), rolsiz = hamma huquq NO.

@@ -153,6 +153,25 @@ export class ExchangeRateService {
         source: 'CBRU',
       });
     }
+    // 2026-08-16 (egasi qarori): MANUAL kurs CBRU'dan USTUN. Do'kon o'z kursi
+    // bilan ishlaydi («dollarni 12 000 deb hisobla») — kunlik CBRU-sinxron
+    // yangi sana bilan qator qo'shsa ham, MANUAL qatori o'chirilmaguncha
+    // kassadagi kurs o'zgarmaydi. MANUAL qatorlar `exchange_rates` da
+    // source='MANUAL' bilan turadi (docstring'dagi «per-tenant override»
+    // qatlamining minimal ko'rinishi).
+    const manual = await this.prisma.client.exchangeRate.findFirst({
+      where: { currency, source: 'MANUAL', date: { lte: startOfDayUTC(date) } },
+      orderBy: { date: 'desc' },
+    });
+    if (manual) {
+      return toExchangeRateRow({
+        date: toYMD(manual.date),
+        currency: manual.currency,
+        rate: manual.rate.toString(),
+        nominal: manual.nominal,
+        source: manual.source,
+      });
+    }
     const row = await this.prisma.client.exchangeRate.findFirst({
       where: {
         currency,
