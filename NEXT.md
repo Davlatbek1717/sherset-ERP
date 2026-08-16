@@ -331,6 +331,25 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-08-16o (KASSA — «Hisob-kitob cheki» POS mijoz panelida; `30eb3f4e`) — ⛔ DEPLOY QILINMADI**
+> Egasi kassa ilovasida tugmani qidirdi va topmadi. Sabab: dizayn savolida u «Mijoz kartasida»
+> ni tanlagan edi ⇒ tugma FAQAT ERP kontragent kartasida edi, kiosk kassir esa ERP sahifasini
+> ocha olmaydi. Egasi endi «kassirga ham ruxsat» dedi (xabar uning shaxsiy Telegram
+> raqamidan ketishi aytilgan holda).
+> **FE:** `components/pos/customers-panel.tsx` — «Cheklari» yonida tugma + ICHKI ochiluvchi
+> blok (modal EMAS: qobiqda Radix modali OSK'ni o'ldiradi). Matn serverdan — ikkinchi format
+> nusxasi yo'q. Yuborib bo'lmasa sabab ko'rinadi; mijoz almashsa blok yopiladi.
+> **API:** `KIOSK_ALLOWED` ga IKKALA yo'l (`preview` GET + `send` POST, `exact`) + deny-testlar.
+> 🔴 Ertalabki ombor-cheki hodisasi aynan «bir funksiya, ikki endpoint, ro'yxatda bittasi»
+> sinfida edi — shuning uchun ikkalasi birga. Ikkinchi qulf tekshirildi: kassirda
+> `counterparty.update` bor (`pos-contact` uchun) ⇒ ruxsat matritsasi to'smaydi.
+> Gate: tc 0 · lint 0 · i18n 0 · web **4055** · api **8411** — 0 qizil.
+> ⛔ **SSH 22-porti shu mashinadan javob bermayapti** (7 urinish; sayt/API 200 va sog'lom).
+> Prodda hamon `ec82f7da`. **Deploy qarzi: `5b9b7df0`(test) · `966e87d3`(docs) · `30eb3f4e`
+> (POS tugmasi)** — port ochilishi bilan HEAD'gacha bir yo'la.
+>
+> ---
+>
 > **🕒 2026-08-16n (TEST — HEAD'dagi qizil qo'riqchi tuzatildi; api suite YASHIL; `5b9b7df0`) —**
 > Butun sessiya davomida `debt-source-wiring.test.ts` qizil turdi va har commit xabarida
 > «begona qizil» deb qayd etishga to'g'ri keldi. Ildiz o'lchandi (taxmin emas):
