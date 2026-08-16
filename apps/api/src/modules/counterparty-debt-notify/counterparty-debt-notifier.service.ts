@@ -125,6 +125,30 @@ export class CounterpartyDebtNotifier {
         case 'paymentOut':
           row = await this.prisma.client.paymentOut.findFirst({ where, select });
           break;
+        // ── Kassa oqimi (2026-08-16) ────────────────────────────────────────
+        // Uchalasi UCH XIL shaklda: `RetailSale` da `moment` bor, `Debt` da
+        // faqat `createdAt`, `debtpayment` ning `docId` esa jadval PK'si EMAS —
+        // u batch identifikatori (`DebtPayment.batchId`).
+        case 'retailsale':
+          row = await this.prisma.client.retailSale.findFirst({ where, select });
+          break;
+        case 'debt': {
+          const d = await this.prisma.client.debt.findFirst({
+            where,
+            select: { name: true, createdAt: true },
+          });
+          return d ? { number: d.name, moment: d.createdAt } : null;
+        }
+        case 'debtpayment': {
+          // Batch'ning o'z raqami yo'q ⇒ faqat sana beriladi (bo'sh raqam
+          // sarlavhada umuman chizilmaydi).
+          const p = await this.prisma.client.debtPayment.findFirst({
+            where: { accountId, batchId: docId },
+            select: { createdAt: true },
+            orderBy: { createdAt: 'asc' },
+          });
+          return p ? { number: '', moment: p.createdAt } : null;
+        }
         default:
           return null;
       }

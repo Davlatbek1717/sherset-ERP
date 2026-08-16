@@ -44,6 +44,8 @@ function makePrismaFull(
     chatCount?: number;
     /** Oxirgi daqiqada yozilgan mijoz-xabarlari soni (portlash qulfi uchun). */
     recentNotifyCount?: number;
+    /** Hujjat meta'si — `fetchDocMeta` shu jadvallardan o'qiydi. */
+    doc?: { name?: string; moment?: Date; createdAt?: Date } | null;
   } = {},
 ) {
   const cp =
@@ -60,18 +62,25 @@ function makePrismaFull(
   const outboxFindFirst = vi.fn(async () => (opts.existingRow ? { id: 'out-existing' } : null));
   const outboxCount = vi.fn(async () => opts.recentNotifyCount ?? 0);
   const chatCount = vi.fn(async () => opts.chatCount ?? 0);
+  const docRow = opts.doc === undefined ? null : opts.doc;
+  const docFind = vi.fn(async () => docRow);
   return {
     prisma: {
       client: {
         counterparty: { findFirst: vi.fn(async () => cp) },
         telegramChat: { count: chatCount },
         hrTelegramOutbox: { findFirst: outboxFindFirst, create: outboxCreate, count: outboxCount },
+        // `fetchDocMeta` shu jadvallardan o'qiydi (turiga qarab bittasi).
+        retailSale: { findFirst: docFind },
+        debt: { findFirst: docFind },
+        debtPayment: { findFirst: docFind },
       },
     },
     outboxCreate,
     outboxFindFirst,
     outboxCount,
     chatCount,
+    docFind,
   };
 }
 
@@ -342,6 +351,59 @@ describe('CounterpartyDebtNotifier', () => {
       await svc.onBalanceChanged({ ...baseEvent, source: undefined });
       expect(fetchMock).not.toHaveBeenCalled();
       expect(outboxCreate).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('hujjat meta — kassa oqimi turlari', () => {
+    it('retailsale: chek raqami va sanasi xabar sarlavhasiga tushadi', async () => {
+      const { prisma, outboxCreate } = makePrismaFull({
+        phone: '+998901234567',
+        doc: { name: 'CHK-2026-00042', moment: new Date('2026-08-16T06:02:00Z') },
+      });
+      // biome-ignore lint/suspicious/noExplicitAny: test wiring
+      await new CounterpartyDebtNotifier(prisma as any).onBalanceChanged({
+        ...baseEvent,
+        source: 'retailsale',
+        docType: 'retailsale',
+        docId: 'rs-1',
+      });
+      expect(lastOutboxData(outboxCreate).messageText).toContain('№CHK-2026-00042');
+      expect(lastOutboxData(outboxCreate).messageText).toContain('16.08.2026');
+    });
+
+    it("debt: QRZ raqami va createdAt sanasi tushadi (moment maydoni YO'Q)", async () => {
+      const { prisma, outboxCreate } = makePrismaFull({
+        phone: '+998901234567',
+        doc: { name: 'QRZ-2026-00007', createdAt: new Date('2026-08-16T06:02:00Z') },
+      });
+      // biome-ignore lint/suspicious/noExplicitAny: test wiring
+      await new CounterpartyDebtNotifier(prisma as any).onBalanceChanged({
+        ...baseEvent,
+        source: 'debt',
+        docType: 'debt',
+        docId: 'debt-1',
+      });
+      expect(lastOutboxData(outboxCreate).messageText).toContain('№QRZ-2026-00007');
+      expect(lastOutboxData(outboxCreate).messageText).toContain('16.08.2026');
+    });
+
+    it("debtpayment: batch'ning o'z raqami yo'q — faqat sana chiqadi", async () => {
+      const { prisma, outboxCreate } = makePrismaFull({
+        phone: '+998901234567',
+        doc: { createdAt: new Date('2026-08-16T06:02:00Z') },
+      });
+      // biome-ignore lint/suspicious/noExplicitAny: test wiring
+      await new CounterpartyDebtNotifier(prisma as any).onBalanceChanged({
+        ...baseEvent,
+        source: 'debtpayment',
+        docType: 'debtpayment',
+        docId: 'batch-1',
+        deltaMinor: -1_000_000n,
+        newBalanceMinor: 4_000_000n,
+      });
+      const text = lastOutboxData(outboxCreate).messageText;
+      expect(text).toContain('16.08.2026');
+      expect(text).not.toContain('№');
     });
   });
 
