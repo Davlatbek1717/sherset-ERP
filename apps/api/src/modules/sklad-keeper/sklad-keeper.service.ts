@@ -11,15 +11,26 @@ import { UpsertSkladKeeperSchema } from './sklad-keeper.schema.js';
 export class SkladKeeperService {
   constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
-  // Ilgari bu yerda `CompanySettings.receiptPrinterName` ham o'qilardi va
-  // javobga qo'shib yuborilardi (mijoz cheki printeri). Akkaunt-darajali chek
-  // printeri butunlay olib tashlandi — chek endi qurilmaning Windows sukut
-  // printeriga bosiladi (desktop v1.4.0+). Bu yerda faqat ombor→omborchi
-  // (va ombor→printer) biriktirmasi qoladi: u yig'ish varag'iniki.
+  // 🔴 PRINTER SOZLAMASI BU MODULDA YO'Q (egasi, 2026-08-16): avval
+  // akkaunt-darajali chek printeri (2026-08-12), endi ombor→printer marshruti
+  // ham olib tashlandi — har qurilma O'ZIGA ulangan printerdan chiqaradi.
+  // Qoladigan yagona narsa — ombor→omborchi biriktirmasi (VAZIFA uchun).
+  //
+  // Maydonlar OSHKORA sanaladi: `printer_name` ustuni bazada hamon bor
+  // (o'chirish migratsiya talab qiladi), `findMany` esa uni jimgina javobga
+  // qo'shib yuborardi va o'lik sozlama mijozga qaytib kelaverardi.
   async list(accountId: string) {
     const items = await this.prisma.client.skladKeeper.findMany({
       where: { accountId },
       orderBy: { skladNo: 'asc' },
+      select: {
+        id: true,
+        skladNo: true,
+        employeeId: true,
+        employeeName: true,
+        createdAt: true,
+        updatedAt: true,
+      },
     });
     return { items };
   }
@@ -48,14 +59,10 @@ export class SkladKeeperService {
         skladNo: input.skladNo,
         employeeId: emp.id,
         employeeName: emp.name,
-        printerName: input.printerName ?? null,
       },
-      // printerName only overwritten when the caller sent the field (undefined =
-      // leave as-is, so editing the keeper alone doesn't wipe the printer).
       update: {
         employeeId: emp.id,
         employeeName: emp.name,
-        ...(input.printerName !== undefined ? { printerName: input.printerName } : {}),
       },
     });
   }

@@ -12,10 +12,11 @@
  *      omborga printer biriktirilmagan ⇒ eski kod `no-printer-mapped` qaytarib
  *      chop etishni BUTUNLAY to'xtatardi (qobiqda sariq ogohlantirish).
  *
- * SHARTNOMA (mijoz cheki bilan AYNI, `2efe572f` qarori): printer biriktirilgan
- * bo'lsa — o'sha printerga; biriktirilmagan bo'lsa — **qurilmaning Windows
- * sukut printeriga** (`printSheet('')`). Ya'ni sozlash qadami MAJBURIY EMAS,
- * lekin ombor→printer marshruti sozlanganda ISHLAYDI.
+ * SHARTNOMA (mijoz cheki bilan AYNI, `2efe572f` qarori + egasining 2026-08-16
+ * qarori): chek HAR DOIM **qurilmaning Windows sukut printeriga** bosiladi
+ * (`printSheet('')`) — «saytdan hech biriga alohida printer ulanmaydi,
+ * kompyuterning o'ziga ulangan printerdan chiqsin». Ombor→printer marshruti
+ * butunlay olib tashlandi.
  *
  * Yacheykasiz guruh (`skladNo: null`) alohida ahamiyatga ega: prodda 5064
  * tovardan faqat 561 tasida `__yacheyka` bor (11%), ya'ni varaqlarning ko'pi
@@ -71,14 +72,18 @@ const res = (sheets: ReturnType<typeof sheet>[]) => ({
   sheets,
 });
 
-/** `/restock-tasks/picking-sheets` → varaqlar, `/sklad-keepers` → marshrut. */
-function mockApi(sheets: ReturnType<typeof sheet>[], keepers: unknown) {
+/**
+ * `/restock-tasks/picking-sheets` → varaqlar.
+ *
+ * 🔴 `/sklad-keepers` chaqirilishi 2026-08-16 dan BUG: sayt printer tanlamaydi,
+ * ya'ni marshrut sozlamasi umuman o'qilmasligi kerak. Mock uni jimgina
+ * qaytarmaydi, balki OTADI — aks holda regressiya `printSheet('')` bilan
+ * ustma-ust tushib ko'rinmay qolardi (chek baribir chiqardi).
+ */
+function mockApi(sheets: ReturnType<typeof sheet>[]) {
   vi.mocked(api.get).mockImplementation(async (url: string) => {
     if (url.startsWith('/restock-tasks/picking-sheets/')) return res(sheets);
-    if (url.startsWith('/sklad-keepers')) {
-      if (keepers instanceof Error) throw keepers;
-      return keepers;
-    }
+    if (url.startsWith('/sklad-keepers')) throw new Error('/sklad-keepers chaqirildi');
     throw new Error(`kutilmagan url: ${url}`);
   });
 }
@@ -95,7 +100,7 @@ afterEach(() => {
 describe('printPickingViaAgent — sozlamasiz ham chek CHIQADI', () => {
   it('🔴 hech bir omborga printer biriktirilmagan ⇒ SUKUT printerga bosiladi', async () => {
     const printSheet = installShell();
-    mockApi([sheet(1, 'Rozetka')], { items: [] });
+    mockApi([sheet(1, 'Rozetka')]);
 
     const r = await printPickingViaAgent('s-1');
 
@@ -110,9 +115,7 @@ describe('printPickingViaAgent — sozlamasiz ham chek CHIQADI', () => {
 
   it('🔴 YACHEYKASIZ guruh (skladNo=null) ham chiqadi — prodda tovarlarning 89%i shunday', async () => {
     const printSheet = installShell();
-    mockApi([sheet(null, 'Yacheykasiz tovar')], {
-      items: [{ skladNo: 1, printerName: 'Ombor-1' }],
-    });
+    mockApi([sheet(null, 'Yacheykasiz tovar')]);
 
     const r = await printPickingViaAgent('s-1');
 
@@ -120,23 +123,31 @@ describe('printPickingViaAgent — sozlamasiz ham chek CHIQADI', () => {
     expect(printSheet.mock.calls[0]?.[0]).toBe('');
   });
 
-  it('sozlangan ombor O`Z printeriga, sozlanmagani sukut printerga', async () => {
+  it('🔴 HAR varaq sukut printerga — printer nomi HECH QACHON uzatilmaydi', async () => {
+    // Egasi, 2026-08-16: «saytdan hech biriga alohida printer ulanmaydi».
     const printSheet = installShell();
-    mockApi([sheet(1, 'Sozlangan'), sheet(2, 'Sozlanmagan'), sheet(null, 'Yacheykasiz')], {
-      items: [{ skladNo: 1, printerName: 'Ombor-1' }],
-    });
+    mockApi([sheet(1, 'Bir'), sheet(2, 'Ikki'), sheet(null, 'Yacheykasiz')]);
 
     const r = await printPickingViaAgent('s-1');
 
     expect(r).toMatchObject({ handled: true, printed: 3, skipped: 0, errors: 0 });
-    const byPrinter = printSheet.mock.calls.map((c) => c[0]);
-    expect(byPrinter).toContain('Ombor-1');
-    expect(byPrinter.filter((p) => p === '')).toHaveLength(2);
+    expect(printSheet.mock.calls.map((c) => c[0])).toEqual(['', '', '']);
+  });
+
+  it('marshrut sozlamasi UMUMAN so`ralmaydi (`/sklad-keepers`)', async () => {
+    installShell();
+    mockApi([sheet(1, 'Rozetka')]);
+
+    const r = await printPickingViaAgent('s-1');
+
+    expect(r.handled).toBe(true);
+    const urls = vi.mocked(api.get).mock.calls.map((c) => String(c[0]));
+    expect(urls.some((u) => u.startsWith('/sklad-keepers'))).toBe(false);
   });
 
   it('drayver rad etsa `errors` sanaladi (jim yo`qolgan chek bo`lmaydi)', async () => {
     installShell(vi.fn(async () => ({ ok: false, error: 'Printer topilmadi' })));
-    mockApi([sheet(1, 'Rozetka')], { items: [{ skladNo: 1, printerName: 'Yo`q-printer' }] });
+    mockApi([sheet(1, 'Rozetka')]);
 
     const r = await printPickingViaAgent('s-1');
 
@@ -152,7 +163,7 @@ describe('printPickingViaAgent — sozlamasiz ham chek CHIQADI', () => {
 describe('varaq sarlavhasi — birlashtirilganda CHIQMAYDI', () => {
   it('birlashtirilgan varaq (groupLabel=null) ⇒ sarlavha yo`q, tovarlar bor', async () => {
     const printSheet = installShell();
-    mockApi([sheet(null, 'Aralash ro`yxat', null)], { items: [] });
+    mockApi([sheet(null, 'Aralash ro`yxat', null)]);
 
     await printPickingViaAgent('s-1');
 
@@ -164,7 +175,7 @@ describe('varaq sarlavhasi — birlashtirilganda CHIQMAYDI', () => {
 
   it('bitta omborli varaq ⇒ server bergan sarlavha chiqadi', async () => {
     const printSheet = installShell();
-    mockApi([sheet(1, 'Rozetka')], { items: [] });
+    mockApi([sheet(1, 'Rozetka')]);
 
     await printPickingViaAgent('s-1');
 
@@ -172,19 +183,7 @@ describe('varaq sarlavhasi — birlashtirilganda CHIQMAYDI', () => {
   });
 });
 
-describe('printPickingViaAgent — marshrut sozlamasi CHEKNI to`xtatmaydi', () => {
-  it('`/sklad-keepers` yiqilsa ham chek sukut printerdan chiqadi (fail-open)', async () => {
-    const printSheet = installShell();
-    mockApi([sheet(1, 'Rozetka')], new Error('403'));
-
-    const r = await printPickingViaAgent('s-1');
-
-    // Marshrut — QULAYLIK; chek esa hujjat. Sozlama so'rovi yiqilgani uchun
-    // chekni yo'qotish (eski xulq: load-failed → popup) noto'g'ri ayirboshlash.
-    expect(r).toMatchObject({ handled: true, printed: 1 });
-    expect(printSheet.mock.calls[0]?.[0]).toBe('');
-  });
-
+describe('printPickingViaAgent — uzilish sabablari', () => {
   it('varaqlarning O`ZI yuklanmasa — chop yo`q, sabab load-failed', async () => {
     installShell();
     vi.mocked(api.get).mockRejectedValue(new Error('500'));

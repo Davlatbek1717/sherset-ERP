@@ -73,9 +73,6 @@ describe('isKioskAllowed — RUXSAT ETILGANLAR', () => {
     // `/smena/mine` turardi: kiosk-kassir smena ocholmay 403 olardi.
     ['GET', '/admin/smenas/mine'],
     ['POST', '/admin/smenas/open-session'],
-    // Chek printeri nomi shu yerdan o'qiladi (`print-agent.ts`); yo'q bo'lsa
-    // native chop etish jimgina brauzer-popup'ga tushardi.
-    ['GET', '/sklad-keepers'],
     // 🔴 Omborga chiqadigan chekning MAZMUNI shu yerdan o'qiladi. Ro'yxatda
     // yo'q edi ⇒ kiosk-kassir 403 olardi (prodda 28 marta o'lchandi,
     // 2026-08-16) ⇒ «Omborchiga yuborish» dan keyin chek chiqmasdi, uning
@@ -115,6 +112,10 @@ describe('isKioskAllowed — DEFAULT DENY', () => {
     ['DELETE', '/admin/smenas/abc'],
     ['GET', '/admin/users'],
     ['POST', '/admin/smenas/mine'],
+    // 🔴 Printer marshruti bekor qilindi (2026-08-16) ⇒ kassa `/sklad-keepers`
+    // ni chaqirmaydi va ruxsat ham qolmadi. Bu qator ro'yxat «ehtiyot uchun»
+    // kengayib ketmasligini qo'riqlaydi.
+    ['GET', '/sklad-keepers'],
     // 🔴 `/restock-tasks` ostidan FAQAT chop-varag'i ochilgan. Omborchi
     // navbati, vazifa detali va qator-tasdiqlash kassirga TEGISHLI EMAS —
     // bitta keng prefiks qoidasi ularni jimgina ochib yuborardi.

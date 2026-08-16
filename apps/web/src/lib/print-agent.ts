@@ -272,10 +272,8 @@ export interface AgentPickingSheetsResponse {
   comment?: string | null;
   sheets: AgentPickingSheet[];
 }
-interface AgentKeeperRow {
-  skladNo: number;
-  printerName: string | null;
-}
+// `AgentKeeperRow` OLIB TASHLANDI (2026-08-16): ombor→printer marshruti yo'q,
+// ya'ni chop uchun `/sklad-keepers` UMUMAN o'qilmaydi.
 
 // `pickGroupLabel` OLIB TASHLANDI (2026-08-16): sarlavhani endi SERVER
 // hisoblaydi (`groupLabel`) — u varaqlar birlashtirilganini biladi, mijoz esa
@@ -385,22 +383,24 @@ export interface PickingPrintOutcome {
 }
 
 /**
- * Route each warehouse's picking sheet to a printer via the agent/shell.
+ * Omborga chiqadigan chekni QURILMANING O'Z printeriga jim chop etadi.
  *
- * 🔴 SOZLASH QADAMI MAJBURIY EMAS (2026-08-16, o'lchangan prod nosozligi).
- * Ilgari varaq FAQAT `sklad_keepers.printer_name` biriktirilgan omborga
- * chiqardi, aks holda funksiya `no-printer-mapped` qaytarib chop etishni
- * to'xtatardi. Prodda o'sha jadval **0 qator** edi va tovarlarning 89% ida
- * yacheyka yo'q (`skladNo: null` — u umuman marshrutlanmasdi ham), ya'ni
- * «Omborchiga yuborish» dan keyin chek HECH QACHON chiqmasdi.
+ * 🔴 PRINTER TANLANMAYDI (egasi, 2026-08-16): «monobloklarga, notbuklarga
+ * printer ulangan… saytdan hech biriga alohida printer ulanmaydi — kompyuter
+ * o'ziga ulangan printerdan chop qilsin». Bo'sh nom = Windows sukut printeri
+ * (`desktop/main.js` `printHtml` shartnomasi).
  *
- * Endi qoida mijoz cheki bilan AYNI (`2efe572f`): biriktirilgan printer bo'lsa
- * — o'sha printerga, bo'lmasa — **qurilmaning Windows sukut printeriga**
- * (bo'sh nom). Ombor→printer marshruti sozlansa ishlashda davom etadi.
+ * TARIX (nega bu qaror): ilgari varaq FAQAT `sklad_keepers.printer_name`
+ * biriktirilgan omborga chiqardi va aks holda chop BUTUNLAY to'xtardi. Prodda
+ * o'sha jadval 0 qator edi, tovarlarning 89% ida yacheyka yo'q — ya'ni chek
+ * hech qachon chiqmasdi. Sozlama semantik xato ham edi: printer nomi
+ * QURILMANIKI, sozlama esa akkauntga yozilardi — ikki kassada bir vaqtda
+ * to'g'ri bo'la olmasdi, nom mos kelmasa chop jim yiqilardi. Mijoz cheki va
+ * Z-hisobot 2026-08-12 da shu sababdan sukut printerga o'tgan edi; endi
+ * uchinchisi ham. Server ham bitta varaq qaytaradi (bo'linish sababi yo'q).
  *
  * Returns handled=false faqat ikki holatda: chop qatlami umuman yo'q
- * (`no-agent`) yoki varaqlarning O'ZI yuklanmadi (`load-failed`) — o'shanda
- * chaqiruvchi brauzer-zaxirasiga tushadi. Varaqlar bir vaqtda bosiladi.
+ * (`no-agent`) yoki varaqning O'ZI yuklanmadi (`load-failed`).
  */
 export async function printPickingViaAgent(saleId: string): Promise<PickingPrintOutcome> {
   const idle = (reason: PrintIdleReason): PickingPrintOutcome => ({
@@ -421,35 +421,19 @@ export async function printPickingViaAgent(saleId: string): Promise<PickingPrint
     return idle('load-failed');
   }
 
-  // Marshrut sozlamasi — QULAYLIK, chek esa hujjat: bu so'rov yiqilsa
-  // (403/500/tarmoq) varaq baribir sukut printerdan chiqadi. Ilgari u
-  // `Promise.all` da varaqlar bilan bir kaftda edi va uning har qanday xatosi
-  // chekni butunlay yo'qotardi.
-  const printerBySklad = new Map<number, string>();
-  try {
-    const keepers = await api.get<{ items: AgentKeeperRow[] }>('/sklad-keepers');
-    for (const k of keepers.items ?? []) {
-      if (k.printerName) printerBySklad.set(k.skladNo, k.printerName);
-    }
-  } catch {
-    // marshrutsiz davom etamiz — hammasi sukut printerga
-  }
-
   const sheets = sheetsRes.sheets ?? [];
-  // Varaq umuman yo'q — bu SOZLAMA muammosi emas (chop etadigan narsa yo'q).
+  // Varaq umuman yo'q — chop etadigan narsa yo'q.
   if (sheets.length === 0) return idle('load-failed');
 
   const el = electron();
   const results = await Promise.all(
     sheets.map(async (sheet) => {
-      // Bo'sh nom = Windows sukut printeri (desktop `printHtml` shartnomasi);
-      // yacheykasiz guruh (`skladNo: null`) ham aynan shu yo'ldan chiqadi.
-      const printer = (sheet.skladNo != null ? printerBySklad.get(sheet.skladNo) : undefined) ?? '';
       // Electron shell → native driver print (HTML, Cyrillic-safe).
       // Plain browser → HTTP print-agent (raw ESC/POS).
+      // Ikkalasida ham printer nomi BO'SH = qurilmaning sukut printeri.
       const r = el
-        ? await el.printSheet(printer, buildSheetHtml(sheet, sheetsRes), THERMAL_PAGE_MICRONS)
-        : await agentPrint(printer, { text: buildSheetText(sheet, sheetsRes) });
+        ? await el.printSheet('', buildSheetHtml(sheet, sheetsRes), THERMAL_PAGE_MICRONS)
+        : await agentPrint('', { text: buildSheetText(sheet, sheetsRes) });
       return r.ok ? ('printed' as const) : ('error' as const);
     }),
   );
@@ -457,9 +441,8 @@ export async function printPickingViaAgent(saleId: string): Promise<PickingPrint
   return {
     handled: true,
     printed: results.filter((r) => r === 'printed').length,
-    // Endi hech bir varaq TASHLAB KETILMAYDI (printer yo'q bo'lsa sukut
-    // printerga tushadi), lekin maydon shakli saqlanadi — chaqiruvchi
-    // «o'tkazib yuborildi» hisobini ko'rsatishda davom etadi.
+    // Hech bir varaq tashlab ketilmaydi — maydon shakli chaqiruvchilar uchun
+    // saqlanadi (hisobot qatori), qiymati doim 0.
     skipped: 0,
     errors: results.filter((r) => r === 'error').length,
   };

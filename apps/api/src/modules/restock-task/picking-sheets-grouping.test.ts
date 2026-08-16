@@ -39,7 +39,7 @@ const prod = (id: string, name: string, cell: string | null) => ({
 
 function makeService(opts: {
   products: ReturnType<typeof prod>[];
-  keepers?: Array<{ skladNo: number; employeeName: string | null; printerName: string | null }>;
+  keepers?: Array<{ skladNo: number; employeeName: string | null }>;
 }) {
   const positions = opts.products.map((p) => ({ productId: p.id, quantity: 1 }));
   const prisma = {
@@ -129,35 +129,33 @@ describe('getPickingSheets — bitta printer = bitta varaq', () => {
     expect(res.sheets[0].groupLabel).toBe('Yacheykasiz');
   });
 
-  it('PRINTERI BOR ombor — ALOHIDA varaq (boshqa jismoniy printer)', async () => {
+  /**
+   * 🔴 Egasi, 2026-08-16 (ikkinchi talab): «saytdan hech biriga alohida printer
+   * ulanmaydi — kompyuter/monoblokning O'ZIGA ulangan printerdan chiqsin».
+   * Ombor→printer marshruti butunlay olib tashlandi, ya'ni bo'linishning
+   * yagona sababi ham yo'qoldi: chek DOIM bitta ro'yxat.
+   */
+  it('omborchi biriktirilgan bo`lsa ham — baribir BITTA varaq', async () => {
     const svc = makeService({
       products: [
         prod('p1', 'Ombor-1-tovar', '01-01-01-01'),
         prod('p2', 'Ombor-2-tovar', '02-01-01-01'),
         prod('p3', 'Yacheykasiz', null),
       ],
-      keepers: [{ skladNo: 1, employeeName: 'Omborchi Ali', printerName: 'XP-01' }],
-    });
-
-    const res = await svc.getPickingSheets(ACCOUNT, 'retailsale', SALE_ID);
-
-    // 01 — o'z printeriga; qolgani (02 printersiz + yacheykasiz) bitta qog'ozda.
-    expect(res.sheets).toHaveLength(2);
-    expect(res.sheets[0]).toMatchObject({ skladNo: 1, printerName: 'XP-01', groupLabel: '01' });
-    expect(namesOf(res.sheets[0])).toEqual(['Ombor-1-tovar']);
-    expect(res.sheets[1].printerName).toBeNull();
-    expect(namesOf(res.sheets[1])).toEqual(['Ombor-2-tovar', 'Yacheykasiz']);
-  });
-
-  it('omborchi biriktirilgan-u printersiz bo`lsa — qo`shiladi (bitta qog`oz)', async () => {
-    const svc = makeService({
-      products: [prod('p1', 'Ombor-1-tovar', '01-01-01-01'), prod('p2', 'Yacheykasiz', null)],
-      keepers: [{ skladNo: 1, employeeName: 'Omborchi Ali', printerName: null }],
+      keepers: [{ skladNo: 1, employeeName: 'Omborchi Ali' }],
     });
 
     const res = await svc.getPickingSheets(ACCOUNT, 'retailsale', SALE_ID);
 
     expect(res.sheets).toHaveLength(1);
-    expect(namesOf(res.sheets[0])).toEqual(['Ombor-1-tovar', 'Yacheykasiz']);
+    expect(namesOf(res.sheets[0])).toEqual(['Ombor-1-tovar', 'Ombor-2-tovar', 'Yacheykasiz']);
+  });
+
+  it('javobda `printerName` maydoni UMUMAN yo`q (sayt printer tanlamaydi)', async () => {
+    const svc = makeService({ products: [prod('p1', 'A', '01-01-01-01')] });
+
+    const res = await svc.getPickingSheets(ACCOUNT, 'retailsale', SALE_ID);
+
+    expect(res.sheets[0]).not.toHaveProperty('printerName');
   });
 });

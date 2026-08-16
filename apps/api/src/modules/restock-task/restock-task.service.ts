@@ -300,66 +300,48 @@ export class RestockTaskService {
       skladNo != null ? String(skladNo).padStart(2, '0') : 'Yacheykasiz';
 
     /**
-     * 🔴 BITTA PRINTER = BITTA QOG'OZ (egasi, 2026-08-16).
+     * 🔴 CHEK — BITTA RO'YXAT (egasi, 2026-08-16, ikki bosqichda).
      *
-     * Ilgari HAR ombor guruhi alohida varaq edi. Bu ombor→printer marshruti
-     * sozlanganda to'g'ri (har ombor o'z printeriga), lekin prodda
-     * `sklad_keepers` 0 qator: hamma varaq AYNI sukut printerdan ketma-ket
-     * chiqardi — egasi «yacheykali va yacheykasiz alohida-alohida chiqdi»
-     * deb ko'rgan simptom shu. Tartib ham teskari edi: `NULL_SKLAD = -1`
-     * sonli saralashda birinchi turadi ⇒ yacheykasizlar oldinda chiqardi.
+     * (1) Ilgari HAR ombor guruhi alohida varaq edi — bu ombor→printer
+     * marshruti bor deb faraz qilardi. Egasi jonli sinovda «yacheykali va
+     * yacheykasiz alohida-alohida chiqdi» dedi. Tartib ham teskari edi:
+     * `NULL_SKLAD = -1` sonli saralashda birinchi turadi.
+     * (2) Keyin egasi marshrutning O'ZINI bekor qildi: «saytdan hech biriga
+     * alohida printer ulanmaydi — kompyuterning o'ziga ulangan printerdan
+     * chiqsin». Ya'ni bo'linishning yagona sababi ham yo'q.
      *
-     * Endi: printeri BOR ombor — o'z varag'i; qolgani BITTA varaqqa qo'shiladi
-     * (avval yacheykalilar marshrut bo'yicha, oxirida yacheykasizlar).
+     * Natija: HAMMA pozitsiya bitta varaqda — avval yacheykalilar (ombor →
+     * serpantin marshrut), oxirida yacheykasizlar. Sarlavha faqat guruh
+     * YAGONA bo'lganda chiqadi; aralashda `null` (na «01», na «Yacheykasiz»
+     * rost bo'lardi — manzil har qatorda turibdi).
      */
-    const routedSheets = [...groups.entries()]
-      .filter(([key]) => key !== NULL_SKLAD && keeperBySklad.get(key)?.printerName)
-      .sort((a, b) => a[0] - b[0])
-      .map(([key, entries]) => {
-        const keeper = keeperBySklad.get(key);
-        return {
-          skladNo: key,
-          groupLabel: labelOf(key),
-          omborchiName: keeper?.employeeName ?? null,
-          // Named printer this sklad's strip is routed to (via the local
-          // print-agent). null ⇒ no per-printer routing → browser print.
-          printerName: keeper?.printerName ?? null,
-          lines: [...entries].sort(byRoute).map(toLine),
-        };
-      });
-
-    const restKeys = [...groups.entries()]
-      .filter(([key]) => key === NULL_SKLAD || !keeperBySklad.get(key)?.printerName)
-      .map(([key]) => key);
-    // Yacheykasizlar OXIRIDA: `NULL_SKLAD = -1` bo'lgani uchun sonli saralash
-    // ularni oldinga chiqarardi — shuning uchun kalit alohida ko'chiriladi.
-    const restEntries = [
-      ...restKeys
-        .filter((k) => k !== NULL_SKLAD)
-        .sort((a, b) => a - b)
-        .flatMap((k) => [...(groups.get(k) ?? [])].sort(byRoute)),
+    const cellKeys = [...groups.keys()].filter((k) => k !== NULL_SKLAD).sort((a, b) => a - b);
+    // Yacheykasizlar OXIRIDA: `NULL_SKLAD = -1` bo'lgani uchun oddiy sonli
+    // saralash ularni oldinga chiqarardi — shuning uchun kalit alohida qo'shiladi.
+    const ordered = [
+      ...cellKeys.flatMap((k) => [...(groups.get(k) ?? [])].sort(byRoute)),
       ...(groups.get(NULL_SKLAD) ?? []),
     ];
 
-    // Aralash varaqda ombor sarlavhasi KO'RSATILMAYDI: na «01», na
-    // «Yacheykasiz» rost bo'lardi. Yagona guruh qolsa — o'z sarlavhasi.
-    const soleKey = restKeys.length === 1 ? restKeys[0] : undefined;
-    const restSkladNo = soleKey != null && soleKey !== NULL_SKLAD ? soleKey : null;
-    const restSheets =
-      restEntries.length > 0
+    const allKeys = [...groups.keys()];
+    const soleKey = allKeys.length === 1 ? allKeys[0] : undefined;
+    const sheetSkladNo = soleKey != null && soleKey !== NULL_SKLAD ? soleKey : null;
+    const sheets =
+      ordered.length > 0
         ? [
             {
-              skladNo: restSkladNo,
-              groupLabel: soleKey === undefined ? null : labelOf(restSkladNo),
+              skladNo: sheetSkladNo,
+              groupLabel: soleKey === undefined ? null : labelOf(sheetSkladNo),
+              // Omborchi nomi — vazifa biriktirmasidan (chop etishga aloqasi
+              // yo'q); faqat yagona omborli varaqda ma'noli.
               omborchiName:
-                restSkladNo != null ? (keeperBySklad.get(restSkladNo)?.employeeName ?? null) : null,
-              printerName: null,
-              lines: restEntries.map(toLine),
+                sheetSkladNo != null
+                  ? (keeperBySklad.get(sheetSkladNo)?.employeeName ?? null)
+                  : null,
+              lines: ordered.map(toLine),
             },
           ]
         : [];
-
-    const sheets = [...routedSheets, ...restSheets];
 
     return {
       sourceName,

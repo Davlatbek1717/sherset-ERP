@@ -13,13 +13,16 @@ const uuid = z.string().uuid();
 export const UpsertSkladKeeperSchema = z.object({
   skladNo: z.coerce.number().int().min(0).max(99999),
   employeeId: uuid.nullable(),
-  // Windows printer name this zone's picking sheet is routed to (print-agent).
-  // Optional; null/omitted leaves it unset.
-  printerName: z.string().max(255).nullable().optional(),
 });
 export type UpsertSkladKeeperInput = z.infer<typeof UpsertSkladKeeperSchema>;
 
-// `SetReceiptPrinterSchema` olib tashlandi: akkaunt-darajali mijoz cheki
-// printeri sozlamasi yo'q — chek qurilmaning Windows sukut printeriga bosiladi
-// (desktop v1.4.0+). Yuqoridagi `printerName` — ombor→printer marshruti, u
-// yig'ish varag'iniki va joyida qoladi.
+// 🔴 PRINTER NOMI BU YERDA YO'Q (egasi, 2026-08-16): «saytdan hech biriga
+// alohida printer ulanmaydi — kompyuter/monoblokning O'ZIGA ulangan
+// printerdan chiqsin». Avval akkaunt-darajali chek printeri
+// (`SetReceiptPrinterSchema`, 2026-08-12), endi ombor→printer marshruti ham
+// olib tashlandi. Sabab bir xil: printer nomi QURILMANIKI, sozlama esa
+// akkauntga yozilardi — ikki qurilmada bir vaqtda to'g'ri bo'la olmasdi va
+// nom mos kelmasa chop JIM yiqilardi.
+//
+// `sklad_keepers.printer_name` USTUNI bazada qoladi (o'chirish migratsiya
+// talab qiladi, jonli bazada esa foydasi yo'q) — hech kim o'qimaydi/yozmaydi.

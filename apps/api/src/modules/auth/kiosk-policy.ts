@@ -79,11 +79,11 @@ export const KIOSK_ALLOWED: readonly Rule[] = [
   { prefix: '/currencies', methods: ['GET'], why: 'USD naqd uchun' },
   { prefix: '/exchange-rates', methods: ['GET'], why: 'USD kursi (muzlatiladi)' },
   { prefix: '/company-settings', methods: ['GET'], why: 'chek sozlamalari' },
-  // Yig'ish varag'ining ombor→printer marshruti shu yerdan o'qiladi
-  // (`printPickingViaAgent`). Ro'yxatda bo'lmasa kiosk'da native chop etish
-  // jimgina popup'ga tushadi. (Mijoz cheki bu endpointga endi MUHTOJ EMAS —
-  // u qurilmaning Windows sukut printeriga bosiladi, desktop v1.4.0+.)
-  { prefix: '/sklad-keepers', methods: ['GET'], why: 'ombor→printer marshruti' },
+  // 🔴 `/sklad-keepers` QATORI OLIB TASHLANDI (2026-08-16). U yig'ish
+  // varag'ining ombor→printer marshruti uchun ochilgan edi; egasi esa printer
+  // tanlashni butunlay bekor qildi («kompyuterning o'ziga ulangan printerdan
+  // chiqsin»), ya'ni kassa bu endpointni endi CHAQIRMAYDI. Kerak bo'lmagan
+  // ruxsat ro'yxatda qolsa — bu jim kengayish (default-deny ma'nosini yeydi).
   // 🔴 Marshrut ochiq edi-yu VARAQNING O'ZI yopiq qolgan edi (2026-08-16).
   // «Omborchiga yuborish» dan keyin kassa shu endpointdan chek mazmunini
   // o'qiydi (`printPickingViaAgent`), zaxira `/print/picking/:id?auto=1`
