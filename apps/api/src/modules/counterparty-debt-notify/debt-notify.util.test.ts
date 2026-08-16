@@ -88,3 +88,55 @@ describe('buildDebtMessage — owner report (title + delta + total)', () => {
     expect(t).toContain('10 000 USD');
   });
 });
+
+describe('kassa oqimi — ega tomoni MIJOZ tomoni bilan simmetrik', () => {
+  it('retailsale, delta>0 → kassa savdosi', () => {
+    const t = buildDebtMessage({ ...base, source: 'retailsale' });
+    expect(t).toContain('📄 *Kassa savdosi*');
+    expect(t).toContain("📤 Qarzga sotildi: *10 000 so'm*");
+  });
+
+  it('retailsale, delta<0 → kassa qaytarishi', () => {
+    const t = buildDebtMessage({ ...base, source: 'retailsale', deltaMinor: -1_000_000n });
+    expect(t).toContain('📄 *Kassa qaytarishi*');
+    expect(t).toContain("↩️ Qarzdan ayirildi: *10 000 so'm*");
+  });
+
+  it("debtpayment → kontragent to'ladi", () => {
+    const t = buildDebtMessage({ ...base, source: 'debtpayment', deltaMinor: -2_000_000n });
+    expect(t).toContain("📄 *Qarz to'lovi*");
+    expect(t).toContain("💵 Kontragent to'ladi: *20 000 so'm*");
+  });
+
+  it('debt, delta>0 → qarz ochildi · delta<0 → qarz tuzatildi', () => {
+    expect(buildDebtMessage({ ...base, source: 'debt' })).toContain('📄 *Qarz ochildi*');
+    expect(buildDebtMessage({ ...base, source: 'debt', deltaMinor: -1_000_000n })).toContain(
+      '📄 *Qarz tuzatildi*',
+    );
+  });
+
+  /**
+   * SIMMETRIYA QULFI: mijoz tomoni biladigan har bir manba turini ega tomoni
+   * ham bilishi shart. Aks holda mijoz xabar oladi, ega esa hech nima —
+   * aynan shu yoriq 2026-08-16 da `default: return null` ostida topilgan edi.
+   */
+  it('mijoz biladigan HAR BIR turni ega ham biladi', () => {
+    const sources = [
+      'invoiceIn',
+      'invoiceOut',
+      'paymentIn',
+      'paymentOut',
+      'cashIn',
+      'cashOut',
+      'retailsale',
+      'debtpayment',
+      'debt',
+    ] as const;
+    for (const source of sources) {
+      expect(
+        buildDebtMessage({ ...base, source }),
+        `ega tomoni «${source}» ni bilmaydi`,
+      ).not.toBeNull();
+    }
+  });
+});

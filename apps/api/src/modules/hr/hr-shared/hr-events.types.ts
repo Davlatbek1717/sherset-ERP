@@ -148,7 +148,17 @@ export type CounterpartyBalanceChangeSource =
   | 'paymentIn'
   | 'paymentOut'
   | 'cashIn'
-  | 'cashOut';
+  | 'cashOut'
+  /**
+   * Kassa (POS) qarzga savdosi. Yo'nalish `deltaMinor` ISHORASIDAN o'qiladi:
+   * `> 0` qarzga sotildi · `< 0` qaytarish/tuzatish (mijozga baribir aytiladi —
+   * aks holda uning qo'lida «qarzga qo'shildi» oxirgi haqiqat bo'lib qolardi).
+   */
+  | 'retailsale'
+  /** Kassa qarz to'lovi (`recalcDebt` → `-paidDelta`). */
+  | 'debtpayment'
+  /** Qo'lda ochilgan QRZ- qarz. `deltaMinor < 0` ⇒ qarz o'chirildi/tuzatildi. */
+  | 'debt';
 
 export interface CounterpartyBalanceChangedEvent {
   accountId: string;

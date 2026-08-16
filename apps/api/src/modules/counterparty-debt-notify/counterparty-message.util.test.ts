@@ -91,3 +91,82 @@ describe('buildCounterpartyMessage — counterparty report (delta + total)', () 
     expect(t).not.toContain("so'm");
   });
 });
+
+describe('kassa oqimi — yangi manba turlari', () => {
+  it('retailsale, delta>0 → kassada qarzga savdo', () => {
+    const t = buildCounterpartyMessage({
+      ...base,
+      source: 'retailsale',
+      deltaMinor: 1_000_000n,
+      newBalanceMinor: 5_000_000n,
+    });
+    expect(t).toContain('📄 Kassa savdosi');
+    expect(t).toContain("🛒 Qarzga qo'shildi: +10 000 so'm");
+    expect(t).toContain("💰 Jami qarzingiz: 50 000 so'm");
+  });
+
+  it("debtpayment, delta<0 → qarz to'lovi, qoldiq ko'rsatiladi", () => {
+    const t = buildCounterpartyMessage({
+      ...base,
+      source: 'debtpayment',
+      deltaMinor: -2_000_000n,
+      newBalanceMinor: 3_000_000n,
+    });
+    expect(t).toContain("📄 Qarz to'lovi");
+    expect(t).toContain("✅ To'lovingiz qabul qilindi: 20 000 so'm");
+    expect(t).toContain("💰 Qolgan qarzingiz: 30 000 so'm");
+  });
+
+  it('debtpayment qarzni NOLGA tushirsa ham xabar beriladi', () => {
+    const t = buildCounterpartyMessage({
+      ...base,
+      source: 'debtpayment',
+      deltaMinor: -5_000_000n,
+      newBalanceMinor: 0n,
+    });
+    expect(t).not.toBeNull();
+    expect(t).toContain("💰 Hisob teng — qarzingiz yo'q");
+  });
+
+  it("debt, delta>0 → qo'lda ochilgan qarz", () => {
+    const t = buildCounterpartyMessage({
+      ...base,
+      source: 'debt',
+      deltaMinor: 1_000_000n,
+      newBalanceMinor: 1_000_000n,
+    });
+    expect(t).toContain('📄 Qarz');
+    expect(t).toContain("🛒 Qarzga qo'shildi: +10 000 so'm");
+  });
+
+  it('TUZATISH: retailsale, delta<0 → qaytarish, qarz kamayadi', () => {
+    const t = buildCounterpartyMessage({
+      ...base,
+      source: 'retailsale',
+      deltaMinor: -1_000_000n,
+      newBalanceMinor: 4_000_000n,
+    });
+    expect(t).toContain('📄 Qaytarish');
+    expect(t).toContain("↩️ Qarzingizdan ayirildi: 10 000 so'm");
+    expect(t).toContain("💰 Qolgan qarzingiz: 40 000 so'm");
+  });
+
+  it('TUZATISH nolga tushsa ham xabar beriladi (jim qolmaydi)', () => {
+    const t = buildCounterpartyMessage({
+      ...base,
+      source: 'debt',
+      deltaMinor: -5_000_000n,
+      newBalanceMinor: 0n,
+    });
+    expect(t).not.toBeNull();
+    expect(t).toContain("💰 Hisob teng — qarzingiz yo'q");
+  });
+});
+
+describe("mavjud matnlar o'zgarmadi (regressiya qulfi)", () => {
+  it('invoiceOut aynan eski satr', () => {
+    expect(buildCounterpartyMessage({ ...base, source: 'invoiceOut' })).toBe(
+      "Hurmatli Akme,\n📄 Sotuv\n🛒 Qarzga qo'shildi: +10 000 so'm\n━━━━━━━━━━━━\n💰 Jami qarzingiz: 50 000 so'm",
+    );
+  });
+});

@@ -55,6 +55,8 @@ export interface CounterpartyMessageContext {
 function cpHead(
   source: CounterpartyBalanceChangeSource,
   amt: string,
+  /** `true` ⇒ delta manfiy: mijozning qarzi KAMAYDI. */
+  isDecrease: boolean,
 ): { title: string; amountLine: string } | null {
   switch (source) {
     case 'invoiceOut': // we sold to them → their debt to us grew
@@ -67,6 +69,20 @@ function cpHead(
     case 'paymentOut':
     case 'cashOut': // we paid them
       return { title: "To'lov (bizdan)", amountLine: `💸 Bizning to'lovimiz: ${amt}` };
+    // ── Kassa oqimi (2026-08-16) — bitta manba, ikki yo'nalish ─────────────
+    // Qaytarish/bekor uchun ALOHIDA manba turi ATAYLAB kiritilmadi: yo'nalish
+    // `deltaMinor` ishorasida allaqachon bor, ikkinchi tur esa har yozuvchida
+    // «qaysi turni tanlayman?» degan yangi xato manbaini ochardi.
+    case 'retailsale':
+      return isDecrease
+        ? { title: 'Qaytarish', amountLine: `↩️ Qarzingizdan ayirildi: ${amt}` }
+        : { title: 'Kassa savdosi', amountLine: `🛒 Qarzga qo'shildi: +${amt}` };
+    case 'debtpayment':
+      return { title: "Qarz to'lovi", amountLine: `✅ To'lovingiz qabul qilindi: ${amt}` };
+    case 'debt':
+      return isDecrease
+        ? { title: 'Qarz tuzatildi', amountLine: `↩️ Qarzingizdan ayirildi: ${amt}` }
+        : { title: 'Qarz', amountLine: `🛒 Qarzga qo'shildi: +${amt}` };
     default:
       return null;
   }
@@ -88,11 +104,18 @@ function cpTotal(newBalanceMinor: bigint, currency: string, isPayment: boolean):
  * balance). A payment is always acknowledged, even if it clears the balance.
  */
 export function buildCounterpartyMessage(ctx: CounterpartyMessageContext): string | null {
-  const isPayment = ctx.source === 'paymentIn' || ctx.source === 'cashIn';
-  const head = cpHead(ctx.source, fmtAmount(ctx.deltaMinor, ctx.currency));
+  const isDecrease = ctx.deltaMinor < 0n;
+  // To'lov = mijozning puli keldi. Kassa qarz to'lovi ham shu toifada.
+  const isPayment =
+    ctx.source === 'paymentIn' || ctx.source === 'cashIn' || ctx.source === 'debtpayment';
+  // TUZATISH (qaytarish / qarz o'chirilishi): mijozga aytilishi SHART. Aks holda
+  // u olgan oxirgi xabar «qarzga qo'shildi» bo'lib qoladi va uning qo'lidagi
+  // raqam haqiqatdan uziladi (dizayn §4.3).
+  const isCorrection = isDecrease && (ctx.source === 'retailsale' || ctx.source === 'debt');
+  const head = cpHead(ctx.source, fmtAmount(ctx.deltaMinor, ctx.currency), isDecrease);
   if (!head) return null;
   // Non-payment change landing exactly on zero ⇒ nothing meaningful to say.
-  if (!isPayment && ctx.newBalanceMinor === 0n) return null;
+  if (!isPayment && !isCorrection && ctx.newBalanceMinor === 0n) return null;
 
   const date = fmtDate(ctx.docMoment);
   const num = (ctx.docNumber || '').trim();
@@ -104,6 +127,6 @@ export function buildCounterpartyMessage(ctx: CounterpartyMessageContext): strin
   lines.push(hdr);
   lines.push(head.amountLine);
   lines.push('━━━━━━━━━━━━');
-  lines.push(cpTotal(ctx.newBalanceMinor, ctx.currency, isPayment));
+  lines.push(cpTotal(ctx.newBalanceMinor, ctx.currency, isPayment || isCorrection));
   return lines.join('\n');
 }

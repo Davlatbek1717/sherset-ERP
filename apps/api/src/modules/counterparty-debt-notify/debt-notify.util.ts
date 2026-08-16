@@ -67,6 +67,8 @@ const WARN_LINE = '⚠️ Diqqat: qarz belgilangan chegaradan oshdi.';
 function ownerHead(
   source: CounterpartyBalanceChangeSource,
   amt: string,
+  /** `true` ⇒ delta manfiy: kontragentning qarzi KAMAYDI. */
+  isDecrease: boolean,
 ): { title: string; amountLine: string } | null {
   switch (source) {
     case 'invoiceIn': // we received goods → we owe the supplier more
@@ -79,6 +81,19 @@ function ownerHead(
     case 'paymentIn':
     case 'cashIn': // the counterparty paid us
       return { title: "To'lov (kirim)", amountLine: `💵 Kontragent to'ladi: *${amt}*` };
+    // ── Kassa oqimi (2026-08-16) ──────────────────────────────────────────
+    // MIJOZ tomoni bilan SIMMETRIK bo'lishi shart: `counterparty-message.util`
+    // bu turlarni bilib, bu yer bilmasa — mijoz xabar oladi, EGA olmaydi.
+    case 'retailsale':
+      return isDecrease
+        ? { title: 'Kassa qaytarishi', amountLine: `↩️ Qarzdan ayirildi: *${amt}*` }
+        : { title: 'Kassa savdosi', amountLine: `📤 Qarzga sotildi: *${amt}*` };
+    case 'debtpayment':
+      return { title: "Qarz to'lovi", amountLine: `💵 Kontragent to'ladi: *${amt}*` };
+    case 'debt':
+      return isDecrease
+        ? { title: 'Qarz tuzatildi', amountLine: `↩️ Qarzdan ayirildi: *${amt}*` }
+        : { title: 'Qarz ochildi', amountLine: `📤 Qarzga yozildi: *${amt}*` };
     default:
       return null;
   }
@@ -102,7 +117,7 @@ function ownerTotal(newBalanceMinor: bigint, escapedName: string, currency: stri
  * unmatched ⇒ no owner alert).
  */
 export function buildDebtMessage(ctx: DebtMessageContext): string | null {
-  const head = ownerHead(ctx.source, fmtAmount(ctx.deltaMinor, ctx.currency));
+  const head = ownerHead(ctx.source, fmtAmount(ctx.deltaMinor, ctx.currency), ctx.deltaMinor < 0n);
   if (!head) return null;
   const name = escapeMd(ctx.name);
   const date = fmtDate(ctx.docMoment);
