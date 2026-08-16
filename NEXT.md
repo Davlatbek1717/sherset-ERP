@@ -331,6 +331,33 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-08-16i (KASSA — OMBORGA CHIQADIGAN CHEK chiqmasdi: kiosk 403 + printer sozlamasi; `d7e11af0`) —**
+> ✅ DEPLOYED `c3aeee3e → d7e11af0`: sayt/health 200, deploy qilingan `kiosk-policy.ts` da yangi
+> qoida bor, web chunk'da `no-printer-mapped` YO'Q (eski kod ketdi). Egasi simptomi: «Omborchiga
+> yuborish» dan keyin chek o'rniga **kichik oyna** ochiladi. Prodda o'lchandi — 3 qatlam:
+> **(1)** `GET /restock-tasks/picking-sheets/:source/:id` `KIOSK_ALLOWED` da YO'Q edi ⇒ 403
+> (nginx logida **28 marta**) ⇒ `load-failed` ⇒ zaxira popup, u ham AYNI endpointni so'raydi ⇒
+> ikkinchi 403. Ro'yxat YARIM to'ldirilgan edi: marshrut (`/sklad-keepers`) ochiq, varaqning
+> O'ZI yopiq. Endi `exact` qoida; `/restock-tasks` ning qolgani YOPIQ (deny-testlar bilan).
+> **(2)** varaq faqat `sklad_keepers.printer_name` biriktirilgan omborga chiqardi — prodda u
+> jadval **0 qator**, ustiga yacheykasiz guruh (`skladNo:null`) umuman marshrutlanmasdi va
+> prodda **5064 tovardan 561 tasida** (11%) `__yacheyka` bor. Endi mijoz cheki bilan AYNI
+> shartnoma: biriktirilgan printer bo'lsa — o'shanga, bo'lmasa **qurilma sukut printeriga**;
+> `/sklad-keepers` fail-open (marshrut yiqilsa chek baribir chiqadi).
+> **(3)** qobiqda popup BUTUNLAY yopildi (egasi: «oyna ochilmasligi kerak edi») — u ayni
+> so'rovni qaytaradi, ya'ni foydasiz; endi sababli xato toast. `no-printer-mapped`/
+> `configure-printer` qavati o'lik qolib olib tashlandi.
+> Gate: tc 0 · lint:product 0 · i18n 0 · **web 4058** · api auth/restock/retail-sale 700.
+> Yangi qulf: `apps/web/src/lib/__tests__/picking-print-routing.test.ts` (7 test).
+> ⚠️ **Qurilmada kassa ilovasi qayta ochilishi kerak** (eski JS chunk xotirada qoladi).
+> 🔴 **QOLGAN QARZ (egasi «hozircha tegmaymiz» dedi):** `sklad_keepers` 0 qator ⇒
+> `createPickingTasksForSale` hech qanday `RestockTask` YARATMAYDI — omborchi ilovada vazifa
+> ko'rmaydi, zanjir faqat QOG'OZ chek bilan ishlaydi. Xotira: `picking-sheet-needed-printer-config`,
+> `kiosk-allowlist-half-filled`. Shu sinfdan tuzatilmagan 403 lar: `GET /tasks/badge-count`
+> (**4641 marta** — kiosk sahifasidagi polling), `/audit-logs`, `/custom-entities`.
+>
+> ---
+>
 > **🕒 2026-08-16h (KASSA — MANUAL dollar kursi CBRU'dan USTUN; egasi: «12 000 deb hisobla») —**
 > `getRate` endi avval source='MANUAL' qatorini qidiradi (sana lte, latest) — topilsa CBRU'ga
 > qaramaydi; kunlik 09:00 CBRU-cron yangi sana qo'shsa ham MANUAL o'chirilmaguncha kassa kursi
