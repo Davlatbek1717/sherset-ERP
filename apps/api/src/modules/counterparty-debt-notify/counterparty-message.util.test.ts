@@ -163,6 +163,96 @@ describe('kassa oqimi — yangi manba turlari', () => {
   });
 });
 
+describe('chek mazmuni — do`kon nomi, tovarlar, to`lov taqsimoti, havola', () => {
+  const sale = {
+    ...base,
+    source: 'retailsale' as const,
+    deltaMinor: 100_000_00n, // qarzga yozilgan qism
+    newBalanceMinor: 690_899_400n,
+    docNumber: 'CHK-2026-00042',
+    docMoment: new Date('2026-08-16T06:02:00Z'),
+    orgName: "SHERSET ELEKTRO TOVAR DO'KONI",
+  };
+
+  it('do`kon nomi eng tepada, mijoz nomidan oldin', () => {
+    const t = buildCounterpartyMessage(sale) as string;
+    expect(t.split('\n')[0]).toBe("SHERSET ELEKTRO TOVAR DO'KONI");
+    expect(t.split('\n')[1]).toBe('Hurmatli Akme,');
+  });
+
+  it('tovarlardan 3 tasi chiqadi, qolgani «va yana N tur»', () => {
+    const t = buildCounterpartyMessage({
+      ...sale,
+      items: [
+        { name: 'Kabel VVG 3x2.5', quantity: '100', uom: 'm' },
+        { name: 'Avtomat IEK 25A', quantity: '4', uom: 'dona' },
+        { name: 'Rozetka Schneider', quantity: '10', uom: 'dona' },
+        { name: 'Vilka', quantity: '2', uom: 'dona' },
+        { name: 'Lenta', quantity: '5', uom: null },
+      ],
+    }) as string;
+    expect(t).toContain('• Kabel VVG 3x2.5 — 100 m');
+    expect(t).toContain('• Avtomat IEK 25A — 4 dona');
+    expect(t).toContain('• Rozetka Schneider — 10 dona');
+    expect(t).not.toContain('Vilka');
+    expect(t).toContain('• va yana 2 tur');
+  });
+
+  it('uchtadan kam tovar bo`lsa «va yana» qatori chiqmaydi', () => {
+    const t = buildCounterpartyMessage({
+      ...sale,
+      items: [{ name: 'Kabel', quantity: '1', uom: 'm' }],
+    }) as string;
+    expect(t).toContain('• Kabel — 1 m');
+    expect(t).not.toContain('va yana');
+  });
+
+  it("to'lov taqsimoti: naqd va qarzga yozilgan qism alohida qator", () => {
+    const t = buildCounterpartyMessage({
+      ...sale,
+      paidMinor: 70_000_00n,
+      debtMinor: 100_000_00n,
+    }) as string;
+    expect(t).toContain("💵 To'landi: 70 000 so'm");
+    expect(t).toContain("📝 Qarzga yozildi: 100 000 so'm");
+  });
+
+  it("to'liq to'langan chekda «Qarzga yozildi» qatori chiqmaydi", () => {
+    const t = buildCounterpartyMessage({
+      ...sale,
+      paidMinor: 170_000_00n,
+      debtMinor: 0n,
+    }) as string;
+    expect(t).toContain("💵 To'landi: 170 000 so'm");
+    expect(t).not.toContain('Qarzga yozildi');
+  });
+
+  it('chek havolasi oxirgi qator bo`lib chiqadi', () => {
+    const t = buildCounterpartyMessage({
+      ...sale,
+      receiptUrl: 'https://erp.sherset.uz/p/abc123',
+    }) as string;
+    expect(t.split('\n').at(-1)).toBe('🧾 Chek: https://erp.sherset.uz/p/abc123');
+  });
+
+  it('yangi maydonlarning HECH BIRI yo`q bo`lsa — eski qisqa matn chiqadi', () => {
+    const t = buildCounterpartyMessage({ ...base, source: 'retailsale' }) as string;
+    expect(t).not.toContain('🧾');
+    expect(t).not.toContain('•');
+    expect(t).not.toContain("💵 To'landi");
+    expect(t.split('\n')[0]).toBe('Hurmatli Akme,');
+  });
+
+  it('MINUS balans mijozga hech qachon ko`rsatilmaydi', () => {
+    const t = buildCounterpartyMessage({
+      ...sale,
+      newBalanceMinor: -690_899_400n,
+    }) as string;
+    expect(t).not.toContain('-6 908 994');
+    expect(t).toContain('💰 Sizga qarzimiz: 6 908 994 so`m'.replace(/`/g, "'"));
+  });
+});
+
 describe("mavjud matnlar o'zgarmadi (regressiya qulfi)", () => {
   it('invoiceOut aynan eski satr', () => {
     expect(buildCounterpartyMessage({ ...base, source: 'invoiceOut' })).toBe(

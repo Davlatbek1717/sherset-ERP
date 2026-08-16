@@ -46,6 +46,12 @@ function makePrismaFull(
     recentNotifyCount?: number;
     /** Hujjat meta'si — `fetchDocMeta` shu jadvallardan o'qiydi. */
     doc?: { name?: string; moment?: Date; createdAt?: Date } | null;
+    /** Chek tafsiloti — `fetchReceiptDetails` (faqat retailsale) o'qiydi. */
+    receipt?: {
+      payedSumMinor?: bigint;
+      organization?: { name: string } | null;
+      positions?: Array<{ quantity: string; product: { name: string; uom: string | null } | null }>;
+    };
   } = {},
 ) {
   const cp =
@@ -64,6 +70,12 @@ function makePrismaFull(
   const chatCount = vi.fn(async () => opts.chatCount ?? 0);
   const docRow = opts.doc === undefined ? null : opts.doc;
   const docFind = vi.fn(async () => docRow);
+  // `retailSale.findFirst` IKKI joydan chaqiriladi — `fetchDocMeta` (raqam+sana)
+  // va `fetchReceiptDetails` (tovarlar+to'langan). Bitta obyekt ikkalasini ham
+  // qondiradi: har biri o'ziga keragini oladi.
+  const saleFind = vi.fn(async () =>
+    docRow === null && opts.receipt === undefined ? null : { ...docRow, ...(opts.receipt ?? {}) },
+  );
   return {
     prisma: {
       client: {
@@ -71,7 +83,7 @@ function makePrismaFull(
         telegramChat: { count: chatCount },
         hrTelegramOutbox: { findFirst: outboxFindFirst, create: outboxCreate, count: outboxCount },
         // `fetchDocMeta` shu jadvallardan o'qiydi (turiga qarab bittasi).
-        retailSale: { findFirst: docFind },
+        retailSale: { findFirst: saleFind },
         debt: { findFirst: docFind },
         debtPayment: { findFirst: docFind },
       },
@@ -404,6 +416,54 @@ describe('CounterpartyDebtNotifier', () => {
       const text = lastOutboxData(outboxCreate).messageText;
       expect(text).toContain('16.08.2026');
       expect(text).not.toContain('№');
+    });
+  });
+
+  describe('chek tafsiloti xabarga tushadi', () => {
+    it('kassa savdosi: do`kon nomi, tovarlar va to`lov taqsimoti', async () => {
+      const { prisma, outboxCreate } = makePrismaFull({
+        phone: '+998901234567',
+        doc: { name: 'CHK-2026-00042', moment: new Date('2026-08-16T06:02:00Z') },
+        receipt: {
+          payedSumMinor: 70_000_00n,
+          organization: { name: "SHERSET ELEKTRO TOVAR DO'KONI" },
+          positions: [
+            { quantity: '100.000000', product: { name: 'Kabel VVG 3x2.5', uom: 'm' } },
+            { quantity: '2.500000', product: { name: 'Sim', uom: 'kg' } },
+          ],
+        },
+      });
+      // biome-ignore lint/suspicious/noExplicitAny: test wiring
+      await new CounterpartyDebtNotifier(prisma as any).onBalanceChanged({
+        ...baseEvent,
+        source: 'retailsale',
+        docType: 'retailsale',
+        docId: 'rs-1',
+        deltaMinor: 100_000_00n,
+        newBalanceMinor: 690_899_400n,
+      });
+      const t = lastOutboxData(outboxCreate).messageText;
+      expect(t.split('\n')[0]).toBe("SHERSET ELEKTRO TOVAR DO'KONI");
+      // Decimal «100.000000» → «100», «2.500000» → «2.5»
+      expect(t).toContain('• Kabel VVG 3x2.5 — 100 m');
+      expect(t).toContain('• Sim — 2.5 kg');
+      expect(t).toContain("💵 To'landi: 70 000 so'm");
+      expect(t).toContain("📝 Qarzga yozildi: 100 000 so'm");
+    });
+
+    it('boshqa manbada chek tafsiloti O`QILMAYDI (ortiqcha so`rov yo`q)', async () => {
+      const { prisma } = makePrismaFull({ phone: '+998901234567' });
+      // biome-ignore lint/suspicious/noExplicitAny: test wiring
+      const p = prisma as any;
+      await new CounterpartyDebtNotifier(p).onBalanceChanged({
+        ...baseEvent,
+        source: 'paymentIn',
+        docType: 'paymentIn',
+        docId: 'pi-1',
+        deltaMinor: -1_000_000n,
+        newBalanceMinor: 1_000_000n,
+      });
+      expect(p.client.retailSale.findFirst).not.toHaveBeenCalled();
     });
   });
 

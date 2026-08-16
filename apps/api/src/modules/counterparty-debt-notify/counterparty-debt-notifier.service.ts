@@ -15,6 +15,14 @@ const BOT_API_TIMEOUT_MS = 10_000;
 const COUNTERPARTY_NOTIFY_EVENT = 'debt.counterparty_notify';
 
 /**
+ * Prisma `Decimal` `String()` da «100.000000» beradi — chekda «100 m» bo'lishi
+ * kerak. Kasr qismi bo'lsa saqlanadi («2.5 kg»), bo'lmasa nuqta ham olib tashlanadi.
+ */
+function trimDecimal(v: string): string {
+  return v.includes('.') ? v.replace(/0+$/, '').replace(/\.$/, '') : v;
+}
+
+/**
  * Counterparty debt/payment Telegram notifier — TWO independent deliveries per
  * balance change (emitted by CounterpartyBalanceService.applyDelta):
  *
@@ -93,6 +101,52 @@ export class CounterpartyDebtNotifier {
    * (`moment`) for the report header, keyed by the event's docType+docId. Any
    * miss / error ⇒ null (the message builders then omit the header parts).
    */
+  /**
+   * Kassa cheki tafsiloti — FAQAT `retailsale` uchun o'qiladi (boshqa turlarda
+   * ortiqcha so'rov qilinmaydi). Xato bo'lsa `null`: xabar baribir ketadi,
+   * shunchaki tovar ro'yxatisiz — chek tafsiloti xabarni BLOKLAMASLIGI kerak.
+   */
+  private async fetchReceiptDetails(
+    accountId: string,
+    docId: string | undefined,
+  ): Promise<{
+    orgName: string | null;
+    items: Array<{ name: string; quantity: string; uom: string | null }>;
+    paidMinor: bigint | null;
+  } | null> {
+    if (!docId) return null;
+    try {
+      const sale = await this.prisma.client.retailSale.findFirst({
+        where: { id: docId, accountId },
+        select: {
+          payedSumMinor: true,
+          organization: { select: { name: true } },
+          positions: {
+            orderBy: { position: 'asc' },
+            select: { quantity: true, product: { select: { name: true, uom: true } } },
+          },
+        },
+      });
+      if (!sale) return null;
+      return {
+        orgName: sale.organization?.name ?? null,
+        items: (sale.positions ?? [])
+          .filter((p): p is typeof p & { product: { name: string; uom: string | null } } =>
+            Boolean(p.product),
+          )
+          .map((p) => ({
+            name: p.product.name,
+            quantity: trimDecimal(String(p.quantity)),
+            uom: p.product.uom,
+          })),
+        paidMinor: sale.payedSumMinor,
+      };
+    } catch (e) {
+      this.logger.warn(`debt notify: chek tafsiloti o'qilmadi: ${(e as Error).message}`);
+      return null;
+    }
+  }
+
   private async fetchDocMeta(
     docType: string | undefined,
     docId: string | undefined,
@@ -207,6 +261,13 @@ export class CounterpartyDebtNotifier {
         return;
       }
 
+      // Chek tafsiloti faqat kassa savdosida bor (tovar ro'yxati + to'langan
+      // qism). Qolgan manbalarda `null` ⇒ o'sha qatorlar chizilmaydi.
+      const receipt =
+        payload.source === 'retailsale'
+          ? await this.fetchReceiptDetails(payload.accountId, payload.docId)
+          : null;
+
       const text = buildCounterpartyMessage({
         name,
         currency: payload.currency,
@@ -215,6 +276,12 @@ export class CounterpartyDebtNotifier {
         source: payload.source,
         docNumber: doc?.number,
         docMoment: doc?.moment,
+        orgName: receipt?.orgName,
+        items: receipt?.items,
+        paidMinor: receipt?.paidMinor,
+        // Qarzga yozilgan qism = shu hodisaning deltasi (musbat bo'lsa).
+        // Qaytarishda (manfiy) bu qator umuman chiqmaydi.
+        debtMinor: payload.deltaMinor > 0n ? payload.deltaMinor : null,
       });
       if (!text) return; // e.g. non-payment change landing on a zero balance
 

@@ -49,7 +49,24 @@ export interface CounterpartyMessageContext {
   docNumber?: string | null;
   /** Source document date; omitted from header if absent. */
   docMoment?: Date | string | null;
+
+  // ── Chek mazmuni (2026-08-16, egasi namunasi) ─────────────────────────────
+  // Hammasi OPTIONAL: yo'q bo'lsa tegishli qator umuman chizilmaydi, ya'ni
+  // ma'lumot yetmagan manba (invoiceOut, cashIn…) eski qisqa matnda qoladi.
+  /** Do'kon nomi — xabarning eng tepasidagi sarlavha. */
+  orgName?: string | null;
+  /** Chek tarkibi. Uchtasi chiqadi, qolgani «va yana N tur» bo'lib yig'iladi. */
+  items?: Array<{ name: string; quantity: string; uom?: string | null }>;
+  /** Chekdan naqd/karta bilan to'langan qism (tiyin). */
+  paidMinor?: bigint | null;
+  /** Chekdan qarzga yozilgan qism (tiyin). */
+  debtMinor?: bigint | null;
+  /** Ochiq chek havolasi (`/p/<token>`). */
+  receiptUrl?: string | null;
 }
+
+/** Chekda ko'rsatiladigan tovar qatorlari soni; qolgani jamlanadi. */
+const ITEM_PREVIEW_LIMIT = 3;
 
 /** Per-source report title + the "this operation" amount line (counterparty framing). */
 function cpHead(
@@ -120,13 +137,42 @@ export function buildCounterpartyMessage(ctx: CounterpartyMessageContext): strin
   const date = fmtDate(ctx.docMoment);
   const num = (ctx.docNumber || '').trim();
 
-  const lines: string[] = [`Hurmatli ${ctx.name},`];
+  const lines: string[] = [];
+  // Do'kon nomi — brend sarlavhasi (egasining namunasidagi kabi).
+  const org = (ctx.orgName || '').trim();
+  if (org) lines.push(org);
+  lines.push(`Hurmatli ${ctx.name},`);
   let hdr = `📄 ${head.title}`;
   if (date) hdr += ` — ${date}`;
   if (num) hdr += `, №${num}`;
   lines.push(hdr);
   lines.push(head.amountLine);
+
+  // Tovar ro'yxati — mijoz nima olganini havolani ochmasdan ko'rsin.
+  const items = ctx.items ?? [];
+  for (const it of items.slice(0, ITEM_PREVIEW_LIMIT)) {
+    const uom = (it.uom || '').trim();
+    lines.push(`   • ${it.name} — ${it.quantity}${uom ? ` ${uom}` : ''}`);
+  }
+  if (items.length > ITEM_PREVIEW_LIMIT) {
+    lines.push(`   • va yana ${items.length - ITEM_PREVIEW_LIMIT} tur`);
+  }
+
+  // To'lov taqsimoti — qarzga savdoda eng muhim ikki raqam.
+  if (ctx.paidMinor != null && ctx.paidMinor > 0n) {
+    lines.push(`💵 To'landi: ${fmtAmount(ctx.paidMinor, ctx.currency)}`);
+  }
+  if (ctx.debtMinor != null && ctx.debtMinor > 0n) {
+    lines.push(`📝 Qarzga yozildi: ${fmtAmount(ctx.debtMinor, ctx.currency)}`);
+  }
+
   lines.push('━━━━━━━━━━━━');
+  // 🔴 Balans HECH QACHON minus bilan chiqmaydi — `cpTotal` uni so'z bilan
+  // beradi («Jami qarzingiz» / «Sizga qarzimiz»). Xom manfiy son mijozga
+  // hech nima anglatmaydi va eng ko'p savol tug'diradigan qator edi.
   lines.push(cpTotal(ctx.newBalanceMinor, ctx.currency, isPayment || isCorrection));
+
+  const url = (ctx.receiptUrl || '').trim();
+  if (url) lines.push(`🧾 Chek: ${url}`);
   return lines.join('\n');
 }
