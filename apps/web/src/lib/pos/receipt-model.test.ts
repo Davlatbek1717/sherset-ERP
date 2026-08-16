@@ -59,6 +59,7 @@ describe('yorliqlar i18n bilan bir xil (ikki manba ajralib ketmasin)', () => {
   const PAIRS: Array<[keyof typeof RECEIPT_LABELS, string]> = [
     ['titleSale', 'chek_title_sale'],
     ['titleReturn', 'chek_title_return'],
+    ['titleDebt', 'chek_title_debt'],
     ['date', 'date'],
     ['seller', 'chek_seller'],
     ['buyer', 'chek_buyer'],

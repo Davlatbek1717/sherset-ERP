@@ -56,6 +56,7 @@ import {
 import { parseAmountToMinor } from '@/lib/pos/parse-amount';
 import { scanFeedback } from '@/lib/pos/scan-feedback';
 import {
+  printDebtReceiptViaAgent,
   printPickingViaAgent,
   printReceiptViaAgent,
   printZReportViaAgent,
@@ -982,6 +983,18 @@ function SalesScreen({
     [finishPrint],
   );
 
+  // Qarz to'lovi cheki — tovar cheki bilan AYNI yo'l (2026-08-16, egasi):
+  // qobiq/agent tirik bo'lsa to'lov tasdiqlanishi bilan OYNASIZ chop etiladi.
+  // Ilgari bu yerda `window.open('/print/debt-payment/…?auto=1')` turardi va
+  // kassa.exe'da chek alohida oynada EKRANGA chiqardi.
+  const printDebtReceipt = useCallback(
+    async (batchId: string) => {
+      const outcome = await printDebtReceiptViaAgent(batchId);
+      await finishPrint(outcome, { url: `/print/debt-payment/${batchId}?auto=1` });
+    },
+    [finishPrint],
+  );
+
   // When omborchi marks a sale "Tayyor", the kassir pulls it into the cart:
   // its positions load into the Savat view (read-only echo) and the payment
   // sheet opens against that existing ready sale.
@@ -1641,9 +1654,9 @@ function SalesScreen({
               ? t('debt_paid_with_closed', { n: result.closedCount })
               : t('debt_paid'),
           );
-          // PKO cheki — kassa TZ §7.2/5-qadam. Yangi oynada, `auto=1` bilan
-          // darhol chop etish dialogi ochiladi (retail-sale cheki bilan bir xil).
-          window.open(`/print/debt-payment/${result.batchId}?auto=1`, '_blank');
+          // Qarz cheki — kassa TZ §7.2/5-qadam. Tovar cheki bilan AYNI yo'l:
+          // jim chop, zaxira-popup faqat qobiq/agent o'lik bo'lsa (2026-08-16).
+          void printDebtReceipt(result.batchId);
         }}
       />
 

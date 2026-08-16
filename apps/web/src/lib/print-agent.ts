@@ -13,6 +13,8 @@
 import { api } from './api-client';
 // P05: chek oxiridagi qarz qoldig'i — ikkala chop-nuqta bitta helper'dan.
 import { fetchDebtAfter } from './pos/receipt-debt';
+// Qarz to'lovi cheki — server javobi → tovar-chek modeli (2026-08-16).
+import { type DebtReceiptPayload, debtReceiptToSaleInput } from './pos/receipt-debt-model';
 // Chek modeli — uchala renderer uchun YAGONA manba (qaror + formatlash).
 import {
   RECEIPT_LABELS,
@@ -532,8 +534,9 @@ export function buildReceiptText(sale: ReceiptSale): string {
     }
   }
   // ── P05: mijozning qolgan qarzi — to'lovlardan keyin, footer'dan oldin.
-  //    null = o'lchanmagan, 0 = qarz yo'q — ikkalasida qator chizilmaydi.
-  if (m.debtAfterMinor != null && m.debtAfterMinor > 0n) {
+  //    null = o'lchanmagan, 0 = qarz yo'q — savdo chekida ikkalasida qator
+  //    chizilmaydi; qarz to'lovi chekida (showZeroDebt) 0 ham chiqadi.
+  if (m.debtAfterMinor != null && (m.debtAfterMinor > 0n || m.showZeroDebt)) {
     L.push(bar);
     pushRow(L, `${RECEIPT_LABELS.debtAfter}:`, fmtSom(m.debtAfterMinor));
   }
@@ -580,8 +583,9 @@ export function buildReceiptHtml(sale: ReceiptSale): string {
     .join('');
 
   // P05: qolgan qarz — to'lov qatorlari uslubida, ulardan keyin.
+  // Qarz to'lovi chekida (showZeroDebt) 0 qoldiq ham chiziladi.
   const debtHtml =
-    m.debtAfterMinor != null && m.debtAfterMinor > 0n
+    m.debtAfterMinor != null && (m.debtAfterMinor > 0n || m.showZeroDebt)
       ? `<tr><td colspan="5" class="c">${e(RECEIPT_LABELS.debtAfter)}:</td><td class="r">${e(fmtSom(m.debtAfterMinor))}</td></tr>`
       : '';
 
@@ -670,6 +674,43 @@ export async function printReceiptViaAgent(saleId: string): Promise<ReceiptPrint
   // (desktop v1.4.0+). Akkaunt-darajali sozlama butunlay olib tashlandi — u
   // ikki kassada bir vaqtda to'g'ri bo'la olmasdi va kiosk kassirda uni
   // sozlaydigan sahifa umuman yo'q edi.
+  const el = electron();
+  const r = el
+    ? await el.printSheet('', buildReceiptHtml(sale), THERMAL_PAGE_MICRONS)
+    : await agentPrint('', { text: buildReceiptText(sale) });
+  return { handled: true, ok: r.ok, error: r.error };
+}
+
+/**
+ * Qarz to'lovi chekini qurilmaning sukut printeriga JIM chop etadi
+ * (2026-08-16, egasi) — tovar cheki bilan AYNI yo'l va AYNI shablon
+ * (`debtReceiptToSaleInput` → `buildReceiptHtml`/`buildReceiptText`).
+ *
+ * Ilgari POS to'lovdan keyin `window.open('/print/debt-payment/…?auto=1')`
+ * qilardi — kassa.exe'da chek ALOHIDA OYNADA ekranga chiqardi va dizayni
+ * boshqa (PKO) edi. Endi chaqiruvchi tovar cheki naqshida `finishPrint`
+ * bilan yakunlaydi: qobiq/agent o'lik bo'lsagina brauzer-zaxira ochiladi.
+ *
+ * Chek server javobidan TO'LIQ yig'iladi (qoldiq ham `outstandingAfterMinor`
+ * ichida) — `fetchDebtAfter` ga o'xshash qo'shimcha so'rov KERAK EMAS va
+ * qayta chop etishda ham AYNI raqamlar chiqadi (chek — moliyaviy hujjat).
+ */
+export async function printDebtReceiptViaAgent(batchId: string): Promise<ReceiptPrintOutcome> {
+  const idle = (reason: PrintIdleReason): ReceiptPrintOutcome => ({
+    handled: false,
+    ok: false,
+    reason,
+  });
+  if (!(await checkPrintAgent())) return idle('no-agent');
+
+  let receipt: DebtReceiptPayload;
+  try {
+    receipt = await api.get<DebtReceiptPayload>(`/debts/pos/receipt/${batchId}`);
+  } catch {
+    return idle('load-failed');
+  }
+
+  const sale = debtReceiptToSaleInput(receipt);
   const el = electron();
   const r = el
     ? await el.printSheet('', buildReceiptHtml(sale), THERMAL_PAGE_MICRONS)

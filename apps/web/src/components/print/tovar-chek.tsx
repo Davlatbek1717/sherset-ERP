@@ -77,6 +77,12 @@ export interface TovarChekProps {
    * Buyurtma/jo'natma cheklari bermaydi ⇒ namunaga 1:1 mos qoladi.
    */
   debtAfterMinor?: bigint | null;
+  /**
+   * Qarz to'lovi chekida (2026-08-16) TRUE: «Sizning qarzingiz» 0 bo'lsa HAM
+   * chiziladi — «qarz tugadi» nizoni yopadigan dalil. Savdo/buyurtma
+   * cheklarida berilmaydi ⇒ eski xulq (0 → qator yo'q) o'zgarmaydi.
+   */
+  showZeroDebt?: boolean;
   /** Qog'oz eni (mm) — shrift shunga qarab moslashadi. */
   widthMm: number;
 }
@@ -97,6 +103,7 @@ export function TovarChek({
   subtotalMinor,
   payments,
   debtAfterMinor,
+  showZeroDebt,
   widthMm,
 }: TovarChekProps) {
   const t = useTranslations('pages.print');
@@ -257,8 +264,9 @@ export function TovarChek({
             </React.Fragment>
           ))}
           {/* P05 — mijozning qolgan qarzi: to'lov qatorlaridan keyin, xuddi
-              shu uslubda. Shart renderer'lar bilan BIR XIL: != null && > 0n. */}
-          {debtAfterMinor != null && debtAfterMinor > 0n && (
+              shu uslubda. Shart renderer'lar bilan BIR XIL: != null && > 0n;
+              qarz to'lovi chekida (showZeroDebt) 0 ham chiziladi. */}
+          {debtAfterMinor != null && (debtAfterMinor > 0n || showZeroDebt) && (
             <tr data-test-id="chek-debt-after">
               <td colSpan={5} style={{ ...cell, textAlign: 'center' }}>
                 {t('chek_debt_after')}:

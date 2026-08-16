@@ -49,6 +49,8 @@ import {
 export const RECEIPT_LABELS = {
   titleSale: 'SAVDO CHEKI',
   titleReturn: 'Qaytarish cheki',
+  /** Qarz to'lovi cheki (2026-08-16, egasi) — tovar cheki shablonida. */
+  titleDebt: "QARZ TO'LOVI",
   date: 'Sana',
   seller: 'Sotuvchi',
   buyer: 'Xaridor',
@@ -71,6 +73,13 @@ export const RECEIPT_LABELS = {
 } as const;
 
 export interface ReceiptSaleInput {
+  /**
+   * Chek turi. `debtPayment` (qarz to'lovi, 2026-08-16) — AYNI shablon, uch
+   * farq bilan: sarlavha «QARZ TO'LOVI», qatorlar mapper'dan «Qarz to'lovi»
+   * nomi bilan keladi va «Sizning qarzingiz» 0 bo'lsa HAM chiziladi
+   * («qarz tugadi» — nizoni yopadigan dalil). Berilmasa — oddiy savdo cheki.
+   */
+  variant?: 'sale' | 'debtPayment';
   name: string;
   moment: string;
   sumMinor: string;
@@ -135,6 +144,11 @@ export interface ReceiptModel {
   payments: ReceiptPaymentEntry[];
   /** P05: renderer'lar `!= null && > 0n` bo'lsagina qator chizadi. */
   debtAfterMinor: bigint | null;
+  /**
+   * Qarz to'lovi chekida (variant `debtPayment`) TRUE: «Sizning qarzingiz»
+   * 0 bo'lsa ham chiziladi. Savdo chekida FALSE — eski xulq o'zgarmaydi.
+   */
+  showZeroDebt: boolean;
 }
 
 /** Tiyin → «330 250» (butun bo'lsa kasrsiz — namunadagidek). */
@@ -214,7 +228,7 @@ export function buildReceiptModel(sale: ReceiptSaleInput): ReceiptModel {
     // uchun bu yerda ataylab boshqacha.
     orgName: sale.session.organization.name || (sale.session.organization.legalTitle ?? ''),
     orgPhone: sale.session.organization.phone?.trim() || null,
-    title: RECEIPT_LABELS.titleSale,
+    title: sale.variant === 'debtPayment' ? RECEIPT_LABELS.titleDebt : RECEIPT_LABELS.titleSale,
     docNumber: sale.name,
     dateLabel: fmtReceiptDate(sale.moment),
     sellerName: sale.session.cashier.name,
@@ -228,6 +242,7 @@ export function buildReceiptModel(sale: ReceiptSaleInput): ReceiptModel {
     inWords: amountInWords(totalMinor, 'UZS', 'uz'),
     payments,
     debtAfterMinor: sale.debtAfterMinor ?? null,
+    showZeroDebt: sale.variant === 'debtPayment',
   };
 }
 

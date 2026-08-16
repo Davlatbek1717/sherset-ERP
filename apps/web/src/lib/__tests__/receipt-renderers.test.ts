@@ -1,3 +1,4 @@
+import { debtReceiptToSaleInput } from '@/lib/pos/receipt-debt-model';
 import { buildReceiptHtml, buildReceiptText } from '@/lib/print-agent';
 import { describe, expect, it } from 'vitest';
 
@@ -236,6 +237,60 @@ describe('P05 — «Sizning qarzingiz» qatori', () => {
   it('🔴 qarz qatori ham 32 ustun chegarasida (printer o`ng chetini qirqmasin)', () => {
     const sale = SALE({ debtAfterMinor: 125000000n });
     for (const line of buildReceiptText(sale as never).split('\n')) {
+      expect(line.length, `uzun qator: «${line}»`).toBeLessThanOrEqual(32);
+    }
+  });
+});
+
+/**
+ * QARZ TO'LOVI CHEKI (2026-08-16, egasi) — tovar cheki shablonida.
+ *
+ * Server cheki `debtReceiptToSaleInput` orqali AYNI ikki renderer'dan o'tadi —
+ * alohida «PKO» dizayni yo'q. Farqlar: sarlavha «QARZ TO'LOVI», qator nomi
+ * «Qarz to'lovi», «Sizning qarzingiz» esa 0 bo'lsa HAM chiqadi (savdo chekida
+ * chiqmaydi — yuqoridagi P05 bloki o'sha xulqni qulflab turadi).
+ */
+const DEBT_RECEIPT = (over: Record<string, unknown> = {}) =>
+  debtReceiptToSaleInput({
+    batchId: 'a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d',
+    counterparty: { id: 'cp-1', name: 'Alisher aka', phone: null },
+    organization: { name: 'Sherset MChJ', legalTitle: null, phone: '+998908769900' },
+    cashier: { id: 'u-1', name: 'Kassir Aliyev' },
+    paidAt: '2026-08-15T05:30:00.000Z',
+    method: 'cash',
+    currency: 'UZS',
+    originalMinor: null,
+    exchangeRate: null,
+    paidMinor: '8000000',
+    outstandingAfterMinor: '4000000',
+    lines: [{ debtId: 'd-1', debtName: 'QRZ-00012', amountMinor: '8000000', reversed: false }],
+    ...over,
+  });
+
+describe('qarz to`lovi cheki — tovar cheki shablonida', () => {
+  it('ikkala renderer sarlavha, qator nomi va ismlarni chiqaradi', () => {
+    for (const out of [
+      buildReceiptText(DEBT_RECEIPT() as never),
+      buildReceiptHtml(DEBT_RECEIPT() as never),
+    ]) {
+      const s = flat(out);
+      expect(s).toContain("QARZ TO'LOVI");
+      expect(s).toContain("Qarz to'lovi");
+      expect(s).toContain('Kassir Aliyev');
+      expect(s).toContain('Alisher aka');
+      expect(s).toContain('Sizning qarzingiz');
+      expect(s).toContain('40 000');
+    }
+  });
+
+  it('🔴 qoldiq 0 bo`lsa HAM «Sizning qarzingiz» chiqadi (qarz tugadi dalili)', () => {
+    const paidOff = DEBT_RECEIPT({ outstandingAfterMinor: '0' });
+    expect(buildReceiptText(paidOff as never)).toContain('Sizning qarzingiz');
+    expect(buildReceiptHtml(paidOff as never)).toContain('Sizning qarzingiz');
+  });
+
+  it('matn cheki 32 ustundan oshmaydi (qarz chekida ham)', () => {
+    for (const line of buildReceiptText(DEBT_RECEIPT() as never).split('\n')) {
       expect(line.length, `uzun qator: «${line}»`).toBeLessThanOrEqual(32);
     }
   });

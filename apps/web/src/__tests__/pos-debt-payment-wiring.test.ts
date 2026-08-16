@@ -32,25 +32,22 @@ describe('POS qarz to`lovi — ulanish', () => {
     expect(POS_PAGE).toMatch(/<DebtPaymentDialog[\s\S]{0,400}?sessionId=\{session\.id\}/);
   });
 
-  it('to`lovdan keyin PKO cheki ochiladi va route MAVJUD', () => {
-    // Sahifada bir nechta chek ochiladi (qarz to'lovi, xarajat/inkassatsiya) —
-    // shuning uchun HAMMASI yig'iladi va oralaridan qarz cheki qidiriladi.
-    // «Birinchi topilgani» deb olish yangi chek qo'shilishi bilan buzilardi.
-    const paths = [...POS_PAGE.matchAll(/window\.open\(`(\/print\/[^`?]+)/g)].map((m) => m[1]);
-    expect(paths.length, 'chek ochuvchi window.open topilmadi').toBeGreaterThan(0);
-    const urlPath = paths.find((p) => p?.includes('/print/debt-payment/')) ?? '';
-    expect(urlPath, `qarz cheki havolasi yo'q — topilganlar: ${paths.join(', ')}`).toContain(
-      '/print/debt-payment/',
-    );
+  it('to`lovdan keyin chek JIM chop etiladi (window.open EMAS) va zaxira route MAVJUD', () => {
+    // 2026-08-16 (egasi): qarz cheki tovar cheki bilan AYNI yo'ldan yuradi —
+    // qobiq/agent tirik bo'lsa oynasiz, darhol printerga. `window.open` bilan
+    // to'g'ridan-to'g'ri ochish kassa.exe'da chekni EKRANGA chiqarardi.
+    expect(POS_PAGE).toMatch(/printDebtReceiptViaAgent\(/);
+    expect(POS_PAGE).not.toMatch(/window\.open\(`\/print\/debt-payment/);
 
-    // Havoladagi yo'l uchun haqiqiy App Router fayli borligini tekshiramiz.
+    // Zaxira yo'l (agent/qobiq o'lik) — finishPrint popup'i; route fayli bor.
+    expect(POS_PAGE).toMatch(/\/print\/debt-payment\/\$\{batchId\}\?auto=1/);
     const routeFile = join(WEB_SRC, 'app', 'print', 'debt-payment', '[batchId]', 'page.tsx');
     expect(existsSync(routeFile), `route yo'q: ${routeFile}`).toBe(true);
   });
 
-  it('chek pay() qaytargan batchId bilan ochiladi (qator id bilan emas)', () => {
+  it('chek pay() qaytargan batchId bilan chop etiladi (qator id bilan emas)', () => {
     // Bitta to'lov = N qator: qator id bilan ochilsa chek CHALA chiqadi.
-    expect(POS_PAGE).toMatch(/\/print\/debt-payment\/\$\{result\.batchId\}/);
+    expect(POS_PAGE).toMatch(/printDebtReceipt\(result\.batchId\)/);
   });
 
   it('ortiqcha to`lov tugmasi OLDINDAN bloklanadi', () => {

@@ -4,15 +4,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import PrintDebtPaymentPage from './page';
 
 /**
- * F6 — PKO cheki (qarz to'lovi) DOLLAR qatori.
+ * Qarz to'lovi chekining ZAXIRA (brauzer) sahifasi — 2026-08-16 dan TOVAR
+ * CHEKI shablonida (`TovarChek`), eski «PKO» dizayni emas. Haqiqiy chop odatda
+ * agent/Electron orqali jim ketadi; bu sahifa faqat qobiq o'lik bo'lganda va
+ * qayta chop etishda ochiladi — dizayn UCHALA yo'lda bir xil bo'lishi shart
+ * (xotira: `ombor-chek-uch-renderer`).
  *
- * Chek MOLIYAVIY hujjat: mijoz nechta dollar berganini va QAYSI KURS bo'yicha
- * hisoblanganini o'qishi shart. Busiz «qarzim nega shuncha kamaydi» bahsini
- * yechib bo'lmaydi — kurs ertaga o'zgaradi, chek esa muzlatilgan qiymatni
- * ko'rsatishi kerak.
- *
- * Yorliq/format `receipt-payments.ts` dan (savdo cheki bilan BITTA lug'at) —
- * xotira: «ombor cheki uch renderer», nusxa jimgina eskiradi.
+ * F6 (dollar qatori) shartnomasi saqlanadi: mijoz nechta dollar berganini va
+ * QAYSI muzlatilgan kurs bo'yicha hisoblanganini chekdan o'qiy oladi.
  */
 
 vi.mock('@/lib/api-client', () => ({
@@ -20,16 +19,16 @@ vi.mock('@/lib/api-client', () => ({
 }));
 
 vi.mock('next/navigation', () => ({
-  useParams: () => ({ batchId: 'b-1' }),
+  useParams: () => ({ batchId: 'a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d' }),
   useSearchParams: () => new URLSearchParams(''),
 }));
 
 const RECEIPT = (over: Record<string, unknown> = {}) => ({
-  batchId: 'b-1',
-  counterparty: { id: 'cp-1', name: 'Alisher', phone: null },
-  organization: { name: 'Sherset MChJ', legalTitle: null },
+  batchId: 'a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d',
+  counterparty: { id: 'cp-1', name: 'Alisher aka', phone: null },
+  organization: { name: 'Sherset MChJ', legalTitle: null, phone: '+998908769900' },
   cashier: { id: 'u-1', name: 'Kassir Aliyev' },
-  paidAt: '2026-08-11T05:30:00.000Z',
+  paidAt: '2026-08-15T05:30:00.000Z',
   method: 'cash',
   currency: 'UZS',
   originalMinor: null,
@@ -44,36 +43,57 @@ beforeEach(() => {
   vi.mocked(api.get).mockReset();
 });
 
-describe('PKO cheki — dollar qatori (F6)', () => {
+describe('qarz cheki (zaxira sahifa) — tovar cheki shablonida', () => {
+  it('sarlavha, sotuvchi/mijoz ismlari va «Qarz to`lovi» qatori chiqadi', async () => {
+    vi.mocked(api.get).mockResolvedValue(RECEIPT({ outstandingAfterMinor: '4000000' }));
+    renderWithProviders(<PrintDebtPaymentPage />);
+
+    await screen.findByTestId('tovar-chek');
+    expect(screen.getByText(/QARZ TO'LOVI № A1B2C3D4/)).toBeInTheDocument();
+    expect(screen.getByText(/Kassir Aliyev/)).toBeInTheDocument();
+    expect(screen.getByText(/Alisher aka/)).toBeInTheDocument();
+    expect(screen.getByText("Qarz to'lovi")).toBeInTheDocument();
+  });
+
+  it('«Sizning qarzingiz» = qoldiq, 0 bo`lsa HAM ko`rinadi (qarz tugadi dalili)', async () => {
+    vi.mocked(api.get).mockResolvedValue(RECEIPT());
+    renderWithProviders(<PrintDebtPaymentPage />);
+
+    const row = await screen.findByTestId('chek-debt-after');
+    expect(row).toHaveTextContent('Sizning qarzingiz');
+    expect(row).toHaveTextContent('0');
+  });
+});
+
+describe('qarz cheki — dollar qatori (F6)', () => {
   it('dollar to`lovida ASL summa va MUZLATILGAN kurs chiqadi', async () => {
     vi.mocked(api.get).mockResolvedValue(
       RECEIPT({ currency: 'USD', originalMinor: '10000', exchangeRate: '1245027000000' }),
     );
     renderWithProviders(<PrintDebtPaymentPage />);
 
-    const line = await screen.findByTestId('pko-usd-line');
-    expect(line).toHaveTextContent('$100.00');
-    expect(line).toHaveTextContent('12450.27');
-    // So'mdagi jami hamon ko'rinadi — qarz daftari shu qiymatda kamaydi.
-    await waitFor(() => expect(screen.getByText(/TO'LANDI/)).toBeInTheDocument());
+    await screen.findByTestId('tovar-chek');
+    expect(screen.getByText('Dollar:')).toBeInTheDocument();
+    expect(screen.getByText('$100.00')).toBeInTheDocument();
+    expect(screen.getByText(/12450\.27/)).toBeInTheDocument();
   });
 
   it('so`m to`lovida dollar qatori YO`Q (bo`sh qator chizilmaydi)', async () => {
     vi.mocked(api.get).mockResolvedValue(RECEIPT());
     renderWithProviders(<PrintDebtPaymentPage />);
 
-    await waitFor(() => expect(screen.getByText(/TO'LANDI/)).toBeInTheDocument());
-    expect(screen.queryByTestId('pko-usd-line')).toBeNull();
+    await screen.findByTestId('tovar-chek');
+    expect(screen.getByText('Naqd:')).toBeInTheDocument();
+    expect(screen.queryByText('Dollar:')).toBeNull();
   });
 
-  it('kurs yo`q buzuq qatorda chek YO`QOLMAYDI (dollar qatori tushiriladi)', async () => {
-    // Eski (F6'gacha) USD qatori: valyuta bor, kurs yo'q. Chek baribir bosiladi.
+  it('kurs yo`q buzuq qatorda chek YO`QOLMAYDI (kurs izohi tushiriladi)', async () => {
     vi.mocked(api.get).mockResolvedValue(
       RECEIPT({ currency: 'USD', originalMinor: '10000', exchangeRate: null }),
     );
     renderWithProviders(<PrintDebtPaymentPage />);
 
-    await waitFor(() => expect(screen.getByText(/TO'LANDI/)).toBeInTheDocument());
-    expect(screen.queryByTestId('pko-usd-line')).toBeNull();
+    await screen.findByTestId('tovar-chek');
+    await waitFor(() => expect(screen.queryByText(/12450\.27/)).toBeNull());
   });
 });

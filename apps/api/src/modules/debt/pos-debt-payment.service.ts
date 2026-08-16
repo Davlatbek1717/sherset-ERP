@@ -629,7 +629,8 @@ export class PosDebtPaymentService {
       }),
       this.prisma.client.organization.findFirst({
         where: { accountId },
-        select: { name: true, legalTitle: true },
+        // `phone` — chek shapkasida (tovar-chek shabloni, 2026-08-16).
+        select: { name: true, legalTitle: true, phone: true },
         orderBy: { createdAt: 'asc' },
       }),
     ]);
