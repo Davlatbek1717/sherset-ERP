@@ -331,6 +331,33 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-08-16l (QARZ — mijoz kartasidan «HISOB-KITOB CHEKI» Telegramga; `98c1e245`) —**
+> ✅ DEPLOYED `64d1c244 → 98c1e245`: sayt/health 200, yangi endpoint tokensiz **401** (ya'ni
+> marshrut bor va qo'riqlangan), prod HEAD `98c1e245`. Prodda `PUBLIC_APP_URL` ham qo'shildi
+> (zaxira: `/root/api-env-backup-1786880167`) — usiz chek havolasi qatori chiqmasdi.
+> **Telegram holati (o'lchandi):** yuborish JONLI — bugun 8 xabar ketgan (5 tasi
+> `debt.counterparty_notify`), 1 yiqilgan (raqamda Telegram yo'q). Egasining SHAXSIY raqamidan
+> (MTProto userbot), 348 chatdan 150 tasi mijozga bog'langan.
+> **Tuzatilgan format nuqsonlari** (egasi jonli xabarda ko'rsatdi): «Qarzga qo'shildi» va
+> «Qarzga yozildi» DOIM bir xil raqam edi (`debtMinor = deltaMinor`) — ikkinchisi butunlay
+> olib tashlandi · tovarlar 3 tadan keyin kesilardi → endi to'liq (`ITEM_HARD_CAP=40` faqat
+> texnik chegara) · «3 шт» → «3 dona» (`uomLabel`) · qisman to'langan chekda uch raqam endi
+> YIG'ILADI (Jami summa = To'landi + Qarzga qo'shildi).
+> **Yangi:** `GET/POST /counterparty-debt-receipts/:id/{preview,send}` + kartada
+> «Hisob-kitob cheki» kartasi (ikki qadam: matnni KO'RIB, keyin yuborish). Ma'lumot —
+> `statement.aggregate` (butun tarix, balans jurnalidan) · matn — `buildDebtReceiptMessages`
+> (sof, 17 test) · yuborish — `hrTelegramOutbox`, manba turi `debt.receipt`, uzun hisob
+> hujjat chegarasida `1/2`, `2/2` bo'linadi. `preview()` HECH NARSA yaratmaydi (havolalar ham
+> faqat `send()` da). Yuborib bo'lmasa SABAB ko'rsatiladi.
+> ⚠️ **Prodda 609 mijozda qarz bor, lekin cheklar juda oz** — qarzning katta qismi 16.08
+> tarix tozalashidan qolgan **ochilish qoldig'i**; shuning uchun chekda «Oldingi qoldiq»
+> alohida qator (usiz raqamlar yig'ilmasdi va mijoz bahslashardi).
+> Gate: tc 0 · lint 0 · i18n 0 · web **4055** · api **8406** (+26 yangi test).
+> 🔴 Begona qizil test o'zgarmadi: `debt-source-wiring.test.ts` (`765191b1`).
+> **QOLDI:** jonli yuborish sinovi (egasi bitta mijozda bosib ko'rsin) — Phase-1.
+>
+> ---
+>
 > **🕒 2026-08-16k (KASSA — EKRAN QULFI butunlay olib tashlandi; `64d1c244`) —**
 > ✅ DEPLOYED `511ffab9 → 64d1c244`: sayt/health 200, prod manbada `pos-pin-lock.tsx` **yo'q**,
 > build chunk'larida «Ekran qulflandi»/«Экран заблокирован» satri **0 marta** uchraydi.
