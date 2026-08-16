@@ -18,6 +18,20 @@
 
 import { lineFloorBreach, priceFloorMinor } from '@moysklad/money';
 
+/**
+ * 🔴 2026-08-16, egasining qarori: KASSADA NARX CHEKLOVI YO'Q.
+ *
+ * Ikkala qoida ham (0-narx taqiqi va narx poli) O'CHIRILDI — kassir istalgan
+ * narxda, shu jumladan BEPULGA sotishi mumkin. Hisoblash mantig'i ataylab
+ * o'chirilmadi: qoida qaytarilishi so'ralsa shu bayroqni `true` qilish kifoya,
+ * mantiqni va testlarni qaytadan yozish kerak emas.
+ *
+ * Tur `boolean` deb OSHKORA yozilgan: `false` literali bo'lsa TypeScript
+ * qolgan tanani «yetib bo'lmaydigan» deb tor qiladi va tuzatish paytida
+ * xatolar chiqarardi.
+ */
+const PRICE_POLICY_ENFORCED: boolean = false;
+
 export interface PricePolicyLine {
   /** Xizmat qatorida `null` — bunda pol yo'q, lekin 0-narx taqiqi qoladi. */
   productId: string | null;
@@ -50,6 +64,7 @@ export function checkSalePricePolicy(
   lines: ReadonlyArray<PricePolicyLine>,
   floorsByProduct: ReadonlyMap<string, PricePolicyFloors>,
 ): string | null {
+  if (!PRICE_POLICY_ENFORCED) return null;
   for (const l of lines) {
     const floors = l.productId ? floorsByProduct.get(l.productId) : undefined;
     const floorMinor = floors

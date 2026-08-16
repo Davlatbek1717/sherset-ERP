@@ -317,30 +317,29 @@ describe('SalesScreen — savat qatorlari', () => {
     expect(screen.queryByTestId('sotuv-cart-line')).not.toBeInTheDocument();
   });
 
-  // K-3 (audit-fixlar) → P12: ilgari bo'shatilgan maydon ekranda bo'sh
-  // ko'rinib, hisob-kitobga ESKI narx ketardi; keyin 0 bo'lib savatga tushdi;
-  // endi 0 narx UMUMAN qabul qilinmaydi (egasining 2026-08-12 qarori).
-  it('narx BO‘SHATILSA — 0 qabul qilinmaydi, qatordagi narx tegilmaydi', async () => {
+  // K-3 → P12 → 🔴 2026-08-16: cheklov OLIB TASHLANDI (egasining qarori).
+  // Bo'sh maydon = 0 va u endi QABUL QILINADI — kassir bepulga ham sotadi.
+  // Saqlanadigan invariant: ekranda ko'ringan qiymat savatga tushadi
+  // (ESKI narx jimgina qolib ketmaydi — K-3 shartnomasi).
+  it('narx BO‘SHATILSA — 0 saqlanadi (bepul sotishga ruxsat)', async () => {
     const user = userEvent.setup();
     renderWithProviders(<SotuvPage />);
 
     const line = await addFirstProduct(user);
     await tryPrice(user, line, '');
 
-    expect(screen.getByTestId('pos-line-edit-no-price')).toBeInTheDocument();
-    const after = screen.getByTestId('sotuv-cart-line');
-    expect(priceText(after)).toBe('10 000,00 сум');
+    expect(screen.queryByTestId('pos-line-edit-no-price')).not.toBeInTheDocument();
+    expect(priceText(screen.getByTestId('sotuv-cart-line'))).toBe('0,00 сум');
   });
 
-  it('narxga HARF yozilsa — jimgina o‘qilmaydi va qabul ham qilinmaydi', async () => {
+  it('narxga HARF yozilsa — 0 o‘qiladi va o‘sha 0 saqlanadi', async () => {
     const user = userEvent.setup();
     renderWithProviders(<SotuvPage />);
 
     const line = await addFirstProduct(user);
     await tryPrice(user, line, 'abc');
 
-    expect(screen.getByTestId('pos-line-edit-no-price')).toBeInTheDocument();
-    expect(priceText(screen.getByTestId('sotuv-cart-line'))).toBe('10 000,00 сум');
+    expect(priceText(screen.getByTestId('sotuv-cart-line'))).toBe('0,00 сум');
   });
 
   // F2 — narx parse'i YAGONA (`parseAmountToMinor`). Ilgari sahifa o'z
@@ -355,11 +354,9 @@ describe('SalesScreen — savat qatorlari', () => {
     const line = await addFirstProduct(user);
     await tryPrice(user, line, '12abc');
 
-    // Oyna ochiq qoladi va o'qilgan qiymat 0 ekanini ko'rsatadi — 12 so'm
-    // jimgina chekka ketmaydi (P12 dan oldin bu qiymat savatga tushardi).
-    const modal = screen.getByTestId('pos-line-edit');
-    expect(norm(within(modal).getByTestId('pos-line-edit-price').textContent)).toContain('0,00');
-    expect(priceText(screen.getByTestId('sotuv-cart-line'))).toBe('10 000,00 сум');
+    // Buzuq kiritma = 0 (12 EMAS). Cheklov olib tashlangani uchun bu 0 endi
+    // saqlanadi — muhimi 12 so'm jimgina chekka ketmasligi.
+    expect(priceText(screen.getByTestId('sotuv-cart-line'))).toBe('0,00 сум');
   });
 
   it('narxni tahrirlash qator summasini darhol siljitadi', async () => {
@@ -428,19 +425,18 @@ describe('SalesScreen — narx tasmalari (kassa TZ §5.2)', () => {
     );
   });
 
-  it('🔴 P12 — tan narxdan past narx savatga UMUMAN tushmaydi (pol to‘sadi)', async () => {
+  it('🔴 2026-08-16 — tan narxdan past narx SAQLANADI (pol olib tashlandi)', async () => {
     const user = userEvent.setup();
     renderWithProviders(<SotuvPage />);
 
     const line = await addFirstProduct(user);
-    await tryPrice(user, line, '5000'); // pol 6 000
+    await tryPrice(user, line, '5000'); // ilgarigi pol 6 000
 
-    // Ilgari bu yerda qizil ZARAR tasmasi chiqar, lekin narx SAQLANARDI.
-    // Egasining qarori (2026-08-12): ogohlantirish emas — QULF.
-    expect(screen.getByTestId('pos-line-edit-floor-blocked')).toBeInTheDocument();
+    // P12 qulfi egasining 2026-08-16 qarori bilan o'chirildi: qizil «rad
+    // etildi» banneri ham chizilmaydi, narx savatga tushadi.
+    expect(screen.queryByTestId('pos-line-edit-floor-blocked')).not.toBeInTheDocument();
     const after = screen.getByTestId('sotuv-cart-line');
-    expect(priceText(after)).toBe('10 000,00 сум');
-    expect(after).toHaveAttribute('data-price-band', 'ok');
+    expect(priceText(after)).toBe('5 000,00 сум');
     // Marja RAQAMI hamon ekranda yo'q (`ui-flags.ts` qarori o'zgarmadi).
     expect(within(after).queryByTestId('sotuv-cart-profit')).not.toBeInTheDocument();
   });

@@ -734,22 +734,35 @@ function SalesScreen({
    * hujjatining ishi, kassir uni tuzata olmaydi — tugmani o'chirish uni chiqish
    * yo'lisiz qoldirardi. Bunday chekni server rad etadi va sabab ko'rinadi.
    */
-  const pricePolicyBlock = cartLocked
-    ? null
-    : (cart.find((l) => l.priceMinor <= 0n) ??
-      cart.find(
-        (l) =>
-          lineFloorBreach({
-            quantity: normalizeQtyDecimal(l.quantity),
-            priceMinor: l.priceMinor,
-            discount: String(discountPct),
-            floorMinor: priceFloorMinor({
-              costMinor: l.costMinor,
-              basePriceMinor: l.basePriceMinor,
-            }),
-          }) != null,
-      ) ??
-      null);
+  /**
+   * 🔴 2026-08-16, egasining qarori: KASSADA NARX CHEKLOVI YO'Q — kassir
+   * istalgan narxda, shu jumladan BEPULGA sotadi. Bu — uchinchi majburlash
+   * nuqtasi: u «To'lash / Sotish / Omborchiga yuborish» tugmalarini
+   * o'chirar edi, ya'ni 0 so'mlik savatni chiqarib bo'lmasdi.
+   *
+   * Qaytarish uchun UCHALASI birga yoqilsin, aks holda ekran bilan server
+   * ayriladi: shu yerdagi `PRICE_POLICY_UI`,
+   * `cart-line-edit-modal.tsx` → `PRICE_LOCK_ENFORCED`,
+   * `price-policy-guard.ts` → `PRICE_POLICY_ENFORCED`.
+   */
+  const PRICE_POLICY_UI: boolean = false;
+  const pricePolicyBlock =
+    !PRICE_POLICY_UI || cartLocked
+      ? null
+      : (cart.find((l) => l.priceMinor <= 0n) ??
+        cart.find(
+          (l) =>
+            lineFloorBreach({
+              quantity: normalizeQtyDecimal(l.quantity),
+              priceMinor: l.priceMinor,
+              discount: String(discountPct),
+              floorMinor: priceFloorMinor({
+                costMinor: l.costMinor,
+                basePriceMinor: l.basePriceMinor,
+              }),
+            }) != null,
+        ) ??
+        null);
 
   const cartCost = cartCostMinor(cart);
   // Foyda asosi = kassa HAQIQATAN oladigan pul. Mavjud chekni to'layotgan

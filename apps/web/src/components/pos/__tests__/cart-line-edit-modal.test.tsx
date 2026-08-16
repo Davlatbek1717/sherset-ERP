@@ -145,7 +145,7 @@ describe('Savat qatori tahrir oynasi — numpad', () => {
 });
 
 describe('Savat qatori tahrir oynasi — shartnomalar', () => {
-  it('🔴 narx BO‘SHATILSA saqlanmaydi va eski narx JIMGINA ketmaydi (K-3 + P12)', async () => {
+  it('🔴 narx BO‘SHATILSA 0 SAQLANADI — eski narx JIMGINA ketmaydi (K-3)', async () => {
     const user = userEvent.setup();
     const { onSave } = open();
 
@@ -153,13 +153,12 @@ describe('Savat qatori tahrir oynasi — shartnomalar', () => {
     await tap(user, '⌫', '⌫', '⌫', '⌫', '⌫');
     await user.click(screen.getByTestId('pos-line-edit-save'));
 
-    // Ilgari bu yerda `0n` SAQLANARDI (K-3: ko'ringan narsa yuboriladi).
-    // P12 dan keyin 0 narx umuman qabul qilinmaydi — muhimi o'zgarmadi:
-    // 10 000 so'mlik ESKI narx jimgina yuborilmaydi.
-    expect(onSave).not.toHaveBeenCalled();
+    // 2026-08-16 (egasi): cheklov olib tashlandi ⇒ 0 qabul qilinadi.
+    // K-3 shartnomasi o'zgarmadi: 10 000 so'mlik ESKI narx JIMGINA ketmaydi.
+    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ priceMinor: 0n }));
   });
 
-  it('🔴 narxga BUZUQ kiritma (12abc) — 0n bo‘lib qoladi va saqlanmaydi', async () => {
+  it('🔴 narxga BUZUQ kiritma (12abc) — 12 EMAS, 0n saqlanadi', async () => {
     const user = userEvent.setup();
     const { onSave } = open();
 
@@ -169,22 +168,21 @@ describe('Savat qatori tahrir oynasi — shartnomalar', () => {
     await user.type(input, '12abc');
     await user.click(screen.getByTestId('pos-line-edit-save'));
 
-    // «12abc» → 12 so'm deb JIMGINA o'qilmaydi (parse 0n beradi), 0 narx esa
-    // saqlanmaydi.
-    expect(onSave).not.toHaveBeenCalled();
+    // Muhimi: «12abc» dan 12 so'm JIMGINA sug'urib olinmaydi (parse 0n beradi).
+    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ priceMinor: 0n }));
   });
 
-  it('🔴 P12 — poli YO‘Q tovarda ham 0 narx saqlanmaydi (0-narx taqiqi)', async () => {
+  it('🔴 0 narx SAQLANADI — bepulga sotishga ruxsat (2026-08-16)', async () => {
     const user = userEvent.setup();
-    // Tan narx NULL ⇒ pol yo'q; taqiq baribir kuchda (server ham rad etadi).
     const { onSave } = open({ costMinor: null, basePriceMinor: null });
 
     await user.click(screen.getByTestId('pos-line-edit-price'));
     await tap(user, '⌫', '⌫', '⌫', '⌫', '⌫');
     await user.click(screen.getByTestId('pos-line-edit-save'));
 
-    expect(onSave).not.toHaveBeenCalled();
-    expect(screen.getByTestId('pos-line-edit-no-price')).toBeInTheDocument();
+    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ priceMinor: 0n }));
+    // «Narxsiz — qabul qilinmaydi» qizil banneri endi CHIZILMAYDI.
+    expect(screen.queryByTestId('pos-line-edit-no-price')).not.toBeInTheDocument();
   });
 
   it('🔴 soni 0 ga tushsa «Saqlash» qatorni O‘CHIRADI', async () => {
@@ -239,12 +237,10 @@ describe('Savat qatori tahrir oynasi — narx tasmalari JONLI', () => {
       'data-price-band',
       'below-wholesale',
     );
-    // P12: «−6 000 tushirildi» summasi endi KO'RSATILMAYDI (egasining qarori) —
-    // o'rnida pastki chegara turadi. P03 (2026-08-13): chegara qiymati ham
-    // sukutda yashirin — ko'rish uchun «•••» bosiladi.
+    // «−6 000 tushirildi» summasi ko'rsatilmaydi (P12 qarori), pol qatori esa
+    // 2026-08-16 dan butunlay olib tashlandi — tasma (signal) qoladi.
     expect(screen.queryByTestId('pos-line-edit-markdown')).not.toBeInTheDocument();
-    await user.click(screen.getByTestId('pos-line-edit-floor-toggle'));
-    expect(norm(screen.getByTestId('pos-line-edit-floor').textContent)).toContain('6 000,00');
+    expect(screen.queryByTestId('pos-line-edit-floor-toggle')).not.toBeInTheDocument();
   });
 
   it('🔴 P12 — poldan past narxda ZARAR tasmasi ko‘rsatilmaydi (egasining qarori)', async () => {
@@ -270,91 +266,54 @@ describe('Savat qatori tahrir oynasi — narx tasmalari JONLI', () => {
 });
 
 /**
- * P12 — NARX POLI (egasining qarori, 2026-08-11/12).
+ * 🔴 2026-08-16, egasining qarori: KASSADA NARX CHEKLOVI YO'Q.
  *
- * Oynada ZARAR belgisi o'rniga **«Minimal»** qatori turadi va poldan past
- * narxni **saqlab bo'lmaydi** — bu ogohlantirish emas, QULF. Pol = min(tan narx,
- * karta chakana narxi); tan narx NULL bo'lsa pol YO'Q (NULL ≠ 0).
+ * P12 (2026-08-11/12) narx polini va 0-narx taqiqini yoqqan, P03 (2026-08-13)
+ * pol qiymatini «•••» ostiga yashirgan edi. Ikkalasi ham OLIB TASHLANDI:
+ * kassir istalgan narxda, shu jumladan BEPULGA sotadi.
  *
- * P03 (2026-08-13, egasi): pol QIYMATI sukutda YASHIRIN — o'rnida bosiladigan
- * «Minimal: •••» turadi, bosilganda ochiladi, boshqa qator ochilsa yana
- * yashirinadi. Eski «Minimal: X doim ochiq» niyati (2026-08-11/12) shu kuni
- * toraytirildi: qiymat mijoz ko'zi oldida ochiq turmasin. QULF esa o'zgarmadi —
- * yashirish faqat KO'RSATISH.
+ * Ko'rsatish tomoni ham tozalandi: «Minimal» qatori, «•••» tugmasi va qizil
+ * «rad etildi» bannerlari CHIZILMAYDI — chegara yo'q joyda «minimal» yozuvi
+ * turishi kassirni chalg'itardi.
  *
- * Ekran qulfi himoyaning FAQAT ko'rinadigan qismi — haqiqiy chegara serverda
- * (`price-policy-guard.ts`). Ikkalasi bitta manbadan (`@moysklad/money`) o'qiydi.
+ * Bu blok TESKARI shartnomani qulflaydi. Qaytarish kerak bo'lsa:
+ * `cart-line-edit-modal.tsx` → `PRICE_LOCK_ENFORCED` va
+ * `price-policy-guard.ts` → `PRICE_POLICY_ENFORCED` — IKKALASI birga.
  */
-describe('Savat qatori tahrir oynasi — narx POLI (P12) va yashirin «Minimal» (P03)', () => {
-  it('P03 (2026-08-13) — «Minimal» sukutda YASHIRIN, o‘rnida «•••» tugmasi turadi', () => {
+describe('Savat qatori tahrir oynasi — narx cheklovi OLIB TASHLANGAN (2026-08-16)', () => {
+  it('«Minimal» qatori ham, «•••» tugmasi ham CHIZILMAYDI', () => {
     open();
     expect(screen.queryByTestId('pos-line-edit-floor')).not.toBeInTheDocument();
-    expect(screen.getByTestId('pos-line-edit-floor-toggle')).toBeInTheDocument();
-  });
-
-  it('P03 — «•••» bosilganda pol qiymati OCHILADI (tan narx = pol)', async () => {
-    const user = userEvent.setup();
-    open();
-
-    await user.click(screen.getByTestId('pos-line-edit-floor-toggle'));
-
-    expect(norm(screen.getByTestId('pos-line-edit-floor').textContent)).toContain('6 000,00');
     expect(screen.queryByTestId('pos-line-edit-floor-toggle')).not.toBeInTheDocument();
   });
 
-  it('P03 — BOSHQA qator ochilsa pol YANA yashirinadi', async () => {
-    const user = userEvent.setup();
-    const { rerender } = renderWithProviders(
-      <CartLineEditModal line={LINE} onSave={vi.fn()} onRemove={vi.fn()} onClose={vi.fn()} />,
-    );
-    await user.click(screen.getByTestId('pos-line-edit-floor-toggle'));
-    expect(screen.getByTestId('pos-line-edit-floor')).toBeInTheDocument();
-
-    rerender(
-      <CartLineEditModal
-        line={{ ...LINE, productId: 'p-2', productName: 'Rozetka' }}
-        onSave={vi.fn()}
-        onRemove={vi.fn()}
-        onClose={vi.fn()}
-      />,
-    );
-
-    expect(screen.queryByTestId('pos-line-edit-floor')).not.toBeInTheDocument();
-    expect(screen.getByTestId('pos-line-edit-floor-toggle')).toBeInTheDocument();
-  });
-
-  it('tan narx YO‘Q bo‘lsa pol qatori UMUMAN chizilmaydi — «•••» ham (NULL ≠ 0)', () => {
+  it('tan narx YO‘Q bo‘lsa ham hech narsa chizilmaydi', () => {
     open({ costMinor: null });
     expect(screen.queryByTestId('pos-line-edit-floor')).not.toBeInTheDocument();
     expect(screen.queryByTestId('pos-line-edit-floor-toggle')).not.toBeInTheDocument();
   });
 
-  it('karta narxi tan narxdan past bo‘lsa pol = karta narxi (46 tovar holati)', async () => {
-    const user = userEvent.setup();
-    // Prod: chakana 3 500 < tan 24 500 ⇒ karta narxida sotish mumkin bo'lib qoladi.
+  it('karta narxi tan narxdan past tovarda ham qulf yo‘q (46 tovar holati)', () => {
     open({
       costMinor: 2_450_000n,
       basePriceMinor: 350_000n,
       priceMinor: 350_000n,
       priceStr: '3500',
     });
-    await user.click(screen.getByTestId('pos-line-edit-floor-toggle'));
-    expect(norm(screen.getByTestId('pos-line-edit-floor').textContent)).toContain('3 500,00');
     expect(screen.queryByTestId('pos-line-edit-floor-blocked')).not.toBeInTheDocument();
   });
 
-  it('🔴 poldan past narx SAQLANMAYDI — pol YASHIRIN holatda ham (P03: qulf ≠ ko‘rsatish)', async () => {
+  it('🔴 poldan past narx SAQLANADI (ilgari qulflangan holat)', async () => {
     const user = userEvent.setup();
     const { onSave } = open();
 
     await user.click(screen.getByTestId('pos-line-edit-price'));
-    await tap(user, '5', '9', '9', '9'); // 5 999 < pol 6 000
+    await tap(user, '5', '9', '9', '9'); // ilgarigi pol 6 000
+
     await user.click(screen.getByTestId('pos-line-edit-save'));
 
-    expect(onSave).not.toHaveBeenCalled();
-    expect(screen.getByTestId('pos-line-edit-floor-blocked')).toBeInTheDocument();
-    // Qiymat ochilmagan — qulf baribir ishladi.
-    expect(screen.queryByTestId('pos-line-edit-floor')).not.toBeInTheDocument();
+    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ priceMinor: 599_900n }));
+    expect(screen.queryByTestId('pos-line-edit-floor-blocked')).not.toBeInTheDocument();
   });
 
   it('polga TENG narx saqlanadi — pol o‘zi ruxsat etilgan', async () => {

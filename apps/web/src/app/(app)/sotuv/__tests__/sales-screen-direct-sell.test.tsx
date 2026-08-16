@@ -125,7 +125,7 @@ describe('P3 — «Sotish» tugmasi yig‘ishni CHETLAB o‘tadi', () => {
    * bo'lishi shart — aks holda «0 so'mga sotish» taqiqi bir tugmada
    * qolib, ikkinchisida ochiq bo'lardi.
    */
-  it('narxsiz tovar ikkala tugmani ham bloklaydi (P12 qulfi chetlab o‘tilmaydi)', async () => {
+  it('🔴 narxsiz tovar HECH BIR tugmani bloklamaydi (2026-08-16: cheklov yo‘q)', async () => {
     // Prodda 488 ta tovar aynan shunday — chakana narx qatori umuman yo'q.
     vi.mocked(api.get).mockImplementation(
       router(
@@ -144,9 +144,9 @@ describe('P3 — «Sotish» tugmasi yig‘ishni CHETLAB o‘tadi', () => {
     await user.click(at(tiles, 0));
     await screen.findByTestId('sotuv-cart-line');
 
-    expect(screen.getByTestId('sotuv-sell-direct')).toBeDisabled();
-    expect(screen.getByTestId('sotuv-pay')).toBeDisabled();
-    expect(screen.getByTestId('sotuv-price-blocked')).toBeInTheDocument();
+    expect(screen.getByTestId('sotuv-sell-direct')).not.toBeDisabled();
+    expect(screen.getByTestId('sotuv-pay')).not.toBeDisabled();
+    expect(screen.queryByTestId('sotuv-price-blocked')).not.toBeInTheDocument();
   });
 
   it('eski «Omborchiga yuborish» yo‘li TEGILMAGAN', async () => {

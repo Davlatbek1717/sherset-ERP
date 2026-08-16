@@ -188,7 +188,15 @@ export function CartLineEditModal({
    * ketardi. Server ham shu qoidani qo'llaydi (`price-policy-guard.ts`).
    */
   const noPrice = priceMinor <= 0n;
-  const blocked = (belowFloor || noPrice) && quantity !== '0';
+  /**
+   * 🔴 2026-08-16, egasining qarori: KASSADA NARX CHEKLOVI YO'Q — kassir
+   * istalgan narxda, shu jumladan BEPULGA sotadi. Server tomonida ham
+   * o'chirilgan (`price-policy-guard.ts` → `PRICE_POLICY_ENFORCED`); ikkovi
+   * BIRGA o'zgarishi shart, aks holda ekran «bo'ladi» degan chekni server rad
+   * etardi (yoki teskarisi). Qaytarish uchun ikkala bayroqni `true` qilish kifoya.
+   */
+  const PRICE_LOCK_ENFORCED: boolean = false;
+  const blocked = PRICE_LOCK_ENFORCED && (belowFloor || noPrice) && quantity !== '0';
   // Tasma endi POLga nisbatan (tan narxga emas): karta narxining o'zi tan
   // narxdan past bo'lgan 46 tovarda (prodda o'lchangan) o'z narxida sotish
   // ruxsat etilgan — ular qizil «zarar» deb belgilanmasligi kerak.
@@ -365,7 +373,8 @@ export function CartLineEditModal({
                 {/* P03 (2026-08-13): qiymat sukutda yashirin — «•••» bosilganda
                     ochiladi. Poldan pastda ham QIZIL bo'lib qoladi (qulf banneri
                     bilan birga) — faqat SON berkitilgan, signal emas. */}
-                {floorMinor != null &&
+                {PRICE_LOCK_ENFORCED &&
+                  floorMinor != null &&
                   (floorRevealed ? (
                     <span
                       data-test-id="pos-line-edit-floor"
@@ -398,7 +407,10 @@ export function CartLineEditModal({
                   </span>
                 )}
               </div>
-              {noPrice ? (
+              {/* Cheklov o'chirilgan (2026-08-16) ⇒ «rad etildi» bannerlari ham
+                  chizilmaydi: qizil «qabul qilinmaydi» yozuvi turib, Saqlash
+                  ishlayversa kassirni chalg'itardi. */}
+              {!PRICE_LOCK_ENFORCED ? null : noPrice ? (
                 <div
                   data-test-id="pos-line-edit-no-price"
                   className="mt-2 rounded-lg bg-red-600 px-3 py-2 font-bold text-sm text-white"

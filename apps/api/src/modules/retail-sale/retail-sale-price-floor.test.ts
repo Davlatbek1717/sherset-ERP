@@ -1,16 +1,18 @@
-import { BadRequestException } from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
 import { mockDocumentSequence } from '../../prisma/document-sequence.mock.js';
 import { RetailSaleService } from './retail-sale.service.js';
 
 /**
- * P12 — `post()` NARX SIYOSATINI qo'llaydimi (egasining qarori 2026-08-12).
+ * 🔴 2026-08-16, egasining qarori: KASSADA NARX CHEKLOVI YO'Q.
  *
- * `price-policy-guard.test.ts` qoidaning O'ZINI sinaydi; bu yerdagi savol
- * boshqa — chek yopish yo'li o'sha qoidani haqiqatan chaqiradimi va rad etilgan
- * chekda PUL QIMIRLAMAYDImi. Ikkisi alohida: qoida to'g'ri bo'lib, `post()` uni
- * chaqirmasa ham hamma test yashil qolardi (repo'ning ma'lum «yetim modul»
- * klassi).
+ * P12 da (2026-08-12) yoqilgan pol va 0-narx taqiqi O'CHIRILDI
+ * (`price-policy-guard.ts` → `PRICE_POLICY_ENFORCED = false`). Bu fayl endi
+ * TESKARI shartnomani qulflaydi: ilgari 400 qaytargan har bir holat chekni
+ * `posted` holatiga olib borishi shart — shu jumladan 0 so'mlik qator.
+ *
+ * Nega baribir `post()` darajasida sinaladi: qoidaning o'zi (`price-policy-
+ * guard.test.ts`) yashil bo'lib, chek yopish yo'li boshqa joyda ikkinchi
+ * tekshiruv ushlab turishi mumkin — «yetim modul» klassining teskarisi.
  *
  * Harness `retail-sale-post-guards.test.ts` dagi dublyordan olingan: `findFirst`
  * — detached snapshot, `updateMany` — jonli qator.
@@ -162,15 +164,11 @@ function makeHarness(opts: Opts) {
   return { svc, pay, money, stock, saleRow };
 }
 
-describe("P12 · post() narx polini qo'llaydi", () => {
-  it('poldan past narxli chek RAD etiladi va pul qimirlamaydi', async () => {
+describe('🔴 2026-08-16 · post() NARX CHEKLOVI YO`Q (egasining qarori)', () => {
+  it('poldan past narxli chek O`TADI', async () => {
     const h = makeHarness({ priceMinor: 79_900n, buyPrice: 80_000n });
-
-    await expect(h.pay()).rejects.toBeInstanceOf(BadRequestException);
-
-    expect(h.money.applyDeltas).not.toHaveBeenCalled();
-    expect(h.stock.applyDeltas).not.toHaveBeenCalled();
-    expect(h.saleRow.state).toBe('draft');
+    await h.pay();
+    expect(h.saleRow.state).toBe('posted');
   });
 
   it("polga teng narxli chek o'tadi", async () => {
@@ -179,27 +177,31 @@ describe("P12 · post() narx polini qo'llaydi", () => {
     expect(h.saleRow.state).toBe('posted');
   });
 
-  it('chek chegirmasi polni buzsa RAD etiladi', async () => {
-    // 1 000 so'm − 25% = 750 so'm < pol 800 so'm.
+  it('chek chegirmasi polni buzsa ham O`TADI', async () => {
     const h = makeHarness({ priceMinor: 100_000n, discount: '25', buyPrice: 80_000n });
-    await expect(h.pay()).rejects.toBeInstanceOf(BadRequestException);
-    expect(h.money.applyDeltas).not.toHaveBeenCalled();
+    await h.pay();
+    expect(h.saleRow.state).toBe('posted');
   });
 
-  it("tan narx NULL bo'lgan tovarda past narx ham o'tadi (NULL ≠ pol 0)", async () => {
+  it("tan narx NULL bo'lgan tovarda past narx o'tadi", async () => {
     const h = makeHarness({ priceMinor: 1_00n, buyPrice: null });
     await h.pay();
     expect(h.saleRow.state).toBe('posted');
   });
 
-  it('0 narxli qator RAD etiladi (egasining qarori: TAQIQ)', async () => {
+  it('🔴 0 narxli qator O`TADI — tovar BEPULGA sotiladi', async () => {
     const h = makeHarness({ priceMinor: 0n, buyPrice: null });
-    await expect(h.pay()).rejects.toBeInstanceOf(BadRequestException);
-    expect(h.money.applyDeltas).not.toHaveBeenCalled();
+    await h.pay();
+    expect(h.saleRow.state).toBe('posted');
+  });
+
+  it('🔴 tan narxi BOR tovar ham bepulga sotiladi (pol umuman qo`llanmaydi)', async () => {
+    const h = makeHarness({ priceMinor: 0n, buyPrice: 80_000n, basePrice: 100_000n });
+    await h.pay();
+    expect(h.saleRow.state).toBe('posted');
   });
 
   it("karta narxi tan narxdan past tovar o'z karta narxida sotiladi", async () => {
-    // Prod holati: chakana 35 000 < tan 245 000 ⇒ pol = 35 000.
     const h = makeHarness({ priceMinor: 3_500_000n, buyPrice: 24_500_000n, basePrice: 3_500_000n });
     await h.pay();
     expect(h.saleRow.state).toBe('posted');

@@ -91,8 +91,9 @@ describe('Chek chiqarish (sotuvsiz) — tugma va oqim', () => {
     expect(screen.getByTestId('sotuv-cart-draft')).toBeInTheDocument();
   });
 
-  it('narxsiz tovar (0 so‘m) savatda — tugma bloklangan (Sotish bilan bir xil qoida)', async () => {
-    // Narxi yo'q tovar: salePrices bo'sh → qator 0 so'm → narx-xato bloki.
+  it('🔴 narxsiz tovar (0 so‘m) savatda — tugma OCHIQ (2026-08-16: cheklov yo‘q)', async () => {
+    // Narxi yo'q tovar: salePrices bo'sh → qator 0 so'm. Ilgari bu tugmani
+    // bloklardi; egasining qarori bilan 0 so'mlik chek ham chiqariladi.
     vi.mocked(api.get).mockImplementation(
       router(
         salesRoutes([
@@ -113,7 +114,6 @@ describe('Chek chiqarish (sotuvsiz) — tugma va oqim', () => {
     renderWithProviders(<SotuvPage />);
     await addFirstProduct(user);
 
-    expect(screen.getByTestId('sotuv-proforma')).toBeDisabled();
-    expect(printProformaReceiptViaAgent).not.toHaveBeenCalled();
+    expect(screen.getByTestId('sotuv-proforma')).not.toBeDisabled();
   });
 });

@@ -2,24 +2,27 @@ import { describe, expect, it } from 'vitest';
 import { checkSalePricePolicy } from './price-policy-guard.js';
 
 /**
- * P12 — chekni post qilishdagi IKKI narx qoidasi (egasining qarori 2026-08-12).
+ * 🔴 2026-08-16, egasining qarori: KASSADA NARX CHEKLOVI YO'Q.
  *
- *  1. **0-narx TAQIQ.** Prodda 488 tovarda chakana narx umuman yo'q (o'lchangan)
- *     ⇒ savatga tushsa 0 so'mlik qator bo'lib ketardi. Chek YOPILMAYDI.
- *  2. **Narx POLI.** Pozitsiya narxi (chek chegirmasidan KEYIN) `priceFloorMinor`
- *     dan past bo'lsa — rad. Ekrandagi qulf himoya emas: POS chetlab o'tilishi
- *     mumkin, haqiqiy chegara shu yerda.
+ * P12 da yoqilgan ikki qoida (0-narx taqiqi va narx poli) O'CHIRILDI —
+ * `price-policy-guard.ts` → `PRICE_POLICY_ENFORCED = false`. Kassir istalgan
+ * narxda, shu jumladan BEPULGA sotadi.
  *
- * Qo'riqchi SOF — Prisma mock'siz sinaladi (`compute-positions.ts`,
- * `retail-tenders.ts` naqshi).
+ * Bu testlar shu shartnomani QULFLAYDI: ilgari rad etilgan har bir holat endi
+ * `null` (ya'ni «to'siq yo'q») qaytarishi shart. Agar kimdir qoidani
+ * bilmasdan qayta yoqsa — bu fayl darhol qizil bo'ladi.
+ *
+ * Pol MATEMATIKASI o'chirilmadi va o'z testlari bilan qoplangan
+ * (`packages/money/src/price-floor.test.ts`) — qoida qaytarilsa bayroqni
+ * `true` qilish kifoya.
  */
 
 const FLOORS = new Map([
-  // Odatiy tovar: tan 800, chakana 1 000 ⇒ pol 800.
+  // Odatiy tovar: tan 800, chakana 1 000 ⇒ pol bo'lsa 800 bo'lardi.
   ['p-normal', { costMinor: 80_000n, basePriceMinor: 100_000n }],
-  // Tan narx yig'ilmagan ⇒ pol YO'Q (996 ta prod tovari shu holatda).
+  // Tan narx yig'ilmagan.
   ['p-nocost', { costMinor: null, basePriceMinor: 100_000n }],
-  // Karta narxi tan narxdan past (46 tovar) ⇒ pol = karta narxi 350.
+  // Karta narxi tan narxdan past (prodda 46 tovar).
   ['p-inverted', { costMinor: 2_400_00n, basePriceMinor: 350_00n }],
 ]);
 
@@ -32,84 +35,47 @@ const line = (over: Partial<Parameters<typeof checkSalePricePolicy>[0][number]> 
   ...over,
 });
 
-describe('checkSalePricePolicy — 0-narx taqiqi', () => {
-  it("narxsiz qator chekni yopishga qo'ymaydi", () => {
-    const err = checkSalePricePolicy([line({ priceMinor: 0n })], FLOORS);
-    expect(err).toContain('Kabel VVG 3x2.5');
-    expect(err).toMatch(/narx/i);
+describe('checkSalePricePolicy — cheklov O`CHIRILGAN (2026-08-16)', () => {
+  it('0 so`mlik qator chekni YOPADI — bepul sotish ruxsat etilgan', () => {
+    expect(checkSalePricePolicy([line({ priceMinor: 0n })], FLOORS)).toBeNull();
   });
 
-  it("tan narxi yo'q tovarda ham 0-narx taqiqlanadi (pol yo'qligi teshik emas)", () => {
-    const err = checkSalePricePolicy([line({ productId: 'p-nocost', priceMinor: 0n })], FLOORS);
-    expect(err).not.toBeNull();
+  it('100% chegirma ham to`smaydi', () => {
+    expect(checkSalePricePolicy([line({ discount: '100' })], FLOORS)).toBeNull();
   });
 
-  it('100% chegirma ham 0-narx — qator tekin ketmaydi', () => {
-    const err = checkSalePricePolicy([line({ productId: 'p-nocost', discount: '100' })], FLOORS);
-    expect(err).not.toBeNull();
+  it('xizmat qatori (productId yo`q) narxsiz o`tadi', () => {
+    expect(checkSalePricePolicy([line({ productId: null, priceMinor: 0n })], FLOORS)).toBeNull();
   });
 
-  it("xizmat qatori (productId yo'q) ham narxsiz o'tmaydi", () => {
-    const err = checkSalePricePolicy([line({ productId: null, priceMinor: 0n })], FLOORS);
-    expect(err).not.toBeNull();
+  it('tan narxdan past narx o`tadi', () => {
+    expect(checkSalePricePolicy([line({ priceMinor: 79_900n })], FLOORS)).toBeNull();
   });
-});
 
-describe('checkSalePricePolicy — narx poli', () => {
-  it("pol ustidagi odatiy chek o'tadi", () => {
+  it('karta narxidan ham past narx o`tadi (o`sha 46 tovar)', () => {
+    expect(
+      checkSalePricePolicy([line({ productId: 'p-inverted', priceMinor: 1n })], FLOORS),
+    ).toBeNull();
+  });
+
+  it('chegirma polni buzsa ham chek qabul qilinadi', () => {
+    expect(checkSalePricePolicy([line({ discount: '25' })], FLOORS)).toBeNull();
+  });
+
+  it('manfiy narx ham to`silmaydi — hech qanday cheklov qo`yilmagan', () => {
+    expect(checkSalePricePolicy([line({ priceMinor: -100n })], FLOORS)).toBeNull();
+  });
+
+  it('bir nechta muammoli qator ham o`tadi', () => {
+    expect(
+      checkSalePricePolicy(
+        [line({ priceMinor: 0n }), line({ productName: 'Rozetka', priceMinor: 10_00n })],
+        FLOORS,
+      ),
+    ).toBeNull();
+  });
+
+  it('odatiy, muammosiz chek avvalgidek o`tadi', () => {
     expect(checkSalePricePolicy([line()], FLOORS)).toBeNull();
-  });
-
-  it('polga teng narx qabul qilinadi', () => {
-    expect(checkSalePricePolicy([line({ priceMinor: 80_000n })], FLOORS)).toBeNull();
-  });
-
-  it('poldan past narx rad etiladi — xato matnida tovar nomi va minimal bor', () => {
-    const err = checkSalePricePolicy([line({ priceMinor: 79_900n })], FLOORS);
-    expect(err).toContain('Kabel VVG 3x2.5');
-    expect(err).toContain('800');
-  });
-
-  it("tan narx NULL bo'lsa pol yo'q — past narx ham rad etilmaydi", () => {
-    // NULL ≠ 0: yig'ilmagan tan narxdan chegara to'qib bo'lmaydi.
-    expect(
-      checkSalePricePolicy([line({ productId: 'p-nocost', priceMinor: 1_00n })], FLOORS),
-    ).toBeNull();
-  });
-
-  it('karta narxi tan narxdan past tovarda karta narxi qabul qilinadi', () => {
-    expect(
-      checkSalePricePolicy([line({ productId: 'p-inverted', priceMinor: 350_00n })], FLOORS),
-    ).toBeNull();
-  });
-
-  it("karta narxidan ham past bo'lsa rad etiladi (o'sha 46 tovar)", () => {
-    expect(
-      checkSalePricePolicy([line({ productId: 'p-inverted', priceMinor: 349_00n })], FLOORS),
-    ).not.toBeNull();
-  });
-
-  it('chek chegirmasi polni buzsa rad etiladi', () => {
-    // 1 000 so'm − 25% = 750 < pol 800.
-    const err = checkSalePricePolicy([line({ discount: '25' })], FLOORS);
-    expect(err).not.toBeNull();
-  });
-
-  it("polni buzmaydigan chegirma o'tadi", () => {
-    expect(checkSalePricePolicy([line({ discount: '10' })], FLOORS)).toBeNull();
-  });
-
-  it('kartasi topilmagan pozitsiya polsiz — jimgina rad etilmaydi', () => {
-    expect(
-      checkSalePricePolicy([line({ productId: 'p-unknown', priceMinor: 1_00n })], FLOORS),
-    ).toBeNull();
-  });
-
-  it('bir nechta buzilishda birinchi buzilgan qator xabar qiladi', () => {
-    const err = checkSalePricePolicy(
-      [line(), line({ productName: 'Rozetka', priceMinor: 10_00n })],
-      FLOORS,
-    );
-    expect(err).toContain('Rozetka');
   });
 });

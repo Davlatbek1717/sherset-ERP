@@ -83,15 +83,15 @@ describe('SalesScreen — 0-narx himoyasi (P12)', () => {
     expect(within(line).getByTestId('sotuv-cart-no-price')).toBeInTheDocument();
   });
 
-  it('🔴 narxsiz qator bilan chekni yuborib bo‘lmaydi', async () => {
+  it('🔴 narxsiz qator bilan ham chek YUBORILADI (2026-08-16: cheklov yo‘q)', async () => {
     vi.mocked(api.get).mockImplementation(router(pricelessRoutes()));
     const user = userEvent.setup();
     renderWithProviders(<SotuvPage />);
 
     await addFirstProduct(user);
 
-    expect(screen.getByTestId('sotuv-pay')).toBeDisabled();
-    expect(screen.getByTestId('sotuv-price-blocked')).toBeInTheDocument();
+    expect(screen.getByTestId('sotuv-pay')).not.toBeDisabled();
+    expect(screen.queryByTestId('sotuv-price-blocked')).not.toBeInTheDocument();
   });
 
   it('narx kiritilgach yuborish ochiladi', async () => {
@@ -114,16 +114,16 @@ describe('SalesScreen — 0-narx himoyasi (P12)', () => {
 });
 
 describe('SalesScreen — chek chegirmasi polni buzsa (P12)', () => {
-  it('🔴 polni buzadigan chegirmada yuborish BLOKLANADI', async () => {
+  it('🔴 polni buzadigan chegirma ham O‘TADI (2026-08-16: cheklov yo‘q)', async () => {
     const user = userEvent.setup();
     renderWithProviders(<SotuvPage />);
     await addFirstProduct(user);
 
-    // Kartochka: chakana 10 000, tan 6 000 ⇒ pol 6 000. −45% = 5 500 < pol.
+    // Kartochka: chakana 10 000, tan 6 000 ⇒ ilgarigi pol 6 000. −45% = 5 500.
     await setDiscount(user, '45');
 
-    expect(screen.getByTestId('sotuv-pay')).toBeDisabled();
-    expect(screen.getByTestId('sotuv-price-blocked')).toBeInTheDocument();
+    expect(screen.getByTestId('sotuv-pay')).not.toBeDisabled();
+    expect(screen.queryByTestId('sotuv-price-blocked')).not.toBeInTheDocument();
   });
 
   it('polni buzmaydigan chegirma odatdagidek ishlaydi', async () => {

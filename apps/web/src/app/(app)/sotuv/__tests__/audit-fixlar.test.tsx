@@ -85,54 +85,48 @@ async function tryPrice(
 // ── K-3: parse bo'lmagan narx = 0, ESKI narx EMAS ───────────────────────────
 
 describe('K-3 — narx maydoni parse bo‘lmasa qator narxi 0 bo‘ladi', () => {
-  it('maydon BO‘SHATILSA — 0 narx QABUL QILINMAYDI, savatdagi narx o‘zgarmaydi', async () => {
+  it('maydon BO‘SHATILSA — 0 narx QABUL QILINADI (cheklov olib tashlangan)', async () => {
     const user = userEvent.setup();
     renderWithProviders(<SotuvPage />);
 
     const line = await addFirstProduct(user);
     await tryPrice(user, line, '');
 
-    // P12: oyna ochiq qoladi va sababni yozadi (ilgari 0 narx savatga tushardi).
-    expect(screen.getByTestId('pos-line-edit-no-price')).toBeInTheDocument();
-    // K-3 mohiyati saqlanadi: maydonda ko'ringan narsa (bo'sh) jimgina ESKI
-    // narxga aylanmaydi — u shunchaki saqlanmaydi, savat qatori tegilmaydi.
+    // 2026-08-16 (egasi): 0 narx endi taqiqlanmaydi — qizil banner ham yo'q.
+    expect(screen.queryByTestId('pos-line-edit-no-price')).not.toBeInTheDocument();
+    // K-3 mohiyati o'zgarmadi: ko'ringan narsa (bo'sh = 0) savatga TUSHADI,
+    // eski 10 000 jimgina qolib ketmaydi.
     const after = screen.getByTestId('sotuv-cart-line');
-    expect(norm(within(after).getByTestId('sotuv-cart-price-edit').textContent)).toBe(
-      '10 000,00 сум',
-    );
+    expect(norm(within(after).getByTestId('sotuv-cart-price-edit').textContent)).toBe('0,00 сум');
   });
 
-  it('bo‘sh narx urinishidan keyin rasmiylashtirishga ESKI narx ketadi, 0 EMAS', async () => {
+  it('🔴 bo‘sh narxdan keyin rasmiylashtirishga 0 ketadi — ESKI narx EMAS', async () => {
     const user = userEvent.setup();
     renderWithProviders(<SotuvPage />);
 
     const line = await addFirstProduct(user);
     await tryPrice(user, line, '');
-    await user.click(screen.getByTestId('pos-line-edit-close'));
     await user.click(screen.getByTestId('sotuv-pay'));
 
     await waitFor(() => expect(api.post).toHaveBeenCalled());
     const [, body] = vi.mocked(api.post).mock.calls[0] as [string, { positions: unknown[] }];
-    // 🔴 Muhimi: serverga 0 narx HECH QACHON ketmaydi (P12 taqiqi), va savat
-    // qatori kassir ko'rgan narxni tashiydi.
+    // K-3 shartnomasi: serverga kassir KO'RGAN narx ketadi. Endi u 0 —
+    // bepul sotish ruxsat etilgan, lekin eski narx jimgina tiklanmaydi.
     expect(body.positions).toEqual([
-      { productId: 'p-1', quantity: '1', priceMinor: '1000000', discount: '0' },
+      { productId: 'p-1', quantity: '1', priceMinor: '0', discount: '0' },
     ]);
   });
 
-  it('HARF yozilsa narx jimgina o‘qilmaydi va qabul ham qilinmaydi', async () => {
+  it('HARF yozilsa narx jimgina o‘qilmaydi — 0 bo‘lib saqlanadi', async () => {
     const user = userEvent.setup();
     renderWithProviders(<SotuvPage />);
 
     const line = await addFirstProduct(user);
     await tryPrice(user, line, 'abc');
 
-    // «abc» → 0 (parse yagona: `parseAmountToMinor`), 0 esa qabul qilinmaydi.
-    expect(screen.getByTestId('pos-line-edit-no-price')).toBeInTheDocument();
+    // «abc» → 0 (parse yagona: `parseAmountToMinor`); 0 endi qabul qilinadi.
     const after = screen.getByTestId('sotuv-cart-line');
-    expect(norm(within(after).getByTestId('sotuv-cart-price-edit').textContent)).toBe(
-      '10 000,00 сум',
-    );
+    expect(norm(within(after).getByTestId('sotuv-cart-price-edit').textContent)).toBe('0,00 сум');
   });
 });
 
