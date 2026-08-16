@@ -204,13 +204,12 @@ export interface PrintResult {
 export type PrintIdleReason =
   /** Qobiq ham, HTTP print-agent ham yo'q — oddiy brauzer. */
   | 'no-agent'
-  // `'printer-not-set'` olib tashlandi: mijoz cheki va Z-hisobot endi
-  // qurilmaning Windows sukut printeriga bosiladi (desktop v1.4.0+), ya'ni
-  // «sozlanmagan» holat ularda YO'Q. Quyidagisi — yig'ish varag'iniki, u
-  // ombor→printer biriktirmasiga tayanadi va saqlanadi.
-  /** Hech bir sklad'ga printer biriktirilmagan (yacheykali chek). */
-  | 'no-printer-mapped'
-  /** Sozlama yoki hujjat yuklanmadi (tarmoq/server xatosi). */
+  // `'printer-not-set'` (2026-08-12) va `'no-printer-mapped'` (2026-08-16)
+  // olib tashlandi: UCHALA chek ham — mijoz cheki, Z-hisobot va omborga
+  // chiqadigan yig'ish varag'i — printer biriktirilmagan bo'lsa qurilmaning
+  // Windows sukut printeriga bosiladi. Ya'ni «sozlanmagan» degan uzilish
+  // qavati BUTUNLAY yo'q; sozlama faqat marshrutni ANIQLASHTIRADI.
+  /** Hujjat yuklanmadi (tarmoq/server xatosi) — chop etadigan narsa yo'q. */
   | 'load-failed';
 
 /** Send a job to one named printer. Provide either `text` or base64 ESC/POS bytes. */
@@ -378,10 +377,22 @@ export interface PickingPrintOutcome {
 }
 
 /**
- * Route each warehouse's picking sheet to its own printer via the local agent.
- * Returns handled=false when the agent is down or NO zone has a printer mapped —
- * the caller should then fall back to the browser popup print. Sheets print
- * concurrently (the agent is multi-threaded), so two printers fire in parallel.
+ * Route each warehouse's picking sheet to a printer via the agent/shell.
+ *
+ * 🔴 SOZLASH QADAMI MAJBURIY EMAS (2026-08-16, o'lchangan prod nosozligi).
+ * Ilgari varaq FAQAT `sklad_keepers.printer_name` biriktirilgan omborga
+ * chiqardi, aks holda funksiya `no-printer-mapped` qaytarib chop etishni
+ * to'xtatardi. Prodda o'sha jadval **0 qator** edi va tovarlarning 89% ida
+ * yacheyka yo'q (`skladNo: null` — u umuman marshrutlanmasdi ham), ya'ni
+ * «Omborchiga yuborish» dan keyin chek HECH QACHON chiqmasdi.
+ *
+ * Endi qoida mijoz cheki bilan AYNI (`2efe572f`): biriktirilgan printer bo'lsa
+ * — o'sha printerga, bo'lmasa — **qurilmaning Windows sukut printeriga**
+ * (bo'sh nom). Ombor→printer marshruti sozlansa ishlashda davom etadi.
+ *
+ * Returns handled=false faqat ikki holatda: chop qatlami umuman yo'q
+ * (`no-agent`) yoki varaqlarning O'ZI yuklanmadi (`load-failed`) — o'shanda
+ * chaqiruvchi brauzer-zaxirasiga tushadi. Varaqlar bir vaqtda bosiladi.
  */
 export async function printPickingViaAgent(saleId: string): Promise<PickingPrintOutcome> {
   const idle = (reason: PrintIdleReason): PickingPrintOutcome => ({
@@ -394,32 +405,38 @@ export async function printPickingViaAgent(saleId: string): Promise<PickingPrint
   if (!(await checkPrintAgent())) return idle('no-agent');
 
   let sheetsRes: AgentPickingSheetsResponse;
-  let keepers: { items: AgentKeeperRow[] };
   try {
-    [sheetsRes, keepers] = await Promise.all([
-      api.get<AgentPickingSheetsResponse>(`/restock-tasks/picking-sheets/retailsale/${saleId}`),
-      api.get<{ items: AgentKeeperRow[] }>('/sklad-keepers'),
-    ]);
+    sheetsRes = await api.get<AgentPickingSheetsResponse>(
+      `/restock-tasks/picking-sheets/retailsale/${saleId}`,
+    );
   } catch {
     return idle('load-failed');
   }
 
+  // Marshrut sozlamasi — QULAYLIK, chek esa hujjat: bu so'rov yiqilsa
+  // (403/500/tarmoq) varaq baribir sukut printerdan chiqadi. Ilgari u
+  // `Promise.all` da varaqlar bilan bir kaftda edi va uning har qanday xatosi
+  // chekni butunlay yo'qotardi.
   const printerBySklad = new Map<number, string>();
-  for (const k of keepers.items) if (k.printerName) printerBySklad.set(k.skladNo, k.printerName);
+  try {
+    const keepers = await api.get<{ items: AgentKeeperRow[] }>('/sklad-keepers');
+    for (const k of keepers.items ?? []) {
+      if (k.printerName) printerBySklad.set(k.skladNo, k.printerName);
+    }
+  } catch {
+    // marshrutsiz davom etamiz — hammasi sukut printerga
+  }
 
   const sheets = sheetsRes.sheets ?? [];
-  const anyMapped = sheets.some((s) => s.skladNo != null && printerBySklad.has(s.skladNo));
-  // Nothing to route (agent up but no printer configured) → let caller fall back.
-  // Varaq umuman yo'q — bu SOZLAMA muammosi emas (ogohlantirish noto'g'ri
-  // manzil ko'rsatardi), shuning uchun eski xulq: popup.
+  // Varaq umuman yo'q — bu SOZLAMA muammosi emas (chop etadigan narsa yo'q).
   if (sheets.length === 0) return idle('load-failed');
-  if (!anyMapped) return idle('no-printer-mapped');
 
   const el = electron();
   const results = await Promise.all(
     sheets.map(async (sheet) => {
-      const printer = sheet.skladNo != null ? printerBySklad.get(sheet.skladNo) : undefined;
-      if (!printer) return 'skipped' as const;
+      // Bo'sh nom = Windows sukut printeri (desktop `printHtml` shartnomasi);
+      // yacheykasiz guruh (`skladNo: null`) ham aynan shu yo'ldan chiqadi.
+      const printer = (sheet.skladNo != null ? printerBySklad.get(sheet.skladNo) : undefined) ?? '';
       // Electron shell → native driver print (HTML, Cyrillic-safe).
       // Plain browser → HTTP print-agent (raw ESC/POS).
       const r = el
@@ -432,7 +449,10 @@ export async function printPickingViaAgent(saleId: string): Promise<PickingPrint
   return {
     handled: true,
     printed: results.filter((r) => r === 'printed').length,
-    skipped: results.filter((r) => r === 'skipped').length,
+    // Endi hech bir varaq TASHLAB KETILMAYDI (printer yo'q bo'lsa sukut
+    // printerga tushadi), lekin maydon shakli saqlanadi — chaqiruvchi
+    // «o'tkazib yuborildi» hisobini ko'rsatishda davom etadi.
+    skipped: 0,
     errors: results.filter((r) => r === 'error').length,
   };
 }

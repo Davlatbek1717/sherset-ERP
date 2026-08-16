@@ -7,13 +7,14 @@
  * chaqiruvchi esa har qanday `handled:false` ga `?auto=1` popup'ini ochardi;
  * popup qobiq ichida `window.print()` chaqiradi ⇒ Chromium tasdiq oynasi.
  *
- * Endi: qobiqda «printer sozlanmagan» ⇒ popup OCHILMAYDI, kassirga manzilli
- * ogohlantirish chiqadi. Oddiy brauzerda popup — yagona chop yo'li, qoladi.
- *
  * B3 (2026-08-12): chekda «printer sozlanmagan» holati BUTUNLAY yo'qoldi —
  * chek qurilmaning Windows sukut printeriga bosiladi. Qolgan nosozlik sinfi:
  * qobiq chop qildi-yu drayver rad etdi (`handled:true, ok:false`) ⇒ SABABI
  * ko'rsatilgan xato toast'i, popup EMAS.
+ *
+ * 2026-08-16 — YAKUN: qobiqda popup UMUMAN ochilmaydi. Oxirgi shox
+ * (`load-failed`) ham yopildi, chunki popup sahifasi AYNI so'rovni qaytaradi
+ * va u ham yiqiladi. Oddiy brauzerda popup — yagona chop yo'li, qoladi.
  */
 
 import { api } from '@/lib/api-client';
@@ -114,7 +115,11 @@ describe('Chek chop etish — qobiq shoxi', () => {
     expect(vi.mocked(window.open).mock.calls[0]?.[0]).toContain('/print/retail-sale/s-1?auto=1');
   });
 
-  it('qobiqda agent yo‘q / yuklanmadi shoxi popup‘ni SAQLAYDI', async () => {
+  it('🔴 qobiqda yuklanmadi: popup OCHILMAYDI — u ayni so‘rovni qaytaradi', async () => {
+    // 2026-08-16 (egasi: «kichik oyna ochildi, ochilmasligi kerak edi»).
+    // Ilgari bu shox popup ochardi. Popup sahifasi (`/print/retail-sale/:id`)
+    // AYNI `GET /retail-sales/:id` ni yuboradi — yuklash yiqilgan bo'lsa u ham
+    // yiqiladi, ya'ni oyna faqat kassirni chalg'itardi. Endi sabab toastda.
     vi.mocked(hasNativePrinting).mockReturnValue(true);
     vi.mocked(printReceiptViaAgent).mockResolvedValue({
       handled: false,
@@ -126,6 +131,8 @@ describe('Chek chop etish — qobiq shoxi', () => {
 
     await pressPrint(user);
 
-    await waitFor(() => expect(window.open).toHaveBeenCalled());
+    expect(await screen.findByText(/Chek chiqmadi/)).toBeInTheDocument();
+    expect(screen.getByText(/yuklanmadi/)).toBeInTheDocument();
+    expect(window.open).not.toHaveBeenCalled();
   });
 });

@@ -1299,8 +1299,10 @@ function SalesScreen({
       qc.invalidateQueries({ queryKey: ['retail-sales-picking', session.id] });
       toast.success(t('sent_to_picker'));
       // Per-warehouse routing via the local print-agent: each sklad's sheet goes
-      // to its own mapped printer (Settings → Sklad-keepers). If the agent isn't
-      // running or no printer is mapped, fall back to the browser popup print.
+      // to its own mapped printer (Settings → Sklad-keepers). Biriktirilmagan
+      // ombor (va yacheykasiz guruh) qurilmaning Windows SUKUT printeriga
+      // chiqadi — sozlash qadami majburiy emas (2026-08-16, prod nosozligi).
+      // Brauzer-zaxira faqat chop qatlami umuman bo'lmasa ishlaydi.
       const outcome = await printPickingViaAgent(saleId);
       if (outcome.handled) {
         if (outcome.printed > 0) {
@@ -1311,8 +1313,9 @@ function SalesScreen({
         }
         if (outcome.errors > 0) toast.error(t('print_error_count', { n: outcome.errors }));
       } else {
-        // Yacheykali chek — chek bilan ayni qaror: qobiqda printer
-        // biriktirilmagan bo'lsa popup emas, ogohlantirish.
+        // Yacheykali chek — chek bilan ayni qaror: qobiqda popup OCHILMAYDI
+        // (u ayni so'rovni qaytaradi ⇒ ayni xato), kassir sababni toastdan
+        // ko'radi; oddiy brauzerda esa popup yagona chop yo'li.
         await finishPrint(
           { handled: false, ok: false, reason: outcome.reason },
           {

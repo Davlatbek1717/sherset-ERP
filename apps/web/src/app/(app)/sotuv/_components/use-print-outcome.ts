@@ -10,18 +10,18 @@
  * 🔴 P7 (2026-08-11, egasi monoblokda): har qanday `handled:false` ga
  * `?auto=1` popup'i ochilardi. Qobiq ichida o'sha popup `window.print()`
  * chaqiradi ⇒ Chromium TASDIQ oynasi — «exe chekni o'zi chiqarsin»ning
- * teskarisi. Endi sozlama muammosi (printer tanlanmagan/biriktirilmagan)
- * qobiqda popup emas, MANZILLI ogohlantirish beradi; oddiy brauzerda popup
- * yagona chop yo'li bo'lgani uchun o'zgarmaydi. Qaror `printFollowUp` da.
+ * teskarisi. 2026-08-16 da qoida yakunlandi: **qobiqda popup umuman
+ * ochilmaydi**, uzilish sababi toast bilan aytiladi; oddiy brauzerda popup
+ * yagona chop yo'li bo'lgani uchun qoladi. Qaror `printFollowUp` da.
  *
- * Ogohlantirishga qurilmadagi printer NOMLARI ham qo'shiladi: sozlamadagi
- * qiymat Windows printer nomi bilan AYNAN mos bo'lishi shart, egasi esa
- * kiosk ichidan Windows ro'yxatini ochib ko'ra olmaydi.
+ * «Printer sozlanmagan» shoxi ham o'sha kuni yo'qoldi — uchala chek ham
+ * printer biriktirilmagan bo'lsa qurilmaning Windows sukut printeriga
+ * bosiladi, ya'ni kassirni sozlamaga yuboradigan holat qolmadi.
  */
 
 // Chop natijasi → keyingi qadam (qobiqda popup ochilmaydi) — izohi modulda.
 import { printFollowUp } from '@/lib/pos/print-fallback';
-import { type PrintIdleReason, fetchAgentPrinters, hasNativePrinting } from '@/lib/print-agent';
+import { type PrintIdleReason, hasNativePrinting } from '@/lib/print-agent';
 import { useToast } from '@moysklad/ui';
 import { useTranslations } from 'next-intl';
 import { useCallback } from 'react';
@@ -43,19 +43,14 @@ export function usePrintOutcome() {
           // TASHLAB YUBORILARDI va kassir doim bir xil umumiy matnni ko'rardi.
           // Sukut printerga o'tgach qolgan yagona nosozlik sinfi aynan shular —
           // sabab ko'rinmasa keyingi nosozlik yana taxminga aylanadi.
-          toast.error(t('print_error'), outcome.error ? { description: outcome.error } : undefined);
-          return;
-        case 'configure-printer': {
-          const printers = await fetchAgentPrinters();
-          const hint = t('printer_not_set_hint');
-          toast.warning(t('printer_not_set'), {
-            description: printers.length
-              ? `${hint} ${t('printer_not_set_available', { printers: printers.slice(0, 3).join(', ') })}`
-              : hint,
-            duration: 12000,
+          // Qobiqda `handled:false` (hujjat yuklanmadi) ham shu shoxga tushadi
+          // va uning `error` maydoni bo'sh — sababsiz «chek chiqmadi» esa
+          // aynan o'sha «nega chiqmadi?» savolini qoldiradi.
+          toast.error(t('print_error'), {
+            description:
+              outcome.error ?? (outcome.handled ? undefined : t('print_load_failed_hint')),
           });
           return;
-        }
         default:
           window.open(popup.url, '_blank', popup.features ?? 'width=420,height=680,noopener');
       }

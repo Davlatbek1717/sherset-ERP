@@ -84,6 +84,19 @@ export const KIOSK_ALLOWED: readonly Rule[] = [
   // jimgina popup'ga tushadi. (Mijoz cheki bu endpointga endi MUHTOJ EMAS —
   // u qurilmaning Windows sukut printeriga bosiladi, desktop v1.4.0+.)
   { prefix: '/sklad-keepers', methods: ['GET'], why: 'ombor→printer marshruti' },
+  // 🔴 Marshrut ochiq edi-yu VARAQNING O'ZI yopiq qolgan edi (2026-08-16).
+  // «Omborchiga yuborish» dan keyin kassa shu endpointdan chek mazmunini
+  // o'qiydi (`printPickingViaAgent`), zaxira `/print/picking/:id?auto=1`
+  // sahifasi ham AYNI so'rovni yuboradi — ikkalasi ham 403 olardi (prod
+  // nginx logida 28 marta) va omborga chiqadigan chek umuman chiqmasdi.
+  // `exact` — `/restock-tasks` ning qolgani (omborchi navbati, vazifa
+  // detali, qator-tasdiqlash) kassirga OCHILMAYDI.
+  {
+    prefix: '/restock-tasks/picking-sheets/:source/:id',
+    methods: ['GET'],
+    exact: true,
+    why: "omborga chiqadigan chek mazmuni (yig'ish varag'i)",
+  },
 
   // ── Mijoz: o'qish + YARATISH + TOR tahrir (F9 mijoz kartasi) ─────────────
   // 🔴 To'rt AYNIQ qator — ilgari bu yerda bitta PREFIKS qoida turardi

@@ -14,9 +14,7 @@ export type PrintFollowUp =
   /** Chop qilishga urinildi, lekin printer/drayver rad etdi — xato ko'rsatiladi. */
   | 'error'
   /** Brauzer chop sahifasi (`?auto=1`) ochiladi. */
-  | 'popup'
-  /** Omborga printer biriktirilmagan — kassirga manzilli ogohlantirish (popup EMAS). */
-  | 'configure-printer';
+  | 'popup';
 
 /**
  * @param outcome `printReceiptViaAgent` / `printZReportViaAgent` /
@@ -29,17 +27,22 @@ export type PrintFollowUp =
  * qobiqda popup o'rniga ogohlantirish beriladi. Oddiy brauzerda esa popup —
  * YAGONA chop yo'li, o'zgarmaydi.
  *
- * Sozlama bo'shlig'i endi YAGONA: `no-printer-mapped` (ombor→printer, yig'ish
- * varag'i). Mijoz cheki va Z-hisobotda «printer sozlanmagan» holati YO'Q — ular
- * qurilmaning Windows sukut printeriga bosiladi (desktop v1.4.0+), ya'ni ular
- * uzilsa bu haqiqiy xato (`error`) yoki yuklash muammosi (`popup`), sozlama
- * emas.
+ * 🔴 «Printer sozlanmagan» qavati BUTUNLAY YO'Q (2026-08-16 da oxirgisi ham
+ * olib tashlandi). Uchala chek ham printer biriktirilmagan bo'lsa qurilmaning
+ * Windows sukut printeriga bosiladi, ya'ni chop zanjiri uzilsa bu HAR DOIM
+ * yo haqiqiy xato (`error`), yo yuklash muammosi (`popup`) — sozlama emas.
+ * Ilgari bu yerda `no-printer-mapped → configure-printer` shoxi turardi va
+ * yig'ish varag'ini «avval sozlang» ogohlantirishi bilan to'xtatardi: prodda
+ * `sklad_keepers` 0 qator edi, ya'ni chek hech qachon chiqmasdi.
  */
 export function printFollowUp(
   outcome: { handled: boolean; ok: boolean; reason?: PrintIdleReason },
   opts: { inShell: boolean },
 ): PrintFollowUp {
   if (outcome.handled) return outcome.ok ? 'none' : 'error';
-  if (opts.inShell && outcome.reason === 'no-printer-mapped') return 'configure-printer';
+  // Qobiqda `handled:false` ning YAGONA sababi — hujjat yuklanmadi
+  // (`checkPrintAgent()` qobiqda doim `true`). Popup sahifasi AYNI so'rovni
+  // qaytaradi, ya'ni u ham yiqiladi: kassirga bo'sh oyna emas, sabab kerak.
+  if (opts.inShell) return 'error';
   return 'popup';
 }

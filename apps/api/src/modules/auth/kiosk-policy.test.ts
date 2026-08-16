@@ -76,6 +76,13 @@ describe('isKioskAllowed — RUXSAT ETILGANLAR', () => {
     // Chek printeri nomi shu yerdan o'qiladi (`print-agent.ts`); yo'q bo'lsa
     // native chop etish jimgina brauzer-popup'ga tushardi.
     ['GET', '/sklad-keepers'],
+    // 🔴 Omborga chiqadigan chekning MAZMUNI shu yerdan o'qiladi. Ro'yxatda
+    // yo'q edi ⇒ kiosk-kassir 403 olardi (prodda 28 marta o'lchandi,
+    // 2026-08-16) ⇒ «Omborchiga yuborish» dan keyin chek chiqmasdi, uning
+    // o'rniga zaxira popup ochilardi — u ham AYNI endpointni so'raydi, ya'ni
+    // ikkinchi 403. Printer marshruti (`/sklad-keepers`) ochiq bo'lgani holda
+    // varaqning o'zi yopiq qolgan edi — ro'yxat yarim to'ldirilgan.
+    ['GET', '/restock-tasks/picking-sheets/retailsale/8f7d1c22-0000-4000-8000-000000000001'],
     ['GET', '/products?q=viko'],
     ['GET', '/counterparties'],
     ['POST', '/counterparties'],
@@ -108,6 +115,17 @@ describe('isKioskAllowed — DEFAULT DENY', () => {
     ['DELETE', '/admin/smenas/abc'],
     ['GET', '/admin/users'],
     ['POST', '/admin/smenas/mine'],
+    // 🔴 `/restock-tasks` ostidan FAQAT chop-varag'i ochilgan. Omborchi
+    // navbati, vazifa detali va qator-tasdiqlash kassirga TEGISHLI EMAS —
+    // bitta keng prefiks qoidasi ularni jimgina ochib yuborardi.
+    ['GET', '/restock-tasks'],
+    ['GET', '/restock-tasks/8f7d1c22-0000-4000-8000-000000000001'],
+    ['POST', '/restock-tasks/from-sales-return'],
+    ['POST', '/restock-tasks/8f7d1c22-0000-4000-8000-000000000001/lines/l-1/confirm'],
+    // Metod ham tor: varaq faqat O'QILADI.
+    ['POST', '/restock-tasks/picking-sheets/retailsale/8f7d1c22-0000-4000-8000-000000000001'],
+    // Chuqurroq yo'l `exact` bilan yopiq qoladi.
+    ['GET', '/restock-tasks/picking-sheets/retailsale/8f7d1c22-0000-4000-8000-000000000001/lines'],
   ])('%s %s → RAD (UI yashirish yetarli emas)', (method, path) => {
     expect(isKioskAllowed(method, normalizePath(path))).toBe(false);
   });
