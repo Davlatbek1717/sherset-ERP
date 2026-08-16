@@ -331,7 +331,7 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
-> **🕒 2026-08-16c (KASSA POS — qarz to'lovi cheki TOVAR-CHEK shablonida + JIM chop;
+> **🕒 2026-08-16c (KASSA POS — qarz to'lovi cheki TOVAR-CHEK shablonida + JIM chop, `48d2430e`;
 > Phase-1: strukturaviy, runtime-tasdiqlanmagan, browser-smoke YO'Q, qurilma-QA QOLDI) —** egasi:
 > qarz qabul qilingach kassa.exe'da chek BOSHQA OYNADA ekranga chiqyapti, dizayni tovar chekidan farq
 > qiladi. **Ildiz:** tovar cheki `printReceiptViaAgent` (jim) yo'lidan yurardi, qarz cheki esa
@@ -348,8 +348,11 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 > (12) · renderers +3 · pko-usd qayta yozildi (5) · wiring-test jim-chopga moslandi. Gate: web tc 0 ·
 > api tc 0 · biome 0 (o'z fayllar) · TO'LIQ web vitest 285 fayl / 4029 pass · api debt-modul 278 pass.
 > (`audit-fixlar` `5e3`-testi bir oraliqda 5× qizardi, keyin 3× 7/7 — diffga bog'lanmadi, 16b bilan bir
-> kuzatuv.) **QO'SHMA COMMIT:** 16b (qidiruv-debounce) bilan BITTA commit — page.tsx bitta nusxada ikkala
-> ishni olgani uchun, user ruxsati bilan; 16b'dagi «blob-retsept bilan chiqarildi» rejasi shunga bekor.
+> kuzatuv.) **Commit tartibi (jonli poyga, yakun TO'G'RI):** user «bitta qo'shma commit»ga ruxsat bergan
+> edi, lekin 16b-sessiya mening stage'im bilan commit'im ORASIDA o'z `fab01481`ini qildi (blob-retsept:
+> page.tsx'dan mening kiritmalarim chiqarilgan); mening `48d2430e` uning USTIGA chek-ishini qo'shdi —
+> shuning uchun `48d2430e` xabari «qo'shma» deydi-yu, debounce aslida `fab01481`da. Yakuniy daraxtda
+> ikkala ish TO'LIQ (07:04 to'liq suite AYNAN shu tarkibda 285/285 yashil, HEAD grep-tasdiqlangan).
 > **⚠️ KEYINGI QADAM: WEB-DEPLOY (exe SHART EMAS — sof web) + qurilma-QA:** qarz to'lovi → chek DARHOL
 > printerdan (oyna ochilmaydi), dizayn savdo cheki bilan bir xil, to'liq yopilganda «Sizning qarzingiz: 0».
 >
