@@ -1,8 +1,10 @@
 # Sherset Kassa — Electron o'rami (`desktop/`)
 
-> Holat: **`1.8.0` KANALDA** (F9, 2026-08-15, operator ruxsati bilan): exe+blockmap
-> md5-solishtirildi, `latest.yml` HTTPS'da `version: 1.8.0`, exe HEAD 200 /
-> 81 963 045 bayt; zaxira `latest.yml.bak-1.7.0`. 1.8.0 yangiligi (F6):
+> Holat: **`1.9.0` KANALDA** (2026-08-16, operator ruxsati bilan): remote sha512
+> `latest.yml` bilan mos, HTTPS'da `version: 1.9.0`, exe HEAD 200 / 81 963 309
+> bayt; zaxira `latest.yml.bak-1.8.0`. 1.9.0 yangiligi: **OSK katta harflar**
+> (29px/60px, belgilar yuqori qatorda, probel/⌫ uzun) — qurilmada o'lchanmagan.
+> 1.8.0 yangiligi (F6):
 > `electronAPI.minimize/toggleWindowed/requestQuit` + web-header
 > `data-sherset-window-controls="page"` markerini qo'yganda suzuvchi uchlik
 > bostiriladi (MutationObserver) — yangi web bilan uchlik POS headeriga singadi.
@@ -491,6 +493,7 @@ qolganlarini to'xtatadi).
 | `1.6.0` | 2026-08-13 | **chiqish tugmasi ✕** o'ng-yuqori burchakda (imoga qo'shimcha, tasdiq dialogli `shell:request-quit`); web tomonda qobiq doim kiosk-ko'rinish. Kanalga chiqqan (sha512+HEAD 200 o'lchandi); qurilmada 1.5.0→1.6.0 avto-o'tish jonli KUZATILMAGAN |
 | `1.7.0` | 2026-08-13 | **oyna boshqaruv uchligi — ❐ ✕** (P01): «—» minimize, «❐» kiosk ↔ oynali (ramkasiz 1280×800) rejim, «✕» avvalgidek tasdiqli; close-qo'riqchi `isKiosk()` dan KONFIGga ko'chdi (oynali rejimda Alt+F4 jim yopmasin). Kanalga chiqqan (sha512+HEAD 200 o'lchandi, zaxira `latest.yml.bak-1.6.0`); qurilmada o'lchanmagan. ⚠️ «Yetim» reliz: suppression'siz — o'rnini 1.8.0 bosdi |
 | `1.8.0` | 2026-08-15 | **preload suppression + yangi bridge-metodlar** (F6/F9, POS redizayn): `minimize/toggleWindowed/requestQuit` electronAPI'da; web `data-sherset-window-controls="page"` markerini qo'ysa suzuvchi uchlik chizilmaydi (yangi web'da uchlik POS headeriga singadi, eski web'da suzuvchi qoladi — moslik matritsasi F6 hisobotida). Kanalga chiqqan (md5 mos, `latest.yml` HTTPS 1.8.0, HEAD 200, 81 963 045 bayt; zaxira `latest.yml.bak-1.7.0`); qurilmada F9-QA kutmoqda |
+| `1.9.0` | 2026-08-16 | **OSK katta harflar** (K8, `preload.js`): harf 29px/60px, belgilar yuqori qatorda, probel/⌫ uzun; qidiruv-persist/qoralama web tomonda (3a275a80). Kanalga chiqqan (remote sha512 `latest.yml` bilan mos, HTTPS 1.9.0, HEAD 200, 81 963 309 bayt; zaxira `latest.yml.bak-1.8.0`); qurilmada o'lchanmagan, 1.8.0→1.9.0 avto-o'tish jonli KUZATILMAGAN |
 
 **Kanal tomoni — o'lchangan (2026-08-11, `1.3.0`):**
 `https://erp.sherset.uz/downloads/desktop/latest.yml` → **200**, ichida
