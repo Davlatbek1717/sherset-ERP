@@ -646,6 +646,90 @@ Yozilishi kerak: nechta xabar `sent`, nechtasi `failed` va nega, «tanish kontak
 
 ---
 
+---
+
+# QO'SHIMCHA: B2 — chek mazmuni va ochiq chek havolasi (2026-08-16, egasi)
+
+Egasi hozirgi tizimi yuboradigan xabar namunasini berdi (do'kon nomi · sana ·
+hujjat № · xaridor · summa · balans · **chek havolasi**) va «hammasini qur,
+bog'liq sahifalarni ham unutma» dedi.
+
+**O'lchangan holat:**
+- `Publication` modeli (token · muddat · parol · ko'rishlar soni) va `/p/[token]`
+  sahifasi ISHLAYDI — `mskld.ru` havolasining ekvivalenti. Lekin `retailsale`
+  `PublicationTargetTypeSchema` dagi 25 turdan **birortasi emas**, va sahifa
+  hozircha «minimal preview» (`app/p/[token]/page.tsx` izohi).
+- `tovar-chek.tsx` (305 qator) — POS termal chek shabloni, tuzilgan props qabul
+  qiladi va formatlashni `@/lib/pos/receipt-model` dan oladi (fayl izohida
+  ataylab: «uch renderer jimgina ajralib ketmasin»). Ochiq sahifa SHU
+  komponentni ishlatadi — **to'rtinchi renderer YOZILMAYDI**.
+- 🔴 `fetchDocMeta` da `default: return null` ⇒ `retailsale`/`debt`/`debtpayment`
+  uchun xabarda sana va hujjat raqami CHIQMAYDI (Task 1-3 da yopilmagan).
+
+**Bog'liq sahifalar (unutilmasin):** `/p/[token]` viewer · `settings/publications`
+ro'yxati va `[id]` · `/retail/sales/[id]` (havolani ko'rsatish) · har ikkalasidagi
+`TARGET_LABEL` xaritalari.
+
+### Task 5: hujjat meta + chek mazmuni xabarda
+
+**Files:**
+- Modify: `apps/api/src/modules/counterparty-debt-notify/counterparty-debt-notifier.service.ts` (`fetchDocMeta`)
+- Modify: `apps/api/src/modules/counterparty-debt-notify/counterparty-message.util.ts`
+- Test: ikkala mavjud test fayli
+
+**Interfaces:**
+- Produces: `CounterpartyMessageContext` ga `orgName`, `orgPhone`, `items`,
+  `paidMinor`, `debtMinor`, `receiptUrl` (hammasi optional — yo'q bo'lsa qator chiqmaydi)
+
+- [ ] **Step 1:** `fetchDocMeta` ga `retailsale` (→ `retailSale`), `debt` (→ `debt`),
+  `debtpayment` (→ `debt`, `docId` = batch) case'larini qo'sh; testda har uch tur
+  uchun `number`+`moment` qaytishini qulfla.
+- [ ] **Step 2:** `CounterpartyMessageContext` ni kengaytir va shablonni namunaga
+  yaqinlashtir: do'kon nomi sarlavha · tovar ro'yxati (3 tur + «va yana N») ·
+  `💵 To'landi` / `📝 Qarzga yozildi` · tushunarli balans qatori · `🧾 Chek: <url>`.
+  🔴 Balans MINUS bilan chiqarilmaydi — «Jami qarzingiz: X» yoki «Sizga qarzimiz: X».
+- [ ] **Step 3:** Notifier `retailsale` uchun pozitsiya va to'lovlarni o'qisin
+  (`retailSale.positions` + `payments`), boshqa turlarda o'qimasin (ortiqcha so'rov yo'q).
+- [ ] **Step 4:** Gate + commit.
+
+### Task 6: `retailsale` uchun publication (havola)
+
+**Files:**
+- Modify: `apps/api/src/modules/publication/publication.schema.ts` (enum)
+- Modify: `apps/api/src/modules/retail-sale/retail-sale.service.ts` (post → havola yaratish)
+- Modify: `apps/web/src/app/p/[token]/page.tsx` + `settings/publications/*` (`TARGET_LABEL`)
+- Test: publication schema + retail-sale wiring
+
+- [ ] **Step 1:** Enum'ga `'retailsale'` qo'sh; label xaritalariga «Kassa cheki».
+- [ ] **Step 2:** Chek `post` bo'lganda publication AVTO yaratilsin (idempotent:
+  bitta chekka bitta havola) va **muddat qo'yilsin** — havola kalitga teng.
+  Muddat `.env` bilan sozlansin (`RECEIPT_LINK_TTL_DAYS`, sukut 90).
+- [ ] **Step 3:** Gate + commit.
+
+### Task 7: ochiq chek sahifasi (`/p/[token]`)
+
+**Files:**
+- Create: `apps/api/src/modules/publication/public-receipt.service.ts` (chek modeli)
+- Modify: `apps/api/src/modules/publication/publication.controller.ts` (public endpoint)
+- Modify: `apps/web/src/app/p/[token]/page.tsx` (retailsale shoxi)
+- Test: service + sahifa komponenti
+
+- [ ] **Step 1:** Public endpoint chek modelini qaytarsin (pozitsiya, to'lov,
+  tashkilot nomi/telefoni, qarz qoldig'i) — **auth talab qilmaydi**, token yetarli.
+- [ ] **Step 2:** Sahifa `<ThermalShell><TovarChek/></ThermalShell>` chizsin.
+  🔴 Yangi layout QO'LDA yozilmaydi — mavjud komponent va `receipt-model`
+  formatlashi ishlatiladi (uch-renderer ajralishi kuchaymasin).
+- [ ] **Step 3:** Muddati o'tgan/noto'g'ri token → aniq xato, hujjat ichki
+  ma'lumoti sizmasin (mavjud 410/404 naqshi).
+- [ ] **Step 4:** Gate (yangi `.tsx` ⇒ **TO'LIQ web suite**) + commit.
+
+### Task 8: havolani xabarga ulash
+
+- [ ] **Step 1:** Notifier chek uchun publication token'ini o'qib `receiptUrl`
+  yasasin (`https://erp.sherset.uz/p/<token>`); bazaviy URL `.env` dan.
+- [ ] **Step 2:** Havola bo'lmasa qator umuman chiqmasin (xabar buzilmasin).
+- [ ] **Step 3:** Gate + commit.
+
 ## Bajarilmaydi (bu rejadan tashqarida)
 
 - Qarz muddati kelganda avtomatik eslatma (spec §4.2) — alohida reja.
