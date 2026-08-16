@@ -331,6 +331,29 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-08-16k (KASSA — EKRAN QULFI butunlay olib tashlandi; `64d1c244`) —**
+> ✅ DEPLOYED `511ffab9 → 64d1c244`: sayt/health 200, prod manbada `pos-pin-lock.tsx` **yo'q**,
+> build chunk'larida «Ekran qulflandi»/«Экран заблокирован» satri **0 marta** uchraydi.
+> Egasi: «bir marta kirgandan keyin yana pinkod so'raydi, ekran qulf bo'lib qoladi — o'shani
+> to'liq olib tashla, ekran qulf kerak emas umuman». O'chirildi: `PosPinLock` komponenti
+> (5 daq harakatsizlik → butun ekranni yopuvchi PIN overlay) + `layout.tsx` chaqiruvi +
+> serverdagi `POS_LOCK_IDLE_MINUTES` (u faqat shu ekranning chegarasi edi; **sessiyani
+> yopadigan server-cron YO'Q** — tekshirildi, ya'ni qulfsiz ham hech kim chiqarib
+> yuborilmaydi). PIN ATAYLAB qoldi ikki joyda: `/kassa-kirish` va kassir almashtirish
+> (`CashierSelectScreen`) — ikkalasi ham foydalanuvchi O'ZI boshlaydi; 5-xato → to'liq
+> chiqish qoidasi almashtirish ekranida saqlandi. Qo'riqchilar TESKARI shartnomaga o'girildi
+> (`kiosk-shell` — fayl mavjud EMASligi + layoutda overlay yo'qligi; `kiosk-logout-redirect`
+> — lockout endi almashtirish ekranidan o'qiladi; `pin-entry-single-numpad` — qulf bloklari
+> ketdi, «bitta numpad» invarianti `cashier-select-screen.test.tsx` da qoladi) va POS i18n
+> registrlaridan (`pos-i18n-guard`, `i18n-no-hardcoded`) o'chirilgan fayl olib tashlandi.
+> i18n: `pages.posLock.{title,hint,unlock}` ikkala tilda o'chdi; `wrong`/`wrong_remaining`
+> qoldi (almashtirish ekrani ishlatadi).
+> ⚠️ **XAVFSIZLIK QARORI (egasi, ochiq):** ochiq qolgan hisobdan boshqa odam sotishi mumkin
+> va audit jurnali kassir nomini yozadi. Egasiga aytildi, qulf shu bilan bekor qilindi.
+> Gate: tc 0 · lint:product 0 · i18n 0 · web **4055** · api auth 294.
+>
+> ---
+>
 > **🕒 2026-08-16j (KASSA — chek BITTA ro'yxat + saytdan PRINTER TANLASH olib tashlandi;
 > `76d4c244` + `511ffab9`) —** ✅ DEPLOYED `7a4cd579 → 511ffab9`: sayt/health 200, prod HEAD
 > `511ffab9`, kiosk-policy'da `/sklad-keepers` qoidasi **0 ta**, POS chunk'ida o'sha so'rov yo'q.
