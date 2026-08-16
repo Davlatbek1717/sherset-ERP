@@ -78,8 +78,15 @@ function line(l: AuditLineInput): Record<string, unknown> {
  * number. Positive = discounted. Kept in BigInt until the last step so a large
  * receipt can't drift, and rounded rather than truncated (the same one-sided
  * error the cart had before browser QA).
+ *
+ * 🔴 `null` = kartada narx 0, ya'ni foiz ANIQLANMAGAN. Nolga bo'lish
+ * `RangeError: Division by zero` otardi va u `post()` ichida ushlanmasdi —
+ * 2026-08-16 da prodda kassirlar chekni yopa olmay qoldi (500). Prodda
+ * chakana narxi qo'yilmagan 488 tovar bor, ya'ni bu chekka hol emas.
+ * 0 qaytarish YARAMAYDI — u «chegirma yo'q» degan yolg'on bo'lardi.
  */
-function discountPercent(basePriceMinor: bigint, priceMinor: bigint): number {
+function discountPercent(basePriceMinor: bigint, priceMinor: bigint): number | null {
+  if (basePriceMinor === 0n) return null;
   const diff = (basePriceMinor - priceMinor) * 1000n;
   const half = basePriceMinor / 2n;
   const rounded = diff >= 0n ? (diff + half) / basePriceMinor : (diff - half) / basePriceMinor;
@@ -105,6 +112,10 @@ export function planSaleAuditEvents(
     // from the card is. Selling ABOVE the card price is reported too: it is
     // rarer, but it is still the cashier overriding the price list.
     if (l.basePriceMinor != null && l.priceMinor !== l.basePriceMinor) {
+      // Foiz aniqlanmasa maydon UMUMAN qo'shilmaydi — o'quvchi
+      // (`daily-kpi-drilldown.service.ts`) pul hissasini `diffMinor` dan
+      // oladi, foiz esa faqat ko'rsatish uchun.
+      const pct = discountPercent(l.basePriceMinor, l.priceMinor);
       events.push({
         type: CASHIER_EVENT.priceChanged,
         docId: saleId,
@@ -112,7 +123,7 @@ export function planSaleAuditEvents(
           ...line(l),
           basePriceMinor: l.basePriceMinor.toString(),
           diffMinor: (l.priceMinor - l.basePriceMinor).toString(),
-          discountPercent: discountPercent(l.basePriceMinor, l.priceMinor),
+          ...(pct != null ? { discountPercent: pct } : {}),
         },
       });
     }

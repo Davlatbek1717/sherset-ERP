@@ -57,6 +57,33 @@ describe('planSaleAuditEvents — narx erkinligi izi', () => {
     expect(e?.payload).toMatchObject({ diffMinor: '400000', discountPercent: -11.1 });
   });
 
+  /**
+   * 🔴 PRODDA UZILISH (2026-08-16): kassirlar chek yopganda 500 —
+   * «Division by zero». Sabab shu yerda edi: qo'riqchi `basePriceMinor` ni
+   * faqat `null` ga tekshirardi, `0n` ga EMAS. Kartada chakana narxi
+   * QO'YILMAGAN tovar (prodda o'lchangan: 488 ta) 0n bilan keladi va
+   * `diff / 0n` BigInt bo'linishi `RangeError: Division by zero` otadi —
+   * chek POST bo'lmaydi, kassa to'xtaydi.
+   *
+   * Nolga nisbatan «necha foiz past» degan savolning javobi YO'Q, shuning
+   * uchun foiz maydoni TUSHIRIB QOLDIRILADI (0 yozish «chegirma yo'q» degan
+   * yolg'on bo'lardi). Hodisaning o'zi yoziladi: `diffMinor` — menejer
+   * hisoboti aynan shuni o'qiydi (`daily-kpi-drilldown.service.ts`).
+   */
+  it('🔴 kartada narx 0 — chek YIQILMAYDI, foiz esa yozilmaydi', () => {
+    const events = planSaleAuditEvents(SALE, [lineOf({ basePriceMinor: 0n, priceMinor: 50_000n })]);
+    const e = events.find((x) => x.type === CASHIER_EVENT.priceChanged);
+    expect(e?.payload).toMatchObject({ basePriceMinor: '0', diffMinor: '50000' });
+    expect(e?.payload).not.toHaveProperty('discountPercent');
+  });
+
+  it('kartada narx 0 va kassir ham 0 qo`ysa — hodisa umuman yo`q', () => {
+    const events = planSaleAuditEvents(SALE, [
+      lineOf({ basePriceMinor: 0n, priceMinor: 0n, costMinor: null, wholesaleMinor: null }),
+    ]);
+    expect(events).toEqual([]);
+  });
+
   it('optomdan past sotilsa SOLD_BELOW_WHOLESALE va qancha pastligini yozadi', () => {
     const events = planSaleAuditEvents(SALE, [lineOf({ priceMinor: 2_700_000n })]);
     const e = events.find((x) => x.type === CASHIER_EVENT.soldBelowWholesale);
