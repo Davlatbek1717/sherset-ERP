@@ -29,6 +29,8 @@ interface PublicMeta {
 }
 
 const TARGET_LABEL: Record<string, string> = {
+  // Kassa cheki (2026-08-16) — mijozga Telegram xabaridagi «🧾 Chek» havolasi.
+  retailsale: 'Kassa cheki',
   customerorder: 'Mijoz buyurtmasi',
   invoiceout: 'Mijozga schyot',
   demand: 'Yuk berish',

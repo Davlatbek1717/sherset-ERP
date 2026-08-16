@@ -42,6 +42,11 @@ export const PublicationTargetTypeSchema = z.enum([
   'counterpartyadjustment',
   'processingorder',
   'processing',
+  /**
+   * Kassa cheki (2026-08-16). Mijozga Telegram xabarida «🧾 Chek: …» havolasi
+   * shu tur orqali beriladi — MoySklad'ning `mskld.ru/...` havolasi ekvivalenti.
+   */
+  'retailsale',
 ]);
 export type PublicationTargetType = z.infer<typeof PublicationTargetTypeSchema>;
 

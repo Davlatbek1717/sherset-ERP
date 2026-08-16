@@ -80,6 +80,8 @@ const TARGET_PATH: Record<string, string> = {
 // Maps a publication targetType to its canonical `detail_titles` i18n key, so
 // the linked document shows a localized name instead of the raw enum slug.
 const TARGET_TITLE_KEY: Record<string, string> = {
+  // Kassa cheki (2026-08-16) — mijozga Telegram xabaridagi «🧾 Chek» havolasi.
+  retailsale: 'retail_sale',
   customerorder: 'customer_order',
   invoiceout: 'invoice_out',
   demand: 'demand',

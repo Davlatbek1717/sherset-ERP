@@ -40,6 +40,8 @@ const LIMIT = 100;
 // the «Тип документа» column shows a localized RU/uz name instead of the raw
 // enum slug — mirrors settings/publications/[id]/page.tsx so list + detail agree.
 const TARGET_TITLE_KEY: Record<string, string> = {
+  // Kassa cheki (2026-08-16) — mijozga Telegram xabaridagi «🧾 Chek» havolasi.
+  retailsale: 'retail_sale',
   customerorder: 'customer_order',
   invoiceout: 'invoice_out',
   demand: 'demand',
