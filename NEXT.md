@@ -331,6 +331,22 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-08-16n (TEST — HEAD'dagi qizil qo'riqchi tuzatildi; api suite YASHIL; `5b9b7df0`) —**
+> Butun sessiya davomida `debt-source-wiring.test.ts` qizil turdi va har commit xabarida
+> «begona qizil» deb qayd etishga to'g'ri keldi. Ildiz o'lchandi (taxmin emas):
+> test **yashil tug'ilgan** (`765191b1` da 2 ta balans-metasi bor edi), keyin `c59afdcf`
+> («to'langan chekni tahrirlash») **3 ta yangi chaqiruv nuqtasi** qo'shdi ⇒ 5 bo'ldi ⇒
+> `toBe(2)` qizardi. **Uchala yangisi ham `source` bilan to'g'ri yozilgan** — haqiqiy yoriq
+> YO'Q edi, faqat qattiq son eskirgan.
+> **Tuzatish:** qo'riqchi qattiq sondan ANIQ INVARIANTGA o'tdi — *har* balans-metasi
+> `source` bilan; qonuniy o'sish qizartirmaydi, `source`siz nuqta darhol tutiladi. Pastki
+> chegara (`>= 2`/`>= 3`) saqlandi: regexp ishlamay qolsa test VAKUUM bo'lib yashil
+> qolardi. Ayni davo `debt.service` blokiga ham.
+> **MUTANT bilan tekshirildi:** bitta metadan `source` olib tashlanganda test qizaradi.
+> Gate: tc 0 · lint 0 · **api 8407/8407 — 0 qizil** (sessiyada birinchi marta).
+>
+> ---
+>
 > **🕒 2026-08-16m (QARZ — mijoz havolani bosib O'Z CHEKINI ko'radi; `ec82f7da`) —**
 > ✅ DEPLOYED `98c1e245 → ec82f7da`: sayt/health 200, `POST /p/:token/document` jonli
 > (noma'lum token → 404), build chunk'ida chek renderer BOR va eski «keyingi sprint»
