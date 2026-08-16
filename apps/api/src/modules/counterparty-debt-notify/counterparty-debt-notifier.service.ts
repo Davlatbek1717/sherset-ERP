@@ -103,6 +103,56 @@ export class CounterpartyDebtNotifier {
    * miss / error ⇒ null (the message builders then omit the header parts).
    */
   /**
+   * Avtomatik xabarni KONTRAGENT SUHBAT IPIGA ko'chiradi.
+   *
+   * Nega kerak: kiruvchi xabarlar (MTProto ham, Business ham)
+   * `TelegramChatMessage` ga normallashtiriladi va kartochkadagi ipda
+   * ko'rinadi, chiquvchi AVTOMATIK xabar esa faqat outbox'da qolardi.
+   * Natijada operator mijozning javobini ko'rib, nimaga javob berganini
+   * ko'rmasdi — va o'sha gapni qaytadan yozardi.
+   *
+   * 🔴 CHEKLOV (o'lchangan): `TelegramChat.chatId` MAJBURIY va u Telegram
+   * `userId` siga teng; hali hal qilinmagan raqamning `userId` si faqat
+   * YUBORISH paytida (`resolvePhone`) aniqlanadi. Shuning uchun chati YO'Q
+   * mijozda bu yerda ip qatori yozilmaydi — soxta `chatId` yozish
+   * `@@unique([accountId, chatId])` ni buzardi.
+   *
+   * Hech qachon throw qilmaydi: ip — KO'RSATISH qatlami, uning nosozligi
+   * xabarning o'zini to'xtatmasligi kerak (outbox allaqachon yozilgan).
+   */
+  private async mirrorToThread(
+    payload: CounterpartyBalanceChangedEvent,
+    text: string,
+    outboxId: string,
+    senderName: string,
+  ): Promise<void> {
+    try {
+      const chat = await this.prisma.client.telegramChat.findFirst({
+        where: { accountId: payload.accountId, counterpartyId: payload.counterpartyId },
+        orderBy: { lastMessageAt: 'desc' },
+        select: { id: true },
+      });
+      if (!chat) return; // chat hali yo'q — birinchi yuborishdan keyin ochiladi
+
+      await this.prisma.client.telegramChatMessage.create({
+        data: {
+          accountId: payload.accountId,
+          chatRefId: chat.id,
+          direction: 'out',
+          text: text.slice(0, 4096),
+          kind: 'text',
+          senderName,
+          // Yo'nalish ishorasidan: qarz oshdi ⇒ «berildi», kamaydi ⇒ «to'lov».
+          autoKind: payload.deltaMinor > 0n ? 'debt_issued' : 'payment',
+          outboxId,
+        },
+      });
+    } catch (e) {
+      this.logger.warn(`suhbat ipiga yozilmadi: ${(e as Error).message}`);
+    }
+  }
+
+  /**
    * Kassa cheki tafsiloti — FAQAT `retailsale` uchun o'qiladi (boshqa turlarda
    * ortiqcha so'rov qilinmaydi). Xato bo'lsa `null`: xabar baribir ketadi,
    * shunchaki tovar ro'yxatisiz — chek tafsiloti xabarni BLOKLAMASLIGI kerak.
@@ -418,7 +468,7 @@ export class CounterpartyDebtNotifier {
         if (existing) return;
       }
 
-      await this.prisma.client.hrTelegramOutbox.create({
+      const outbox = await this.prisma.client.hrTelegramOutbox.create({
         data: {
           accountId: payload.accountId,
           counterpartyId: payload.counterpartyId,
@@ -428,7 +478,10 @@ export class CounterpartyDebtNotifier {
           sourceDocId: payload.docId ?? null,
           status: 'pending',
         },
+        select: { id: true },
       });
+
+      await this.mirrorToThread(payload, text, outbox.id, name);
     } catch (e) {
       this.logger.warn(`counterparty debt notify failed: ${(e as Error).message}`);
     }

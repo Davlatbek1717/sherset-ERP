@@ -11614,8 +11614,18 @@ model TelegramChatMessage {
   /// Bir chatda bitta tgMessageId — backfill/catch-up idempotent upsert kaliti
   /// (dublikat xabar yozilmaydi). tgMessageId NULL qatorlar (eski Bot API)
   /// Postgres multi-NULL bilan to'qnashmaydi.
+  /// Chiquvchi AVTOMATIK xabarni `HrTelegramOutbox` qatoriga bog'laydi
+  /// (2026-08-16). Nega kerak: ip qatorining o'zida yetkazish holati YO'Q —
+  /// «navbatda / yuborildi / yetmadi» outbox'da yashaydi. Bu havolasiz UI
+  /// `pending` ni «yuborildi» deb ko'rsatishga majbur bo'lardi.
+  /// NULL — qo'lda yozilgan yoki kiruvchi xabar (ularda outbox yo'q).
+  outboxId String? @map("outbox_id") @db.Uuid
+
   @@unique([chatRefId, tgMessageId])
   @@index([accountId, chatRefId, createdAt(sort: Desc)])
+  /// Ip qatorlarini outbox holati bilan BITTA so'rovda birlashtirish uchun
+  /// (N+1 bo'lmasin).
+  @@index([accountId, outboxId])
   @@map("telegram_chat_messages")
 }
 

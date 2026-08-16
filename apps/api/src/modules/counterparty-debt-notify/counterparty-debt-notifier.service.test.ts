@@ -46,6 +46,10 @@ function makePrismaFull(
     recentNotifyCount?: number;
     /** Hujjat meta'si — `fetchDocMeta` shu jadvallardan o'qiydi. */
     doc?: { name?: string; moment?: Date; createdAt?: Date } | null;
+    /** Kontragentga bog'langan Telegram chati (yo'q bo'lsa `null`). */
+    chatRow?: { id: string } | null;
+    /** `telegramChatMessage.create` xatosini modellash uchun. */
+    chatMessageCreateImpl?: () => Promise<unknown>;
     /** Chek tafsiloti — `fetchReceiptDetails` (faqat retailsale) o'qiydi. */
     receipt?: {
       payedSumMinor?: bigint;
@@ -76,11 +80,14 @@ function makePrismaFull(
   const saleFind = vi.fn(async () =>
     docRow === null && opts.receipt === undefined ? null : { ...docRow, ...(opts.receipt ?? {}) },
   );
+  const chatMessageCreate = vi.fn(opts.chatMessageCreateImpl ?? (async () => ({ id: 'tcm-1' })));
+  const chatFindFirst = vi.fn(async () => opts.chatRow ?? null);
   return {
     prisma: {
       client: {
         counterparty: { findFirst: vi.fn(async () => cp) },
-        telegramChat: { count: chatCount },
+        telegramChat: { count: chatCount, findFirst: chatFindFirst },
+        telegramChatMessage: { create: chatMessageCreate },
         hrTelegramOutbox: { findFirst: outboxFindFirst, create: outboxCreate, count: outboxCount },
         // `fetchDocMeta` shu jadvallardan o'qiydi (turiga qarab bittasi).
         retailSale: { findFirst: saleFind },
@@ -93,6 +100,8 @@ function makePrismaFull(
     outboxCount,
     chatCount,
     docFind,
+    chatMessageCreate,
+    chatFindFirst,
   };
 }
 
@@ -464,6 +473,72 @@ describe('CounterpartyDebtNotifier', () => {
         newBalanceMinor: 1_000_000n,
       });
       expect(p.client.retailSale.findFirst).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('suhbat ipi — chiquvchi avtomatik xabar ko`rinadi', () => {
+    const retailEvt: CounterpartyBalanceChangedEvent = {
+      ...baseEvent,
+      source: 'retailsale',
+      docType: 'retailsale',
+      docId: 'rs-1',
+    };
+
+    it('chat MAVJUD bo`lsa — xabar ipga yoziladi (direction out + autoKind + outboxId)', async () => {
+      const { prisma, chatMessageCreate } = makePrismaFull({
+        phone: '+998901234567',
+        chatRow: { id: 'chat-1' },
+      });
+      // biome-ignore lint/suspicious/noExplicitAny: test wiring
+      await new CounterpartyDebtNotifier(prisma as any).onBalanceChanged(retailEvt);
+      const data = chatMessageCreate.mock.calls.at(-1)?.[0].data;
+      expect(data.chatRefId).toBe('chat-1');
+      expect(data.direction).toBe('out');
+      expect(data.autoKind).toBe('debt_issued');
+      expect(data.outboxId).toBe('out-1');
+      expect(data.text).toContain('Qarzga');
+    });
+
+    it('qarz to`lovida autoKind = payment', async () => {
+      const { prisma, chatMessageCreate } = makePrismaFull({
+        phone: '+998901234567',
+        chatRow: { id: 'chat-1' },
+      });
+      // biome-ignore lint/suspicious/noExplicitAny: test wiring
+      await new CounterpartyDebtNotifier(prisma as any).onBalanceChanged({
+        ...retailEvt,
+        source: 'debtpayment',
+        docType: 'debtpayment',
+        deltaMinor: -1_000_000n,
+        newBalanceMinor: 4_000_000n,
+      });
+      expect(chatMessageCreate.mock.calls.at(-1)?.[0].data.autoKind).toBe('payment');
+    });
+
+    it('chat YO`Q bo`lsa — ipga yozilmaydi, lekin xabar baribir navbatga tushadi', async () => {
+      const { prisma, chatMessageCreate, outboxCreate } = makePrismaFull({
+        phone: '+998901234567',
+        chatRow: null,
+      });
+      // biome-ignore lint/suspicious/noExplicitAny: test wiring
+      await new CounterpartyDebtNotifier(prisma as any).onBalanceChanged(retailEvt);
+      expect(outboxCreate).toHaveBeenCalled();
+      expect(chatMessageCreate).not.toHaveBeenCalled();
+    });
+
+    it('ip yozuvi yiqilsa xabar TO`XTAMAYDI (outbox yozilgan)', async () => {
+      const { prisma, outboxCreate } = makePrismaFull({
+        phone: '+998901234567',
+        chatRow: { id: 'chat-1' },
+        chatMessageCreateImpl: async () => {
+          throw new Error('db down');
+        },
+      });
+      // biome-ignore lint/suspicious/noExplicitAny: test wiring
+      await expect(
+        new CounterpartyDebtNotifier(prisma as any).onBalanceChanged(retailEvt),
+      ).resolves.toBeUndefined();
+      expect(outboxCreate).toHaveBeenCalled();
     });
   });
 
