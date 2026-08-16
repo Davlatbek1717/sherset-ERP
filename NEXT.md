@@ -331,6 +331,36 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-08-16j (KASSA — chek BITTA ro'yxat + saytdan PRINTER TANLASH olib tashlandi;
+> `76d4c244` + `511ffab9`) —** ✅ DEPLOYED `7a4cd579 → 511ffab9`: sayt/health 200, prod HEAD
+> `511ffab9`, kiosk-policy'da `/sklad-keepers` qoidasi **0 ta**, POS chunk'ida o'sha so'rov yo'q.
+> Egasi 16i deploydan keyin sinab ikki narsani aytdi:
+> **(a)** «yacheykali va yacheykasiz ALOHIDA-ALOHIDA chiqdi» — varaqlar ombor bo'yicha
+> bo'linardi va `NULL_SKLAD = -1` sonli saralashda yacheykasizlar BIRINCHI chiqardi. Endi
+> server BITTA varaq qaytaradi: avval yacheykalilar (ombor → serpantin; saralash endi
+> BIRINCHI segmentni ham hisobga oladi), oxirida yacheykasizlar. Aralash varaqda ombor
+> sarlavhasi CHIQMAYDI (`groupLabel: null`) — mijozdagi `pickGroupLabel` olib tashlandi
+> (u `skladNo` dan hisoblardi va yolg'on sarlavha berardi); `ReceiptGroupInput.warehouse`
+> uchinchi holat oldi (`undefined` = sarlavhasiz).
+> **(b)** «monobloklarga, notbuklarga printer ulangan… saytdan hech biriga alohida printer
+> ulanmaydi — kompyuterning O'ZIGA ulangan printerdan chiqsin». Bu — UCHINCHI va oxirgi
+> printer-sozlamasi qatlami (birinchisi `CompanySettings.receiptPrinterName`, 2026-08-12).
+> Olib tashlandi: `printPickingViaAgent` `/sklad-keepers` ni UMUMAN o'qimaydi va har varaq
+> `printSheet('')` bilan sukut printerga ketadi · `getPickingSheets` javobida `printerName`
+> yo'q · `/settings/sklad-keepers` da «Printer» ustuni/maydoni yo'q (jadval endi faqat
+> ombor→omborchi = VAZIFA biriktirmasi) · `/print/picking` zaxira sahifasida per-printer
+> dispatch qatlami yo'q · `KIOSK_ALLOWED` dan `/sklad-keepers` qatori olib tashlandi
+> (deny-test bilan qulflandi). `sklad_keepers.printer_name` USTUNI bazada qoldi (o'chirish
+> migratsiya talab qiladi; hech kim o'qimaydi/yozmaydi).
+> Gate: tc 0 · lint:product 0 · web **4061** · api **8378**. Yangi qulf:
+> `picking-sheets-grouping.test.ts` (6 test).
+> 🔴 **BEGONA QIZIL TEST (mening ishimdan EMAS, o'lchandi):**
+> `counterparty-debt-notify/debt-source-wiring.test.ts` — o'zgarishlarim stash qilinganda
+> ham (HEAD holati) qizil; boshqa sessiyaning `765191b1` ishi.
+> ⚠️ Qurilmada kassa ilovasi qayta ochilishi kerak. Qog'oz jonli ko'rilmagan.
+>
+> ---
+>
 > **🕒 2026-08-16i (KASSA — OMBORGA CHIQADIGAN CHEK chiqmasdi: kiosk 403 + printer sozlamasi; `d7e11af0`) —**
 > ✅ DEPLOYED `c3aeee3e → d7e11af0`: sayt/health 200, deploy qilingan `kiosk-policy.ts` da yangi
 > qoida bor, web chunk'da `no-printer-mapped` YO'Q (eski kod ketdi). Egasi simptomi: «Omborchiga
