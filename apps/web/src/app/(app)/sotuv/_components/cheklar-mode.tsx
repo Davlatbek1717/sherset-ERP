@@ -21,7 +21,7 @@ import {
   saleDebtMinor,
 } from '@/lib/pos/cart-math';
 import { printReceiptViaAgent } from '@/lib/print-agent';
-import { formatMoney, useToast } from '@moysklad/ui';
+import { formatMoney, useConfirm, useToast } from '@moysklad/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Receipt, User } from 'lucide-react';
 import { useTranslations } from 'next-intl';
@@ -72,6 +72,13 @@ interface ChekDetailData {
   positions: ChekDetailPosition[];
 }
 
+/**
+ * Bekor qilish mumkin bo'lgan holatlar — server `retail-sale-fsm.ts`
+ * (`allowedFrom('cancel')`) bilan AYNI ro'yxat. Ikki joyda ikki ro'yxat
+ * bo'lsa tugma ko'rinib turib 400 qaytarardi.
+ */
+const CANCELLABLE_STATES = ['draft', 'picking', 'ready'];
+
 function ChekDetailPanel({
   saleId,
   onBack,
@@ -97,6 +104,33 @@ function ChekDetailPanel({
   // olmasdi — «1.» yozilishi bilan nuqta o'chib ketardi, ya'ni og'irlik
   // bilan sotilgan tovarni qisman qaytarib bo'lmasdi.
   const [returnQty, setReturnQty] = useState<Record<string, string>>({});
+
+  const { confirm } = useConfirm();
+
+  /**
+   * ❌ NOTO'G'RI KIRITILGAN CHEKNI BEKOR QILISH (egasi, 2026-08-16).
+   *
+   * 🔴 MUAMMO (jonli): kassa ro'yxatida `draft` («Qoralama») chek qolib
+   * ketsa, uni olib tashlashning HECH QANDAY yo'li yo'q edi — panelda faqat
+   * chop, savatga nusxalash va `posted` uchun qaytarish bor edi. Natijada
+   * xato kiritilgan chek smena ro'yxatini abadiy iflos qilardi.
+   *
+   * Bekor qilish — O'CHIRISH EMAS: hujjat `cancelled` holatiga o'tadi
+   * (audit izi qoladi), rezerv bo'shaydi, omborchining ochiq yig'ish
+   * topshiriqlari yopiladi. Server FSM'i faqat `draft|picking|ready` dan
+   * ruxsat beradi — ya'ni TO'LANGAN chek bu yo'l bilan yo'qolmaydi, unga
+   * faqat QAYTARISH (pul harakati bilan) qo'llanadi.
+   */
+  const cancelMut = useMutation({
+    mutationFn: () => api.post(`/retail-sales/${saleId}/cancel`, {}),
+    onSuccess: () => {
+      toast.success(t('cancel_sale_success'));
+      qc.invalidateQueries({ queryKey: ['retail-sale-detail', saleId] });
+      qc.invalidateQueries({ queryKey: ['retail-sales-session'] });
+      onBack();
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
 
   const refundMut = useMutation({
     mutationFn: async () => {
@@ -248,6 +282,30 @@ function ChekDetailPanel({
             `salesreturn.view/create` berildi (role-templates F6) — tugma
             endi 403 bermaydi. ⚠️ Haqiqiy qulf avvalgidek serverdagi ruxsat
             matritsasida (`retail-sale-lifecycle-permissions.test.ts`). */}
+        {/* Bekor qilish FAQAT to'lanmagan holatlarda — server FSM'i bilan
+            AYNI ro'yxat (`draft|picking|ready`). To'langan chekda bu tugma
+            YO'Q: u yerda pul harakati bor, yagona to'g'ri yo'l — qaytarish. */}
+        {CANCELLABLE_STATES.includes(data.state) && (
+          <button
+            type="button"
+            data-test-id="chek-cancel"
+            disabled={cancelMut.isPending}
+            onClick={async () => {
+              const ok = await confirm({
+                title: t('cancel_sale_confirm', {
+                  name: data.name,
+                  sum: formatMoney(BigInt(data.sumMinor ?? '0')),
+                }),
+                confirmLabel: t('cancel_sale_confirm_label'),
+                tone: 'destructive',
+              });
+              if (ok) cancelMut.mutate();
+            }}
+            className="flex h-8 items-center gap-1.5 rounded-lg border border-[var(--ms-destructive-500)] px-3 font-medium text-[var(--ms-destructive-500)] text-xs hover:bg-[var(--ms-bg-hover)]"
+          >
+            ✕ {tCommon('delete')}
+          </button>
+        )}
         {data.state === 'posted' &&
           (returnMode ? (
             <button
