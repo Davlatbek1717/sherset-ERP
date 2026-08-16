@@ -77,11 +77,19 @@ import type {
 import { Money, lineFloorBreach, marginPercent, priceFloorMinor } from '@moysklad/money';
 import { isCurrencyCode } from '@moysklad/money/currencies';
 import { Button, Input, formatMoney, useConfirm, useToast } from '@moysklad/ui';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 // `formatUsd` — F1 da smena bloki bilan birga `_components/smena-mode.tsx` ga ko'chdi.
+
+/**
+ * Qidiruv debounce oynasi (ms). Qo'lda terishda oraliq prefikslar uchun so'rov
+ * ketmaydi — do'kon internetida har harfga bitta tarmoq-aylanma qimmat edi
+ * (2026-08-16 diagnoz). Skaner/Enter bu oynani KUTMAYDI — `onSearchEnter`
+ * flush qilib so'rovni darhol otadi.
+ */
+const SEARCH_DEBOUNCE_MS = 250;
 
 // ── Types ──────────────────────────────────────────────────────────────────
 //
@@ -340,6 +348,15 @@ function SalesScreen({
   // F2 — aloqa indikatori: mavjud polling oqimini kuzatadi, yangi so'rov yo'q.
   const connectionOk = useServerLink();
   const [search, setSearch] = useState('');
+  // 2026-08-16 (sekin-qidiruv diagnozi): so'rov HAR tugma-bosishda emas, matn
+  // tinchigach ketadi. `debouncedSearch` — so'rovga boradigan (kechiktirilgan)
+  // nusxa; Enter/skaner uni kutmaydi (`onSearchEnter` flush qiladi).
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  useEffect(() => {
+    if (search === debouncedSearch) return undefined;
+    const timer = setTimeout(() => setDebouncedSearch(search), SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [search, debouncedSearch]);
   // Qidiruv maydoni savatga qo'shilgandan keyin tozalanadi VA fokusni
   // qaytaradi (`addToCart`) — shu ref o'sha fokus uchun.
   const searchRef = useRef<HTMLInputElement>(null);
@@ -484,10 +501,24 @@ function SalesScreen({
   const [showCloseForm, setShowCloseForm] = useState(false);
   const [varianceNote, setVarianceNote] = useState('');
 
-  const { data: products, isLoading } = useQuery<ListResponse<ProductRow>>({
-    queryKey: ['products-sotuv', search],
-    queryFn: () =>
-      api.get<ListResponse<ProductRow>>(`/products?search=${encodeURIComponent(search)}&limit=48`),
+  const {
+    data: products,
+    isLoading,
+    isFetching,
+  } = useQuery<ListResponse<ProductRow>>({
+    queryKey: ['products-sotuv', debouncedSearch],
+    // `signal` — kalit o'zgarganda (yangi matn) eskirgan so'rov bekor bo'ladi;
+    // sekin internetda ulanish-slotlarni band qilib navbat hosil qilmasin.
+    queryFn: ({ signal }) =>
+      api.get<ListResponse<ProductRow>>(
+        `/products?search=${encodeURIComponent(debouncedSearch)}&limit=48`,
+        { signal },
+      ),
+    // Yangi qidiruvda setka ESKI natijani ushlab turadi (spinner o'rniga) —
+    // «har harfda Yuklanmoqda…» sekinlik shikoyatining asosiy ko'rinishi edi.
+    // Eskirgan-natija-ustidan-Enter xavfi `searchSettled` bilan yopilgan
+    // (pastda) — Enter faqat JORIY matn natijasiga ishlaydi.
+    placeholderData: keepPreviousData,
     /**
      * P12 — TOVAR KARTASI → POS zanjiri. Kassa ekrani kun bo'yi OCHIQ turadi
      * (kiosk), global sozlama esa `staleTime: 30s` + `refetchOnWindowFocus:
@@ -744,6 +775,40 @@ function SalesScreen({
     },
     [cardPrices, defaultPriceTypeId],
   );
+
+  // ── Qidiruv «tinchidi»mi + Enter/skaner oqimi (2026-08-16) ────────────────
+  // `searchSettled` — ekrandagi natijalar AYNAN joriy matnniki: debounce ham
+  // o'tgan, so'rov ham tugagan. Bu ikkita iste'molchi uchun kontrakt:
+  //  • Enter — `keepPreviousData` bilan setkada ESKI natija turishi mumkin;
+  //    unga Enter berish noto'g'ri tovarni (masalan, skaner o'qigan shtrix
+  //    o'rniga oldingi ro'yxat birinchisini) savatga qo'shib yuborardi.
+  //  • «Topilmadi» ovozi — eski natija ko'rinib turganda chalinmasin.
+  const searchSettled = search === debouncedSearch && !isFetching;
+
+  // Skaner matnni terib DARHOL Enter yuboradi — natija hali yo'q. Enter
+  // YO'QOLMAYDI: matn eslab qolinadi, debounce flush qilinadi (so'rov darhol
+  // ketadi) va natija kelgach quyidagi effekt birinchisini qo'shadi. Kassir
+  // bu orada boshqa matn tersa — eskirgan Enter bekor (ref-taqqoslash).
+  const pendingEnterRef = useRef<string | null>(null);
+  const onSearchEnter = useCallback(() => {
+    if (searchSettled) {
+      const first = products?.items?.[0];
+      if (first) addToCart(first);
+      return;
+    }
+    pendingEnterRef.current = search;
+    setDebouncedSearch(search);
+  }, [searchSettled, products, addToCart, search]);
+
+  useEffect(() => {
+    const pending = pendingEnterRef.current;
+    if (pending == null || !searchSettled) return;
+    pendingEnterRef.current = null;
+    // Enter'dan keyin matn o'zgargan bo'lsa — bu javob endi unga tegishli emas.
+    if (pending !== search) return;
+    const first = products?.items?.[0];
+    if (first) addToCart(first);
+  }, [searchSettled, search, products, addToCart]);
 
   // Savat har o'zgarganda mijoz-ekranga uzatamiz — ikkala yo'l bilan:
   //  • Electron IPC (pushCart) — dastur ichidagi native 2-oyna,
@@ -1356,6 +1421,8 @@ function SalesScreen({
                 searchRef={searchRef}
                 products={products}
                 isLoading={isLoading}
+                searchSettled={searchSettled}
+                onSearchEnter={onSearchEnter}
                 addToCart={addToCart}
               />
               <div

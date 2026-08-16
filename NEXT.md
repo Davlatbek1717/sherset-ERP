@@ -331,6 +331,37 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-08-16b (KASSA POS — «qidiruv sekin» tuzatildi: debounce + keepPreviousData + AbortSignal;
+> Phase-1: strukturaviy, runtime-tasdiqlanmagan, browser-smoke YO'Q, qurilma-QA QOLDI) —** egasi
+> «mahsulot izlaganda ko'p vaqt ketyapti» dedi. **Diagnoz (o'lchangan): DB aybdor EMAS** — lokal egizakda
+> (4710 tovar) POS-shakl so'rovi EXPLAIN 10.7ms, `products_name_trgm_idx` sxema+migratsiyada bor (prod'da
+> indeks JONLI TEKSHIRILMAGAN — SSH sessiyada bloklandi; keyingi safar 1 psql bilan tasdiqlash mumkin).
+> Asl sabab frontend zanjiri edi: har tugma-bosishda so'rov (debounce yo'q) + har harfda yangi queryKey →
+> grid «Yuklanmoqda…»ga tushardi + AbortSignal yo'q → eskirgan so'rovlar brauzerning ~6 ulanish-slotini
+> band qilib oxirgisini navbatda ushlardi (do'kon interneti RTT × navbat = sekundlab). **Tuzatish (web-only,
+> exe SHART EMAS):** (1) `SEARCH_DEBOUNCE_MS=250` — so'rov matn tinchigach (`page.tsx` `debouncedSearch`);
+> (2) `placeholderData: keepPreviousData` — yangi qidiruvda setka eski natijani ushlab turadi, spinner faqat
+> birinchi yuklanishda; (3) `api.get(path, {signal})` (yangi ixtiyoriy param, orqaga-mos) + queryFn signal —
+> react-query kalit almashganda eskirgan so'rovni bekor qiladi. **🔴 Enter/skaner shartnomasi (regress-xavf
+> yopildi):** keepPreviousData bilan Enter eski ro'yxat birinchisini qo'shib yuborishi mumkin edi →
+> `searchSettled` (matn=debounced && !isFetching) + `onSearchEnter`: tinchimagan bo'lsa Enter YO'QOLMAYDI —
+> flush + natija kelgach AYNAN joriy matn natijasining birinchisi qo'shiladi (pending ref; matn o'zgarsa bekor).
+> «Topilmadi» ovozi ham endi `searchSettled`da. Testlar (TDD, RED ko'rildi): yangi
+> `sales-screen-search-debounce.test.tsx` (4: prefiks-so'rov YO'Q · eski natija turadi · skaner-Enter to'g'ri
+> tovar · signal uzatiladi) + `api-client.test.ts`ga signal-forwarding (2). **+1 mayda:** `sales-screen-shift`
+> mockida `printDebtReceiptViaAgent` yo'q edi — test tugagach otiladigan Unhandled Rejection (suite'ni
+> nondeterministik qizartirardi) — qo'shildi. Gate: web tc0 · lint 0 err · TO'LIQ web vitest 285 fayl /
+> 4027 pass (bir yugurishda `audit-fixlar` `5e3`-testi yuklama ostida flake qizardi — izolyatsiyada 3×7/7,
+> qidiruv diffiga mexanik bog'lanmaydi; kuzatuvda). **⚠️ KEYINGI QADAM: WEB-DEPLOY + qurilma-QA**
+> (skaner oqimi: shtrix ter→Enter→to'g'ri tovar; sekin internetda qidiruv his-tezligi) + prod'da
+> `products_name_trgm_idx` mavjudligini psql bilan tasdiqlash. Xotira: `pos-search-per-keystroke-roundtrip.md`.
+> **§6.6 qayd:** parallel sessiya qarz-cheki ustida ishlayapti (page.tsx'ga `printDebtReceiptViaAgent`
+> kiritmasi commit'imdan `hash-object` blob-retsepti bilan CHIQARILDI — diff'im path- va hunk-cheklangan;
+> `shift.test` mock-qatori ularning kelayotgan oqimi uchun ham forward-mos). To'liq-suite yugurishlardagi
+> `tovar-chek`/`pko-usd` qizillari ham o'sha sessiyaning jonli tahriri edi.
+>
+> ---
+>
 > **🕒 2026-08-16a (KASSA POS — kassir so'rovlari: qidiruv PERSIST + «Tozalash» · savat header 2× +
 > QORALAMA (hold order) · OSK katta harflar, `3a275a80`,
 > ✅ DEPLOYED `6b562b46 → 3a275a80` (2026-08-16): sayt/health 200, sotuv-chunk'da

@@ -206,6 +206,27 @@ describe('401 → refresh → retry, on every transport', () => {
   });
 });
 
+describe('AbortSignal forwarding (POS qidiruv bekor qilish, 2026-08-16)', () => {
+  it("get() ixtiyoriy signalni fetch'ga uzatadi", async () => {
+    fetchMock.mockResolvedValue(res(200, { body: { items: [] } }));
+    const controller = new AbortController();
+
+    await api.get('/products?search=kab', { signal: controller.signal });
+
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    expect(init.signal).toBe(controller.signal);
+  });
+
+  it('signal berilmasa fetch signalsiz ketadi (regress emas)', async () => {
+    fetchMock.mockResolvedValue(res(200, { body: {} }));
+
+    await api.get('/organizations');
+
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    expect(init.signal).toBeUndefined();
+  });
+});
+
 describe('Content-Disposition filename handling (shared by both save paths)', () => {
   it('download() prefers the server filename over the caller fallback', async () => {
     const anchors: HTMLAnchorElement[] = [];

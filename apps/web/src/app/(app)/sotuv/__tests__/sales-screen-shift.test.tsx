@@ -44,6 +44,11 @@ vi.mock('@/lib/print-agent', () => ({
   printPickingViaAgent: vi.fn(async () => ({ handled: true, printed: 1, skipped: 0, errors: 0 })),
   // F11 — smena yopilganda sahifa Z-hisobotni ham chop yo'liga uzatadi.
   printZReportViaAgent: vi.fn(async () => ({ handled: true, ok: true })),
+  // Qarz to'lovi muvaffaqiyatida sahifa qarz-chekini ham chop yo'liga uzatadi
+  // (`printDebtReceipt`); eksport mockda yo'qligi test TUGAGACH otiladigan
+  // «Unhandled Rejection» edi (2026-08-16 to'liq-suite'da tutildi) — suite'ni
+  // nondeterministik qizartiradigan yashirin manba.
+  printDebtReceiptViaAgent: vi.fn(async () => ({ handled: true, ok: true })),
 }));
 
 const SESSION_ID = '33333333-3333-4333-8333-333333333333';

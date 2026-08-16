@@ -157,7 +157,11 @@ async function blobUrl(path: string): Promise<{ url: string; mime: string }> {
 }
 
 export const api = {
-  get: <T>(path: string) => request<T>(path),
+  // `signal` — react-query'ning queryFn-signali shu yerdan fetch'ga yetadi:
+  // kalit o'zgarganda (masalan, POS qidiruvida yangi matn) eskirgan so'rov
+  // brauzer ulanish-slotini band qilib turmasdan bekor qilinadi.
+  get: <T>(path: string, opts: { signal?: AbortSignal } = {}) =>
+    request<T>(path, opts.signal ? { signal: opts.signal } : {}),
   post: <T>(path: string, body: unknown) =>
     request<T>(path, { method: 'POST', body: JSON.stringify(body) }),
   put: <T>(path: string, body: unknown) =>

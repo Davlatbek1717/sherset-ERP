@@ -54,6 +54,18 @@ interface SotuvSearchGridProps {
   searchRef: RefObject<HTMLInputElement | null>;
   products: ListResponse<ProductRow> | undefined;
   isLoading: boolean;
+  /**
+   * Natijalar AYNAN joriy matnniki (debounce o'tgan + so'rov tugagan) —
+   * sahifa hisoblaydi. `keepPreviousData` tufayli setkada eski natija turishi
+   * mumkin; «Topilmadi» ovozi shunga chalinib ketmasin.
+   */
+  searchSettled: boolean;
+  /**
+   * Enter/skaner — sahifada: natija tinchigan bo'lsa birinchisini qo'shadi,
+   * bo'lmasa so'rovni flush qilib natija kelgach qo'shadi (Enter yo'qolmaydi,
+   * eski ro'yxatdan noto'g'ri tovar ham qo'shilmaydi).
+   */
+  onSearchEnter: () => void;
   addToCart: (product: ProductRow) => void;
 }
 
@@ -65,17 +77,20 @@ export function SotuvSearchGrid({
   searchRef,
   products,
   isLoading,
+  searchSettled,
+  onSearchEnter,
   addToCart,
 }: SotuvSearchGridProps) {
   const t = useTranslations('pages.sotuv');
 
   // F3 — skaner-javob (spec §5.1): qidiruv/skan hech narsa topmasa PAST ton.
   // Xabar («not_found») allaqachon setkada turadi — bu faqat OVOZ qatlami.
-  // Dedup ikki qavat: (1) bir so'rov matni uchun bir marta; (2) 800ms ichida
-  // qayta chalinmaydi — qidiruv har tugma-bosishda so'rov yuboradi (debounce
-  // yo'q) va qo'l bilan terganda har prefiks «topilmadi» bo'lib qolardi.
+  // 2026-08-16: `searchSettled` sharti — natija JORIY matnniki bo'lgandagina
+  // (debounce + keepPreviousData bilan endi oraliq prefikslar so'ralmaydi,
+  // eski natija esa yangi matn uchun «topilmadi» degani emas). Dedup (bir
+  // matn = bir marta; 800ms oynasi) himoya sifatida qoladi.
   const lastMissRef = useRef<{ q: string; at: number } | null>(null);
-  const missNow = !isLoading && search.trim() !== '' && (products?.items.length ?? 0) === 0;
+  const missNow = searchSettled && search.trim() !== '' && (products?.items.length ?? 0) === 0;
   useEffect(() => {
     if (!missNow) {
       if (search.trim() === '') lastMissRef.current = null;
@@ -122,8 +137,9 @@ export function SotuvSearchGrid({
           if (e.key === 'Enter') {
             e.preventDefault();
             // Maydon matni `addToCart`da to'liq belgilanadi (tozalanmaydi).
-            const first = products?.items?.[0];
-            if (first) addToCart(first);
+            // Qo'shish mantiqi sahifada (`onSearchEnter`): natija hali
+            // tinchimagan bo'lsa Enter yo'qolmaydi — flush + kutib qo'shish.
+            onSearchEnter();
           }
         }}
         placeholder={t('search_placeholder')}
