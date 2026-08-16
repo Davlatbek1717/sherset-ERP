@@ -4,9 +4,16 @@
  * Bu testlar **hozirgi** xulqni qulflaydi, uni yaxshilamaydi. Yiqilgan test =
  * bug (hisobotga yoziladi, tuzatish alohida fazada).
  *
- * Qamrov: smena biriktirilmagan · yuklanish · smena ma'lumotlari · ish vaqti
- * ichida ochish · vaqtdan tashqarida sababsiz ochib bo'lmasligi · sabab bilan
- * ochish · tugma yorlig'i/bloklanishi.
+ * Qamrov: smena biriktirilmagan · yuklanish · smena ma'lumotlari · ochilish
+ * naqdi maydonlari · vaqtdan tashqarida SABABSIZ ochish (ixtiyoriy sabab).
+ *
+ * 2026-08-16 (egasi qarori): «smenani xohlaganda ochib-yopish, har safar 0
+ * dan» — vaqtdan-tashqari sabab endi MAJBURIY EMAS (audit §9 baribir
+ * yoziladi, server testi smena.service.test.ts da) va ochilish shakliga
+ * yashiqdagi boshlang'ich naqd (so'm + USD) maydonlari qo'shildi: ilgari
+ * '0' qattiq kodlangan, yashiqda qolgan pul esa yopishda «oldingi smenalar
+ * qo'shilib ketyapti» soxta farqini berardi. Eski «sabab majburiy» testlari
+ * shu qaror bilan YANGI niyatga almashtirildi.
  */
 
 import { api } from '@/lib/api-client';
@@ -94,8 +101,8 @@ describe('OpenShiftForm — smena holati', () => {
   });
 });
 
-describe('OpenShiftForm — smena ochish', () => {
-  it('ish vaqti ICHIDA: bir bosishda ochiladi, sabab so‘ralmaydi', async () => {
+describe('OpenShiftForm — smena ochish (2026-08-16: 0 dan + ixtiyoriy sabab)', () => {
+  it('ish vaqti ICHIDA: bir bosishda ochiladi, naqd maydonlari bo‘sh → 0', async () => {
     vi.mocked(api.get).mockImplementation(router(routes({ smena: SMENA, withinShift: true })));
     vi.mocked(api.post).mockResolvedValue({ id: 'sess-1' });
     const user = userEvent.setup();
@@ -107,60 +114,74 @@ describe('OpenShiftForm — smena ochish', () => {
     expect(api.post).toHaveBeenCalledWith('/admin/smenas/open-session', {
       smenaId: 'sm-1',
       openingCashMinor: '0',
+      openingCashUsdMinor: '0',
     });
   });
 
-  it('vaqtdan TASHQARIDA: birinchi bosish so‘rov YUBORMAYDI — sabab maydonini ochadi', async () => {
-    vi.mocked(api.get).mockImplementation(router(routes({ smena: SMENA, withinShift: false })));
+  it('yashiqdagi naqd terilsa minor birlikda ketadi (150 000 so‘m + $25)', async () => {
+    // Yashiq bo'shatilmagan holat: kassir bor pulni yozadi — yopishdagi
+    // «oldingi smena puli soxta farq» shu maydon bilan yo'qoladi.
+    vi.mocked(api.get).mockImplementation(router(routes({ smena: SMENA, withinShift: true })));
+    vi.mocked(api.post).mockResolvedValue({ id: 'sess-1' });
     const user = userEvent.setup();
     renderWithProviders(<SotuvPage />);
 
-    await user.click(await screen.findByRole('button', { name: 'Smena ochish' }));
+    await screen.findByText('Smenani ochish');
+    await user.type(screen.getByTestId('open-shift-cash'), '150 000');
+    await user.type(screen.getByTestId('open-shift-cash-usd'), '25');
+    await user.click(screen.getByRole('button', { name: 'Smena ochish' }));
 
-    expect(api.post).not.toHaveBeenCalled();
-    expect(
-      screen.getByPlaceholderText('Masalan: navbatchi kassir xastalik sababli kelmadi'),
-    ).toBeInTheDocument();
-    // Yorliq o'zgaradi va sabab bo'sh ekan — tugma bloklangan.
-    const btn = screen.getByRole('button', { name: 'Sabab bilan ochish' });
-    expect(btn).toBeDisabled();
+    await waitFor(() => expect(api.post).toHaveBeenCalledTimes(1));
+    expect(api.post).toHaveBeenCalledWith('/admin/smenas/open-session', {
+      smenaId: 'sm-1',
+      openingCashMinor: '15000000',
+      openingCashUsdMinor: '2500',
+    });
   });
 
-  it('vaqtdan tashqarida: sabab yozilgach so‘rov `outOfShiftReason` bilan ketadi', async () => {
+  it('vaqtdan TASHQARIDA: sabab maydoni DARHOL ko‘rinadi, tugma BLOKLANMAYDI, sababsiz ochiladi', async () => {
     vi.mocked(api.get).mockImplementation(router(routes({ smena: SMENA, withinShift: false })));
     vi.mocked(api.post).mockResolvedValue({ id: 'sess-1' });
     const user = userEvent.setup();
     renderWithProviders(<SotuvPage />);
 
-    await user.click(await screen.findByRole('button', { name: 'Smena ochish' }));
-    await user.type(
-      screen.getByPlaceholderText('Masalan: navbatchi kassir xastalik sababli kelmadi'),
-      '  Navbatchi kelmadi  ',
-    );
-    await user.click(screen.getByRole('button', { name: 'Sabab bilan ochish' }));
+    // Ikki bosqichli «avval bos, keyin sabab» oqimi BEKOR — maydon darhol turadi.
+    expect(
+      await screen.findByPlaceholderText('Masalan: navbatchi kassir xastalik sababli kelmadi'),
+    ).toBeInTheDocument();
+
+    const btn = screen.getByRole('button', { name: 'Smena ochish' });
+    expect(btn).toBeEnabled();
+    await user.click(btn);
 
     await waitFor(() => expect(api.post).toHaveBeenCalledTimes(1));
-    // Sabab TRIM qilinib yuboriladi.
+    // Sabab YO'Q — kalit umuman yuborilmaydi (server null yozadi, audit qoladi).
     expect(api.post).toHaveBeenCalledWith('/admin/smenas/open-session', {
       smenaId: 'sm-1',
       openingCashMinor: '0',
-      outOfShiftReason: 'Navbatchi kelmadi',
+      openingCashUsdMinor: '0',
     });
   });
 
-  it('faqat bo‘shliqdan iborat sabab — hamon bloklangan, so‘rov ketmaydi', async () => {
+  it('vaqtdan tashqarida sabab YOZILSA — trim qilinib `outOfShiftReason` bilan ketadi', async () => {
     vi.mocked(api.get).mockImplementation(router(routes({ smena: SMENA, withinShift: false })));
+    vi.mocked(api.post).mockResolvedValue({ id: 'sess-1' });
     const user = userEvent.setup();
     renderWithProviders(<SotuvPage />);
 
-    await user.click(await screen.findByRole('button', { name: 'Smena ochish' }));
     await user.type(
-      screen.getByPlaceholderText('Masalan: navbatchi kassir xastalik sababli kelmadi'),
-      '   ',
+      await screen.findByPlaceholderText('Masalan: navbatchi kassir xastalik sababli kelmadi'),
+      '  Navbatchi kelmadi  ',
     );
+    await user.click(screen.getByRole('button', { name: 'Smena ochish' }));
 
-    expect(screen.getByRole('button', { name: 'Sabab bilan ochish' })).toBeDisabled();
-    expect(api.post).not.toHaveBeenCalled();
+    await waitFor(() => expect(api.post).toHaveBeenCalledTimes(1));
+    expect(api.post).toHaveBeenCalledWith('/admin/smenas/open-session', {
+      smenaId: 'sm-1',
+      openingCashMinor: '0',
+      openingCashUsdMinor: '0',
+      outOfShiftReason: 'Navbatchi kelmadi',
+    });
   });
 });
 

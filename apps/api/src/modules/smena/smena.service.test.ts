@@ -69,13 +69,22 @@ const CASHIER = 'cash-1';
  * `openSessionFromSmena` uchun mock-klient. `outOfShiftReason` DOIM beriladi —
  * test vaqt-formulasiga bog'lanib qolmasin (vaqt alohida qulflangan yuqorida).
  */
-function makeService(opts: { member?: boolean; createRejects?: unknown } = {}) {
+function makeService(
+  opts: {
+    member?: boolean;
+    createRejects?: unknown;
+    /** '00:00'–'00:00' berilsa — DETERMINISTIK «vaqtdan tashqari» (formula
+     *  `current < '00:00'` hech qachon TRUE emas), test soatiga bog'lanmaydi. */
+    schedule?: { startTime: string; endTime: string };
+  } = {},
+) {
   const sessionCreate = opts.createRejects
     ? vi.fn().mockRejectedValue(opts.createRejects)
     : vi.fn().mockResolvedValue({ id: 'sess-1' });
+  const auditCreate = vi.fn().mockResolvedValue({ id: 'ev-1' });
   const tx = {
     cashierSession: { create: sessionCreate },
-    cashierAuditEvent: { create: vi.fn().mockResolvedValue({ id: 'ev-1' }) },
+    cashierAuditEvent: { create: auditCreate },
   };
   const membershipFindFirst = vi
     .fn()
@@ -88,7 +97,7 @@ function makeService(opts: { member?: boolean; createRejects?: unknown } = {}) {
         id: SMENA_ID,
         name: 'Kunduzgi',
         organizationId: 'org-1',
-        schedule: { startTime: '09:00', endTime: '18:00' },
+        schedule: opts.schedule ?? { startTime: '09:00', endTime: '18:00' },
       }),
     },
     smenaEmployee: { findFirst: membershipFindFirst },
@@ -99,8 +108,99 @@ function makeService(opts: { member?: boolean; createRejects?: unknown } = {}) {
     $transaction: vi.fn(async (fn: (t: typeof tx) => Promise<unknown>) => fn(tx)),
   };
   const service = new SmenaService({ client } as never);
-  return { service, client, sessionCreate, membershipFindFirst };
+  return { service, client, sessionCreate, auditCreate, membershipFindFirst };
 }
+
+/** Deterministik «vaqtdan tashqari» jadval (izoh `makeService.schedule` da). */
+const NEVER_WITHIN = { startTime: '00:00', endTime: '00:00' };
+
+describe('openSessionFromSmena — vaqtdan tashqari SABABSIZ ochish (2026-08-16, egasi qarori)', () => {
+  it('sabab YO`Q bo`lsa ham ochiladi — 400 OTILMAYDI', async () => {
+    const { service } = makeService({ schedule: NEVER_WITHIN });
+    const res = (await service.openSessionFromSmena(ACC, CASHIER, { smenaId: SMENA_ID })) as {
+      id: string;
+    };
+    expect(res.id).toBe('sess-1');
+  });
+
+  it('sababsiz ochilganda ham §9 audit-hodisasi YOZILADI (reason: null)', async () => {
+    // Audit jurnal «kim qancha marta vaqtdan tashqari ochadi» savoliga sabab
+    // bo'lmasa ham javob berishi shart — aks holda majburiylikni olib
+    // tashlash kuzatuvni ham jimgina o'chirib qo'yardi.
+    const { service, auditCreate } = makeService({ schedule: NEVER_WITHIN });
+    await service.openSessionFromSmena(ACC, CASHIER, { smenaId: SMENA_ID });
+
+    expect(auditCreate).toHaveBeenCalledTimes(1);
+    const data = auditCreate.mock.calls[0]?.[0]?.data as {
+      payload: { reason: string | null };
+    };
+    expect(data.payload.reason).toBeNull();
+  });
+
+  it('sabab BERILSA payloadda saqlanadi (eski xulq buzilmaydi)', async () => {
+    const { service, auditCreate } = makeService({ schedule: NEVER_WITHIN });
+    await service.openSessionFromSmena(ACC, CASHIER, {
+      smenaId: SMENA_ID,
+      outOfShiftReason: 'inventarizatsiya',
+    });
+
+    const data = auditCreate.mock.calls[0]?.[0]?.data as {
+      payload: { reason: string | null };
+    };
+    expect(data.payload.reason).toBe('inventarizatsiya');
+  });
+
+  it('ish vaqti ICHIDA audit-hodisa yozilmaydi (shovqin emas)', async () => {
+    // 00:00–23:59 — har qanday test soatida ICHIDA.
+    const { service, auditCreate } = makeService({
+      schedule: { startTime: '00:00', endTime: '23:59' },
+    });
+    await service.openSessionFromSmena(ACC, CASHIER, { smenaId: SMENA_ID });
+    expect(auditCreate).not.toHaveBeenCalled();
+  });
+});
+
+describe('openSessionFromSmena — ochilish naqdi (2026-08-16: yashiq 0 dan boshlanadi)', () => {
+  it('openingCashMinor VA openingCashUsdMinor sessiyaga yoziladi', async () => {
+    const { service, sessionCreate } = makeService({
+      schedule: { startTime: '00:00', endTime: '23:59' },
+    });
+    await service.openSessionFromSmena(ACC, CASHIER, {
+      smenaId: SMENA_ID,
+      openingCashMinor: '15000000',
+      openingCashUsdMinor: '2500',
+    });
+
+    const data = sessionCreate.mock.calls[0]?.[0]?.data as {
+      openingCashMinor: bigint;
+      openingCashUsdMinor: bigint;
+    };
+    expect(data.openingCashMinor).toBe(15000000n);
+    expect(data.openingCashUsdMinor).toBe(2500n);
+  });
+
+  it('USD berilmasa 0n (NULL emas) — «sanalmagan» semantikasi ochilishga tegishli emas', async () => {
+    const { service, sessionCreate } = makeService({
+      schedule: { startTime: '00:00', endTime: '23:59' },
+    });
+    await service.openSessionFromSmena(ACC, CASHIER, { smenaId: SMENA_ID });
+    const data = sessionCreate.mock.calls[0]?.[0]?.data as { openingCashUsdMinor: bigint };
+    expect(data.openingCashUsdMinor).toBe(0n);
+  });
+});
+
+describe('OpenSessionFromSmenaSchema — openingCashUsdMinor', () => {
+  it('manfiy USD rad etiladi, berilmasa default "0"', () => {
+    expect(
+      OpenSessionFromSmenaSchema.safeParse({
+        smenaId: SMENA_ID,
+        openingCashUsdMinor: '-100',
+      }).success,
+    ).toBe(false);
+    const dflt = OpenSessionFromSmenaSchema.parse({ smenaId: SMENA_ID });
+    expect(String((dflt as { openingCashUsdMinor: string }).openingCashUsdMinor)).toBe('0');
+  });
+});
 
 const OPEN_INPUT = { smenaId: SMENA_ID, outOfShiftReason: 'test-sabab' };
 

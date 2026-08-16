@@ -331,6 +331,29 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-08-16d (KASSA — smena «0 dan» + ixtiyoriy sabab + ochilish-naqd maydonlari;
+> Phase-1: strukturaviy, runtime-tasdiqlanmagan, browser-smoke YO'Q, qurilma-QA QOLDI) —** egasi:
+> «smenani yopganda oldingilari ham qo'shilib ketyapti; xohlaganda ochib-yopiladigan, har safar 0 dan».
+> **Diagnoz (prod-SQL bilan o'lchandi): hisob-matematika BUZILMAGAN** — har yopilgan smena kutilgani
+> faqat o'z cheklaridan to'g'ri chiqqan. Ikki jarayon-yorig'i: (1) POS ochilishda `openingCashMinor:'0'`
+> QATTIQ KODLANGAN edi, yashiqda oldingi smenadan pul qolsa yopishda «soxta излишек» = o'sha qoldiq
+> (prodda 1.0M/1.5M holatlar ko'rildi); (2) vaqtdan-tashqari ochish SABAB MAJBURIY edi → kassirlar
+> yopmay yurgan, sessiyalar 14–42 soat ochiq qolib «oldingi kunlar qo'shilgan» his qilingan.
+> **Fix (TDD, RED ko'rildi):** (a) `OpenShiftForm`da yangi maydonlar «Yashiqdagi naqd (so'm)» +
+> «Yashiqdagi dollar» (`open-shift-cash[-usd]` test-id; bo'sh=0, `parseAmountToMinor`); (b) sabab
+> IXTIYORIY — server throw olib tashlandi (`smena.service`), §9 audit endi sababsiz ham YOZILADI
+> (`planOutOfScheduleAuditEvent.reason: string|null`); (c) `OpenSessionFromSmenaSchema`+create'ga
+> `openingCashUsdMinor` (ilgari jim 0). Yopish istalgan payt mumkin edi — unga tegilmadi (unresolved-chek
+> to'sig'i qoladi). Testlar: api smena.service.test 25 (5 yangi RED→GREEN) · web open-shift-form 9
+> (eski «sabab majburiy» qulflari YANGI niyatga qayta yozildi, egasi qarori izohlangan). i18n:
+> `opening_cash_label`/`opening_cash_usd_label`/`out_of_hours_optional_hint` uz+ru; o'lik
+> `out_of_hours_reason`/`shift_open_with_reason` o'chirildi. Gate: web tc0 · api tc0 · lint 0 err ·
+> TO'LIQ web 285f/4029 (Errors ham 0 — shift-mock tuzatildi) · TO'LIQ api 596f/8295. **⚠️ KEYINGI
+> QADAM: DEPLOY (web+api!) + qurilma-QA** (ochilish maydonlari · sababsiz ochish · yopish→darhol qayta
+> ochish 0 dan). Eslatma: `/retail` (MS-parity) ochilish sahifasi ALOHIDA — bu o'zgarish faqat POS'da.
+>
+> ---
+>
 > **🕒 2026-08-16c (KASSA POS — qarz to'lovi cheki TOVAR-CHEK shablonida + JIM chop, `48d2430e`;
 > Phase-1: strukturaviy, runtime-tasdiqlanmagan, browser-smoke YO'Q, qurilma-QA QOLDI) —** egasi:
 > qarz qabul qilingach kassa.exe'da chek BOSHQA OYNADA ekranga chiqyapti, dizayni tovar chekidan farq

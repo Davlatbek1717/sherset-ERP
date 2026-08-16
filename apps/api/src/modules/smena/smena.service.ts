@@ -245,9 +245,13 @@ export class SmenaService {
     if (!membership) throw new BadRequestException('Siz bu smenaga biriktirilmagansiz');
 
     const withinShift = isWithinShift(smena.schedule.startTime, smena.schedule.endTime);
-    if (!withinShift && !input.outOfShiftReason) {
-      throw new BadRequestException('Smena vaqtidan tashqari — sabab yozish shart');
-    }
+    // 2026-08-16 (egasi qarori): vaqtdan tashqari SABAB endi MAJBURIY EMAS —
+    // «smenani xohlaganda ochib-yopish» so'rovi. Eski majburiylik amalda
+    // teskari ishlagan edi: kassirlar yopmay qo'yib, bitta sessiya 14–42
+    // soatlab ochiq qolardi va yopishda «oldingi kunlar qo'shilib ketyapti»
+    // shikoyati tug'ilardi. §9 kuzatuvi YO'QOLMAYDI: vaqtdan-tashqari ochilish
+    // audit-jurnalga sababsiz ham yoziladi (quyida), menejer hisoboti ishlashda
+    // davom etadi.
 
     // Allaqachon ochiq sessiya bormi?
     const existing = await this.prisma.client.cashierSession.findFirst({
@@ -341,6 +345,10 @@ export class SmenaService {
             // Sxema endi asosiy naqsh bo'yicha string beradi (manfiy rad
             // etilgan) — BigInt'ga bu yerda o'giriladi.
             openingCashMinor: BigInt(input.openingCashMinor),
+            // 2026-08-16: yashiqdagi boshlang'ich dollar ham shakldan keladi
+            // (sentda). Ilgari jim 0 edi — dollar qoldig'i yopishda soxta
+            // излишек bo'lib chiqardi.
+            openingCashUsdMinor: BigInt(input.openingCashUsdMinor),
             state: 'open',
           },
           include: {
@@ -348,11 +356,13 @@ export class SmenaService {
           },
         });
 
-        if (!withinShift && input.outOfShiftReason) {
+        // Sababli ham, sababsiz ham — vaqtdan-tashqari ochilish JURNALGA
+        // tushadi (§9). Sabab ixtiyoriy bo'lgani bilan kuzatuv ixtiyoriy emas.
+        if (!withinShift) {
           const event = planOutOfScheduleAuditEvent(session.id, {
             smenaId: smena.id,
             smenaName: smena.name,
-            reason: input.outOfShiftReason,
+            reason: input.outOfShiftReason ?? null,
           });
           await tx.cashierAuditEvent.create({
             data: {

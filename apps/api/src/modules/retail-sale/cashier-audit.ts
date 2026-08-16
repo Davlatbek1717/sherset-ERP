@@ -237,11 +237,13 @@ export function planCreditSaleAuditEvent(
   };
 }
 
-/** Shift opened outside its schedule. The reason is mandatory upstream, so the
- *  event always carries one — an unexplained out-of-hours shift cannot exist. */
+/** Shift opened outside its schedule. 2026-08-16 (egasi qarori): sabab endi
+ *  IXTIYORIY — `reason: null` = «sababsiz ochildi», hodisaning o'zi esa doim
+ *  yoziladi (menejer «kim qancha marta vaqtdan tashqari ochadi» hisoboti
+ *  sababsiz ochilishlarni ham ko'rishi shart). */
 export function planOutOfScheduleAuditEvent(
   sessionId: string,
-  args: { smenaId: string; smenaName: string; reason: string },
+  args: { smenaId: string; smenaName: string; reason: string | null },
 ): CashierAuditEventInput {
   return {
     type: CASHIER_EVENT.shiftOutOfSchedule,

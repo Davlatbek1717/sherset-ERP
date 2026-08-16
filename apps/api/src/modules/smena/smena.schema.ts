@@ -36,5 +36,13 @@ export const OpenSessionFromSmenaSchema = z.object({
     .string()
     .regex(/^\d+$/, 'openingCashMinor must be a non-negative integer')
     .default('0'),
+  // 2026-08-16 (egasi: «har smena 0 dan») — yashiqdagi boshlang'ich DOLLAR
+  // (sentda). Ilgari bu yo'lda umuman qabul qilinmasdi va ustun jim 0 bo'lib
+  // qolardi; endi ochilish shakli yuboradi. So'm bilan bir xil qat'iylik:
+  // manfiy rad etiladi (kamomad yashirish yo'li).
+  openingCashUsdMinor: z.coerce
+    .string()
+    .regex(/^\d+$/, 'openingCashUsdMinor must be a non-negative integer')
+    .default('0'),
 });
 export type OpenSessionFromSmenaInput = z.infer<typeof OpenSessionFromSmenaSchema>;

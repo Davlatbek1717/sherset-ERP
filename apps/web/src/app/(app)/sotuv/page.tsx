@@ -126,7 +126,12 @@ function OpenShiftForm() {
   const { toast } = useToast();
 
   const [reason, setReason] = useState('');
-  const [showReasonInput, setShowReasonInput] = useState(false);
+  // 2026-08-16 (egasi: «har smena 0 dan») — yashiqdagi boshlang'ich naqd
+  // endi shaklda so'raladi. Bo'sh = 0 (yashiq bo'shatilgan, smena 0 dan
+  // boshlanadi); pul qolgan bo'lsa kassir borini yozadi — yopishdagi
+  // «oldingi smenalar qo'shilib ketyapti» soxta farqi shu bilan yo'qoladi.
+  const [openingCash, setOpeningCash] = useState('');
+  const [openingCashUsd, setOpeningCashUsd] = useState('');
 
   const { data: mine, isLoading } = useQuery<MineResponse>({
     queryKey: ['smena-mine'],
@@ -141,13 +146,13 @@ function OpenShiftForm() {
 
   const handleOpen = () => {
     if (!mine?.smena) return;
-    if (!mine.withinShift && !reason.trim()) {
-      setShowReasonInput(true);
-      return;
-    }
+    // 2026-08-16 (egasi qarori): vaqtdan tashqari SABAB IXTIYORIY — ikki
+    // bosqichli «avval bos, keyin sabab» to'sig'i olib tashlandi. Server ham
+    // endi sababsiz qabul qiladi (audit §9 baribir yoziladi).
     openMut.mutate({
       smenaId: mine.smena.id,
-      openingCashMinor: '0',
+      openingCashMinor: parseAmountToMinor(openingCash).toString(),
+      openingCashUsdMinor: parseAmountToMinor(openingCashUsd, 'USD').toString(),
       ...(reason.trim() ? { outOfShiftReason: reason.trim() } : {}),
     });
   };
@@ -210,11 +215,52 @@ function OpenShiftForm() {
         </div>
       </div>
 
-      {/* Vaqtdan tashqari — sabab so'rash */}
-      {showReasonInput && !withinShift && (
+      {/* Yashiqdagi boshlang'ich naqd (2026-08-16): bo'sh = 0. Sensorli
+          nishon uchun balandroq maydonlar (kassa ekrani). */}
+      <div className="mb-4 flex flex-col gap-3">
+        <div>
+          <label
+            htmlFor="open-shift-cash"
+            className="mb-1 block text-[var(--ms-text-muted)] text-sm"
+          >
+            {t('opening_cash_label')}
+          </label>
+          <Input
+            id="open-shift-cash"
+            data-test-id="open-shift-cash"
+            value={openingCash}
+            onChange={(e) => setOpeningCash(e.target.value)}
+            placeholder="0"
+            inputMode="decimal"
+            className="h-12 text-base"
+          />
+        </div>
+        <div>
+          <label
+            htmlFor="open-shift-cash-usd"
+            className="mb-1 block text-[var(--ms-text-muted)] text-sm"
+          >
+            {t('opening_cash_usd_label')}
+          </label>
+          <Input
+            id="open-shift-cash-usd"
+            data-test-id="open-shift-cash-usd"
+            value={openingCashUsd}
+            onChange={(e) => setOpeningCashUsd(e.target.value)}
+            placeholder="0"
+            inputMode="decimal"
+            className="h-12 text-base"
+          />
+        </div>
+      </div>
+
+      {/* Vaqtdan tashqari — sabab IXTIYORIY (2026-08-16, egasi qarori).
+          Maydon darhol ko'rinadi, bo'sh qoldirsa ham ochiladi; yozilgani
+          §9 audit-jurnalida menejer hisobotiga tushadi. */}
+      {!withinShift && (
         <div className="mb-4">
           <p className="text-sm text-orange-600 mb-2">
-            {t('out_of_hours_reason', {
+            {t('out_of_hours_optional_hint', {
               from: smena.schedule.startTime,
               to: smena.schedule.endTime,
             })}
@@ -223,20 +269,20 @@ function OpenShiftForm() {
             value={reason}
             onChange={(e) => setReason(e.target.value)}
             placeholder={t('reason_placeholder')}
-            autoFocus
           />
         </div>
       )}
 
+      {/* 2026-08-16: tugma hech qachon bloklanmaydi — sabab ixtiyoriy,
+          naqd maydonlari bo'sh bo'lsa 0 deb ketadi. */}
       <Button
         variant="primary"
         size="lg"
         className="w-full"
         loading={openMut.isPending}
         onClick={handleOpen}
-        disabled={showReasonInput && !reason.trim()}
       >
-        {showReasonInput && !withinShift ? t('shift_open_with_reason') : t('shift_open_btn')}
+        {t('shift_open_btn')}
       </Button>
     </div>
   );
