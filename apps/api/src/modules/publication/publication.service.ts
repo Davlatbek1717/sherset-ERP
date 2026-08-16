@@ -249,6 +249,111 @@ export class PublicationService {
   }
 
   /**
+   * OMMAVIY HUJJAT TANASI — mijoz havolani bosganda ko'radigan CHEKNING O'ZI
+   * (egasi, 2026-08-16: «linkga bosib mijozlar kirib ko'rsin o'zini chekini»).
+   *
+   * Ilgari `/p/<token>` faqat metama'lumot ko'rsatardi («to'liq ko'rinish
+   * keyingi sprintda») — ya'ni havola mijoz uchun BEFOYDA edi: u chek raqamini
+   * emas, hujjat UUID sini ko'rardi.
+   *
+   * 🔴 POST, GET EMAS: parol bilan himoyalangan havolada parol so'rov qatorida
+   * ketmasligi kerak (nginx access.log'ga tushardi). Parolsiz havolada tana
+   * bo'sh — shakl bir xil qoladi.
+   *
+   * Hozircha FAQAT `retailsale` — mijozga ketadigan yagona havola turi shu.
+   * Boshqa turlar uchun `null` qaytadi va sahifa eski metama'lumot kartasini
+   * ko'rsatadi (regressiya yo'q).
+   */
+  async publicDocument(token: string, password?: string) {
+    const meta = await this.resolveByToken(token);
+    if (meta.passwordProtected) {
+      if (!password) throw new ForbiddenException('Parol talab qilinadi');
+      await this.verifyPassword(token, password);
+    }
+    if (meta.targetType !== 'retailsale') return { targetType: meta.targetType, sale: null };
+
+    const sale = await this.prisma.client.retailSale.findFirst({
+      where: { id: meta.targetId, deletedAt: null },
+      select: {
+        name: true,
+        moment: true,
+        sumMinor: true,
+        cashAmountMinor: true,
+        cardAmountMinor: true,
+        changeMinor: true,
+        description: true,
+        agent: { select: { id: true, name: true, legalTitle: true } },
+        payments: {
+          select: {
+            method: true,
+            amountMinor: true,
+            amountBaseMinor: true,
+            currency: true,
+            rateMinor: true,
+          },
+        },
+        session: {
+          select: {
+            cashier: { select: { name: true } },
+            organization: { select: { name: true, legalTitle: true, phone: true } },
+          },
+        },
+        positions: {
+          orderBy: { position: 'asc' },
+          select: {
+            quantity: true,
+            priceMinor: true,
+            sumMinor: true,
+            basePriceMinor: true,
+            product: { select: { name: true, uom: true } },
+          },
+        },
+      },
+    });
+    if (!sale) throw new NotFoundException('Chek topilmadi');
+
+    // BigInt/Decimal → satr: ommaviy sahifa autentifikatsiyasiz va JSON
+    // serializatsiyasi BigInt'ni ko'tara olmaydi.
+    return {
+      targetType: meta.targetType,
+      sale: {
+        name: sale.name,
+        moment: sale.moment.toISOString(),
+        sumMinor: String(sale.sumMinor),
+        cashAmountMinor: String(sale.cashAmountMinor),
+        cardAmountMinor: String(sale.cardAmountMinor),
+        changeMinor: String(sale.changeMinor),
+        description: sale.description,
+        agent: sale.agent
+          ? { id: sale.agent.id, name: sale.agent.name, legalTitle: sale.agent.legalTitle }
+          : null,
+        payments: sale.payments.map((p) => ({
+          method: p.method,
+          amountMinor: String(p.amountMinor),
+          amountBaseMinor: String(p.amountBaseMinor),
+          currency: p.currency,
+          rateMinor: p.rateMinor == null ? null : String(p.rateMinor),
+        })),
+        session: {
+          cashier: { name: sale.session.cashier.name },
+          organization: {
+            name: sale.session.organization?.name ?? '',
+            legalTitle: sale.session.organization?.legalTitle ?? null,
+            phone: sale.session.organization?.phone ?? null,
+          },
+        },
+        positions: sale.positions.map((p) => ({
+          quantity: String(p.quantity),
+          priceMinor: String(p.priceMinor),
+          sumMinor: String(p.sumMinor),
+          basePriceMinor: p.basePriceMinor == null ? null : String(p.basePriceMinor),
+          product: p.product ? { name: p.product.name, uom: p.product.uom } : null,
+        })),
+      },
+    };
+  }
+
+  /**
    * Verify a password attempt against the stored hash. Returns true on
    * success; throws ForbiddenException on mismatch. The viewer flow:
    * resolve → (if password-protected) verify → recordView → fetch doc.

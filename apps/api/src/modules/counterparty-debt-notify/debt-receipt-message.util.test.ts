@@ -95,9 +95,9 @@ describe('buildDebtReceiptMessages — tuzilma', () => {
 
   it('chek havolasi bo`lsa chiqadi, bo`lmasa qator umuman yo`q', () => {
     const t = one(CTX);
-    expect(t).toContain('   🧾 https://erp.sherset.uz/p/a3f9');
+    expect(t).toContain('   🧾 Chek: https://erp.sherset.uz/p/a3f9');
     // Ikkinchi chekda havola yo'q ⇒ jami bitta havola qatori.
-    expect(t.match(/🧾 https/g) ?? []).toHaveLength(1);
+    expect(t.match(/🧾 Chek:/g) ?? []).toHaveLength(1);
   });
 
   it('🔴 yakuniy blok YIG`ILADI: qoldiq + xaridlar − to`lovlar = jami', () => {

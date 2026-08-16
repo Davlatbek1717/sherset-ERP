@@ -221,6 +221,10 @@ const INTENTIONALLY_OPEN: Record<string, string> = {
   'DriverPublicController#shiftEnd': 'haydovchi magic-link',
   'PublicViewController#verify': 'publikatsiya tokeni',
   'PublicViewController#view': 'publikatsiya tokeni',
+  // POST, GET emas: parol bilan himoyalangan havolada parol so'rov qatorida
+  // (va nginx logida) ketmasligi uchun. Tana faqat token bilan ochiladi va
+  // parolli publikatsiyada parol qayta tekshiriladi.
+  'PublicViewController#document': 'publikatsiya tokeni (mijoz o`z chekini ko`radi)',
   'SupplyApprovalPublicController#confirm': 'qabul-tasdiq magic-link',
   'SupplyApprovalPublicController#reject': 'qabul-tasdiq magic-link',
 

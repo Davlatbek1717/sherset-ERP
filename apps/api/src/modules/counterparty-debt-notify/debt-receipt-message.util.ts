@@ -159,8 +159,10 @@ function docBlock(doc: DebtReceiptDoc, currency: string): string[] {
       : `   Jami summa: ${fmtAmount(doc.deltaMinor, currency)}`,
   );
 
+  // Egasining namunasidagi shakl: «🧾 Chek: <havola>» — yorliqsiz yalang'och
+  // URL mijozga nima ochilishini aytmaydi.
   const url = (doc.receiptUrl || '').trim();
-  if (url) lines.push(`   🧾 ${url}`);
+  if (url) lines.push(`   🧾 Chek: ${url}`);
   return lines;
 }
 

@@ -75,7 +75,11 @@ export async function ensureReceiptLink(
         ownerId: sale.ownerId,
         targetType: 'retailsale',
         targetId: docId,
-        token: randomBytes(32).toString('base64url'),
+        // Qisqa token (12 belgi ≈ 72 bit) — mijoz telefonda ko'radigan
+        // havola qisqa va ishonchli ko'rinsin. Taxmin qilish imkonsiz
+        // (12 belgi base64url = 64^12), umumiy `Publication` tokeni esa
+        // 43 belgiligicha qoladi — u odamga ko'rsatilmaydi.
+        token: randomBytes(9).toString('base64url'),
         description: 'Kassa cheki (avtomatik)',
         expiresAt,
       },

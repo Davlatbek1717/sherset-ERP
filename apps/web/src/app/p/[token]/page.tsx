@@ -17,6 +17,7 @@
 import { PasswordInput } from '@moysklad/ui';
 import { useParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
+import { PublicReceipt, type PublicReceiptSale } from './public-receipt';
 
 interface PublicMeta {
   id: string;
@@ -49,7 +50,8 @@ type State =
   | { kind: 'loading' }
   | { kind: 'error'; status: number; message: string }
   | { kind: 'password-prompt'; meta: PublicMeta }
-  | { kind: 'ready'; meta: PublicMeta };
+  /** `sale` — kassa cheki tanasi; boshqa turlarda `null` (metama'lumot kartasi). */
+  | { kind: 'ready'; meta: PublicMeta; sale: PublicReceiptSale | null };
 
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, init);
@@ -69,6 +71,28 @@ async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   return res.json();
 }
 
+/**
+ * Hujjat TANASI (chek) — `POST /p/:token/document`.
+ *
+ * 🔴 Fail-open: tana kelmasa sahifa YIQILMAYDI, eski metama'lumot kartasi
+ * ko'rinadi. Mijoz uchun «hech narsa ochilmadi» eng yomon natija.
+ */
+async function loadSale(token: string, password?: string): Promise<PublicReceiptSale | null> {
+  try {
+    const r = await fetchJson<{ targetType: string; sale: PublicReceiptSale | null }>(
+      `/api/v1/p/${token}/document`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(password ? { password } : {}),
+      },
+    );
+    return r.sale;
+  } catch {
+    return null;
+  }
+}
+
 export default function PublicViewerPage() {
   const { token } = useParams<{ token: string }>();
   const [state, setState] = useState<State>({ kind: 'loading' });
@@ -86,7 +110,9 @@ export default function PublicViewerPage() {
         if (meta.passwordProtected) {
           setState({ kind: 'password-prompt', meta });
         } else {
-          setState({ kind: 'ready', meta });
+          const sale = await loadSale(token);
+          if (cancelled) return;
+          setState({ kind: 'ready', meta, sale });
           // Best-effort view counter
           fetch(`/api/v1/p/${token}/view`, { method: 'POST' }).catch(() => undefined);
         }
@@ -116,7 +142,8 @@ export default function PublicViewerPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ password }),
       });
-      setState({ kind: 'ready', meta: state.meta });
+      const sale = await loadSale(token, password);
+      setState({ kind: 'ready', meta: state.meta, sale });
       fetch(`/api/v1/p/${token}/view`, { method: 'POST' }).catch(() => undefined);
     } catch (err) {
       setVerifyError((err as Error).message);
@@ -129,8 +156,8 @@ export default function PublicViewerPage() {
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
       <div className="mx-auto max-w-2xl px-4 py-12">
         <div className="mb-6 flex items-center justify-between">
-          <div className="font-medium text-slate-700 text-sm">Public hujjat</div>
-          <div className="text-slate-400 text-xs">moysklad clone</div>
+          <div className="font-medium text-slate-700 text-sm">Hujjat</div>
+          <div className="text-slate-400 text-xs">Sherset</div>
         </div>
 
         {state.kind === 'loading' && (
@@ -181,7 +208,9 @@ export default function PublicViewerPage() {
           </form>
         )}
 
-        {state.kind === 'ready' && (
+        {state.kind === 'ready' && state.sale && <PublicReceipt sale={state.sale} />}
+
+        {state.kind === 'ready' && !state.sale && (
           <div className="space-y-4 rounded-lg border border-[var(--ms-border-default)] bg-white p-8">
             <div className="border-[var(--ms-border-default)] border-b pb-4">
               <div className="text-slate-400 text-xs uppercase tracking-wide">
@@ -193,10 +222,6 @@ export default function PublicViewerPage() {
             </div>
 
             <div className="space-y-2 text-sm">
-              <div className="flex items-center justify-between">
-                <span className="text-slate-500">Hujjat ID:</span>
-                <code className="font-mono text-slate-700 text-xs">{state.meta.targetId}</code>
-              </div>
               {state.meta.expiresAt && (
                 <div className="flex items-center justify-between">
                   <span className="text-slate-500">Amal qiladi:</span>
@@ -205,21 +230,18 @@ export default function PublicViewerPage() {
                   </span>
                 </div>
               )}
-              <div className="flex items-center justify-between">
-                <span className="text-slate-500">Ko'rishlar:</span>
-                <span className="text-slate-700">{state.meta.viewCount + 1}</span>
-              </div>
             </div>
 
+            {/* Kassa chekidan boshqa turlar uchun to'liq ko'rinish hali yo'q.
+                Hujjat UUID'i mijozga hech nima anglatmaydi — ko'rsatilmaydi. */}
             <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-amber-800 text-xs">
-              ℹ To'liq hujjat ko'rinishi keyingi sprint'da qo'shiladi. Hozirgi versiyada faqat
-              metadata ko'rsatiladi.
+              ℹ Bu hujjat turi uchun to'liq ko'rinish hali qo'shilmagan.
             </div>
           </div>
         )}
 
         <div className="mt-6 text-center text-slate-400 text-xs">
-          Powered by moysklad clone · UZ
+          Sherset — savdo va ombor boshqaruvi
         </div>
       </div>
     </div>

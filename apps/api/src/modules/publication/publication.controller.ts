@@ -91,6 +91,21 @@ export class PublicViewController {
     return this.service.verifyPassword(token, password);
   }
 
+  /**
+   * Hujjat TANASI — mijoz havolani bosganda ko'radigan chekning o'zi.
+   * POST: parol bilan himoyalangan havolada parol so'rov qatorida ketmasin.
+   */
+  @Post(':token/document')
+  async document(@Param('token') token: string, @Body() body: unknown) {
+    const password =
+      body &&
+      typeof body === 'object' &&
+      typeof (body as { password?: unknown }).password === 'string'
+        ? (body as { password: string }).password
+        : undefined;
+    return this.service.publicDocument(token, password);
+  }
+
   @Post(':token/view')
   async view(@Param('token') token: string) {
     await this.service.recordView(token);
