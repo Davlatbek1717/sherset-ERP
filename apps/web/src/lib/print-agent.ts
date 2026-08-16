@@ -245,6 +245,14 @@ interface AgentPickingLine {
 }
 interface AgentPickingSheet {
   skladNo: number | null;
+  /**
+   * Varaq sarlavhasi — «01» / «Yacheykasiz», yoki **null = sarlavha yo'q**.
+   *
+   * Server bir necha omborni bitta qog'ozga birlashtirganda (bitta printer =
+   * bitta qog'oz) yagona sarlavha yolg'on bo'lardi. `skladNo` dan HISOBLAB
+   * bo'lmaydi — aynan shuning uchun server aytadi.
+   */
+  groupLabel: string | null;
   omborchiName: string | null;
   lines: AgentPickingLine[];
 }
@@ -269,10 +277,9 @@ interface AgentKeeperRow {
   printerName: string | null;
 }
 
-/** «01» / «Yacheykasiz» — the receipt's group heading for one sklad sheet. */
-export function pickGroupLabel(skladNo: number | null): string {
-  return skladNo != null ? String(skladNo).padStart(2, '0') : 'Yacheykasiz';
-}
+// `pickGroupLabel` OLIB TASHLANDI (2026-08-16): sarlavhani endi SERVER
+// hisoblaydi (`groupLabel`) — u varaqlar birlashtirilganini biladi, mijoz esa
+// `skladNo` dan buni chiqara olmaydi. Ikki nusxa bo'lsa biri eskirardi.
 
 /** ISO instant → «DD.MM.YYYY» (the receipt's «от» line). */
 function receiptDateOf(iso: string | null | undefined): string {
@@ -307,7 +314,8 @@ export function buildSheetText(sheet: AgentPickingSheet, res: AgentPickingSheets
   L.push(`Telefon: ${res.buyerPhone ?? ''}`);
   L.push(`Izoh: ${res.comment ?? ''}`);
   L.push(dash);
-  L.push(pickGroupLabel(sheet.skladNo));
+  // Birlashtirilgan ro'yxatda sarlavha yo'q (server `null` yuboradi).
+  if (sheet.groupLabel != null) L.push(sheet.groupLabel);
   sheet.lines.forEach((l, i) => {
     L.push(`${i + 1}. ${l.productName}`);
     L.push(`   ${l.binLocation ?? '-'}   ${Number(l.quantity)} ${l.uom ?? 'dona'}`);
@@ -359,7 +367,7 @@ th{text-align:center;font-weight:700}
 <div>Телефон: ${escapeHtml(res.buyerPhone ?? '')}</div>
 <div>Комментарий: ${escapeHtml(res.comment ?? '')}</div>
 </div>
-<div class="grp">${escapeHtml(pickGroupLabel(sheet.skladNo))}</div>
+${sheet.groupLabel != null ? `<div class="grp">${escapeHtml(sheet.groupLabel)}</div>` : ''}
 <table><thead><tr><th style="width:5mm">№</th><th>Наименование</th><th style="width:7mm">Ед.изм</th><th style="width:8mm">Кол-во</th><th style="width:19mm">Yacheyka</th></tr></thead><tbody>${rows}</tbody></table>
 <div class="total">Всего наименований ${sheet.lines.length}</div>
 <div class="brand">${RECEIPT_BRAND}</div>

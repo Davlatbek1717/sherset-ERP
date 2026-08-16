@@ -46,8 +46,16 @@ function installShell(
   return printSheet;
 }
 
-const sheet = (skladNo: number | null, productName: string) => ({
+const sheet = (skladNo: number | null, productName: string, groupLabel?: string | null) => ({
   skladNo,
+  // Sukut — server bitta guruh uchun yuboradigan sarlavha; testda oshkora
+  // `null` berish «birlashtirilgan varaq» holatini bildiradi.
+  groupLabel:
+    groupLabel !== undefined
+      ? groupLabel
+      : skladNo != null
+        ? String(skladNo).padStart(2, '0')
+        : 'Yacheykasiz',
   omborchiName: null,
   lines: [{ productName, quantity: '2', binLocation: skladNo != null ? '01-02-03-05' : null }],
 });
@@ -133,6 +141,34 @@ describe('printPickingViaAgent — sozlamasiz ham chek CHIQADI', () => {
     const r = await printPickingViaAgent('s-1');
 
     expect(r).toMatchObject({ handled: true, printed: 0, errors: 1 });
+  });
+});
+
+/**
+ * Sarlavha SERVERDAN keladi (2026-08-16). Ilgari mijoz uni `skladNo` dan
+ * hisoblardi (`pickGroupLabel`) — birlashtirilgan varaqda o'sha hisob YOLG'ON
+ * bo'lardi: bir necha ombor + yacheykasizlar ustiga «Yacheykasiz» yozilardi.
+ */
+describe('varaq sarlavhasi — birlashtirilganda CHIQMAYDI', () => {
+  it('birlashtirilgan varaq (groupLabel=null) ⇒ sarlavha yo`q, tovarlar bor', async () => {
+    const printSheet = installShell();
+    mockApi([sheet(null, 'Aralash ro`yxat', null)], { items: [] });
+
+    await printPickingViaAgent('s-1');
+
+    const html = printSheet.mock.calls[0]?.[1] ?? '';
+    expect(html).toContain('Aralash ro`yxat');
+    expect(html).not.toContain('class="grp"');
+    expect(html).not.toContain('Yacheykasiz');
+  });
+
+  it('bitta omborli varaq ⇒ server bergan sarlavha chiqadi', async () => {
+    const printSheet = installShell();
+    mockApi([sheet(1, 'Rozetka')], { items: [] });
+
+    await printPickingViaAgent('s-1');
+
+    expect(printSheet.mock.calls[0]?.[1]).toContain('<div class="grp">01</div>');
   });
 });
 

@@ -53,6 +53,8 @@ interface SheetLine {
 }
 interface PickingSheet {
   skladNo: number | null;
+  /** Server sarlavhasi; `null` = varaqlar birlashtirilgan ⇒ sarlavha yo'q. */
+  groupLabel: string | null;
   omborchiName: string | null;
   printerName: string | null;
   lines: SheetLine[];
@@ -108,8 +110,21 @@ function sheetToReceipt(
     ownerName: res?.sellerName ?? null,
     description: res?.comment ?? null,
     positions,
-    // null ⇒ the body renders the localized «Yacheykasiz» heading itself.
-    groups: [{ warehouse: sheet.skladNo != null ? fmtSklad(sheet.skladNo) : null, positions }],
+    // Uch holat: «01» · null ⇒ tarjima qilingan «Yacheykasiz» sarlavhasi ·
+    // undefined ⇒ sarlavha YO'Q (server varaqlarni birlashtirgan). Sarlavha
+    // matni SHU YERDA tuziladi — sahifa tarjimaga ega, server esa yo'q;
+    // serverdan faqat «birlashtirilganmi» qarori olinadi.
+    groups: [
+      {
+        warehouse:
+          sheet.groupLabel === null
+            ? undefined
+            : sheet.skladNo != null
+              ? fmtSklad(sheet.skladNo)
+              : null,
+        positions,
+      },
+    ],
   };
 }
 

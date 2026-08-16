@@ -33,8 +33,16 @@ export interface ReceiptPositionInput {
 }
 
 export interface ReceiptGroupInput {
-  /** «01», «02», … or null for the cell-less group («Yacheykasiz»). */
-  warehouse: string | null;
+  /**
+   * «01», «02», … · `null` = cell-less group («Yacheykasiz») · **`undefined` =
+   * no heading at all**.
+   *
+   * Uchinchi holat 2026-08-16 da qo'shildi: omborchi varag'i endi bir necha
+   * ombor + yacheykasizlarni BITTA qog'ozga birlashtiradi (bitta printer =
+   * bitta qog'oz). Bunday ro'yxatda yagona sarlavha YOLG'ON bo'lardi — na
+   * «01», na «Yacheykasiz» to'g'ri; manzil esa har qatorda turibdi.
+   */
+  warehouse?: string | null;
   positions: ReceiptPositionInput[];
 }
 
@@ -110,12 +118,15 @@ export function PickReceiptBody({
 
       {groups.map((g) => (
         <div key={g.warehouse ?? 'no-cell'} className="mt-2" style={{ breakInside: 'avoid' }}>
-          <div
-            className="mb-0.5 font-bold text-[15px]"
-            data-test-id={`receipt-group-${g.warehouse ?? 'none'}`}
-          >
-            {g.warehouse ?? t('print_no_cell')}
-          </div>
+          {/* `undefined` — birlashtirilgan ro'yxat: sarlavha CHIQMAYDI. */}
+          {g.warehouse !== undefined && (
+            <div
+              className="mb-0.5 font-bold text-[15px]"
+              data-test-id={`receipt-group-${g.warehouse ?? 'none'}`}
+            >
+              {g.warehouse ?? t('print_no_cell')}
+            </div>
+          )}
           <table className="w-full table-fixed border-collapse text-[10px]">
             <thead>
               <tr>

@@ -121,6 +121,10 @@ const AGENT_RES = {
 };
 const AGENT_SHEET = {
   skladNo: 1,
+  // Sarlavhani 2026-08-16 dan SERVER beradi (`groupLabel`) — mijoz uni
+  // `skladNo` dan hisoblamaydi, chunki varaqlar birlashtirilgan bo'lishi
+  // mumkin va o'shanda sarlavha umuman chiqmaydi.
+  groupLabel: '01',
   omborchiName: 'Камолиддин',
   lines: [
     { productName: 'Заглушка 20 Пластерм', quantity: '50', binLocation: '01-03-05-30', uom: 'шт' },
@@ -154,7 +158,17 @@ describe('Electron HTML kanali — o‘sha shablon', () => {
 
   it('heads the sheet with its sklad number, «Yacheykasiz» when unassigned', () => {
     expect(html).toContain('>01<');
-    expect(buildSheetHtml({ ...AGENT_SHEET, skladNo: null }, AGENT_RES)).toContain('>Yacheykasiz<');
+    expect(
+      buildSheetHtml({ ...AGENT_SHEET, skladNo: null, groupLabel: 'Yacheykasiz' }, AGENT_RES),
+    ).toContain('>Yacheykasiz<');
+  });
+
+  it('birlashtirilgan varaqda (groupLabel=null) sarlavha CHIQMAYDI', () => {
+    // Bitta printer = bitta qog'oz: bir necha ombor + yacheykasizlar bitta
+    // ro'yxatga qo'shilganda yagona sarlavha yolg'on bo'lardi.
+    const merged = buildSheetHtml({ ...AGENT_SHEET, groupLabel: null }, AGENT_RES);
+    expect(merged).not.toContain('class="grp"');
+    expect(merged).toContain('Заглушка 20 Пластерм');
   });
 });
 

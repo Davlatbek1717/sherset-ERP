@@ -255,50 +255,111 @@ export class RestockTaskService {
       else groups.set(key, [{ pos, prod }]);
     }
 
-    const sheets = [...groups.entries()]
+    /**
+     * Serpentine (boustrophedon) pick route: walk the aisles (polka) in order,
+     * but reverse the cell (yacheyka) direction on every other aisle so the
+     * picker snakes through the zone without backtracking. Tier (qavat) is the
+     * secondary key; items with no location sort last.
+     *
+     * Segmentlar yacheyka KODIDAN olinadi (climart: «01-02-03-05»).
+     * BIRINCHI segment (ombor) ham hisobga olinadi — varaq endi bir necha
+     * omborni birlashtirishi mumkin va marshrut ombordan boshlanishi kerak.
+     */
+    const byRoute = (a: Entry, b: Entry) => {
+      const [sa0, pa0, qa0, ya0] = binSegs(a.prod ? cellOf(a.prod.attributes) : '');
+      const [sb0, pb0, qb0, yb0] = binSegs(b.prod ? cellOf(b.prod.attributes) : '');
+      const sa = sa0 ?? 9999;
+      const sb = sb0 ?? 9999;
+      if (sa !== sb) return sa - sb;
+      const pa = pa0 ?? 9999;
+      const pb = pb0 ?? 9999;
+      if (pa !== pb) return pa - pb;
+      const qa = qa0 ?? 0;
+      const qb = qb0 ?? 0;
+      if (qa !== qb) return qa - qb;
+      const ya = ya0 ?? 0;
+      const yb = yb0 ?? 0;
+      return pa % 2 === 0 ? yb - ya : ya - yb;
+    };
+
+    const toLine = (e: Entry) => ({
+      productId: e.prod?.id ?? null,
+      productName: e.prod?.name ?? '—',
+      quantity: e.pos.quantity,
+      // «01-02-03-05 ×30» — per-cell qty (Phase 2) rides along as a suffix so
+      // every existing consumer (omborchi panel + print strip) shows it without
+      // a shape change. No qty tracked → plain code.
+      binLocation: e.prod ? cellOf(e.prod.attributes) || null : null,
+      uom: e.prod?.uom ?? null,
+      // climart'da tovarga BITTA `__yacheyka` — qo'shimcha javonlar yo'q.
+      extraBins: [],
+    });
+
+    /** «01» / «Yacheykasiz» — bitta omborli varaqning sarlavhasi. */
+    const labelOf = (skladNo: number | null) =>
+      skladNo != null ? String(skladNo).padStart(2, '0') : 'Yacheykasiz';
+
+    /**
+     * 🔴 BITTA PRINTER = BITTA QOG'OZ (egasi, 2026-08-16).
+     *
+     * Ilgari HAR ombor guruhi alohida varaq edi. Bu ombor→printer marshruti
+     * sozlanganda to'g'ri (har ombor o'z printeriga), lekin prodda
+     * `sklad_keepers` 0 qator: hamma varaq AYNI sukut printerdan ketma-ket
+     * chiqardi — egasi «yacheykali va yacheykasiz alohida-alohida chiqdi»
+     * deb ko'rgan simptom shu. Tartib ham teskari edi: `NULL_SKLAD = -1`
+     * sonli saralashda birinchi turadi ⇒ yacheykasizlar oldinda chiqardi.
+     *
+     * Endi: printeri BOR ombor — o'z varag'i; qolgani BITTA varaqqa qo'shiladi
+     * (avval yacheykalilar marshrut bo'yicha, oxirida yacheykasizlar).
+     */
+    const routedSheets = [...groups.entries()]
+      .filter(([key]) => key !== NULL_SKLAD && keeperBySklad.get(key)?.printerName)
       .sort((a, b) => a[0] - b[0])
       .map(([key, entries]) => {
-        const skladNo = key === NULL_SKLAD ? null : key;
-        const keeper = skladNo != null ? keeperBySklad.get(skladNo) : undefined;
-        // Serpentine (boustrophedon) pick route: walk the aisles (polka) in
-        // order, but reverse the cell (yacheyka) direction on every other aisle
-        // so the picker snakes through the zone without backtracking. Tier
-        // (qavat) is the secondary key; items with no location sort last.
-        // Segmentlar endi yacheyka KODIDAN olinadi (climart: «01-02-03-05»),
-        // ilgari ular tovarda alohida ustunlar edi — mantiq o'zgarmadi.
-        const routed = [...entries].sort((a, b) => {
-          const [, pa0, qa0, ya0] = binSegs(a.prod ? cellOf(a.prod.attributes) : '');
-          const [, pb0, qb0, yb0] = binSegs(b.prod ? cellOf(b.prod.attributes) : '');
-          const pa = pa0 ?? 9999;
-          const pb = pb0 ?? 9999;
-          if (pa !== pb) return pa - pb;
-          const qa = qa0 ?? 0;
-          const qb = qb0 ?? 0;
-          if (qa !== qb) return qa - qb;
-          const ya = ya0 ?? 0;
-          const yb = yb0 ?? 0;
-          return pa % 2 === 0 ? yb - ya : ya - yb;
-        });
+        const keeper = keeperBySklad.get(key);
         return {
-          skladNo,
+          skladNo: key,
+          groupLabel: labelOf(key),
           omborchiName: keeper?.employeeName ?? null,
           // Named printer this sklad's strip is routed to (via the local
           // print-agent). null ⇒ no per-printer routing → browser print.
           printerName: keeper?.printerName ?? null,
-          lines: routed.map((e) => ({
-            productId: e.prod?.id ?? null,
-            productName: e.prod?.name ?? '—',
-            quantity: e.pos.quantity,
-            // «01-02-03-05 ×30» — per-cell qty (Phase 2) rides along as a
-            // suffix so every existing consumer (omborchi panel + print strip)
-            // shows it without a shape change. No qty tracked → plain code.
-            binLocation: e.prod ? cellOf(e.prod.attributes) || null : null,
-            uom: e.prod?.uom ?? null,
-            // climart'da tovarga BITTA `__yacheyka` — qo'shimcha javonlar yo'q.
-            extraBins: [],
-          })),
+          lines: [...entries].sort(byRoute).map(toLine),
         };
       });
+
+    const restKeys = [...groups.entries()]
+      .filter(([key]) => key === NULL_SKLAD || !keeperBySklad.get(key)?.printerName)
+      .map(([key]) => key);
+    // Yacheykasizlar OXIRIDA: `NULL_SKLAD = -1` bo'lgani uchun sonli saralash
+    // ularni oldinga chiqarardi — shuning uchun kalit alohida ko'chiriladi.
+    const restEntries = [
+      ...restKeys
+        .filter((k) => k !== NULL_SKLAD)
+        .sort((a, b) => a - b)
+        .flatMap((k) => [...(groups.get(k) ?? [])].sort(byRoute)),
+      ...(groups.get(NULL_SKLAD) ?? []),
+    ];
+
+    // Aralash varaqda ombor sarlavhasi KO'RSATILMAYDI: na «01», na
+    // «Yacheykasiz» rost bo'lardi. Yagona guruh qolsa — o'z sarlavhasi.
+    const soleKey = restKeys.length === 1 ? restKeys[0] : undefined;
+    const restSkladNo = soleKey != null && soleKey !== NULL_SKLAD ? soleKey : null;
+    const restSheets =
+      restEntries.length > 0
+        ? [
+            {
+              skladNo: restSkladNo,
+              groupLabel: soleKey === undefined ? null : labelOf(restSkladNo),
+              omborchiName:
+                restSkladNo != null ? (keeperBySklad.get(restSkladNo)?.employeeName ?? null) : null,
+              printerName: null,
+              lines: restEntries.map(toLine),
+            },
+          ]
+        : [];
+
+    const sheets = [...routedSheets, ...restSheets];
 
     return {
       sourceName,
