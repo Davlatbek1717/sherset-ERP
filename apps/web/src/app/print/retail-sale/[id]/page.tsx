@@ -107,11 +107,11 @@ export default function PrintRetailSalePage() {
     sumMinor: p.sumMinor,
   }));
 
-  // «Chek bo'yicha umumiy summa» — pozitsiyalar yalpisi (chegirmasiz);
-  // «Jami summa» — hujjat summasi. Ikkisining farqi «Chegirma» qatori.
-  const grossMinor = data.positions
-    .reduce((acc, p) => acc + BigInt(p.sumMinor || '0'), 0n)
-    .toString();
+  // «Chek bo'yicha umumiy summa» — MODELdan (2026-08-16): u endi qatorning
+  // muzlatilgan sotilish narxi (`basePriceMinor`) bo'yicha yalpini beradi,
+  // «Chegirma» esa shu bilan jami farqi. Bu yerda qayta hisoblash uch-renderer
+  // paritetini buzardi (agent-chek chegirma ko'rsatib, brauzer-chek 0 berardi).
+  const grossMinor = model.subtotalMinor;
 
   return (
     <ThermalShell widthMm={widthMm} autoPrint={auto}>

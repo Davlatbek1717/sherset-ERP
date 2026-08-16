@@ -54,10 +54,12 @@ import {
 } from '@/lib/pos/cart-math';
 // Smena yopish sanog'i uchun xavfsiz pul-parse (buzuq kiritma → 0n, crash emas).
 import { parseAmountToMinor } from '@/lib/pos/parse-amount';
+import { cartToProformaReceipt } from '@/lib/pos/receipt-proforma-model';
 import { scanFeedback } from '@/lib/pos/scan-feedback';
 import {
   printDebtReceiptViaAgent,
   printPickingViaAgent,
+  printProformaReceiptViaAgent,
   printReceiptViaAgent,
   printZReportViaAgent,
 } from '@/lib/print-agent';
@@ -889,6 +891,29 @@ function SalesScreen({
     toast.success(t('draft_saved'));
   }, [cart, cartLocked, payingSale, discountPct, toast, t]);
 
+  // SOTUVSIZ CHEK (2026-08-16, egasi): savatdan chek — sotuv/hujjat YO'Q,
+  // serverga hech nima yozilmaydi. Chek raqami vaqtdan (haqiqiy cheklar
+  // bilan to'qnashmaydi). Muvaffaqiyatda savat qoralamaga o'tadi — «chekni
+  // o'zgartirish» = chipni ochish → o'zgartirish → yana chiqarish.
+  const printProforma = useCallback(async () => {
+    if (cart.length === 0 || pricePolicyBlock != null || cartLocked || payingSale != null) return;
+    const now = new Date();
+    const two = (n: number) => n.toString().padStart(2, '0');
+    const input = cartToProformaReceipt(cart, discountPct, {
+      number: `CHEK-${two(now.getHours())}${two(now.getMinutes())}${two(now.getSeconds())}`,
+      moment: now.toISOString(),
+      cashierName: session.cashier.name,
+      organization: { name: session.organization.name },
+    });
+    const r = await printProformaReceiptViaAgent(input);
+    if (!r.handled || !r.ok) {
+      toast.error(t('proforma_failed'));
+      return;
+    }
+    // Chekning o'zi — kassirga «chiqdi» signali; qoralama toast'i parkdan keladi.
+    parkCart();
+  }, [cart, discountPct, pricePolicyBlock, cartLocked, payingSale, session, parkCart, toast, t]);
+
   // Tiklash — chip bosilganda. Savatda tovar bo'lsa u AVVAL avtomatik
   // qoralamaga olinadi (almashish): kassir hech qachon «tiklasam savatim
   // o'chib ketadimi?» deb o'ylamasin.
@@ -1522,6 +1547,9 @@ function SalesScreen({
                   onDirectSell={() => directSellMut.mutate()}
                   sendToPickingPending={sendToPickingMut.isPending}
                   onSendToPicking={() => sendToPickingMut.mutate()}
+                  onPrintProforma={
+                    cartLocked || payingSale != null ? null : () => void printProforma()
+                  }
                 />
               </div>
             </>

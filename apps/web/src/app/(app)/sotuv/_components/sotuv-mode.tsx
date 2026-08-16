@@ -269,6 +269,13 @@ interface SavatPanelProps {
   onDirectSell: () => void;
   sendToPickingPending: boolean;
   onSendToPicking: () => void;
+  /**
+   * SOTUVSIZ CHEK (2026-08-16, egasi): savatdan chek chiqarish — sotuv
+   * yaratilmaydi, chop etilgach savat qoralamaga o'tadi («chekni
+   * o'zgartirish» yo'li). `null` = tugma chizilmaydi (qulflangan/to'lanayotgan
+   * savat — u yerda hujjat allaqachon bor).
+   */
+  onPrintProforma: (() => void) | null;
 }
 
 export function SavatPanel({
@@ -296,6 +303,7 @@ export function SavatPanel({
   pricePolicyBlock,
   directSellPending,
   onDirectSell,
+  onPrintProforma,
   sendToPickingPending,
   onSendToPicking,
 }: SavatPanelProps) {
@@ -719,6 +727,22 @@ export function SavatPanel({
               ? `${pricePolicyBlock.productName}: ${t('cart_no_price')}`
               : `${pricePolicyBlock.productName}: ${t('cart_floor_blocked')}`}
           </div>
+        )}
+
+        {/* SOTUVSIZ CHEK (2026-08-16, egasi): sotuv YARATILMAYDI — savatdan
+            chek chiqadi, savat qoralamaga o'tadi. Narx-siyosat quli AYNI:
+            0-narx/pol buzilishi buni ham bloklaydi (chek narx-hujjatdek
+            ko'ringani uchun undagi narx ham qoidaga bo'ysunadi). */}
+        {onPrintProforma != null && (
+          <button
+            type="button"
+            onClick={onPrintProforma}
+            disabled={cart.length === 0 || pricePolicyBlock != null}
+            data-test-id="sotuv-proforma"
+            className="mb-2 flex h-[var(--pos-touch-min)] w-full items-center justify-center gap-2 rounded-2xl border border-[var(--ms-border)] bg-[var(--ms-bg-surface)] font-semibold text-[16px] text-[var(--ms-text-primary)] shadow-sm transition-all hover:bg-[var(--ms-bg-hover)] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            {t('proforma_btn')}
+          </button>
         )}
 
         {/* P3 — TO'G'RIDAN-TO'G'RI SOTISH (yig'ishsiz, darhol to'lov).

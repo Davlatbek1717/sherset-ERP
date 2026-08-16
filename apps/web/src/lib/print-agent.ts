@@ -718,6 +718,38 @@ export async function printDebtReceiptViaAgent(batchId: string): Promise<Receipt
   return { handled: true, ok: r.ok, error: r.error };
 }
 
+/**
+ * SOTUVSIZ CHEK (proforma, 2026-08-16 — egasi so'rovi): savatdan yig'ilgan
+ * tayyor `ReceiptSaleInput` ni chop etadi — server so'rovi YO'Q (sotuv ham,
+ * hujjat ham yaratilmagan; kirish `cartToProformaReceipt` dan keladi).
+ *
+ * Yo'l tovar cheki bilan AYNI: qobiq (Electron) → HTML, agent → ESC/POS matn.
+ * Ikkalasi ham yo'q bo'lsa BRAUZER-ZAXIRA shu yerning o'zida: popup oynaga
+ * chek-HTML yozilib `print()` chaqiriladi (tovar chekidagi `/print/...` URL
+ * zaxirasining analogi — proformada server sahifasi yo'q, shuning uchun HTML
+ * bevosita beriladi). Popup bloklangan bo'lsa `handled:false` qaytadi.
+ */
+export async function printProformaReceiptViaAgent(
+  input: ReceiptSaleInput,
+): Promise<ReceiptPrintOutcome> {
+  const el = electron();
+  if (el) {
+    const r = await el.printSheet('', buildReceiptHtml(input), THERMAL_PAGE_MICRONS);
+    return { handled: true, ok: r.ok, error: r.error };
+  }
+  if (await checkPrintAgent()) {
+    const r = await agentPrint('', { text: buildReceiptText(input) });
+    return { handled: true, ok: r.ok, error: r.error };
+  }
+  const w = window.open('', '_blank', 'width=420,height=640');
+  if (!w) return { handled: false, ok: false, reason: 'no-agent' };
+  w.document.write(buildReceiptHtml(input));
+  w.document.close();
+  w.focus();
+  w.print();
+  return { handled: true, ok: true };
+}
+
 // ─── Z-hisobot («Z-отчёт») chop etish ────────────────────────────────────────
 // Chek bilan AYNI yo'l: agent/Electron tirik bo'lsa qog'oz to'g'ridan-to'g'ri
 // qurilmaning sukut printeridan chiqadi, aks holda chaqiruvchi brauzer

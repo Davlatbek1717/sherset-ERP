@@ -8086,6 +8086,8 @@
       "shift_open_btn": "Smena ochish",
       "shift_stale_action": "Naqdni qayta sanang va smenani yoping.",
       "shift_stale_title": "Smena juda uzoq ochiq — {age}",
+      "proforma_btn": "Chek chiqarish",
+      "proforma_failed": "Chek chiqarilmadi — printerni tekshiring",
       "shop": "Do'kon",
       "state_cancelled": "Bekor qilingan",
       "state_draft": "Qoralama",

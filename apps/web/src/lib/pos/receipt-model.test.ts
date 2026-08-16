@@ -220,6 +220,119 @@ describe('buildReceiptModel — namunadagi maydonlar', () => {
   });
 });
 
+/**
+ * 2026-08-16 (egasi): «10 000 lik tovarni 9 000 qilsam, chekda chegirma
+ * 1 000 chiqsin». Chegirma endi qatorning MUZLATILGAN sotilish narxi
+ * (`basePriceMinor`) bilan haqiqiy summasi farqidan hisoblanadi:
+ *   Umumiy summa = Σ max(base×qty, sum) · Chegirma = Umumiy − Jami.
+ * Eski (faqat gross−total) hisob POS'da doim 0 chiqarardi, chunki
+ * arzonlashtirish qator summasining O'ZIDA yashiringan edi.
+ */
+describe('chegirma — basePriceMinor dan (2026-08-16, egasi)', () => {
+  it('1 × 10 000 → 9 000 qilingan: chegirma 1 000, umumiy 10 000, jami 9 000', () => {
+    const m = buildReceiptModel(
+      SALE({
+        sumMinor: '900000',
+        positions: [
+          {
+            quantity: '1',
+            priceMinor: '900000',
+            sumMinor: '900000',
+            basePriceMinor: '1000000',
+            product: { name: 'Test tovar', uom: 'dona' },
+          },
+        ],
+      }),
+    );
+    expect(m.subtotal).toBe('10 000');
+    expect(m.discount).toBe('1 000');
+    expect(m.total).toBe('9 000');
+  });
+
+  it('narx OSHIRILGAN qatorda chegirma 0 (manfiy chegirma yo`q), umumiy = summa', () => {
+    const m = buildReceiptModel(
+      SALE({
+        sumMinor: '1200000',
+        positions: [
+          {
+            quantity: '1',
+            priceMinor: '1200000',
+            sumMinor: '1200000',
+            basePriceMinor: '1000000',
+            product: { name: 'Qimmatlashgan', uom: 'dona' },
+          },
+        ],
+      }),
+    );
+    expect(m.discount).toBe('0');
+    expect(m.subtotal).toBe('12 000');
+    expect(m.total).toBe('12 000');
+  });
+
+  it('kasr miqdor: 2.5 × (1 000 → 900) — chegirma 250', () => {
+    const m = buildReceiptModel(
+      SALE({
+        sumMinor: '225000',
+        positions: [
+          {
+            quantity: '2.5',
+            priceMinor: '90000',
+            sumMinor: '225000',
+            basePriceMinor: '100000',
+            product: { name: 'Kabel', uom: 'm' },
+          },
+        ],
+      }),
+    );
+    expect(m.subtotal).toBe('2 500');
+    expect(m.discount).toBe('250');
+  });
+
+  it('basePriceMinor YO`Q (eski chaqiruvchi) — eski xulq: umumiy = Σ summa, chegirma = gross − total', () => {
+    const m = buildReceiptModel(
+      SALE({
+        sumMinor: '900000',
+        positions: [
+          {
+            quantity: '1',
+            priceMinor: '900000',
+            sumMinor: '900000',
+            product: { name: 'Eski qator', uom: 'dona' },
+          },
+        ],
+      }),
+    );
+    expect(m.subtotal).toBe('9 000');
+    expect(m.discount).toBe('0');
+  });
+
+  it('aralash: bir qator chegirmali, bir qator base`siz — faqat birinchisi qo`shiladi', () => {
+    const m = buildReceiptModel(
+      SALE({
+        sumMinor: '1400000',
+        positions: [
+          {
+            quantity: '1',
+            priceMinor: '900000',
+            sumMinor: '900000',
+            basePriceMinor: '1000000',
+            product: { name: 'Chegirmali', uom: 'dona' },
+          },
+          {
+            quantity: '1',
+            priceMinor: '500000',
+            sumMinor: '500000',
+            product: { name: 'Basesiz', uom: 'dona' },
+          },
+        ],
+      }),
+    );
+    // Umumiy = 10 000 + 5 000; chegirma = 15 000 − 14 000 = 1 000.
+    expect(m.subtotal).toBe('15 000');
+    expect(m.discount).toBe('1 000');
+  });
+});
+
 describe('formatlash yordamchilari', () => {
   it('fmtSom — mingliklar bo`sh joy bilan, butun bo`lsa kasrsiz', () => {
     expect(fmtSom('33025000')).toBe('330 250');

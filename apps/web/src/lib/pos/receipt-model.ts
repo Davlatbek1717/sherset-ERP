@@ -105,6 +105,14 @@ export interface ReceiptSaleInput {
     quantity: string;
     priceMinor: string;
     sumMinor: string;
+    /**
+     * 2026-08-16 (egasi): qatorning MUZLATILGAN sotilish narxi — «Chegirma»
+     * shundan hisoblanadi (10 000 lik tovar 9 000 ga sotilsa chekda 1 000).
+     * Yo'q/null bo'lsa qator chegirmaga hissa qo'shmaydi (eski chaqiruvchilar
+     * xulqi o'zgarmaydi). Server sotuvida bu `RetailSalePosition.basePriceMinor`
+     * (Z-hisobot ham aynan shundan sanaydi), savat-chekida — CartLine'niki.
+     */
+    basePriceMinor?: string | null;
     product: { name: string; uom?: string | null } | null;
   }>;
 }
@@ -137,6 +145,13 @@ export interface ReceiptModel {
   comment: string;
   rows: ReceiptRow[];
   subtotal: string;
+  /**
+   * Umumiy summa XOM tiyinda — React chop-sahifasi (`/print/retail-sale`)
+   * `TovarChek`ga shu qiymatni beradi. U yerda qayta hisoblansa uch-renderer
+   * paritetidan siljiydi (2026-08-16 da aynan shu drift tuzatilgan: sahifa
+   * o'zicha Σsum hisoblab, base-chegirmani ko'rmay qolardi).
+   */
+  subtotalMinor: string;
   discount: string;
   total: string;
   itemsCount: number;
@@ -149,6 +164,17 @@ export interface ReceiptModel {
    * 0 bo'lsa ham chiziladi. Savdo chekida FALSE — eski xulq o'zgarmaydi.
    */
   showZeroDebt: boolean;
+}
+
+/**
+ * minor × kasr-miqdor, half-up (floatsiz). Miqdor 3 kasrgacha ('36.5', '2.125');
+ * buzuq kiritma 0n (chek yiqilmasin — `parseAmountToMinor` falsafasi).
+ */
+export function mulQtyMinor(minor: bigint, qty: string): bigint {
+  const m = /^(\d+)(?:\.(\d{1,3}))?$/.exec(qty.trim());
+  if (!m?.[1]) return 0n;
+  const scaled = BigInt(m[1]) * 1000n + BigInt((m[2] ?? '').padEnd(3, '0') || '0');
+  return (minor * scaled + 500n) / 1000n;
 }
 
 /** Tiyin → «330 250» (butun bo'lsa kasrsiz — namunadagidek). */
@@ -198,7 +224,17 @@ export function buildReceiptModel(sale: ReceiptSaleInput): ReceiptModel {
     sum: fmtSom(p.sumMinor),
   }));
 
-  const grossMinor = sale.positions.reduce((acc, p) => acc + BigInt(p.sumMinor || '0'), 0n);
+  // 2026-08-16 (egasi): qator arzonlashtirilgan bo'lsa (base 10 000, sotildi
+  // 9 000) chekda «Chegirma: 1 000» chiqishi kerak. Qator yalpisi = MAX(base ×
+  // qty, sum): narx OSHIRILGAN qator manfiy chegirma bermaydi, base'siz qator
+  // esa o'z summasicha qoladi (eski chaqiruvchilar xulqi o'zgarmaydi).
+  // Invariant: Umumiy − Chegirma = Jami — chekda doim mos chiqadi.
+  const grossMinor = sale.positions.reduce((acc, p) => {
+    const sum = BigInt(p.sumMinor || '0');
+    const base = p.basePriceMinor != null ? BigInt(p.basePriceMinor) : null;
+    const baseSum = base != null ? mulQtyMinor(base, p.quantity) : sum;
+    return acc + (baseSum > sum ? baseSum : sum);
+  }, 0n);
   const totalMinor = BigInt(sale.sumMinor || '0');
   // Chegirma manfiy bo'lib qolmasin (yaxlitlash yoki qo'lda o'zgartirilgan
   // summa yalpidan katta bo'lishi mumkin) — bunday holda 0 ko'rsatiladi.
@@ -236,6 +272,7 @@ export function buildReceiptModel(sale: ReceiptSaleInput): ReceiptModel {
     comment: sale.description ?? '',
     rows,
     subtotal: fmtSom(grossMinor),
+    subtotalMinor: grossMinor.toString(),
     discount: fmtSom(discountMinor),
     total: fmtSom(totalMinor),
     itemsCount: rows.length,

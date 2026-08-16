@@ -8086,6 +8086,8 @@
       "shift_open_btn": "Открыть смену",
       "shift_stale_action": "Пересчитайте наличные и закройте смену.",
       "shift_stale_title": "Смена открыта слишком долго — {age}",
+      "proforma_btn": "Печать чека",
+      "proforma_failed": "Чек не напечатан — проверьте принтер",
       "shop": "Магазин",
       "state_cancelled": "Отменён",
       "state_draft": "Черновик",

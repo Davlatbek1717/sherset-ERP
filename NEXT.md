@@ -331,6 +331,31 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-08-16e (KASSA POS — SOTUVSIZ CHEK «Chek chiqarish» + chekda base-CHEGIRMA;
+> Phase-1: strukturaviy, runtime-tasdiqlanmagan, browser-smoke YO'Q, qurilma-QA QOLDI) —** egasi:
+> (1) savatdan sotuv qilmasdan chek chiqarish tugmasi; (2) «har bir chekni o'zgartirish»; (3) qator
+> narxi tushirilsa chekda «Chegirma» ko'rinsin (10 000→9 000 ⇒ 1 000). **Egasi qarori (ochiq
+> ogohlantirishdan keyin): sotuvsiz chek haqiqiy sotuv chekidan FARQSIZ** (firibgarlik xavfi
+> tushuntirildi — kassir pul olib sotuv o'tkazmasligi mumkin; egasi o'z zimmasiga oldi; to'lov
+> qatori naqd=jami bilan to'ladi). **Qilingan:** (a) `SavatPanel`da `sotuv-proforma` tugmasi —
+> «Sotish» bilan AYNI narx-siyosat qulfi; zakaz/tayyor-chek savatida chizilmaydi; (b)
+> `cartToProformaReceipt` (`lib/pos/receipt-proforma-model.ts`, sof) — savat+`discountPct` →
+> `ReceiptSaleInput`, hujjat/sotuv YARATILMAYDI; (c) `printProformaReceiptViaAgent` (print-agent) —
+> Electron→HTML / agent→ESC-POS / ikkalasi yo'q bo'lsa popup-HTML zaxira; (d) chop etilgach savat
+> QORALAMA chipiga (`parkCart`) — «chekni o'zgartirish» = chip→tahrir→qayta chiqarish; (e) 🔴 chek
+> modeli: `basePriceMinor` (muzlatilgan sotilish narxi) → «Umumiy» = Σ max(base×qty, sum), «Chegirma»
+> = Umumiy−Jami (`mulQtyMinor` half-up, floatsiz); base'siz qator eski xulq; (f) uch-renderer DRIFT
+> tuzatildi: `/print/retail-sale` endi `model.subtotalMinor`dan (o'zicha Σsum hisoblab base-chegirmani
+> ko'rmay qolardi). i18n: `proforma_btn`/`proforma_failed` uz+ru. Testlar (TDD, RED ko'rildi):
+> receipt-model +5 · receipt-proforma-model 5 (yangi) · sales-screen-proforma 3 (yangi); chek-qatlam
+> jami 287 yashil. Gate: web tc0 · lint 0 err; **TO'LIQ suite'da 13 qizil — PARALLEL sessiyaning
+> jonli narx-siyosat TDD ishi** (`price-policy-guard`/`cart-line-edit-modal` — mening diffimda YO'Q
+> fayllar; §6.6 qayd, commit yana blob-retsepti bilan path-cheklangan). **⚠️ KEYINGI QADAM: DEPLOY
+> (16b–16e birga; egasi SSH-buyruq oldi, hali yugurtirmagan) + qurilma-QA** (sotuvsiz chek chop ·
+> chip-tahrir · chekdagi chegirma raqami).
+>
+> ---
+>
 > **🕒 2026-08-16d (KASSA — smena «0 dan» + ixtiyoriy sabab + ochilish-naqd maydonlari;
 > Phase-1: strukturaviy, runtime-tasdiqlanmagan, browser-smoke YO'Q, qurilma-QA QOLDI) —** egasi:
 > «smenani yopganda oldingilari ham qo'shilib ketyapti; xohlaganda ochib-yopiladigan, har safar 0 dan».
