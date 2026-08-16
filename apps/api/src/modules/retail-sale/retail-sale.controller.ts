@@ -99,6 +99,20 @@ export class RetailSaleController {
    * mazmunan to'g'ri: qaytarish chek MIRRORINI YARATADI. Xuddi shu entity'ni
    * `restock-task.controller` ham qaytarish yo'lida ishlatadi.
    */
+  /**
+   * To'langan chekni tahrirlash (mijoz + to'lov taqsimoti). Ruxsat `approve` —
+   * `post`/`cancel` bilan bir darajada, chunki u pul va qarzga tegadi.
+   */
+  @Patch(':id/edit')
+  @RequirePermission({ entity: 'retailsale', action: 'approve' })
+  async editPosted(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ) {
+    return this.sales.edit(user.accountId, user.sub, id, body);
+  }
+
   @Post(':id/refund')
   @RequirePermission({ entity: 'salesreturn', action: 'create' })
   async refund(

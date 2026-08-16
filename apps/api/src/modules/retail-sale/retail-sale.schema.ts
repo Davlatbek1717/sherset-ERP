@@ -203,6 +203,27 @@ export const RefundRetailSaleSchema = z.object({
 });
 export type RefundRetailSaleInput = z.infer<typeof RefundRetailSaleSchema>;
 
+/**
+ * TO'LANGAN chekni tahrirlash (2026-08-16, egasi: «cheklar bo'limidan chekni
+ * tahrirlash bo'lsin»).
+ *
+ * 1-bosqich QAMROVI — mijoz va to'lov taqsimoti. Tovar tarkibi ATAYLAB yo'q:
+ * u tan narx (COGS) hisobini talab qiladi (miqdor kamaysa `consumeRefundCost`,
+ * oshsa yangi tan narx) va uni shoshib yozish marja ma'lumotini JIMGINA
+ * buzadi. Servis tovar o'zgarishini aniq xabar bilan rad etadi.
+ */
+export const EditRetailSaleSchema = z.object({
+  /** Optimistik qulf — chek o'qilgandan keyin o'zgargan bo'lsa 409. */
+  version: z.coerce.number().int().nonnegative(),
+  /** Yangi mijoz. `null` — mijozni olib tashlash (faqat qarzsiz chekda). */
+  agentId: z.string().uuid().nullable().optional(),
+  /** Naqd/karta bilan to'langan qism (tiyin, satr). */
+  paidMinor: z.coerce.string().regex(/^\d+$/, 'paidMinor butun manfiymas son bo`lishi kerak'),
+  /** Qarzga yoziladigan qism (tiyin, satr). */
+  debtMinor: z.coerce.string().regex(/^\d+$/, 'debtMinor butun manfiymas son bo`lishi kerak'),
+});
+export type EditRetailSaleInput = z.infer<typeof EditRetailSaleSchema>;
+
 // --- Z-report query ---
 
 /**

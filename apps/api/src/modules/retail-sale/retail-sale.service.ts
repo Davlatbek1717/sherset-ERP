@@ -67,9 +67,11 @@ import {
 } from './retail-refund-validation.js';
 // Yagona FSM o'tish jadvali — oldindan tekshiruv va tranzaksiya ichidagi CAS
 // qo'riqchisi bir manbadan oziqlanadi (ajralib qolsa qo'riqchi tor/keng bo'ladi).
+import { formatQty, parseQty, planReceiptEdit } from './retail-sale-edit-plan.js';
 import { allowedFrom, canTransition, transitionRejection } from './retail-sale-fsm.js';
 import {
   CreateRetailSaleSchema,
+  EditRetailSaleSchema,
   ORDER_PAYABLE_STATES,
   PostRetailSaleSchema,
   RefundRetailSaleSchema,
@@ -1391,6 +1393,195 @@ export class RetailSaleService {
     }
 
     return this.prisma.client.retailSale.findUniqueOrThrow({ where: { id, accountId } });
+  }
+
+  /**
+   * TO'LANGAN CHEKNI TAHRIRLASH — 1-bosqich: mijoz va to'lov taqsimoti.
+   *
+   * NEGA «sof farq» (`retail-sale-edit-plan.ts`): daftarlar delta bilan
+   * ishlaydi, shuning uchun to'liq unpost+repost SHART EMAS va xavfli ham.
+   * Chek raqami (`name`) O'ZGARMAYDI — u unique, va aynan shu sabab
+   * «qaytarish + yangi chek» yo'li raqamni saqlay olmaydi.
+   *
+   * 🔴 TOVAR TARKIBI BU BOSQICHDA O'ZGARMAYDI: u tan narx (COGS) hisobini
+   * talab qiladi va uni shoshib yozish marja ma'lumotini JIM buzadi. Reja
+   * moduli tovar farqini hisoblaydi; bu yerda u bo'lsa aniq xabar bilan
+   * rad etiladi (foydalanuvchi qaytarishdan foydalanadi).
+   *
+   * Pul harakati JORIY ochiq smenaga yoziladi — `refund()` bilan bir naqsh
+   * (F6, 2026-08-13): asl smena yopiq bo'lishi mumkin va uning Z-hisoboti
+   * allaqachon chiqarilgan.
+   */
+  async edit(accountId: string, userId: string, saleId: string, raw: unknown) {
+    const parsed = EditRetailSaleSchema.parse(raw);
+    const paidMinor = BigInt(parsed.paidMinor);
+    const debtMinor = BigInt(parsed.debtMinor);
+
+    const sale = await this.prisma.client.retailSale.findFirst({
+      where: { id: saleId, accountId },
+      select: {
+        id: true,
+        name: true,
+        state: true,
+        version: true,
+        agentId: true,
+        sumMinor: true,
+        payedSumMinor: true,
+        refundedFromId: true,
+        positions: { select: { productId: true, quantity: true, sumMinor: true } },
+      },
+    });
+    if (!sale) throw new NotFoundException(`RetailSale ${saleId} not found`);
+    if (sale.state !== 'posted') {
+      throw new BadRequestException(
+        `Faqat to'langan chek tahrirlanadi (hozir: ${sale.state}). To'lanmagan chek uchun oddiy tahrir bor.`,
+      );
+    }
+    if (sale.refundedFromId) {
+      throw new BadRequestException(
+        `${sale.name} — vozvrat cheki. Vozvrat chekini tahrirlab bo'lmaydi — asl chekni tahrirlang.`,
+      );
+    }
+
+    // Qaytarilgan miqdorlar — tahrir ulardan pastga tusha olmaydi.
+    const priorRefunds = await this.prisma.client.retailSale.findMany({
+      where: { accountId, refundedFromId: saleId },
+      select: { positions: { select: { productId: true, quantity: true } } },
+    });
+    const refundedQty: Record<string, string> = {};
+    for (const r of priorRefunds) {
+      for (const p of r.positions) {
+        if (!p.productId) continue;
+        const prev = parseQty(refundedQty[p.productId] ?? '0') ?? 0n;
+        refundedQty[p.productId] = formatQty(prev + (parseQty(String(p.quantity)) ?? 0n));
+      }
+    }
+
+    const positions = sale.positions
+      .filter((p): p is typeof p & { productId: string } => p.productId !== null)
+      .map((p) => ({
+        productId: p.productId,
+        quantity: String(p.quantity),
+        sumMinor: p.sumMinor,
+      }));
+
+    const plan = planReceiptEdit(
+      {
+        positions,
+        paidMinor: sale.payedSumMinor,
+        debtMinor: sale.sumMinor - sale.payedSumMinor,
+        agentId: sale.agentId,
+        refundedQty,
+      },
+      {
+        // 1-bosqich: tovar tarkibi o'zgarmaydi — mavjudi uzatiladi.
+        positions,
+        paidMinor,
+        debtMinor,
+        agentId: parsed.agentId === undefined ? sale.agentId : parsed.agentId,
+      },
+    );
+
+    if (plan.refusals.length > 0) throw new BadRequestException(plan.refusals.join('; '));
+    if (plan.stockDeltas.length > 0) {
+      // Mudofaa: 1-bosqichda tovar o'zgarmasligi kerak. Bu yerga tushish —
+      // chaqiruvchi shartnomani buzgani, jimgina qo'llamaymiz.
+      throw new BadRequestException(
+        "Tovar tarkibini tahrirlash hali qo'llab-quvvatlanmaydi — buning uchun qaytarishdan foydalaning.",
+      );
+    }
+    if (plan.noop) return { ok: true, changed: false };
+
+    const newAgentId = parsed.agentId === undefined ? sale.agentId : parsed.agentId;
+
+    // Pul JORIY ochiq smenaga (F6 naqshi).
+    const currentSession = await this.prisma.client.cashierSession.findFirst({
+      where: { accountId, cashierId: userId, state: 'open' },
+      select: { id: true, cashDeskId: true, cashDesk: { select: { currency: true } } },
+    });
+    if (plan.cashDeltaMinor !== 0n && !currentSession) {
+      throw new BadRequestException(
+        "Pul o'zgarishi uchun ochiq smena kerak — smenani oching va qayta urinib ko'ring.",
+      );
+    }
+
+    await this.prisma.client.$transaction(async (tx) => {
+      const flip = await tx.retailSale.updateMany({
+        where: { id: saleId, accountId, version: sale.version, state: 'posted' },
+        data: {
+          agentId: newAgentId,
+          payedSumMinor: paidMinor,
+          version: { increment: 1 },
+        },
+      });
+      if (flip.count === 0) {
+        throw new ConflictException(
+          `${sale.name} boshqa joyda o'zgardi — sahifani yangilab qayta urinib ko'ring.`,
+        );
+      }
+
+      if (plan.cashDeltaMinor !== 0n && currentSession) {
+        await this.money.applyDeltas(tx, accountId, [
+          {
+            sourceKind: 'cash_desk',
+            sourceId: currentSession.cashDeskId,
+            deltaMinor: plan.cashDeltaMinor,
+            currency: currentSession.cashDesk.currency,
+            documentKind: 'retailsale',
+            documentId: saleId,
+            description: `Chek tahriri: ${sale.name}`,
+          },
+        ]);
+      }
+
+      // 🔴 MIJOZ ALMASHGANDA sof farq YETARLI EMAS — eskisidan to'liq yechib,
+      // yangisiga to'liq yozamiz, aks holda qarz noto'g'ri odamda qolardi.
+      const currency = currentSession?.cashDesk.currency ?? 'UZS';
+      const oldDebt = sale.sumMinor - sale.payedSumMinor;
+      if (plan.agentChanged) {
+        if (sale.agentId && oldDebt !== 0n) {
+          await this.counterpartyBalance.applyDelta(
+            tx,
+            accountId,
+            sale.agentId,
+            currency,
+            -oldDebt,
+            {
+              docType: 'retailsale',
+              docId: saleId,
+              organizationId: null,
+              source: 'retailsale',
+            },
+          );
+        }
+        if (newAgentId && debtMinor !== 0n) {
+          await this.counterpartyBalance.applyDelta(
+            tx,
+            accountId,
+            newAgentId,
+            currency,
+            debtMinor,
+            {
+              docType: 'retailsale',
+              docId: saleId,
+              organizationId: null,
+              source: 'retailsale',
+            },
+          );
+        }
+      } else if (plan.balanceDeltaMinor !== 0n && newAgentId) {
+        await this.counterpartyBalance.applyDelta(
+          tx,
+          accountId,
+          newAgentId,
+          currency,
+          plan.balanceDeltaMinor,
+          { docType: 'retailsale', docId: saleId, organizationId: null, source: 'retailsale' },
+        );
+      }
+    });
+
+    return { ok: true, changed: true };
   }
 
   async refund(accountId: string, userId: string, originalSaleId: string, raw: unknown) {
