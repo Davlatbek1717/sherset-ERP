@@ -27,6 +27,12 @@ import { computePositionTotal } from '@moysklad/money';
 export interface BalanceDocItem {
   name: string;
   quantity: string;
+  /**
+   * O'lchov birligi («шт», «м»…). 2026-08-16 da qo'shildi: mijozga Telegramda
+   * yuboriladigan «hisob-kitob cheki» tovar qatorini «3 dona» ko'rinishida
+   * chizadi. IXTIYORIY — eski iste'molchilar (Excel) o'zgarmaydi.
+   */
+  uom?: string | null;
   priceMinor: bigint;
   discountPercent?: string;
   sumMinor: bigint;
@@ -78,7 +84,7 @@ interface GoodsPositionRow {
   discount: unknown;
   vat: number | null;
   vatEnabled: boolean;
-  product: { name: string } | null;
+  product: { name: string; uom?: string | null } | null;
 }
 interface GoodsDocRow extends FlatDocRow {
   vatEnabled: boolean;
@@ -180,7 +186,7 @@ const GOODS_SELECT = {
       discount: true,
       vat: true,
       vatEnabled: true,
-      product: { select: { name: true } },
+      product: { select: { name: true, uom: true } },
     },
   },
 } as const;
@@ -196,6 +202,7 @@ function itemsOf(d: GoodsDocRow): BalanceDocItem[] {
   return d.positions.map((p) => ({
     name: p.product?.name ?? '(tovar)',
     quantity: String(p.quantity ?? ''),
+    uom: p.product?.uom ?? null,
     priceMinor: p.priceMinor,
     discountPercent: String(p.discount ?? '0'),
     sumMinor: computePositionTotal(

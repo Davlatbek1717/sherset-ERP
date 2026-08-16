@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   type CounterpartyMessageContext,
+  ITEM_HARD_CAP,
   buildCounterpartyMessage,
 } from './counterparty-message.util.js';
 
@@ -180,7 +181,10 @@ describe('chek mazmuni — do`kon nomi, tovarlar, to`lov taqsimoti, havola', () 
     expect(t.split('\n')[1]).toBe('Hurmatli Akme,');
   });
 
-  it('tovarlardan 3 tasi chiqadi, qolgani «va yana N tur»', () => {
+  it('🔴 chekdagi HAMMA tur chiqadi (egasi, 2026-08-16)', () => {
+    // Ilgari 3 tadan keyin «va yana N tur» deb kesilardi. Egasi jonli xabarni
+    // ko'rib rad etdi: mijoz nima olganini to'liq ko'rishi kerak — bu chek,
+    // bildirishnoma emas. Kesish faqat Telegram chegarasi uchun qoladi.
     const t = buildCounterpartyMessage({
       ...sale,
       items: [
@@ -192,39 +196,63 @@ describe('chek mazmuni — do`kon nomi, tovarlar, to`lov taqsimoti, havola', () 
       ],
     }) as string;
     expect(t).toContain('• Kabel VVG 3x2.5 — 100 m');
-    expect(t).toContain('• Avtomat IEK 25A — 4 dona');
-    expect(t).toContain('• Rozetka Schneider — 10 dona');
-    expect(t).not.toContain('Vilka');
-    expect(t).toContain('• va yana 2 tur');
-  });
-
-  it('uchtadan kam tovar bo`lsa «va yana» qatori chiqmaydi', () => {
-    const t = buildCounterpartyMessage({
-      ...sale,
-      items: [{ name: 'Kabel', quantity: '1', uom: 'm' }],
-    }) as string;
-    expect(t).toContain('• Kabel — 1 m');
+    expect(t).toContain('• Vilka — 2 dona');
+    expect(t).toContain('• Lenta — 5');
     expect(t).not.toContain('va yana');
   });
 
-  it("to'lov taqsimoti: naqd va qarzga yozilgan qism alohida qator", () => {
+  it('juda uzun ro`yxat CHEGARADA kesiladi (xabar yiqilmasin)', () => {
+    const t = buildCounterpartyMessage({
+      ...sale,
+      items: Array.from({ length: ITEM_HARD_CAP + 7 }, (_, i) => ({
+        name: `Tovar ${i}`,
+        quantity: '1',
+        uom: 'dona',
+      })),
+    }) as string;
+    expect(t).toContain('• va yana 7 tur');
+    expect(t.length).toBeLessThan(4096);
+  });
+
+  it("🔴 o'lchov birligi o'zbekchaga o'giriladi (шт → dona)", () => {
+    // Tovarlar MoySklad'dan kelgan va birliklari rus tilida — o'zbek matn
+    // ichida «шт» professional ko'rinmaydi (egasi ko'rsatgan nuqson).
+    const t = buildCounterpartyMessage({
+      ...sale,
+      items: [
+        { name: 'Vera vkl 1x', quantity: '3', uom: 'шт' },
+        { name: 'veral roz 1x', quantity: '1', uom: 'м' },
+      ],
+    }) as string;
+    expect(t).toContain('• Vera vkl 1x — 3 dona');
+    expect(t).toContain('• veral roz 1x — 1 m');
+    expect(t).not.toContain('шт');
+  });
+
+  it("🔴 «Qarzga yozildi» qatori UMUMAN yo'q — u deltani takrorlardi", () => {
+    // O'lchangan nuqson: notifier `debtMinor = deltaMinor` uzatardi, ya'ni
+    // «Qarzga qo'shildi: +465 000» va «Qarzga yozildi: 465 000» HAR DOIM
+    // bir xil raqam edi. Bitta raqam bir marta aytiladi.
+    const t = buildCounterpartyMessage({ ...sale, debtMinor: 100_000_00n }) as string;
+    expect(t).toContain("🛒 Qarzga qo'shildi: +100 000 so'm");
+    expect(t).not.toContain('Qarzga yozildi');
+  });
+
+  it("qisman to'langan chek: uch raqam YIG'ILADI (jami = to'landi + qarz)", () => {
     const t = buildCounterpartyMessage({
       ...sale,
       paidMinor: 70_000_00n,
       debtMinor: 100_000_00n,
     }) as string;
-    expect(t).toContain("💵 To'landi: 70 000 so'm");
-    expect(t).toContain("📝 Qarzga yozildi: 100 000 so'm");
+    expect(t).toContain("🛒 Qarzga qo'shildi: +100 000 so'm");
+    expect(t).toContain("   Jami summa: 170 000 so'm");
+    expect(t).toContain("   💵 To'landi: 70 000 so'm");
   });
 
-  it("to'liq to'langan chekda «Qarzga yozildi» qatori chiqmaydi", () => {
-    const t = buildCounterpartyMessage({
-      ...sale,
-      paidMinor: 170_000_00n,
-      debtMinor: 0n,
-    }) as string;
-    expect(t).toContain("💵 To'landi: 170 000 so'm");
-    expect(t).not.toContain('Qarzga yozildi');
+  it("to'lov bo'lmasa «Jami summa» qatori CHIQMAYDI (deltani takrorlardi)", () => {
+    const t = buildCounterpartyMessage({ ...sale, paidMinor: 0n }) as string;
+    expect(t).not.toContain('Jami summa');
+    expect(t).not.toContain("💵 To'landi");
   });
 
   it('chek havolasi oxirgi qator bo`lib chiqadi', () => {

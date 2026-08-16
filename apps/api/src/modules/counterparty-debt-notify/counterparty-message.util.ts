@@ -1,5 +1,8 @@
 import type { CounterpartyBalanceChangeSource } from '../hr/hr-shared/hr-events.types.js';
 import { formatMinor } from '../hr/hr-telegram-bridge/template-render.util.js';
+// O'lchov birligi tarjimasi — «hisob-kitob cheki» bilan YAGONA manba: mijoz
+// avtomatik xabarda «3 dona», hisobotda «3 шт» ko'rmasin.
+import { uomLabel } from './debt-receipt-message.util.js';
 
 /**
  * Pure, Telegram-free message builder for the COUNTERPARTY-facing debt/payment
@@ -59,14 +62,21 @@ export interface CounterpartyMessageContext {
   items?: Array<{ name: string; quantity: string; uom?: string | null }>;
   /** Chekdan naqd/karta bilan to'langan qism (tiyin). */
   paidMinor?: bigint | null;
-  /** Chekdan qarzga yozilgan qism (tiyin). */
-  debtMinor?: bigint | null;
   /** Ochiq chek havolasi (`/p/<token>`). */
   receiptUrl?: string | null;
 }
 
-/** Chekda ko'rsatiladigan tovar qatorlari soni; qolgani jamlanadi. */
-const ITEM_PREVIEW_LIMIT = 3;
+/**
+ * Tovar qatorlarining QATTIQ chegarasi — 4096 belgilik Telegram limitidan
+ * oshib xabar yiqilmasligi uchun.
+ *
+ * 🔴 Bu «ko'rinish chegarasi» EMAS (2026-08-16, egasi). Ilgari bu yerda
+ * `ITEM_PREVIEW_LIMIT = 3` turardi va chek DOIM uchtadan keyin «va yana N tur»
+ * bo'lib kesilardi — egasi jonli xabarda ko'rib rad etdi: mijoz nima
+ * olganini TO'LIQ ko'rishi kerak, bu chek, bildirishnoma emas. Endi kesish
+ * faqat texnik chegara sifatida qoladi va real chekda deyarli ishlamaydi.
+ */
+export const ITEM_HARD_CAP = 40;
 
 /** Per-source report title + the "this operation" amount line (counterparty framing). */
 function cpHead(
@@ -149,21 +159,31 @@ export function buildCounterpartyMessage(ctx: CounterpartyMessageContext): strin
   lines.push(head.amountLine);
 
   // Tovar ro'yxati — mijoz nima olganini havolani ochmasdan ko'rsin.
+  // O'lchov birligi o'zbekchaga o'giriladi: katalog MoySklad'dan kelgan va
+  // «шт»/«м» bilan to'la, xabar esa o'zbekcha (egasi ko'rsatgan nuqson).
   const items = ctx.items ?? [];
-  for (const it of items.slice(0, ITEM_PREVIEW_LIMIT)) {
-    const uom = (it.uom || '').trim();
+  for (const it of items.slice(0, ITEM_HARD_CAP)) {
+    const uom = uomLabel(it.uom);
     lines.push(`   • ${it.name} — ${it.quantity}${uom ? ` ${uom}` : ''}`);
   }
-  if (items.length > ITEM_PREVIEW_LIMIT) {
-    lines.push(`   • va yana ${items.length - ITEM_PREVIEW_LIMIT} tur`);
+  if (items.length > ITEM_HARD_CAP) {
+    lines.push(`   • va yana ${items.length - ITEM_HARD_CAP} tur`);
   }
 
-  // To'lov taqsimoti — qarzga savdoda eng muhim ikki raqam.
-  if (ctx.paidMinor != null && ctx.paidMinor > 0n) {
-    lines.push(`💵 To'landi: ${fmtAmount(ctx.paidMinor, ctx.currency)}`);
-  }
-  if (ctx.debtMinor != null && ctx.debtMinor > 0n) {
-    lines.push(`📝 Qarzga yozildi: ${fmtAmount(ctx.debtMinor, ctx.currency)}`);
+  // ── To'lov taqsimoti ──────────────────────────────────────────────────────
+  // 🔴 «Qarzga yozildi» qatori OLIB TASHLANDI (2026-08-16, egasi jonli xabarda
+  // ko'rsatdi): chaqiruvchi unga `deltaMinor` ning O'ZINI uzatardi, ya'ni
+  // «Qarzga qo'shildi: +465 000» va «Qarzga yozildi: 465 000» har doim BIR XIL
+  // raqam edi — ikki qator, bitta ma'lumot.
+  //
+  // Qisman to'langan chekda esa uch raqam BIR-BIRIGA YIG'ILADI va shunda
+  // qo'shimcha qatorlar haqiqiy ma'lumot beradi:
+  //     Jami summa (170) = To'landi (70) + Qarzga qo'shildi (100).
+  const paid = ctx.paidMinor ?? 0n;
+  if (paid > 0n) {
+    const gross = paid + (ctx.deltaMinor > 0n ? ctx.deltaMinor : 0n);
+    lines.push(`   Jami summa: ${fmtAmount(gross, ctx.currency)}`);
+    lines.push(`   💵 To'landi: ${fmtAmount(paid, ctx.currency)}`);
   }
 
   lines.push('━━━━━━━━━━━━');

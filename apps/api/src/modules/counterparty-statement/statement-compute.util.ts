@@ -27,6 +27,8 @@ export interface StatementItem {
   name: string;
   /** Formatted quantity (e.g. "10" / "2.5"). */
   quantity: string;
+  /** O'lchov birligi — mijozga ketadigan chek qatori uchun (ixtiyoriy). */
+  uom?: string | null;
   /** Unit price in tiyin. */
   priceMinor: bigint;
   /**
@@ -48,6 +50,12 @@ export interface RawDoc {
    */
   docType: string;
   docNumber: string;
+  /**
+   * Manba hujjat IDsi — mijozga ketadigan chekda OCHIQ HAVOLA yasash uchun
+   * (2026-08-16). Ixtiyoriy: buyum-kesimida ham, eski chaqiruvchilarda ham
+   * bo'lmasligi mumkin va u yerda havola talab qilinmaydi.
+   */
+  docId?: string | null;
   /** BELGILI delta — `applyDelta` balansga qo'llagan qiymatning aynan o'zi. */
   deltaMinor: bigint;
   /** Goods lines (empty for cash/payment docs). */

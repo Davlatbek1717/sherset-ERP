@@ -460,7 +460,12 @@ describe('CounterpartyDebtNotifier', () => {
       expect(t).toContain('• Kabel VVG 3x2.5 — 100 m');
       expect(t).toContain('• Sim — 2.5 kg');
       expect(t).toContain("💵 To'landi: 70 000 so'm");
-      expect(t).toContain("📝 Qarzga yozildi: 100 000 so'm");
+      // 2026-08-16: «Qarzga yozildi» qatori olib tashlandi — u `deltaMinor`
+      // ning o'zi edi, ya'ni «Qarzga qo'shildi» ni takrorlardi. O'rniga uch
+      // raqam yig'iladi: Jami summa = To'landi + Qarzga qo'shildi.
+      expect(t).not.toContain('Qarzga yozildi');
+      expect(t).toContain("🛒 Qarzga qo'shildi: +100 000 so'm");
+      expect(t).toContain("Jami summa: 170 000 so'm");
     });
 
     it('🔴 chek tashkilotga bog`lanmagan bo`lsa akkaunt tashkilotiga tushadi', async () => {

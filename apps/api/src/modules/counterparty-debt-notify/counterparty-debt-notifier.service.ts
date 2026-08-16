@@ -1,10 +1,10 @@
-import { randomBytes } from 'node:crypto';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { OnEvent } from '@nestjs/event-emitter';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { type CounterpartyBalanceChangedEvent, HR_EVENT } from '../hr/hr-shared/hr-events.types.js';
 import { buildCounterpartyMessage } from './counterparty-message.util.js';
 import { buildDebtMessage } from './debt-notify.util.js';
+import { ensureReceiptLink } from './receipt-link.util.js';
 
 const BOT_API_TIMEOUT_MS = 10_000;
 
@@ -224,59 +224,9 @@ export class CounterpartyDebtNotifier {
    * 🔴 Havola KALITGA TENG: kim topsa chekni ko'radi. Shuning uchun muddat
    * majburiy (`RECEIPT_LINK_TTL_DAYS`, sukut 90 kun).
    */
-  private async fetchOrCreateReceiptLink(
-    accountId: string,
-    docId: string | undefined,
-  ): Promise<string | null> {
-    if (!docId) return null;
-    const base = (process.env.PUBLIC_APP_URL ?? '').trim().replace(/\/+$/, '');
-    if (!base) return null; // sozlanmagan ⇒ havola qatori umuman chiqmaydi
-    try {
-      const existing = await this.prisma.client.publication.findFirst({
-        where: {
-          accountId,
-          targetType: 'retailsale',
-          targetId: docId,
-          deletedAt: null,
-          revokedAt: null,
-        },
-        select: { token: true },
-      });
-      if (existing) return `${base}/p/${existing.token}`;
-
-      // `Publication.ownerId` MAJBURIY, `RetailSale.ownerId` esa nullable —
-      // egasiz chekda havola yaratilmaydi (xabar baribir ketadi, havolasiz).
-      const sale = await this.prisma.client.retailSale.findFirst({
-        where: { id: docId, accountId },
-        select: { ownerId: true },
-      });
-      if (!sale?.ownerId) {
-        this.logger.log(`chek ${docId} egasiz — ochiq havola yaratilmadi`);
-        return null;
-      }
-
-      const days = Number.parseInt(process.env.RECEIPT_LINK_TTL_DAYS ?? '90', 10);
-      const expiresAt =
-        Number.isFinite(days) && days > 0 ? new Date(Date.now() + days * 86_400_000) : null;
-      const created = await this.prisma.client.publication.create({
-        data: {
-          accountId,
-          ownerId: sale.ownerId,
-          targetType: 'retailsale',
-          targetId: docId,
-          token: randomBytes(32).toString('base64url'),
-          description: 'Kassa cheki (avtomatik)',
-          expiresAt,
-        },
-        select: { token: true },
-      });
-      return `${base}/p/${created.token}`;
-    } catch (e) {
-      // Havola bo'lmasa xabar BARIBIR ketadi — shunchaki «🧾 Chek» qatorisiz.
-      this.logger.warn(`debt notify: chek havolasi yaratilmadi: ${(e as Error).message}`);
-      return null;
-    }
-  }
+  // `fetchOrCreateReceiptLink` OLIB TASHLANDI (2026-08-16): aynan shu mantiq
+  // «hisob-kitob cheki»ga ham kerak bo'ldi va nusxa ikkiga ajralib ketardi.
+  // Endi yagona manba — `./receipt-link.util.ts` (`ensureReceiptLink`).
 
   private async fetchDocMeta(
     docType: string | undefined,
@@ -412,11 +362,8 @@ export class CounterpartyDebtNotifier {
         paidMinor: receipt?.paidMinor,
         receiptUrl:
           payload.source === 'retailsale'
-            ? await this.fetchOrCreateReceiptLink(payload.accountId, payload.docId)
+            ? await ensureReceiptLink(this.prisma.client, payload.accountId, payload.docId)
             : null,
-        // Qarzga yozilgan qism = shu hodisaning deltasi (musbat bo'lsa).
-        // Qaytarishda (manfiy) bu qator umuman chiqmaydi.
-        debtMinor: payload.deltaMinor > 0n ? payload.deltaMinor : null,
       });
       if (!text) return; // e.g. non-payment change landing on a zero balance
 

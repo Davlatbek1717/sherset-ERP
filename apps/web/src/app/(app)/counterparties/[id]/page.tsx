@@ -17,6 +17,7 @@
 import { BankAccountsSection } from '@/components/bank-accounts-section';
 import { ContactPersonsSection } from '@/components/contact-persons-section';
 import { AktSverkaCard } from '@/components/counterparties/akt-sverka-card';
+import { DebtReceiptCard } from '@/components/counterparties/debt-receipt-card';
 import { SendMessageModal } from '@/components/counterparties/send-message-modal';
 import { TelegramChatCard } from '@/components/counterparties/telegram-chat-card';
 import { CounterpartyActivityWidget } from '@/components/counterparty-activity-widget';
@@ -947,6 +948,8 @@ export default function CounterpartyDetailPage() {
               <CounterpartyActivityWidget counterpartyId={data.id} counterpartyName={data.name} />
               {/* Sherset custom — Telegram Business chat with this counterparty. */}
               <TelegramChatCard counterpartyId={data.id} />
+              {/* Sherset custom — mijozga Telegramda «hisob-kitob cheki». */}
+              <DebtReceiptCard counterpartyId={data.id} />
               {/* Sherset custom — акт-сверка Excel generate + delivery + history. */}
               <AktSverkaCard counterpartyId={data.id} />
             </div>

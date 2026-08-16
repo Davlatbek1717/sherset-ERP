@@ -116,7 +116,7 @@ interface GoodsRow {
     discount: unknown;
     vat: number | null;
     vatEnabled: boolean;
-    product: { name: string } | null;
+    product: { name: string; uom?: string | null } | null;
   }>;
 }
 
@@ -178,7 +178,7 @@ export class CounterpartyStatementService {
             discount: true,
             vat: true,
             vatEnabled: true,
-            product: { select: { name: true } },
+            product: { select: { name: true, uom: true } },
           },
         },
       } as const;
@@ -251,6 +251,7 @@ export class CounterpartyStatementService {
         moment: e.docMoment ?? e.createdAt,
         docType: e.docType,
         docNumber: heads.get(key)?.number ?? '—',
+        docId: e.docId ?? null,
         deltaMinor: e.deltaMinor,
         items: detailed.get(key)?.items ?? [],
       };
@@ -291,6 +292,7 @@ export class CounterpartyStatementService {
     return d.positions.map((p) => ({
       name: p.product?.name ?? '(tovar)',
       quantity: String(p.quantity ?? ''),
+      uom: p.product?.uom ?? null,
       priceMinor: p.priceMinor,
       discountPercent: String(p.discount ?? '0'),
       sumMinor: this.positionSum(d, p),
@@ -596,7 +598,7 @@ export class CounterpartyStatementService {
             discount: true,
             vat: true,
             vatEnabled: true,
-            product: { select: { name: true } },
+            product: { select: { name: true, uom: true } },
           },
         },
       },
