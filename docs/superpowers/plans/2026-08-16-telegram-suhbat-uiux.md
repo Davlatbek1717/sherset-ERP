@@ -43,15 +43,28 @@ Bugungi asosiy nosozlik: mijozning javobi ipda ko'rinadi, bizning avtomatik xaba
 - [ ] **Step 3: Sxema** — `TelegramChatMessage` ga `outboxId String? @map("outbox_id") @db.Uuid`
   + `@@index([accountId, outboxId])`. Migratsiya SQL: `ALTER TABLE telegram_chat_messages
   ADD COLUMN outbox_id uuid;` + indeks.
-- [ ] **Step 4: Chat topish/yaratish** — outbox qatori yozilgandan keyin telefon bo'yicha
-  `TelegramChat` topiladi; yo'q bo'lsa `boundBy: 'auto'`, `source` MTProto bilan yaratiladi
-  va `counterpartyId` bog'lanadi. 🔴 Telefon normalizatsiyasi inbound bilan AYNI funksiya
-  orqali (`normalizeTelegramPhone`) — aks holda ikki xil yozuv ikki ip yasaydi.
+- [ ] **Step 4: Chat topish** — 🔴 **O'LCHANGAN CHEKLOV (2026-08-16):** `TelegramChat.chatId`
+  MAJBURIY `BigInt` va u Telegram `userId` siga teng. `userId` telefon → entity keshidan
+  (`HrTelegramSession.entity_cache`) olinadi, lekin **hali hal qilinmagan raqam faqat
+  YUBORISH paytida** `resolvePhone` bilan aniqlanadi (jonli MTProto ulanishi kerak va raqam
+  Telegram'da bo'lmasa xato beradi). Shuning uchun **hech qachon yozmagan mijozda navbatga
+  qo'yish paytida chat OCHIB BO'LMAYDI.**
+
+  Qabul qilingan yechim — ikki bosqichli:
+  - **(a) Chat MAVJUD bo'lsa** (`counterpartyId` bo'yicha, bo'lmasa telefon bo'yicha) —
+    xabar qatori **enqueue paytida** yoziladi ⇒ `⏳ navbatda` ko'rinadi. Prodda 338 chat,
+    shundan 146 tasi kontragentga bog'langan.
+  - **(b) Chat YO'Q bo'lsa** — qator yozilmaydi; chat va xabar **birinchi muvaffaqiyatli
+    yuborishdan keyin** ochiladi (o'sha payt `userId` ma'lum). Bu holatda `⏳ navbatda`
+    ko'rinmaydi — bu **ongli almashuv**, chunki muqobili soxta `chatId` yozish bo'lardi
+    va u `@@unique([accountId, chatId])` ni buzardi.
+
+  🔴 Telefon normalizatsiyasi inbound bilan AYNI funksiya orqali — aks holda ikki xil yozuv
+  bitta mijozga ikkita ip yasaydi.
 - [ ] **Step 5: Xabar qatori** — `direction: 'out'`, `text` = outbox matni,
   `autoKind` = manba turidan (`retailsale`→`debt_issued`, `debtpayment`→`payment`,
   `debt`→`debt_issued`), `outboxId` = outbox qatori id'si, `senderName` = do'kon nomi.
-  **Enqueue paytida** yoziladi (yuborilgandan keyin emas) — aks holda `⏳ navbatda` va
-  `⚠️ yetmadi` holatlari ipda hech qachon ko'rinmaydi.
+  Step 4 (a) yo'lida enqueue paytida; (b) yo'lida yuborishdan keyin.
 - [ ] **Step 6: Testlar** — yashil; mavjud testlar buzilmagan.
 - [ ] **Step 7: Gate + commit.**
 
