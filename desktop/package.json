@@ -1,6 +1,6 @@
 {
   "name": "@moysklad/desktop",
-  "version": "1.8.0",
+  "version": "1.9.0",
   "private": true,
   "description": "Sherset Kassa — Electron kiosk shell (thin wrapper around the web POS)",
   "main": "main.js",

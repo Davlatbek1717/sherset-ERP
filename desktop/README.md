@@ -1,15 +1,14 @@
 # Sherset Kassa — Electron o'rami (`desktop/`)
 
-> Holat: repo'da **`1.8.0` — YIG'ILMAGAN, KANALDA EMAS** (F6, POS redizayn,
-> 2026-08-14): `electronAPI.minimize/toggleWindowed/requestQuit` + web-header
+> Holat: **`1.8.0` KANALDA** (F9, 2026-08-15, operator ruxsati bilan): exe+blockmap
+> md5-solishtirildi, `latest.yml` HTTPS'da `version: 1.8.0`, exe HEAD 200 /
+> 81 963 045 bayt; zaxira `latest.yml.bak-1.7.0`. 1.8.0 yangiligi (F6):
+> `electronAPI.minimize/toggleWindowed/requestQuit` + web-header
 > `data-sherset-window-controls="page"` markerini qo'yganda suzuvchi uchlik
-> bostiriladi (MutationObserver). Reliz — F9 da, operator ruxsati bilan.
-> Kanalda hozircha **`1.7.0`** (2026-08-13 yig'ilgan, `latest.yml`+exe HTTPS
-> orqali o'lchandi: sha512 mos, HEAD 200, 81 962 235 bayt; suppression'siz —
-> shu sababli F6 raqami 1.8.0 ga ko'tarildi). 1.7.0 yangiligi: o'ng-yuqorida
-> oyna boshqaruv uchligi — «—» (minimize), «❐» (kiosk ↔ oynali rejim), «✕»
-> (tasdiqli chiqish); close-qo'riqchi endi konfig bo'yicha (oynali rejimda ham
-> Alt+F4 yopmaydi). Qurilmada —/❐ xulqi va 1.6.0→1.7.0 o'tish jonli KUZATILMAGAN.
+> bostiriladi (MutationObserver) — yangi web bilan uchlik POS headeriga singadi.
+> ⚠️ Kanal tarixida `1.7.0` — «yetim» reliz: suppression'SIZ, F6 shu sababli
+> raqamni 1.8.0 ga ko'targan (bitta raqam ostida ikki binar bo'lmasin).
+> Qurilmada 1.7.0→1.8.0 avto-o'tish va —/❐ xulqi jonli KUZATILMAGAN (F9 qurilma-QA).
 > `.exe` **yig'iladi va kanalga chiqadi** (o'lchangan, pastga qarang), lekin
 > qobiqning O'ZI bu repo'da hech qachon ishga tushirilmagan: chop etish, mijoz-ekran
 > va ekran klaviaturasi **hech bir printerda, hech bir 2-monitorda va hech bir
@@ -310,11 +309,11 @@ pnpm install            # bir marta (electron + electron-builder ≈ 200 MB)
 pnpm run dist           # = node check-build-assets.js && electron-builder --win nsis
 ```
 
-Natija (hozirgi `version: 1.8.0` uchun):
+Natija (hozirgi `version: 1.9.0` uchun):
 
 ```
-desktop/dist/Sherset-Kassa-Setup-1.8.0.exe
-desktop/dist/Sherset-Kassa-Setup-1.8.0.exe.blockmap
+desktop/dist/Sherset-Kassa-Setup-1.9.0.exe
+desktop/dist/Sherset-Kassa-Setup-1.9.0.exe.blockmap
 desktop/dist/latest.yml
 ```
 
@@ -490,7 +489,8 @@ qolganlarini to'xtatadi).
 | `1.4.0` | 2026-08-12 | chek: bo'sh printer nomi = **Windows sukut printeri** (`deviceName` berilmaydi); kanalga chiqqan oxirgi per-machine reliz |
 | `1.5.0` | 2026-08-13 | **per-user o'rnatma** (UAC yo'q) + **boot'da o'rnatish** (`installOnBoot`, kirish ekranida; o'rnatgach o'zi qaytadi). Kanalga chiqqan (`latest.yml` 2026-08-13 da o'lchandi); 1.4.0 → 1.5.0 o'tish QO'LDA (yuqoridagi bo'lim) |
 | `1.6.0` | 2026-08-13 | **chiqish tugmasi ✕** o'ng-yuqori burchakda (imoga qo'shimcha, tasdiq dialogli `shell:request-quit`); web tomonda qobiq doim kiosk-ko'rinish. Kanalga chiqqan (sha512+HEAD 200 o'lchandi); qurilmada 1.5.0→1.6.0 avto-o'tish jonli KUZATILMAGAN |
-| `1.7.0` | 2026-08-13 | **oyna boshqaruv uchligi — ❐ ✕** (P01): «—» minimize, «❐» kiosk ↔ oynali (ramkasiz 1280×800) rejim, «✕» avvalgidek tasdiqli; close-qo'riqchi `isKiosk()` dan KONFIGga ko'chdi (oynali rejimda Alt+F4 jim yopmasin). Kanalga chiqqan (sha512+HEAD 200 o'lchandi, zaxira `latest.yml.bak-1.6.0`); qurilmada o'lchanmagan |
+| `1.7.0` | 2026-08-13 | **oyna boshqaruv uchligi — ❐ ✕** (P01): «—» minimize, «❐» kiosk ↔ oynali (ramkasiz 1280×800) rejim, «✕» avvalgidek tasdiqli; close-qo'riqchi `isKiosk()` dan KONFIGga ko'chdi (oynali rejimda Alt+F4 jim yopmasin). Kanalga chiqqan (sha512+HEAD 200 o'lchandi, zaxira `latest.yml.bak-1.6.0`); qurilmada o'lchanmagan. ⚠️ «Yetim» reliz: suppression'siz — o'rnini 1.8.0 bosdi |
+| `1.8.0` | 2026-08-15 | **preload suppression + yangi bridge-metodlar** (F6/F9, POS redizayn): `minimize/toggleWindowed/requestQuit` electronAPI'da; web `data-sherset-window-controls="page"` markerini qo'ysa suzuvchi uchlik chizilmaydi (yangi web'da uchlik POS headeriga singadi, eski web'da suzuvchi qoladi — moslik matritsasi F6 hisobotida). Kanalga chiqqan (md5 mos, `latest.yml` HTTPS 1.8.0, HEAD 200, 81 963 045 bayt; zaxira `latest.yml.bak-1.7.0`); qurilmada F9-QA kutmoqda |
 
 **Kanal tomoni — o'lchangan (2026-08-11, `1.3.0`):**
 `https://erp.sherset.uz/downloads/desktop/latest.yml` → **200**, ichida
