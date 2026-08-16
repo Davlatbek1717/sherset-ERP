@@ -179,8 +179,22 @@ export class CounterpartyDebtNotifier {
         },
       });
       if (!sale) return null;
+      // 🔴 O'LCHANGAN (2026-08-16): prodda 33 ta to'langan chekning BIRORTASIDA
+      // ham `organizationId` yo'q ⇒ do'kon nomi xabarda hech qachon
+      // chiqmasdi. Chek tashkilotga bog'lanmagan bo'lsa akkauntning
+      // tashkilotiga tushamiz (bu bazada u bitta).
+      const orgName =
+        sale.organization?.name ??
+        (
+          await this.prisma.client.organization.findFirst({
+            where: { accountId },
+            orderBy: { createdAt: 'asc' },
+            select: { name: true },
+          })
+        )?.name ??
+        null;
       return {
-        orgName: sale.organization?.name ?? null,
+        orgName,
         items: (sale.positions ?? [])
           .filter((p): p is typeof p & { product: { name: string; uom: string | null } } =>
             Boolean(p.product),

@@ -50,6 +50,8 @@ function makePrismaFull(
     chatRow?: { id: string } | null;
     /** `telegramChatMessage.create` xatosini modellash uchun. */
     chatMessageCreateImpl?: () => Promise<unknown>;
+    /** Akkaunt tashkiloti — chekda org yo'q bo'lsa shunga tushiladi. */
+    organization?: { name: string } | null;
     /** Chek tafsiloti — `fetchReceiptDetails` (faqat retailsale) o'qiydi. */
     receipt?: {
       payedSumMinor?: bigint;
@@ -93,6 +95,7 @@ function makePrismaFull(
         retailSale: { findFirst: saleFind },
         debt: { findFirst: docFind },
         debtPayment: { findFirst: docFind },
+        organization: { findFirst: vi.fn(async () => opts.organization ?? null) },
       },
     },
     outboxCreate,
@@ -458,6 +461,27 @@ describe('CounterpartyDebtNotifier', () => {
       expect(t).toContain('• Sim — 2.5 kg');
       expect(t).toContain("💵 To'landi: 70 000 so'm");
       expect(t).toContain("📝 Qarzga yozildi: 100 000 so'm");
+    });
+
+    it('🔴 chek tashkilotga bog`lanmagan bo`lsa akkaunt tashkilotiga tushadi', async () => {
+      // Prodda o'lchangan: 33 ta chekning birortasida ham organizationId yo'q,
+      // shuning uchun do'kon nomi xabarda hech qachon chiqmasdi.
+      const { prisma, outboxCreate } = makePrismaFull({
+        phone: '+998901234567',
+        doc: { name: 'CHK-1', moment: new Date('2026-08-16T06:02:00Z') },
+        receipt: { payedSumMinor: 0n, organization: null, positions: [] },
+        organization: { name: 'Sherset elektro tovarlar' },
+      });
+      // biome-ignore lint/suspicious/noExplicitAny: test wiring
+      await new CounterpartyDebtNotifier(prisma as any).onBalanceChanged({
+        ...baseEvent,
+        source: 'retailsale',
+        docType: 'retailsale',
+        docId: 'rs-1',
+      });
+      expect(lastOutboxData(outboxCreate).messageText.split('\n')[0]).toBe(
+        'Sherset elektro tovarlar',
+      );
     });
 
     it('boshqa manbada chek tafsiloti O`QILMAYDI (ortiqcha so`rov yo`q)', async () => {
