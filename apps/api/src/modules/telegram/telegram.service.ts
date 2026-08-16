@@ -1078,6 +1078,36 @@ export class TelegramService implements MtprotoInboundHandler {
       orderBy: { createdAt: 'desc' },
       take: limit,
     });
+
+    // YETKAZISH HOLATI (2026-08-16) — ip qatorining o'zida YO'Q, u
+    // `HrTelegramOutbox` da yashaydi va `outboxId` orqali bog'lanadi.
+    // BITTA so'rov (N+1 emas); bog'lanadigan qator bo'lmasa so'rov umuman
+    // qilinmaydi.
+    const outboxIds = rows
+      .map((m) => m.outboxId)
+      .filter((id): id is string => typeof id === 'string');
+    const deliveryById = new Map<
+      string,
+      { state: string; at: Date | null; reason: string | null }
+    >();
+    if (outboxIds.length > 0) {
+      const obRows = await this.prisma.client.hrTelegramOutbox.findMany({
+        where: { accountId, id: { in: outboxIds } },
+        select: { id: true, status: true, sentAt: true, failReason: true },
+      });
+      for (const o of obRows) {
+        // 🔴 `pending`/`retry` HECH QACHON «yuborildi» emas — kutish holati
+        // ochiq aytiladi. Faqat aniq `sent`/`failed` o'z holatini oladi,
+        // qolgani `queued` bo'lib qoladi.
+        const state = o.status === 'sent' ? 'sent' : o.status === 'failed' ? 'failed' : 'queued';
+        deliveryById.set(o.id, {
+          state,
+          at: state === 'sent' ? o.sentAt : null,
+          reason: state === 'failed' ? o.failReason : null,
+        });
+      }
+    }
+
     return {
       items: rows.reverse().map((m) => ({
         id: m.id,
@@ -1094,6 +1124,12 @@ export class TelegramService implements MtprotoInboundHandler {
         autoKind: m.autoKind,
         /** Forward qilingan xabar bo'lsa — asl jo'natuvchi nomi (2026-07-20, Phase 2). */
         fwdFromName: m.fwdFromName,
+        /**
+         * Chiquvchi AVTOMATIK xabarning yetkazish holati.
+         * `null` — bog'lanish yo'q (qo'lda yozilgan, kiruvchi yoki eski qator)
+         * ⇒ UI hech narsa chizmaydi va «yuborildi» deb TAXMIN QILMAYDI.
+         */
+        delivery: m.outboxId ? (deliveryById.get(m.outboxId) ?? null) : null,
         createdAt: m.createdAt,
       })),
     };

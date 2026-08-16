@@ -67,3 +67,80 @@ describe('TelegramChatCard — webhook secret ogohlantirishi', () => {
     expect(screen.queryByTestId('tg-webhook-secret-warn')).toBeNull();
   });
 });
+
+/**
+ * Yetkazish holati (2026-08-16). Eng muhim shartnoma — `delivery: null`
+ * bo'lganda HECH NARSA chizilmaydi: «yuborildi» deb taxmin qilish bu
+ * loyihada allaqachon xato qilingan klass (`pending` dalil emas).
+ */
+describe('TelegramChatCard — yetkazish holati', () => {
+  const CHAT = {
+    id: 'chat-1',
+    chatId: '77',
+    name: 'Akme',
+    username: null,
+    counterparty: null,
+    lastMessageAt: null,
+  };
+
+  const msg = (over: Record<string, unknown>) => ({
+    id: 'm1',
+    direction: 'out',
+    text: 'Qarzga qoshildi',
+    senderName: null,
+    kind: 'text',
+    attachmentId: null,
+    fileName: null,
+    mimeType: null,
+    autoKind: 'debt_issued',
+    fwdFromName: null,
+    delivery: null,
+    createdAt: '2026-08-16T06:02:00Z',
+    ...over,
+  });
+
+  function mockWithMessages(items: Array<Record<string, unknown>>) {
+    vi.mocked(api.get).mockImplementation(async (url: string) => {
+      if (url.startsWith('/telegram/business-status')) return BASE_STATUS;
+      if (url.includes('/messages')) return { items };
+      if (url.startsWith('/telegram/chats')) return { items: [CHAT] };
+      return { items: [] };
+    });
+  }
+
+  beforeEach(() => {
+    vi.mocked(api.get).mockReset();
+  });
+
+  it('queued → navbatda chiziladi', async () => {
+    mockWithMessages([msg({ delivery: { state: 'queued', at: null, reason: null } })]);
+    renderWithProviders(<TelegramChatCard counterpartyId="cp-1" />);
+    const el = await screen.findByTestId('tg-delivery-m1');
+    expect(el.textContent ?? '').toMatch(/⏳/);
+  });
+
+  it('sent → belgi va vaqt', async () => {
+    mockWithMessages([
+      msg({ delivery: { state: 'sent', at: '2026-08-16T06:03:00Z', reason: null } }),
+    ]);
+    renderWithProviders(<TelegramChatCard counterpartyId="cp-1" />);
+    const el = await screen.findByTestId('tg-delivery-m1');
+    expect(el.textContent ?? '').toMatch(/✓/);
+  });
+
+  it('failed → sabab bilan chiziladi', async () => {
+    mockWithMessages([
+      msg({ delivery: { state: 'failed', at: null, reason: 'raqam Telegramda yoq' } }),
+    ]);
+    renderWithProviders(<TelegramChatCard counterpartyId="cp-1" />);
+    const el = await screen.findByTestId('tg-delivery-m1');
+    expect(el.textContent ?? '').toMatch(/raqam Telegramda yoq/);
+  });
+
+  it('delivery null → HECH NARSA chizilmaydi (yuborildi deb taxmin qilinmaydi)', async () => {
+    mockWithMessages([msg({ delivery: null })]);
+    renderWithProviders(<TelegramChatCard counterpartyId="cp-1" />);
+    await screen.findByTestId('tg-msg-m1');
+    expect(screen.queryByTestId('tg-delivery-m1')).toBeNull();
+  });
+});

@@ -54,6 +54,16 @@ interface MessageRow {
   mimeType: string | null;
   /** Avtomatik xabar bo'lsa sababi: 'debt_issued' | 'payment' | ... */
   autoKind: string | null;
+  /**
+   * Chiquvchi avtomatik xabarning yetkazish holati (2026-08-16).
+   * `null` — bog'lanish yo'q (qo'lda yozilgan, kiruvchi yoki eski qator):
+   * bu holda HECH NARSA chizilmaydi va «yuborildi» deb taxmin qilinmaydi.
+   */
+  delivery: {
+    state: 'queued' | 'sent' | 'failed';
+    at: string | null;
+    reason: string | null;
+  } | null;
   createdAt: string;
 }
 
@@ -259,6 +269,34 @@ export function TelegramChatCard({ counterpartyId }: { counterpartyId: string })
                       minute: '2-digit',
                     })}
                   </div>
+
+                  {/* YETKAZISH HOLATI (2026-08-16). `delivery` null bo'lsa bu
+                      blok UMUMAN chizilmaydi — «yuborildi» deb taxmin qilish
+                      bu loyihada allaqachon xato qilingan klass (`pending`
+                      dalil emas). Shuning uchun uch holat ochiq ajratilgan. */}
+                  {m.delivery && (
+                    <div
+                      className={`mt-0.5 text-[10px] ${
+                        m.delivery.state === 'failed'
+                          ? 'text-[var(--ms-text-danger)]'
+                          : 'text-[var(--ms-text-muted)]'
+                      }`}
+                      data-test-id={`tg-delivery-${m.id}`}
+                    >
+                      {m.delivery.state === 'queued' && `⏳ ${t('delivery_queued')}`}
+                      {m.delivery.state === 'sent' &&
+                        `✓ ${t('delivery_sent')}${
+                          m.delivery.at
+                            ? ` ${new Date(m.delivery.at).toLocaleTimeString('ru-RU', {
+                                hour: '2-digit',
+                                minute: '2-digit',
+                              })}`
+                            : ''
+                        }`}
+                      {m.delivery.state === 'failed' &&
+                        `⚠️ ${t('delivery_failed')}${m.delivery.reason ? ` — ${m.delivery.reason}` : ''}`}
+                    </div>
+                  )}
                 </div>
               </div>
             ))}

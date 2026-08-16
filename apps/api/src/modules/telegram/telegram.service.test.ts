@@ -404,3 +404,113 @@ describe('TelegramService.requestCounterpartySync — backfill trigger', () => {
     expect(upsert).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * Yetkazish holati ipda (2026-08-16). Holat ip qatorining O'ZIDA yo'q — u
+ * `HrTelegramOutbox` da yashaydi va `outboxId` orqali bog'lanadi. Bu testlar
+ * shu bog'lanish uzilib qolmasligini qulflaydi: uzilsa UI `pending` ni
+ * «yuborildi» deb ko'rsatishga majbur bo'lardi.
+ */
+function makeMessagesService(
+  messages: Array<Record<string, unknown>>,
+  outboxRows: Array<Record<string, unknown>>,
+) {
+  const outboxFindMany = vi.fn(async () => outboxRows);
+  const prisma = {
+    client: {
+      telegramChat: { findFirst: vi.fn(async () => ({ id: 'chat-1' })) },
+      telegramChatMessage: { findMany: vi.fn(async () => messages) },
+      hrTelegramOutbox: { findMany: outboxFindMany },
+    },
+  };
+  return {
+    svc: new TelegramService(prisma as never, {} as never, {} as never),
+    outboxFindMany,
+  };
+}
+
+const msgRow = (over: Record<string, unknown> = {}) => ({
+  id: 'm1',
+  direction: 'out',
+  text: 'Salom',
+  senderName: 'Do`kon',
+  kind: 'text',
+  attachmentId: null,
+  fileName: null,
+  mimeType: null,
+  autoKind: 'debt_issued',
+  fwdFromName: null,
+  outboxId: 'ob-1',
+  createdAt: new Date('2026-08-16T06:02:00Z'),
+  ...over,
+});
+
+describe('listChatMessages — yetkazish holati', () => {
+  it("status pending → 'queued' (yuborildi deb KO'RSATILMAYDI)", async () => {
+    const { svc } = makeMessagesService(
+      [msgRow()],
+      [{ id: 'ob-1', status: 'pending', sentAt: null, failReason: null }],
+    );
+    const res = await svc.listChatMessages('acc', 'chat-1', {});
+    expect(res.items[0]?.delivery).toEqual({ state: 'queued', at: null, reason: null });
+  });
+
+  it("status retry ham 'queued'", async () => {
+    const { svc } = makeMessagesService(
+      [msgRow()],
+      [{ id: 'ob-1', status: 'retry', sentAt: null, failReason: 'FLOOD_WAIT' }],
+    );
+    expect((await svc.listChatMessages('acc', 'chat-1', {})).items[0]?.delivery?.state).toBe(
+      'queued',
+    );
+  });
+
+  it("status sent → 'sent' + sentAt", async () => {
+    const at = new Date('2026-08-16T06:03:00Z');
+    const { svc } = makeMessagesService(
+      [msgRow()],
+      [{ id: 'ob-1', status: 'sent', sentAt: at, failReason: null }],
+    );
+    const d = (await svc.listChatMessages('acc', 'chat-1', {})).items[0]?.delivery;
+    expect(d?.state).toBe('sent');
+    expect(d?.at).toEqual(at);
+  });
+
+  it("status failed → 'failed' + sabab", async () => {
+    const { svc } = makeMessagesService(
+      [msgRow()],
+      [{ id: 'ob-1', status: 'failed', sentAt: null, failReason: 'raqam Telegramda yoq' }],
+    );
+    const d = (await svc.listChatMessages('acc', 'chat-1', {})).items[0]?.delivery;
+    expect(d?.state).toBe('failed');
+    expect(d?.reason).toBe('raqam Telegramda yoq');
+  });
+
+  it('outboxId YO`Q (qo`lda yozilgan / kiruvchi) → delivery null, taxmin qilinmaydi', async () => {
+    const { svc, outboxFindMany } = makeMessagesService(
+      [msgRow({ outboxId: null, direction: 'in', autoKind: null })],
+      [],
+    );
+    const res = await svc.listChatMessages('acc', 'chat-1', {});
+    expect(res.items[0]?.delivery).toBeNull();
+    // Bog'lanadigan qator yo'q ⇒ outbox so'rovi umuman qilinmaydi.
+    expect(outboxFindMany).not.toHaveBeenCalled();
+  });
+
+  it('outbox qatori topilmasa ham delivery null (yuborildi deb taxmin qilinmaydi)', async () => {
+    const { svc } = makeMessagesService([msgRow()], []);
+    expect((await svc.listChatMessages('acc', 'chat-1', {})).items[0]?.delivery).toBeNull();
+  });
+
+  it('N+1 YO`Q — outbox BITTA so`rov bilan olinadi', async () => {
+    const { svc, outboxFindMany } = makeMessagesService(
+      [msgRow({ id: 'm1', outboxId: 'ob-1' }), msgRow({ id: 'm2', outboxId: 'ob-2' })],
+      [
+        { id: 'ob-1', status: 'sent', sentAt: new Date(), failReason: null },
+        { id: 'ob-2', status: 'failed', sentAt: null, failReason: 'x' },
+      ],
+    );
+    await svc.listChatMessages('acc', 'chat-1', {});
+    expect(outboxFindMany).toHaveBeenCalledTimes(1);
+  });
+});

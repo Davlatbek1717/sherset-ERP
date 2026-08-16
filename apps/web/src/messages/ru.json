@@ -10319,6 +10319,9 @@
     "title": "Telegram",
     "unbind": "Отвязать",
     "webhook_secret_missing": "Webhook настроен без секрета — входящие сообщения не принимаются; администратор должен заново настроить webhook",
-    "write_placeholder": "Напишите сообщение… (уйдёт от вашего имени)"
+    "write_placeholder": "Напишите сообщение… (уйдёт от вашего имени)",
+    "delivery_queued": "в очереди",
+    "delivery_sent": "отправлено",
+    "delivery_failed": "не доставлено"
   }
 }
