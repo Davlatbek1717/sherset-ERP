@@ -8976,9 +8976,6 @@
       "within": "Chegara ichida"
     },
     "posLock": {
-      "hint": "PIN kiriting. Savat saqlangan — tovarlarni qaytadan terish shart emas.",
-      "title": "Ekran qulflandi",
-      "unlock": "Qulfni ochish",
       "wrong": "PIN noto'g'ri",
       "wrong_remaining": "PIN noto'g'ri. Qolgan urinish: {n}"
     },

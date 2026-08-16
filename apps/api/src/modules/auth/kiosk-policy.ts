@@ -244,5 +244,8 @@ export function isValidPosPin(pin: string): boolean {
  */
 export const POS_PIN_MAX_ATTEMPTS = 5;
 
-/** Harakatsizlik chegarasi (daqiqa) — shundan keyin ekran qulflanadi. */
-export const POS_LOCK_IDLE_MINUTES = 5;
+// 🔴 `POS_LOCK_IDLE_MINUTES` OLIB TASHLANDI (egasi, 2026-08-16): «bir marta
+// kirgandan keyin yana pinkod so'raydi, ekran qulf bo'lib qoladi — o'shani
+// to'liq olib tashla, ekran qulf kerak emas umuman». Harakatsizlik qulfi
+// (`PosPinLock`) o'chirildi; bu konstanta faqat o'sha ekranning chegarasi edi
+// va hech bir server mantig'i uni o'qimasdi (sessiyani yopadigan cron yo'q).

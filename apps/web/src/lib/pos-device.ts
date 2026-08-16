@@ -49,7 +49,7 @@ export function isShersetShell(): boolean {
 /**
  * Bu sahifa kassa ISH O'RNImi? (F8 — kassir-tanlash ekrani mezoni.)
  *
- * `pos-pin-lock` lockout-yo'nalishi bilan BITTA mezon: yo `.exe` qobig'i
+ * lockout-yo'nalishi bilan BITTA mezon: yo `.exe` qobig'i
  * (`isShersetShell`), yo juftlangan qurilma kaliti (`readPosDevice`). Oddiy
  * brauzerda (admin ish stoli) kassir-almashtirish ekrani chizilmaydi —
  * u yerda to'liq login bor.

@@ -4,7 +4,12 @@ import { describe, expect, it } from 'vitest';
 
 const WEB = join(__dirname, '..');
 const layout = readFileSync(join(WEB, 'app', '(app)', 'layout.tsx'), 'utf8');
-const lock = readFileSync(join(WEB, 'components', 'pos', 'pos-pin-lock.tsx'), 'utf8');
+// PIN-qulf 2026-08-16 da olib tashlandi; lockout yo'nalishi (5 xato → to'liq
+// chiqish) endi FAQAT kassir-almashtirish ekranida qoldi.
+const switchScreen = readFileSync(
+  join(WEB, 'components', 'pos', 'cashier-select-screen.tsx'),
+  'utf8',
+);
 
 /**
  * Kassir chiqqanda email-login emas, PIN ekrani ochilishi kerak — aks holda
@@ -13,7 +18,9 @@ const lock = readFileSync(join(WEB, 'components', 'pos', 'pos-pin-lock.tsx'), 'u
  * ⚠️ Kassa qurilmasida chiqishning UCH yo'li bor, uchalasi ham shu qoidaga
  * bo'ysunishi shart:
  *   1. kiosk qobig'idagi «Chiqish» tugmasi (ataylab kassir bosadi);
- *   2. PIN-qulfda 5 xato → majburiy chiqish (`pos-pin-lock.tsx`);
+ *   2. kassir almashtirishda 5 xato → majburiy chiqish
+ *      (`cashier-select-screen.tsx`; ilgari bu PIN-QULFDA ham bor edi, qulf
+ *      2026-08-16 da butunlay olib tashlandi);
  *   3. sessiya o'lgach layout'ning avto-yo'naltirishi.
  * Biri unutilsa kassa jimgina parol so'raydigan ekranda qotib qoladi.
  */
@@ -50,21 +57,21 @@ describe('kiosk chiqish yo`nalishi — layout', () => {
   });
 });
 
-describe('kiosk chiqish yo`nalishi — PIN-qulf lockout', () => {
+describe('kiosk chiqish yo`nalishi — kassir almashtirishdagi lockout', () => {
   it('5 xatodan keyingi chiqish ham PIN ekraniga qaytaradi', () => {
-    expect(lock).toContain('readPosDevice');
-    expect(lock).toContain('/kassa-kirish');
+    expect(switchScreen).toContain('readPosDevice');
+    expect(switchScreen).toContain('/kassa-kirish');
   });
 
   it('lockout yo`nalishi ham qobiqni kassa ish o`rni deb biladi (2026-08-13)', () => {
-    expect(lock).toContain('readPosDevice() || isShersetShell()');
+    expect(switchScreen).toContain('readPosDevice() || isShersetShell()');
   });
 
   it('juftlanmagan brauzerda /login qoladi', () => {
-    expect(lock).toContain("'/login'");
+    expect(switchScreen).toContain("'/login'");
   });
 
   it('yo`nalish SHARTLI — hech qachon so`zsiz /login emas', () => {
-    expect(lock).not.toMatch(/window\.location\.href\s*=\s*'\/login'/);
+    expect(switchScreen).not.toMatch(/window\.location\.href\s*=\s*'\/login'/);
   });
 });

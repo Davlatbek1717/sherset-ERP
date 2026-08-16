@@ -265,7 +265,6 @@ const POS_DONE_FILES = [
   'components/pos/debt-payment-dialog.tsx',
   'components/pos/payment-dialog.tsx',
   'components/pos/pin-keypad.tsx',
-  'components/pos/pos-pin-lock.tsx',
   // F2 (POS redizayn) — sidebar/header qobiq komponentlari.
   'components/pos/pos-sidebar.tsx',
   'components/pos/pos-header.tsx',

@@ -5,7 +5,6 @@ import { CommandPalette } from '@/components/command-palette';
 import { HelpButton } from '@/components/help-button';
 import { LocaleSwitcher } from '@/components/locale-switcher';
 import { NotificationBell } from '@/components/notification-bell';
-import { PosPinLock } from '@/components/pos/pos-pin-lock';
 import { UserMenu } from '@/components/user-menu';
 import { useNotificationStream } from '@/hooks/use-notification-stream';
 import { usePermissions } from '@/hooks/use-permissions';
@@ -774,7 +773,6 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         >
           {tKassa('logout')}
         </button>
-        <PosPinLock />
       </div>
     );
   }

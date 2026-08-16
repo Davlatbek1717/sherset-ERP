@@ -1,19 +1,22 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import ru from '../messages/ru.json';
 import uz from '../messages/uz.json';
 
 /**
- * Kiosk qobiq + PIN-qulf drift-lock (kassa TZ §3.1, §3.2).
+ * Kiosk qobiq drift-lock (kassa TZ §3.1).
  *
- * Bu yerda qulflanadigan narsalar buzilsa **jimgina** buziladi:
- *   1. kiosk foydalanuvchi ERP menyusini KO'RMASLIGI (layout ertaroq qaytadi);
- *   2. qulf chegarasi server bilan BIR XIL (5 daqiqa) — ikki joyda ikki
- *      raqam bo'lsa, ekran qulflanmay turib server sessiyani yopib qo'yardi;
- *   3. qulf **savatni saqlashi** (qayta login EMAS) — aks holda kassir
- *      mijoz oldida hammasini qaytadan terardi;
- *   4. 5 xatodan keyin TO'LIQ chiqish.
+ * Bu yerda qulflanadigan narsa buzilsa **jimgina** buziladi: kiosk
+ * foydalanuvchi ERP menyusini KO'RMASLIGI (layout `AppShell` dan ertaroq
+ * qaytadi) va PIN uzunligi butun zanjir bo'ylab AYNAN 4 qolishi.
+ *
+ * 🔴 EKRAN QULFI YO'Q (egasi, 2026-08-16): «bir marta kirgandan keyin yana
+ * pinkod so'raydi, ekran qulf bo'lib qoladi — o'shani to'liq olib tashla,
+ * ekran qulf kerak emas umuman». `PosPinLock` (5 daqiqalik harakatsizlik →
+ * PIN overlay) butunlay o'chirildi; quyidagi qo'riqchi uning qaytib
+ * kelmasligini tekshiradi. PIN endi FAQAT ikki joyda: kassaga kirish
+ * (`/kassa-kirish`) va ATAYLAB kassir almashtirish (`CashierSelectScreen`).
  *
  * ⚠️ Eslatma: menyuni yashirish — QULAYLIK, xavfsizlik emas. Haqiqiy cheklov
  * serverdagi `KioskGuard` da (`apps/api/.../kiosk.guard.ts`).
@@ -36,7 +39,6 @@ const API_POLICY = join(
 type Bundle = { pages: Record<string, Record<string, string>> };
 
 const layout = readFileSync(join(WEB, 'app', '(app)', 'layout.tsx'), 'utf8');
-const lock = readFileSync(join(WEB, 'components', 'pos', 'pos-pin-lock.tsx'), 'utf8');
 const loginPage = readFileSync(join(WEB, 'app', 'login', 'page.tsx'), 'utf8');
 const store = readFileSync(join(WEB, 'lib', 'auth-store.ts'), 'utf8');
 const policy = readFileSync(API_POLICY, 'utf8');
@@ -76,7 +78,6 @@ describe('kiosk qobiq — ERP menyusi RENDER QILINMAYDI', () => {
     ]) {
       expect(branch, `kiosk shoxida ${forbidden} bo'lmasligi kerak`).not.toContain(forbidden);
     }
-    expect(branch).toContain('PosPinLock');
   });
 
   it('`isKioskUser` maydon yo`q bo`lsa false (eski token full qoladi)', () => {
@@ -88,45 +89,32 @@ describe('kiosk qobiq — ERP menyusi RENDER QILINMAYDI', () => {
   });
 });
 
-describe('PIN-qulf', () => {
-  it('harakatsizlik chegarasi SERVER bilan bir xil (5 daqiqa)', () => {
-    // Server: `POS_LOCK_IDLE_MINUTES = 5`. Ikki joyda ikki raqam bo'lsa,
-    // ekran qulflanmay turib server sessiyani yopib qo'yardi.
-    expect(policy).toMatch(/POS_LOCK_IDLE_MINUTES\s*=\s*5/);
-    expect(lock).toMatch(/IDLE_MS\s*=\s*5\s*\*\s*60\s*\*\s*1000/);
+describe('🔴 EKRAN QULFI OLIB TASHLANDI (egasi, 2026-08-16)', () => {
+  it('layout hech qanday PIN-qulf overlay`ini render QILMAYDI', () => {
+    // Ilgari bu yerda `<PosPinLock />` turardi va 5 daqiqadan keyin butun
+    // ekranni PIN so'rovi bilan yopardi. Egasi uni butunlay bekor qildi.
+    expect(layout).not.toContain('PosPinLock');
+    expect(layout).not.toContain('pos-pin-lock');
   });
 
-  it('qulf OVERLAY — savat saqlanadi (qayta login EMAS)', () => {
-    // `fixed inset-0` = ustki qatlam; POS holati ostida turaveradi.
-    expect(lock).toContain('fixed inset-0');
-    // Muvaffaqiyatli PIN'da faqat qulf yopiladi, sahifa qayta yuklanmaydi.
-    expect(lock).toContain('setLocked(false)');
+  it('`pos-pin-lock.tsx` fayli MAVJUD EMAS', () => {
+    // Fayl qolib, faqat chaqiruv o'chirilsa — keyingi sessiya uni «tasodifan
+    // uzilgan» deb qayta ulab qo'yishi mumkin edi.
+    expect(existsSync(join(WEB, 'components', 'pos', 'pos-pin-lock.tsx'))).toBe(false);
   });
 
-  it('5 xatodan keyin TO`LIQ chiqish', () => {
-    expect(lock).toContain('lockout');
-    expect(lock).toContain('logout()');
-    // Yo'nalish 2026-08-11 (F1) da SHARTLI qilindi: juftlangan kassada
-    // `/kassa-kirish` (kassir parolni bilmaydi), juftlanmagan brauzerda
-    // `/login`. Ilgari bu yerda so'zsiz `/login` qulflangan edi — batafsil
-    // qo'riqchi: `kiosk-logout-redirect.test.ts`.
-    expect(lock).toContain('window.location.href = dest');
-    // 🔴 NIYAT KENGAYDI (2026-08-13): juftlash 2026-08-11 da olib tashlangan,
-    // yangi o'rnatmalarda qurilma kaliti YO'Q — `readPosDevice()` null. Shart
-    // faqat qurilmaga qaralsa .exe ichida lockout kassirni PAROL ekraniga
-    // tashlardi. Endi Electron qobig'i ham kassa ish o'rni deb sanaladi.
-    expect(lock).toContain("readPosDevice() || isShersetShell() ? '/kassa-kirish' : '/login'");
+  it('serverda ham harakatsizlik chegarasi qolmadi', () => {
+    // `POS_LOCK_IDLE_MINUTES` faqat shu qulf uchun bor edi; hech bir server
+    // mantig'i uni o'qimasdi (sessiyani yopadigan cron yo'q).
+    expect(policy).not.toMatch(/export const POS_LOCK_IDLE_MINUTES/);
   });
 
-  it('PIN o`rnatilmagan bo`lsa qulf ISHLAMAYDI', () => {
-    // Aks holda kassir o'z ekranidan chiqa olmaydigan holatga tushardi.
-    expect(lock).toContain("api\n      .get<{ hasPin: boolean }>('/auth/pos-pin')");
-    expect(lock).toMatch(/if \(!hasPin \|\| locked\) return;/);
-  });
-
-  it('faqat raqam qabul qilinadi, uzunligi 4 bilan cheklangan', () => {
-    expect(lock).toContain("replace(/\\D/g, '')");
-    expect(lock).toContain('maxLength={4}');
+  it('PIN qolgan IKKI joyda ishlaydi — kirish va ATAYLAB almashtirish', () => {
+    // Qulfni olib tashlash PIN mexanizmini o'ldirmasligi kerak: kassaga
+    // kirish va kassir almashtirish hamon PIN bilan.
+    const sotuv = readFileSync(join(WEB, 'app', '(app)', 'sotuv', 'page.tsx'), 'utf8');
+    expect(sotuv).toContain('CashierSelectScreen');
+    expect(policy).toMatch(/POS_PIN_RE\s*=/);
   });
 });
 
@@ -176,23 +164,25 @@ describe('PIN uzunligi — zanjir bo`ylab AYNAN 4', () => {
 });
 
 describe('i18n', () => {
-  const keys = ['title', 'hint', 'unlock', 'wrong', 'wrong_remaining'];
+  // Qulf ekrani ketdi, lekin `pages.posLock` namespace'i QOLADI: xato-PIN
+  // xabarlarini kassir-almashtirish ekrani ham shu yerdan oladi (bitta kalit,
+  // ikki nuqtada bir xil matn). Qolgani (`title`/`hint`/`unlock`) o'chirildi.
+  const keys = ['wrong', 'wrong_remaining'];
 
   it.each([
     ['ru', ru],
     ['uz', uz],
-  ])('%s: qulf ekranining hamma kaliti bor', (_locale, bundle) => {
+  ])('%s: PIN-xato kalitlari bor (kassir almashtirish ishlatadi)', (_locale, bundle) => {
     const ns = (bundle as unknown as Bundle).pages.posLock;
     expect(ns).toBeDefined();
-    const missing = keys.filter((k) => !ns?.[k]);
-    expect(missing).toEqual([]);
+    expect(keys.filter((k) => !ns?.[k])).toEqual([]);
   });
 
-  it('«savat saqlangan» xabari ikkala tilda ham bor', () => {
-    // Kassir vahima qilmasin — bu xabar qulfning qabul qilinishini hal qiladi.
-    const r = (ru as unknown as Bundle).pages.posLock;
-    const u = (uz as unknown as Bundle).pages.posLock;
-    expect((r?.hint ?? '').toLowerCase()).toContain('корзина');
-    expect((u?.hint ?? '').toLowerCase()).toContain('savat');
+  it.each([
+    ['ru', ru],
+    ['uz', uz],
+  ])('%s: qulf ekranining kalitlari OLIB TASHLANGAN', (_locale, bundle) => {
+    const ns = (bundle as unknown as Bundle).pages.posLock;
+    for (const dead of ['title', 'hint', 'unlock']) expect(ns?.[dead]).toBeUndefined();
   });
 });

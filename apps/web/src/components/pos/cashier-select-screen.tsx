@@ -36,7 +36,8 @@ interface Candidate {
   name: string;
 }
 
-/** Lockout — pos-pin-lock xulqi bilan BIR XIL: to'liq chiqish + PIN ekrani. */
+/** Lockout — to'liq chiqish + PIN ekrani (ilgari PIN-qulf ham shunday qilardi;
+ * qulf 2026-08-16 da olib tashlandi, bu yo'l qoldi). */
 async function lockoutExit(): Promise<void> {
   const dest = readPosDevice() || isShersetShell() ? '/kassa-kirish' : '/login';
   await logout();
@@ -96,7 +97,8 @@ export function CashierSelectScreen({
     } catch (e) {
       const err = e as Error & { body?: { lockout?: boolean; remaining?: number } };
       if (err.body?.lockout) {
-        // 5 xato — pos-pin-lock bilan bir xil: hisob himoyasi uchun to'liq chiqish.
+        // 5 xato — hisob himoyasi uchun to'liq chiqish (himoya qoidasi qulf
+        // olib tashlangandan keyin ham o'zgarmaydi).
         await lockoutExit();
         return;
       }
