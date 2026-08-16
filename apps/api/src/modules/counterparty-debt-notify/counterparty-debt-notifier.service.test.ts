@@ -38,20 +38,40 @@ function makePrismaFull(
     phone?: string | null;
     existingRow?: boolean;
     createImpl?: () => Promise<unknown>;
+    /** Kontragent `attributes`. `{ tgid }` bo'lsa «tanish kontakt». */
+    attributes?: Record<string, unknown> | null;
+    /** Bog'langan Telegram chatlari soni. */
+    chatCount?: number;
+    /** Oxirgi daqiqada yozilgan mijoz-xabarlari soni (portlash qulfi uchun). */
+    recentNotifyCount?: number;
   } = {},
 ) {
-  const cp = opts.name === null ? null : { name: opts.name ?? 'Akme', phone: opts.phone ?? null };
+  const cp =
+    opts.name === null
+      ? null
+      : {
+          name: opts.name ?? 'Akme',
+          phone: opts.phone ?? null,
+          // Sukut `{ tgid }` ATAYLAB: shu fayldagi MAVJUD testlar «tanish
+          // kontakt» qulfidan o'zgartirishsiz o'tsin.
+          attributes: opts.attributes ?? { tgid: '123' },
+        };
   const outboxCreate = vi.fn(opts.createImpl ?? (async () => ({ id: 'out-1' })));
   const outboxFindFirst = vi.fn(async () => (opts.existingRow ? { id: 'out-existing' } : null));
+  const outboxCount = vi.fn(async () => opts.recentNotifyCount ?? 0);
+  const chatCount = vi.fn(async () => opts.chatCount ?? 0);
   return {
     prisma: {
       client: {
         counterparty: { findFirst: vi.fn(async () => cp) },
-        hrTelegramOutbox: { findFirst: outboxFindFirst, create: outboxCreate },
+        telegramChat: { count: chatCount },
+        hrTelegramOutbox: { findFirst: outboxFindFirst, create: outboxCreate, count: outboxCount },
       },
     },
     outboxCreate,
     outboxFindFirst,
+    outboxCount,
+    chatCount,
   };
 }
 
@@ -89,6 +109,10 @@ describe('CounterpartyDebtNotifier', () => {
     process.env.DEBT_NOTIFY_THRESHOLD_MINOR = '';
     // Text alerts are opt-in (default OFF); enable for the delivery tests below.
     process.env.DEBT_NOTIFY_ENABLED = 'true';
+    // Xavfsizlik qulflari mavjud testlarga xalaqit bermasin — ular alohida
+    // `describe` blokida ataylab yoqiladi.
+    process.env.DEBT_NOTIFY_ONLY_KNOWN_CONTACTS = 'false';
+    process.env.DEBT_NOTIFY_MAX_PER_MINUTE = '20';
   });
   afterEach(() => {
     vi.unstubAllGlobals();
@@ -96,6 +120,8 @@ describe('CounterpartyDebtNotifier', () => {
     process.env.DEBT_NOTIFY_CHAT_ID = '';
     process.env.DEBT_NOTIFY_THRESHOLD_MINOR = '';
     process.env.DEBT_NOTIFY_ENABLED = '';
+    process.env.DEBT_NOTIFY_ONLY_KNOWN_CONTACTS = '';
+    process.env.DEBT_NOTIFY_MAX_PER_MINUTE = '';
   });
 
   it('kill-switch: DEBT_NOTIFY_ENABLED=false → total no-op (no lookup, no fetch)', async () => {
@@ -316,6 +342,74 @@ describe('CounterpartyDebtNotifier', () => {
       await svc.onBalanceChanged({ ...baseEvent, source: undefined });
       expect(fetchMock).not.toHaveBeenCalled();
       expect(outboxCreate).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('xavfsizlik qulflari', () => {
+    const retailEvent: CounterpartyBalanceChangedEvent = {
+      ...baseEvent,
+      source: 'retailsale',
+      docType: 'retailsale',
+      docId: 'rs-1',
+    };
+
+    it("ommaviy portlash: daqiqalik chegara to'lgan bo'lsa yozmaydi", async () => {
+      process.env.DEBT_NOTIFY_MAX_PER_MINUTE = '2';
+      const { prisma, outboxCreate, outboxCount } = makePrismaFull({
+        phone: '+998901234567',
+        recentNotifyCount: 2,
+      });
+      // biome-ignore lint/suspicious/noExplicitAny: test wiring
+      await new CounterpartyDebtNotifier(prisma as any).onBalanceChanged(retailEvent);
+      expect(outboxCount).toHaveBeenCalled();
+      expect(outboxCreate).not.toHaveBeenCalled();
+    });
+
+    it('chegara ostida bo`lsa yoziladi', async () => {
+      process.env.DEBT_NOTIFY_MAX_PER_MINUTE = '20';
+      const { prisma, outboxCreate } = makePrismaFull({
+        phone: '+998901234567',
+        recentNotifyCount: 3,
+      });
+      // biome-ignore lint/suspicious/noExplicitAny: test wiring
+      await new CounterpartyDebtNotifier(prisma as any).onBalanceChanged(retailEvent);
+      expect(outboxCreate).toHaveBeenCalled();
+    });
+
+    it("noma'lum kontakt (tgid yo'q, chat yo'q) ⇒ yozmaydi", async () => {
+      process.env.DEBT_NOTIFY_ONLY_KNOWN_CONTACTS = 'true';
+      const { prisma, outboxCreate } = makePrismaFull({
+        phone: '+998901234567',
+        attributes: {},
+        chatCount: 0,
+      });
+      // biome-ignore lint/suspicious/noExplicitAny: test wiring
+      await new CounterpartyDebtNotifier(prisma as any).onBalanceChanged(retailEvent);
+      expect(outboxCreate).not.toHaveBeenCalled();
+    });
+
+    it("tgid yo'q, lekin bog'langan chat bor ⇒ yoziladi", async () => {
+      process.env.DEBT_NOTIFY_ONLY_KNOWN_CONTACTS = 'true';
+      const { prisma, outboxCreate } = makePrismaFull({
+        phone: '+998901234567',
+        attributes: {},
+        chatCount: 1,
+      });
+      // biome-ignore lint/suspicious/noExplicitAny: test wiring
+      await new CounterpartyDebtNotifier(prisma as any).onBalanceChanged(retailEvent);
+      expect(outboxCreate).toHaveBeenCalled();
+    });
+
+    it("qulf o'chirilsa (false) noma'lum kontaktga ham yoziladi", async () => {
+      process.env.DEBT_NOTIFY_ONLY_KNOWN_CONTACTS = 'false';
+      const { prisma, outboxCreate } = makePrismaFull({
+        phone: '+998901234567',
+        attributes: {},
+        chatCount: 0,
+      });
+      // biome-ignore lint/suspicious/noExplicitAny: test wiring
+      await new CounterpartyDebtNotifier(prisma as any).onBalanceChanged(retailEvent);
+      expect(outboxCreate).toHaveBeenCalled();
     });
   });
 });

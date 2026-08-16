@@ -65,11 +65,12 @@ export class CounterpartyDebtNotifier {
     // Shared prerequisite for both deliveries: the counterparty's name (owner
     // message) and phone (counterparty outbox). Read once; a lookup failure
     // skips both (nothing to address), never throws into the event bus.
-    let cp: { name: string; phone: string | null } | null;
+    // `attributes` — «tanish kontakt» qulfi uchun (`tgid` shu yerda turadi).
+    let cp: { name: string; phone: string | null; attributes: unknown } | null;
     try {
       cp = await this.prisma.client.counterparty.findFirst({
         where: { id: payload.counterpartyId, accountId: payload.accountId },
-        select: { name: true, phone: true },
+        select: { name: true, phone: true, attributes: true },
       });
     } catch (e) {
       this.logger.warn(`debt notify: counterparty lookup failed: ${(e as Error).message}`);
@@ -84,7 +85,7 @@ export class CounterpartyDebtNotifier {
     // Two INDEPENDENT deliveries — each self-contained so one cannot block the
     // other. Awaited sequentially (single event loop); neither can throw.
     await this.notifyOwner(payload, cp.name, doc);
-    await this.notifyCounterparty(payload, cp.name, cp.phone, doc);
+    await this.notifyCounterparty(payload, cp.name, cp.phone, doc, cp.attributes);
   }
 
   /**
@@ -170,6 +171,7 @@ export class CounterpartyDebtNotifier {
     name: string,
     phone: string | null,
     doc: { number: string; moment: Date } | null,
+    attributes: unknown,
   ): Promise<void> {
     try {
       if (!payload.source) return;
@@ -191,6 +193,53 @@ export class CounterpartyDebtNotifier {
         docMoment: doc?.moment,
       });
       if (!text) return; // e.g. non-payment change landing on a zero balance
+
+      // ── QULF 1: «BIRINCHI TO'LQIN» — faqat TANISH kontaktlar ─────────────
+      // Xabar egasining SHAXSIY raqamidan ketadi. Hech qachon o'zi yozmagan
+      // odamga yozish «Report spam» xavfini tug'diradi — bu MTProto
+      // FLOOD_WAIT himoyasi qoplamaydigan BOSHQA xavf klassi (u faqat
+      // tezlikni boshqaradi). Sukut bo'yicha YOQILGAN.
+      if (process.env.DEBT_NOTIFY_ONLY_KNOWN_CONTACTS !== 'false') {
+        const attrs =
+          attributes && typeof attributes === 'object' && !Array.isArray(attributes)
+            ? (attributes as Record<string, unknown>)
+            : {};
+        const tgid = attrs.tgid;
+        let known = tgid !== undefined && tgid !== null && tgid !== '';
+        if (!known) {
+          const chats = await this.prisma.client.telegramChat.count({
+            where: { accountId: payload.accountId, counterpartyId: payload.counterpartyId },
+          });
+          known = chats > 0;
+        }
+        if (!known) {
+          this.logger.log(
+            `Counterparty ${payload.counterpartyId} noma'lum kontakt — xabar yuborilmadi`,
+          );
+          return;
+        }
+      }
+
+      // ── QULF 2: OMMAVIY PORTLASH (backfill bombasi) ──────────────────────
+      // Ommaviy skript balansni qayta hisoblasa bir zumda yuzlab hodisa
+      // chiqadi va mijozlarga spam ketardi. Bu qulf soniga qarab to'xtatadi.
+      const maxPerMinute = Number.parseInt(process.env.DEBT_NOTIFY_MAX_PER_MINUTE ?? '20', 10);
+      if (Number.isFinite(maxPerMinute) && maxPerMinute > 0) {
+        const recent = await this.prisma.client.hrTelegramOutbox.count({
+          where: {
+            accountId: payload.accountId,
+            sourceEventType: COUNTERPARTY_NOTIFY_EVENT,
+            createdAt: { gte: new Date(Date.now() - 60_000) },
+          },
+        });
+        if (recent >= maxPerMinute) {
+          this.logger.warn(
+            `debt notify: daqiqalik chegara (${maxPerMinute}) to'ldi — ` +
+              `${payload.counterpartyId} uchun xabar TASHLANDI (ommaviy amal shubhasi)`,
+          );
+          return;
+        }
+      }
 
       // Dedup: one outbox row per (event-type, source document). A re-emitted
       // balance event for the same doc must not double-message the counterparty.
