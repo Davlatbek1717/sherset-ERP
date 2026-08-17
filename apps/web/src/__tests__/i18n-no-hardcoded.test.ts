@@ -268,6 +268,8 @@ const POS_DONE_FILES = [
   // F2 (POS redizayn) — sidebar/header qobiq komponentlari.
   'components/pos/pos-sidebar.tsx',
   'components/pos/pos-header.tsx',
+  // Kurs-chipi (egasi, 2026-08-17) — headerda dollar kursi + egaga tahrir.
+  'components/pos/pos-rate-chip.tsx',
   // F6 (POS redizayn) — headerga singdirilgan oyna-tugmalari.
   'components/pos/window-controls.tsx',
   // F8 (POS redizayn) — kassir-tanlash ekrani (ko'p-kassir).

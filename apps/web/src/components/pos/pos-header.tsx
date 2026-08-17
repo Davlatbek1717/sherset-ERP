@@ -21,6 +21,7 @@ import type { CurrentSession } from '@moysklad/contracts';
 import { formatMoney } from '@moysklad/ui';
 import { useTranslations } from 'next-intl';
 import { type ReactNode, useEffect, useState } from 'react';
+import { PosRateChip } from './pos-rate-chip';
 import { ShellVersionBadge } from './shell-version-badge';
 import { WindowControls } from './window-controls';
 
@@ -92,6 +93,10 @@ export function PosHeader({ session, shiftAge, connectionOk, children }: PosHead
       </div>
 
       <div className="ml-auto flex items-center gap-4">
+        {/* Dollar kursi (egasi, 2026-08-17). Kassir KO'RADI, egasi shu yerdan
+            O'ZGARTIRADI — kiosk planshetdan ERP sozlamalari ochilmaydi. */}
+        <PosRateChip />
+
         {/* Aloqa indikatori — nuqta doim turadi, matn faqat uzilganda
             (spec §3.1: «uzilsa qizil nuqta + banner»). */}
         <div
