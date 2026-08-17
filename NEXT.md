@@ -331,7 +331,32 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
-> **🕒 2026-08-16o (KASSA — «Hisob-kitob cheki» POS mijoz panelida; `30eb3f4e`) — ⛔ DEPLOY QILINMADI**
+> **🕒 2026-08-17a (DEPLOY — deploy qarzi YOPILDI) — ✅ DEPLOYED `ec82f7da → 39ba81c1`**
+> 2026-08-16o dagi ⛔ blokirovka yechildi: **SSH 22-porti O'TKINCHI edi** (bugun ham 3 urinish
+> «Connection timed out», keyin port-sweep'da OPEN chiqdi va darhol ulandi) — ya'ni «port yopilgan»
+> emas, **qayta urinish kerak**. Sayt/API bu davrda ham 200 edi.
+> **Deploy qilingan 7 commit:** `d3fa3e0e`(docs) · `5b9b7df0`(test) · `966e87d3`(docs) ·
+> `30eb3f4e`(POS «Hisob-kitob cheki» tugmasi) · `5efe2f69`(docs) · `8c15266a`(chekni BEKOR QILISH) ·
+> `39ba81c1`(ops skript). Diff: FE + i18n + `kiosk-policy.ts`; **migratsiya YO'Q · lockfile YO'Q ·
+> yangi env YO'Q** (skript: «No pending migrations to apply»).
+> **Backup:** `pre-deploy-20260817-071609.sql.gz` (49M, 257 jadval, `gzip -t` OK).
+> **Jonli o'lchandi (pm2 «online» EMAS):** box HEAD == lokal HEAD `39ba81c1` · `.deploy-last-success`
+> bir xil · sayt 200 · `/api/v1/health` ok (uptime 61s = restart bo'ldi) · `:4001` + `:3011` LISTEN ·
+> yangi yo'llar tokensiz **401 ≠ 404** (`/counterparty-debt-receipts/:id/preview` GET,
+> `…/send` POST, `/retail-sales/:id/cancel` POST) · yangi `BUILD_ID` `oBNHda_9xyRSBs9qldcUe`
+> serverdagi HTML'da ham bor (nginx yangi build'ni beryapti) · `sotuv/page-*.js` chunk'ida
+> `debt_receipt_queued` + `cancel_sale_confirm_label` · box'dagi `kiosk-policy.ts` da
+> `counterparty-debt-receipts` ×2 · `/downloads/desktop/latest.yml` 200 (kanal `git reset`dan omon).
+> ⚠️ **DEPLOYGA TUSHMAGAN parallel sessiya ishi** (ataylab — CLAUDE.md §6, birlashtirilmagan):
+> `kassa-qaytarish` (9 commit, POS xaridordan qaytarish) · `kassa-chek-tahrir` (1 commit, tahrir oynasi).
+> ⚠️ **DISK 94% (6.4G bo'sh)** — build o'tdi, lekin chegara yaqin ([[vps-disk-guard-silently-kills-backups]]):
+> `/root/akademiya-backups` **17G** (BEGONA ilova — tegilmadi), `/root/sherset-v2-backups` 5.1G
+> (16.08 gacha bo'lgan 6 ta katta dump ~5G — tarix tozalanganidan keyin ular endi kerakmi, egasi hal qilsin).
+> Qurilma-QA QOLDI: kassada «Hisob-kitob cheki» tugmasi + qoralama chekni «✕ O'chirish».
+>
+> ---
+>
+> **🕒 2026-08-16o (KASSA — «Hisob-kitob cheki» POS mijoz panelida; `30eb3f4e`) — ✅ 17a da DEPLOY QILINDI**
 > Egasi kassa ilovasida tugmani qidirdi va topmadi. Sabab: dizayn savolida u «Mijoz kartasida»
 > ni tanlagan edi ⇒ tugma FAQAT ERP kontragent kartasida edi, kiosk kassir esa ERP sahifasini
 > ocha olmaydi. Egasi endi «kassirga ham ruxsat» dedi (xabar uning shaxsiy Telegram
@@ -344,9 +369,8 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 > sinfida edi — shuning uchun ikkalasi birga. Ikkinchi qulf tekshirildi: kassirda
 > `counterparty.update` bor (`pos-contact` uchun) ⇒ ruxsat matritsasi to'smaydi.
 > Gate: tc 0 · lint 0 · i18n 0 · web **4055** · api **8411** — 0 qizil.
-> ⛔ **SSH 22-porti shu mashinadan javob bermayapti** (7 urinish; sayt/API 200 va sog'lom).
-> Prodda hamon `ec82f7da`. **Deploy qarzi: `5b9b7df0`(test) · `966e87d3`(docs) · `30eb3f4e`
-> (POS tugmasi)** — port ochilishi bilan HEAD'gacha bir yo'la.
+> ⛔ **SSH 22-porti shu mashinadan javob bermadi** (7 urinish; sayt/API 200 va sog'lom).
+> ✅ 2026-08-17a da yopildi: port o'tkinchi edi, qayta urinishda ochildi — `ec82f7da → 39ba81c1`.
 >
 > ---
 >
