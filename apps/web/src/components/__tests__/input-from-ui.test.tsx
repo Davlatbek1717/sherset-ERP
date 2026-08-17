@@ -1,5 +1,6 @@
 import { renderWithProviders, screen, userEvent } from '@/test-utils';
 import { Input } from '@moysklad/ui';
+import * as React from 'react';
 /**
  * Input (re-exported from @moysklad/ui) tests — every form field
  * across the app uses this. Has invalid state, leading/trailing
@@ -96,10 +97,11 @@ describe('Input', () => {
   });
 
   describe('leading/trailing adornments', () => {
-    it('renders WITHOUT a wrapper div when no adornments', () => {
+    it('renders WITHOUT a wrapper div when adornment props are not passed at all', () => {
+      // Ilovadagi form maydonlarining aksariyati shu yo'lda — layout
+      // o'zgarmasligi uchun o'ram bu yerda CHIQMAYDI.
       const { container } = renderWithProviders(<Input data-test-id="i" />);
       const input = screen.getByTestId('i');
-      // The parent of the input should be the container itself (no relative wrapper).
       expect(input.parentElement).toBe(container);
     });
 
@@ -148,6 +150,81 @@ describe('Input', () => {
       const cls = screen.getByTestId('i').className;
       expect(cls).toContain('pl-9');
       expect(cls).toContain('pr-9');
+    });
+  });
+
+  describe('focus survival when an adornment appears mid-typing (REGRESSION)', () => {
+    /**
+     * 🔴 2026-08-17, egasi: «barcha qidiruv inputlaridan bitta belgi yozgach
+     * fokus chiqib ketadi». Ildiz: Input adornment YO'Q holatda yalang'och
+     * `<input>` qaytarardi, adornment PAYDO bo'lishi bilan esa
+     * `<div class="relative"><input/>…</div>` — ya'ni o'sha pozitsiyadagi
+     * element TURI o'zgarardi (input → div). React eski DOM tugunini
+     * ajratib yangisini yaratadi ⇒ fokus (va IME/kursor holati) yo'qoladi.
+     *
+     * ListView qidiruvi aynan shunday: `trailing = search ? <✕> : undefined`.
+     * Shuning uchun xato AYNAN birinchi belgidan keyin yuz berardi.
+     */
+    function ClearableSearch() {
+      const [v, setV] = React.useState('');
+      return (
+        <Input
+          value={v}
+          onChange={(e) => setV(e.target.value)}
+          trailing={v ? <button type="button">×</button> : undefined}
+          data-test-id="i"
+        />
+      );
+    }
+
+    it('wraps even when the passed adornment is currently undefined (stable shape)', () => {
+      const { container } = renderWithProviders(<Input trailing={undefined} data-test-id="i" />);
+      const input = screen.getByTestId('i');
+      // Prop KALITI uzatilgan ⇒ o'ram hozirdanoq bor, keyin ✕ paydo bo'lganda
+      // daraxt shakli o'zgarmaydi.
+      expect(input.parentElement).not.toBe(container);
+      expect(input.parentElement?.className).toContain('relative');
+      // Bo'sh holatda pr-9 qo'shilmaydi — vizual jihatdan ilgarigidek.
+      expect(input.className).not.toContain('pr-9');
+    });
+
+    it('keeps DOM identity when trailing goes undefined → present', () => {
+      const { rerender } = renderWithProviders(
+        <Input value="" readOnly trailing={undefined} data-test-id="i" />,
+      );
+      const before = screen.getByTestId('i');
+      rerender(
+        <Input value="a" readOnly trailing={<button type="button">×</button>} data-test-id="i" />,
+      );
+      // Same physical node ⇒ React did NOT remount it.
+      expect(screen.getByTestId('i')).toBe(before);
+    });
+
+    it('applies wrapperClassName to the adornment wrapper, not the input', () => {
+      renderWithProviders(
+        <Input trailing={undefined} wrapperClassName="w-[206px]" data-test-id="i" />,
+      );
+      const input = screen.getByTestId('i');
+      expect(input.parentElement?.className).toContain('w-[206px]');
+      expect(input.className).not.toContain('w-[206px]');
+    });
+
+    it('keeps focus after the first character (the reported bug)', async () => {
+      const user = userEvent.setup();
+      renderWithProviders(<ClearableSearch />);
+      const el = screen.getByTestId('i');
+      el.focus();
+      await user.keyboard('a');
+      expect(document.activeElement).toBe(screen.getByTestId('i'));
+    });
+
+    it('accepts continued typing without losing characters', async () => {
+      const user = userEvent.setup();
+      renderWithProviders(<ClearableSearch />);
+      const el = screen.getByTestId('i') as HTMLInputElement;
+      el.focus();
+      await user.keyboard('abc');
+      expect((screen.getByTestId('i') as HTMLInputElement).value).toBe('abc');
     });
   });
 

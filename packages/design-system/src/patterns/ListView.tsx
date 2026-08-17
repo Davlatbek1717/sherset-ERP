@@ -598,7 +598,13 @@ export function ListView<T extends object>({
               }
               // Mobile: full-row search (its own wrapped line) — the fixed
               // 206px box left an awkward stub next to wrapped toolbar items.
-              className="w-[206px] max-md:w-full max-md:min-w-0"
+              //
+              // Kenglik O'RAMDA (2026-08-17): `trailing` uzatilgani uchun Input
+              // doim `<div class="relative">` bilan o'raladi va aynan O'SHA div
+              // toolbar flex-item'i bo'ladi. Kenglik inputda qolsa, o'ram
+              // kontent bo'yicha qisqarib, mobil «to'liq qator» buzilardi
+              // (bu ilgari matn terilgan holatda allaqachon yuz berardi).
+              wrapperClassName="w-[206px] max-md:w-full max-md:min-w-0"
               data-test-id="search-input"
             />
           )}
