@@ -53,6 +53,8 @@ interface ChekDetailPosition {
 export type { ChekDetailPosition };
 interface ChekDetailData {
   id: string;
+  /** Optimistik qulf — tahrir so'roviga AYNAN shu qiymat uzatiladi (409 qo'riqchisi). */
+  version: number;
   name: string;
   moment: string;
   state: string;
@@ -166,6 +168,49 @@ function ChekDetailPanel({
   const [returnQty, setReturnQty] = useState<Record<string, string>>({});
 
   const { confirm } = useConfirm();
+
+  /**
+   * 🔴 «NAQD kiritilgan, QARZ bo'lishi kerak» (egasi, 2026-08-17).
+   *
+   * Server yo'li `PATCH /retail-sales/:id/edit` 2026-08-16 dan BOR edi, lekin
+   * butun web ilovada unga bironta chaqiruv YO'Q edi — ya'ni xato to'lov
+   * turini tuzatishning UMUMAN yo'li yo'q edi (o'lchandi: `grep /edit`).
+   *
+   * Bu blok FAQAT pul taqsimotini ko'chiradi (naqd ⇄ qarz) va kerak bo'lsa
+   * mijozni biriktiradi. Tovar tarkibi ATAYLAB tegilmaydi — serverning o'zi
+   * uni rad etadi («qaytarishdan foydalaning»), chunki tovar o'zgarishi ombor
+   * va tan narxni qayta yozishni talab qiladi.
+   *
+   * Modal EMAS — ichki blok (qobiqda Radix modali ekran-klaviaturasini
+   * o'ldiradi; qaytarish bloki bilan bir naqsh).
+   */
+  const [editOpen, setEditOpen] = useState(false);
+  /** Qarzga yoziladigan qism (tiyin, satr) — naqd = jami − shu. */
+  const [editDebtMinor, setEditDebtMinor] = useState('0');
+  const [editAgent, setEditAgent] = useState<{ id: string; name: string } | null>(null);
+  const [agentSearch, setAgentSearch] = useState('');
+
+  const agentOptions = useQuery<{ items: Array<{ id: string; name: string; phone?: string }> }>({
+    queryKey: ['chek-edit-agents', agentSearch],
+    queryFn: () => api.get(`/counterparties?search=${encodeURIComponent(agentSearch)}&limit=8`),
+    enabled: editOpen && agentSearch.trim().length > 0,
+  });
+
+  const editMut = useMutation({
+    mutationFn: (body: {
+      version: number;
+      paidMinor: string;
+      debtMinor: string;
+      agentId?: string;
+    }) => api.patch(`/retail-sales/${saleId}/edit`, body),
+    onSuccess: () => {
+      toast.success(t('chek_edit_success'));
+      setEditOpen(false);
+      qc.invalidateQueries({ queryKey: ['retail-sale-detail', saleId] });
+      qc.invalidateQueries({ queryKey: ['retail-sales-session'] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
 
   /**
    * ❌ NOTO'G'RI KIRITILGAN CHEKNI BEKOR QILISH (egasi, 2026-08-16).
@@ -355,6 +400,28 @@ function ChekDetailPanel({
             ✕ {tCommon('delete')}
           </button>
         )}
+        {/* «Naqd/qarz» ni tuzatish — faqat to'langan chekda (server ham
+            shunday: `edit()` `state !== 'posted'` ni rad etadi). */}
+        {data.state === 'posted' && !returnMode && (
+          <button
+            type="button"
+            data-test-id="chek-edit-open"
+            onClick={() => {
+              // Ochilganda joriy taqsimot ko'rsatiladi: qarz = jami − to'langan.
+              setEditDebtMinor(String(saleDebtMinor(data.payments)));
+              setEditAgent(data.agent);
+              setAgentSearch('');
+              setEditOpen((v) => !v);
+            }}
+            className={`flex h-8 items-center gap-1.5 rounded-lg border px-3 font-medium text-xs ${
+              editOpen
+                ? 'border-[var(--ms-text-brand)] text-[var(--ms-text-brand)]'
+                : 'border-[var(--ms-border)] hover:bg-[var(--ms-bg-hover)]'
+            }`}
+          >
+            ✎ {t('chek_edit')}
+          </button>
+        )}
         {data.state === 'posted' &&
           (returnMode ? (
             <button
@@ -383,6 +450,127 @@ function ChekDetailPanel({
           uchun SCROLL UMUMAN paydo bo'lmasdi. Farzandlar qisilmasa kontent
           tabiiy balandligini oladi (186 → 254px) va panel scroll bo'ladi. */}
       <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-4 [&>*]:shrink-0">
+        {/* ── «Naqd ⇄ qarz» tuzatish bloki ─────────────────────────────── */}
+        {editOpen && data.state === 'posted' && (
+          <div
+            data-test-id="chek-edit-panel"
+            className="flex flex-col gap-3 rounded-xl border border-[var(--ms-text-brand)] p-3"
+          >
+            <p className="text-[var(--ms-text-muted)] text-xs">{t('chek_edit_hint')}</p>
+
+            <div className="flex gap-2">
+              <button
+                type="button"
+                data-test-id="chek-edit-all-debt"
+                onClick={() => setEditDebtMinor(data.sumMinor)}
+                className="h-9 flex-1 rounded-lg border border-[var(--ms-border)] text-xs hover:bg-[var(--ms-bg-hover)]"
+              >
+                {t('chek_edit_all_debt')}
+              </button>
+              <button
+                type="button"
+                data-test-id="chek-edit-all-cash"
+                onClick={() => setEditDebtMinor('0')}
+                className="h-9 flex-1 rounded-lg border border-[var(--ms-border)] text-xs hover:bg-[var(--ms-bg-hover)]"
+              >
+                {t('chek_edit_all_cash')}
+              </button>
+            </div>
+
+            {/* Yig'iladigan uch raqam — kassir o'zi tekshira oladi. */}
+            <div className="flex flex-col gap-1 text-sm">
+              <div className="flex justify-between">
+                <span className="text-[var(--ms-text-muted)]">{t('chek_edit_total')}</span>
+                <span className="font-semibold tabular-nums">
+                  {formatMoney(BigInt(data.sumMinor))}
+                </span>
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[var(--ms-text-muted)]">{t('chek_edit_debt')}</span>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  data-test-id="chek-edit-debt-input"
+                  value={editDebtMinor}
+                  onChange={(e) => setEditDebtMinor(e.target.value.replace(/[^0-9]/g, ''))}
+                  className="h-9 w-40 rounded-lg border border-[var(--ms-border)] px-2 text-right text-sm tabular-nums outline-none focus:border-[var(--ms-primary-500)]"
+                />
+              </div>
+              <div className="flex justify-between">
+                <span className="text-[var(--ms-text-muted)]">{t('chek_edit_paid')}</span>
+                <span className="tabular-nums" data-test-id="chek-edit-paid-value">
+                  {formatMoney(BigInt(data.sumMinor) - BigInt(editDebtMinor || '0'))}
+                </span>
+              </div>
+            </div>
+
+            {/* Qarz KIMGA yozilishi kerak — qarz > 0 bo'lsa mijoz SHART
+                (serverning `planReceiptEdit` qo'riqchisi ham shunday). */}
+            {BigInt(editDebtMinor || '0') > 0n && (
+              <div className="flex flex-col gap-1.5">
+                <span className="text-[var(--ms-text-muted)] text-xs">
+                  {t('chek_edit_customer')}
+                </span>
+                {editAgent ? (
+                  <div className="flex items-center justify-between gap-2 rounded-lg bg-[var(--ms-bg-app)] px-2 py-1.5 text-sm">
+                    <span className="truncate font-medium">{editAgent.name}</span>
+                    <button
+                      type="button"
+                      onClick={() => setEditAgent(null)}
+                      className="shrink-0 text-[var(--ms-text-muted)] text-xs hover:underline"
+                    >
+                      {tCommon('cancel')}
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    <input
+                      type="text"
+                      data-test-id="chek-edit-agent-search"
+                      value={agentSearch}
+                      onChange={(e) => setAgentSearch(e.target.value)}
+                      placeholder={t('chek_edit_customer_search')}
+                      className="h-9 rounded-lg border border-[var(--ms-border)] px-2 text-sm outline-none focus:border-[var(--ms-primary-500)]"
+                    />
+                    {(agentOptions.data?.items ?? []).map((cp) => (
+                      <button
+                        key={cp.id}
+                        type="button"
+                        data-test-id="chek-edit-agent-option"
+                        onClick={() => setEditAgent({ id: cp.id, name: cp.name })}
+                        className="h-9 truncate rounded-lg border border-[var(--ms-border)] px-2 text-left text-sm hover:bg-[var(--ms-bg-hover)]"
+                      >
+                        {cp.name}
+                      </button>
+                    ))}
+                  </>
+                )}
+              </div>
+            )}
+
+            <button
+              type="button"
+              data-test-id="chek-edit-save"
+              disabled={
+                editMut.isPending ||
+                BigInt(editDebtMinor || '0') > BigInt(data.sumMinor) ||
+                (BigInt(editDebtMinor || '0') > 0n && !editAgent)
+              }
+              onClick={() =>
+                editMut.mutate({
+                  version: data.version,
+                  debtMinor: editDebtMinor || '0',
+                  paidMinor: String(BigInt(data.sumMinor) - BigInt(editDebtMinor || '0')),
+                  ...(editAgent ? { agentId: editAgent.id } : {}),
+                })
+              }
+              className="h-10 rounded-lg bg-[var(--ms-bg-brand)] font-semibold text-sm text-white disabled:opacity-50"
+            >
+              {tCommon('save')}
+            </button>
+          </div>
+        )}
+
         {/* Kassir + mijoz */}
         <div className="rounded-xl border border-[var(--ms-border)] bg-[var(--ms-bg-app)] divide-y divide-[var(--ms-border)]">
           <div className="flex justify-between px-4 py-2.5 text-sm">

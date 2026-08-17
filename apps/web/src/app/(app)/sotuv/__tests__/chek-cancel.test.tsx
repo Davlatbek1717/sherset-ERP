@@ -56,7 +56,12 @@ const LIST_ROW = SALE_ROW({
 function routes(state: string): Route[] {
   return salesRoutes([
     { match: /limit=100/, value: { items: [LIST_ROW], total: 1 } },
-    { match: /^\/retail-sales\/[^/?]+$/, value: SALE_DETAIL({ state, sumMinor: '3100000' }) },
+    {
+      match: /^\/retail-sales\/[^/?]+$/,
+      // `version` — optimistik qulf; server (Prisma `include`) uni qaytaradi,
+      // fikstura ham qaytarishi shart, aks holda so'rov tanasida bo'lmaydi.
+      value: SALE_DETAIL({ state, sumMinor: '3100000', version: 1 }),
+    },
   ]);
 }
 
@@ -69,6 +74,10 @@ async function openChek(user: ReturnType<typeof userEvent.setup>) {
 beforeEach(() => {
   vi.mocked(api.get).mockReset();
   vi.mocked(api.post).mockReset();
+  // 🔴 `patch` ham TOZALANADI: usiz `patch.mock.calls[0]` oldingi testning
+  // chaqiruvini qaytaradi va da'vo boshqa test haqida gapiradi (aynan shu
+  // tuzoqqa tushildi — «cp-1 kutilgan cp-9 o'rniga»).
+  vi.mocked(api.patch).mockReset();
   vi.mocked(api.post).mockResolvedValue({ ok: true });
   window.open = vi.fn();
 });
@@ -163,6 +172,110 @@ describe('Cheklar ro`yxati — holat nishoni', () => {
       (el.textContent ?? '').includes('31'),
     );
     expect(sum?.className).toContain('line-through');
+  });
+});
+
+/**
+ * «NAQD kiritilgan, QARZ bo'lishi kerak» (egasi, 2026-08-17).
+ *
+ * 🔴 Server yo'li (`PATCH /retail-sales/:id/edit`) 2026-08-16 dan bor edi,
+ * lekin butun web ilovada unga bironta chaqiruv YO'Q edi — xato to'lov turini
+ * tuzatishning umuman yo'li yo'q edi. Bu blok o'sha bo'shliqni yopadi.
+ *
+ * Qulflanadigan shartnoma:
+ *   1. tugma FAQAT to'langan chekda (server ham `posted` dan boshqasini rad etadi);
+ *   2. so'rov `version` (optimistik qulf) bilan ketadi va `paid + debt = jami`;
+ *   3. 🔴 qarz > 0 bo'lsa MIJOZ shart — mijozsiz saqlash tugmasi O'CHIQ
+ *      (serverning `planReceiptEdit` qo'riqchisi ham shu, lekin kassir 400 ni
+ *      emas, o'chiq tugmani ko'rishi kerak).
+ */
+describe('Naqd ⇄ qarz tuzatish', () => {
+  it('to`langan chekda tugma bor, to`lanmaganda YO`Q', async () => {
+    vi.mocked(api.get).mockImplementation(router(routes('posted')));
+    const user = userEvent.setup();
+    renderWithProviders(<SotuvPage />);
+    await openChek(user);
+    expect(screen.getByTestId('chek-edit-open')).toBeInTheDocument();
+  });
+
+  it('draft chekda tugma YO`Q (server ham rad etadi)', async () => {
+    vi.mocked(api.get).mockImplementation(router(routes('draft')));
+    const user = userEvent.setup();
+    renderWithProviders(<SotuvPage />);
+    await openChek(user);
+    expect(screen.queryByTestId('chek-edit-open')).toBeNull();
+  });
+
+  it('🔴 mijozi BOR chek: «Hammasi qarzga» ⇒ version bilan, paid+debt = jami', async () => {
+    vi.mocked(api.get).mockImplementation(router(routes('posted')));
+    const patch = vi.mocked(api.patch);
+    patch.mockResolvedValue({ ok: true });
+    const user = userEvent.setup();
+    renderWithProviders(<SotuvPage />);
+    await openChek(user);
+
+    await user.click(screen.getByTestId('chek-edit-open'));
+    await user.click(screen.getByTestId('chek-edit-all-debt'));
+    await user.click(screen.getByTestId('chek-edit-save'));
+
+    await waitFor(() => expect(patch).toHaveBeenCalled());
+    const [url, body] = patch.mock.calls[0] as [string, Record<string, string>];
+    expect(url).toContain('/edit');
+    expect(body.debtMinor).toBe('3100000');
+    expect(body.paidMinor).toBe('0'); // paid + debt = jami
+    expect(body.version).toBeDefined(); // optimistik qulf
+  });
+
+  it('🔴 mijozi YO`Q chekda qarz tanlansa — saqlash O`CHIQ, mijoz tanlangach ochiladi', async () => {
+    // Serverning `planReceiptEdit` qo'riqchisi mijozsiz qarzni rad etadi;
+    // kassir 400 ni emas, o'chiq tugmani ko'rishi kerak.
+    vi.mocked(api.get).mockImplementation(
+      router(
+        salesRoutes([
+          {
+            match: /limit=100/,
+            value: {
+              items: [SALE_ROW({ state: 'posted', sumMinor: '3100000', agent: null })],
+              total: 1,
+            },
+          },
+          {
+            match: /^\/counterparties\?search=/,
+            value: { items: [{ id: 'cp-9', name: 'Abbos aka' }] },
+          },
+          {
+            match: /^\/retail-sales\/[^/?]+$/,
+            value: SALE_DETAIL({
+              state: 'posted',
+              sumMinor: '3100000',
+              version: 1,
+              agent: null,
+            }),
+          },
+        ]),
+      ),
+    );
+    const patch = vi.mocked(api.patch);
+    patch.mockResolvedValue({ ok: true });
+    const user = userEvent.setup();
+    renderWithProviders(<SotuvPage />);
+
+    await user.click(await screen.findByRole('button', { name: /^Cheklar/ }));
+    // Mijoz yo'q ⇒ qatorni SUMMA bo'yicha topamiz (formatMoney bo'shliq qo'yadi).
+    await user.click(await screen.findByRole('button', { name: /31\s?000/ }));
+    await screen.findByText('CHEK-00001');
+
+    await user.click(screen.getByTestId('chek-edit-open'));
+    await user.click(screen.getByTestId('chek-edit-all-debt'));
+    expect((screen.getByTestId('chek-edit-save') as HTMLButtonElement).disabled).toBe(true);
+
+    await user.type(screen.getByTestId('chek-edit-agent-search'), 'abb');
+    await user.click(await screen.findByTestId('chek-edit-agent-option'));
+    expect((screen.getByTestId('chek-edit-save') as HTMLButtonElement).disabled).toBe(false);
+
+    await user.click(screen.getByTestId('chek-edit-save'));
+    await waitFor(() => expect(patch).toHaveBeenCalled());
+    expect((patch.mock.calls[0]?.[1] as Record<string, string>).agentId).toBe('cp-9');
   });
 });
 
