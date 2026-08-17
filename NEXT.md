@@ -331,6 +331,49 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-08-17c (KURS — qo'lda o'zgartirish; `1c4d81c4` + `2d39b697`) — ✅ DEPLOYED `303d20a1 → 2d39b697`**
+> Egasi: «dollar kursini qo'lda o'zgartirib bo'lishi kerak, professional qilib».
+> **O'LCHANGAN ILDIZ:** kurs IKKI joyda yashardi va kassa ishlatadigan joyda UI YO'Q edi
+> (shuning uchun 12 000 SQL bilan qo'yilgan): `exchange_rates` `source='MANUAL'` — **kassa**
+> `getRate()` orqali shundan o'qiydi, yozuvchisi faqat CBRU sync edi · `Currency.rateValue`
+> (×10⁸) — ERP hujjatlari/hisobot, «Valyutalar» sozlamasida tahrirlanadi.
+> **YECHIM:** `PUT /exchange-rates/manual` — bitta `$transaction` da MANUAL qator + `rateValue`
+> + `AuditLog` (`action='rate_change'`). Kassaning O'QISH yo'li tegilmadi ⇒ jonli kassaga xavf yo'q.
+> Ikki qulf: kiosk ro'yxatida `exact` PUT (planshetdan ishlasin) + `exchangerate.update`
+> (owner/admin `ALL_FULL`, `cashier` da atayin faqat `view`). Migratsiya KERAK EMAS.
+> UI: «Sozlamalar → Valyuta kurslari» (amaldagi kurs yirik blok · manba belgisi · kim
+> o'zgartirgan · inline tahrir eski→yangi + ogohlantirish · tarix · pastda CBRU) va **kassa
+> headerida kurs-chipi** (kassir ko'radi, egada bosiladi). Radix modal EMAS (OSK sabab).
+> Kesh kaliti `pos-usd-rate` — rasmiylashtirish/qarz oynalari bilan bir xil.
+> 🔴 **Ikki konvensiya qo'riqchisi ishni chala qolganini tutdi** (i18n gate chip yaratilishidan
+> OLDIN yugurtirilgan edi): POS i18n registriga `pos-rate-chip.tsx`, `audit.action_rate_change`
+> yorlig'i ru+uz. Ikkalasi tuzatildi — aks holda audit jurnalida XOM slug ko'rinardi.
+> Gate: web **293 fayl / 4091 test** · api **8439** · tc 0 · biome 0 · i18n 19/19 — 0 qizil.
+> Mutant: server `Currency` yozuvi olinganda 5 test, POS ruxsat qulfi olinganda 2 test qizardi.
+> **JONLI O'LCHANDI (marshrut bor emas — ISHLAYDI):** sayt 200 · health ok · `:4001`+`:3011`
+> LISTEN · yangi `BUILD_ID bpUIQ06aAkJL-ka2XQFpS` xizmatdagi HTML'da · `sotuv` chunkida chip ·
+> token bilan `GET …/manual/changes` **200 `[]`** · `rate=12` → **400** «rate must be at least
+> 100» · `UZS` → **400** «hisob valyutasi» · amaldagi kurs `MANUAL 12000` · kassa kanali 200.
+> Zaxira: `pre-deploy-kurs-20260817-110149.sql.gz` (61M, 257 jadval, `gzip -t` OK).
+> ⚠️ **API boot 60–190s** — restartdan keyingi darhol tekshiruvda `:4001` TINGLAMAGAN ko'rindi;
+> bu normal, kutish kerak (pm2 «online» ≠ tayyor).
+> **QOLDI:** qurilma-QA (planshetda chip + ekran klaviaturasi bilan kurs kiritish); ⚠️ **disk 93%**.
+>
+> ---
+>
+> **🕒 2026-08-17b (QOLDIQ — «10 000 tadan qo'shish» PRODDA bajarildi)**
+> Egasi «tovarlarga 10 000 tadan qo'shgandim» dedi. O'lchandi: aslida tushmagan — bugun 06:38 da
+> **bitta** Oprixodovaniye (`enters` 00001) bor edi, **Ombor 1** da, faqat `Azia Sip 2x16 × 10000`;
+> asosiy qoldiq hamon 1000 edi. Egasi tasdig'i bilan `ops-set-stock-1000.mjs --add=10000
+> --store="Ombor 2"` yugurtirildi → **48 posted Inventarizatsiya, 4726 pozitsiya**; 4452 tovar
+> 11000, sotilganlari 10999/10998. Ombor 1 dagi hujjatga TEGILMADI (egasi qarori).
+> 🔴 `--store` BERISH SHART: bo'sh qoldirilsa skript HAR omborga yozadi va katalog yig'indisi
+> 21000 ko'rsatardi (skriptning o'z ogohlantirishi). ⚠️ **337 tovar 1000 da qoldi — arxivlangan**
+> (skript arxivni ataylab o'tkazadi). Zaxira: `pre-stock-add10000-20260817-083728.sql.gz`.
+> Xotira: [[prod-test-stock-1000]] yangilandi.
+>
+> ---
+>
 > **🕒 2026-08-17a (DEPLOY — deploy qarzi YOPILDI) — ✅ DEPLOYED `ec82f7da → 39ba81c1`**
 > 2026-08-16o dagi ⛔ blokirovka yechildi: **SSH 22-porti O'TKINCHI edi** (bugun ham 3 urinish
 > «Connection timed out», keyin port-sweep'da OPEN chiqdi va darhol ulandi) — ya'ni «port yopilgan»
