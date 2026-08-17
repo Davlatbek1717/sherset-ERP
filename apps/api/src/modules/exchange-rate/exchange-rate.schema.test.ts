@@ -4,6 +4,9 @@ import {
   CbruRowSchema,
   CurrencyCodeSchema,
   ExchangeRateFilterSchema,
+  MANUAL_RATE_MAX,
+  MANUAL_RATE_MIN,
+  ManualRateSchema,
 } from './exchange-rate.schema.js';
 
 describe('CurrencyCodeSchema', () => {
@@ -108,5 +111,62 @@ describe('ExchangeRateFilterSchema', () => {
   it('accepts UPPERCASE currency in filter', () => {
     const f = ExchangeRateFilterSchema.parse({ currency: 'EUR' });
     expect(f.currency).toBe('EUR');
+  });
+});
+
+describe("ManualRateSchema — qo'lda kurs (2026-08-17)", () => {
+  it('qabul qiladi: butun son', () => {
+    const v = ManualRateSchema.parse({ currency: 'USD', rate: '12000' });
+    expect(v.rate).toBe('12000');
+    expect(v.currency).toBe('USD');
+  });
+
+  it('qabul qiladi: 6 kasrgacha', () => {
+    expect(ManualRateSchema.parse({ currency: 'USD', rate: '12000.123456' }).rate).toBe(
+      '12000.123456',
+    );
+  });
+
+  it('rad etadi: 6 dan ortiq kasr', () => {
+    expect(() => ManualRateSchema.parse({ currency: 'USD', rate: '12000.1234567' })).toThrow();
+  });
+
+  it('rad etadi: manfiy va nol', () => {
+    expect(() => ManualRateSchema.parse({ currency: 'USD', rate: '-12000' })).toThrow();
+    expect(() => ManualRateSchema.parse({ currency: 'USD', rate: '0' })).toThrow();
+  });
+
+  it('rad etadi: nol tushib qolgan (12) — chegaradan past', () => {
+    // Egasining real xato sinfi: bitta raqam tushib qolsa kassa narxi yolg'on bo'ladi.
+    expect(() => ManualRateSchema.parse({ currency: 'USD', rate: '12' })).toThrow();
+  });
+
+  it('rad etadi: ortiqcha nol (120000000) — chegaradan yuqori', () => {
+    expect(() => ManualRateSchema.parse({ currency: 'USD', rate: '120000000' })).toThrow();
+  });
+
+  it("chegaralarning O'ZI qabul qilinadi (off-by-one qo'riqchisi)", () => {
+    expect(ManualRateSchema.parse({ currency: 'USD', rate: String(MANUAL_RATE_MIN) }).rate).toBe(
+      '100',
+    );
+    expect(ManualRateSchema.parse({ currency: 'USD', rate: String(MANUAL_RATE_MAX) }).rate).toBe(
+      '1000000',
+    );
+  });
+
+  it("rad etadi: bo'sh, harf, probel-ichidagi son", () => {
+    expect(() => ManualRateSchema.parse({ currency: 'USD', rate: '' })).toThrow();
+    expect(() => ManualRateSchema.parse({ currency: 'USD', rate: '12 000' })).toThrow();
+    expect(() => ManualRateSchema.parse({ currency: 'USD', rate: 'abc' })).toThrow();
+  });
+
+  it('rad etadi: kichik harfli valyuta', () => {
+    expect(() => ManualRateSchema.parse({ currency: 'usd', rate: '12000' })).toThrow();
+  });
+
+  it("rate STRING bo'lib qoladi — number ga aylanmaydi (pul-kritik)", () => {
+    const v = ManualRateSchema.parse({ currency: 'USD', rate: '12000.500000' });
+    expect(typeof v.rate).toBe('string');
+    expect(v.rate).toBe('12000.500000');
   });
 });

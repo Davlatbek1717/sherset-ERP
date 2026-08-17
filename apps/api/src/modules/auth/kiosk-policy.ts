@@ -78,6 +78,19 @@ export const KIOSK_ALLOWED: readonly Rule[] = [
   { prefix: '/expense-items', methods: ['GET'], why: 'xarajat moddasi tanlash' },
   { prefix: '/currencies', methods: ['GET'], why: 'USD naqd uchun' },
   { prefix: '/exchange-rates', methods: ['GET'], why: 'USD kursi (muzlatiladi)' },
+  // ── Kursni qo'lda qo'yish (egasi, 2026-08-17) ─────────────────────────────
+  // 🔴 IKKI QULFNING BIRINCHISI. Marshrut kioskda ochiladi, chunki egasi
+  // kursni PLANSHETDAN (kiosk qobig'idan) o'zgartirmoqchi. Ikkinchi qulf —
+  // ruxsat matritsasi: `exchangerate.update` faqat owner/admin shablonida
+  // (`cashier` da atayin faqat `view`), ya'ni kassir bu yo'lni chaqirsa 403.
+  // Marshrutni ochib ruxsatni tekshirmaslik yoki teskarisi — ikkalasi ham
+  // loyihada real uzilish keltirgan sinf, shuning uchun ikkisi BIRGA.
+  {
+    prefix: '/exchange-rates/manual',
+    methods: ['PUT'],
+    exact: true,
+    why: "kursni qo'lda o'zgartirish — ruxsat qulfi kassirni to'sadi",
+  },
   { prefix: '/company-settings', methods: ['GET'], why: 'chek sozlamalari' },
   // 🔴 `/sklad-keepers` QATORI OLIB TASHLANDI (2026-08-16). U yig'ish
   // varag'ining ombor→printer marshruti uchun ochilgan edi; egasi esa printer

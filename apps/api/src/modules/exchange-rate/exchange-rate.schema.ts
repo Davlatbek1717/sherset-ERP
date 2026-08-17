@@ -29,6 +29,40 @@ export const CbruResponseSchema = z.array(CbruRowSchema);
 
 // --- Read filter ---
 
+// --- Qo'lda kurs qo'yish (2026-08-17, egasi: «dollar kursini qo'lda o'zgartirsam») ---
+
+/**
+ * Aql-bovar chegarasi. Nega kerak: kurs bitta maydonga qo'lda kiritiladi va
+ * xato bir raqam butun kassani buzadi — `12` (nol tushib qolgan) yoki
+ * `120000000` (ortiqcha nol) darhol sotuv narxini yolg'on qiladi. Chegara
+ * so'm-dollar uchun real diapazon: 100 … 1 000 000.
+ */
+export const MANUAL_RATE_MIN = 100;
+export const MANUAL_RATE_MAX = 1_000_000;
+
+/**
+ * `PUT /exchange-rates/manual` tanasi.
+ *
+ * `rate` STRING sifatida keladi va string bo'lib qoladi: pul-kritik qiymat
+ * IEEE-754 `number` ga aylantirilmaydi (Prisma.Decimal bilan ishlanadi).
+ * Chegara tekshiruvi uchun `Number()` faqat SOLISHTIRISHDA ishlatiladi —
+ * saqlanadigan qiymat baribir asl string.
+ */
+export const ManualRateSchema = z.object({
+  currency: CurrencyCodeSchema,
+  rate: z
+    .string()
+    .trim()
+    .regex(/^\d+(\.\d{1,6})?$/, 'rate must be a positive decimal with at most 6 decimals')
+    .refine((v) => Number(v) >= MANUAL_RATE_MIN, {
+      message: `rate must be at least ${MANUAL_RATE_MIN}`,
+    })
+    .refine((v) => Number(v) <= MANUAL_RATE_MAX, {
+      message: `rate must not exceed ${MANUAL_RATE_MAX}`,
+    }),
+});
+export type ManualRateInput = z.infer<typeof ManualRateSchema>;
+
 export const ExchangeRateFilterSchema = z.object({
   /// ISO-8601 date — defaults to today. Reads return the latest known
   /// rate on or before this date (i.e. carry-forward across weekends/holidays).

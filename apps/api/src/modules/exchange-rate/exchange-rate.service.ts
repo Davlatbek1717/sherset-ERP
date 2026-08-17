@@ -1,6 +1,14 @@
 import { Prisma } from '@moysklad/db';
-import { BadGatewayException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  BadGatewayException,
+  BadRequestException,
+  Inject,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service.js';
+import { alphaCurrencyCode } from '../currency/currency-code.util.js';
 import { cbuRateToRateValue } from '../currency/currency-rate-source.js';
 import { CurrencyService } from '../currency/currency.service.js';
 import {
@@ -8,6 +16,7 @@ import {
   type CbruRow,
   type CurrencyCode,
   ExchangeRateFilterSchema,
+  ManualRateSchema,
 } from './exchange-rate.schema.js';
 
 const CBRU_BASE = 'https://cbu.uz/uz/arkhiv-kursov-valyut/json';
@@ -137,6 +146,155 @@ export class ExchangeRateService {
       `CBRU sync ${ymd}: ${rows.length} rows (${inserted} new, ${updated} updated); ${autoUpdated} AUTO currencies repriced`,
     );
     return { date: ymd, inserted, updated, total: rows.length };
+  }
+
+  /**
+   * Kursni QO'LDA qo'yish (2026-08-17, egasi: «dollar kursini o'zim yozaman»).
+   *
+   * 🔴 NEGA BITTA TRANZAKSIYADA IKKI JADVAL: kurs loyihada ikki joyda yashaydi —
+   * `exchange_rates` (source='MANUAL' qatori, KASSA `getRate()` orqali shundan
+   * o'qiydi) va `Currency.rateValue` (ERP hujjatlari + hisobot konvertatsiyasi).
+   * Faqat bittasini yozsak chek bilan hisobot BOSHQA kursdan hisoblaydi. Ikkisi
+   * bitta `$transaction` da — yarim qo'llanish bo'lmaydi.
+   *
+   * Sana DOIM bugungi UTC kuni: o'tgan sanaga yozish hisobot konvertatsiyasini
+   * orqaga qarab qayta hisoblab yuboradi (egasi «faqat bugundan» dedi). Post
+   * qilingan hujjatlar o'z `rate_value` snapshotini saqlaydi ⇒ o'tmish tegilmaydi.
+   */
+  async setManualRate(
+    accountId: string,
+    userId: string | null,
+    input: unknown,
+  ): Promise<ExchangeRateRow> {
+    const { currency, rate } = ManualRateSchema.parse(input);
+
+    // Valyuta shu akkauntda bormi + baza valyutasi emasmi. Lookup alphaCode
+    // orqali: legacy qatorlarda `code` da ALPHA turishi mumkin (M-03).
+    const currencies = await this.prisma.client.currency.findMany({
+      where: { accountId },
+      select: {
+        id: true,
+        code: true,
+        isoCode: true,
+        default: true,
+        rateValue: true,
+        multiplicity: true,
+      },
+    });
+    const target = currencies.find((c) => alphaCurrencyCode(c) === currency);
+    if (!target) {
+      throw new NotFoundException(
+        `Valyuta ${currency} bu akkauntda topilmadi — avval «Sozlamalar → Valyutalar» da yarating.`,
+      );
+    }
+    if (target.default) {
+      throw new BadRequestException(
+        `${currency} — hisob valyutasi (baza). Uning kursi har doim 1, o'zgartirib bo'lmaydi.`,
+      );
+    }
+
+    const today = startOfDayUTC(new Date());
+    // `nominal` mavjud MANUAL/CBRU qatoridan meros oladi — dollar uchun 1,
+    // lekin per-1000 kotirovkali valyutada (KRW) uni 1 ga tushirib
+    // yuborsak kurs 1000× xato bo'lardi.
+    const known = await this.prisma.client.exchangeRate.findFirst({
+      where: { currency },
+      orderBy: { date: 'desc' },
+      select: { nominal: true },
+    });
+    const nominal = known?.nominal && known.nominal > 0 ? known.nominal : 1;
+
+    // Kanonik ×10^8. Margin QO'LLANMAYDI: qo'lda kiritilgan son AYNAN
+    // o'zi ishlasin (egasi «12 000 deb hisobla» degani — ustama emas).
+    const rateValue = cbuRateToRateValue(rate, nominal, 0);
+    const before = target.rateValue;
+
+    await this.prisma.client.$transaction(async (tx) => {
+      await tx.exchangeRate.upsert({
+        where: { date_currency_source: { date: today, currency, source: 'MANUAL' } },
+        create: {
+          date: today,
+          currency,
+          source: 'MANUAL',
+          rate: new Prisma.Decimal(rate),
+          nominal,
+        },
+        update: { rate: new Prisma.Decimal(rate), nominal, fetchedAt: new Date() },
+      });
+
+      await tx.currency.update({
+        where: { id: target.id },
+        data: { rateValue, rateUpdateType: 'MANUAL' },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          accountId,
+          userId,
+          entity: 'currency',
+          entityId: target.id,
+          action: 'rate_change',
+          fieldChanges: {
+            rate: { before: before.toString(), after: rateValue.toString() },
+          },
+          context: { source: 'manual-rate', currency, nominal },
+        },
+      });
+    });
+
+    this.logger.log(
+      `Qo'lda kurs: ${currency} → ${rate} (nominal ${nominal}, rateValue ${rateValue}) · user ${userId ?? 'system'}`,
+    );
+
+    return toExchangeRateRow({
+      date: toYMD(today),
+      currency,
+      rate,
+      nominal,
+      source: 'MANUAL',
+    });
+  }
+
+  /**
+   * Qo'lda kurs o'zgarishlari tarixi — KIM, QACHON, nimadan nimaga.
+   *
+   * `AuditLog` dan o'qiydi (yozuv `setManualRate` da tushadi). Nega alohida
+   * endpoint: sahifa `currencyId` ni topib `audit-log` filtrini qurmasin —
+   * bitta so'rov bilan tarix keladi.
+   */
+  async listManualChanges(
+    accountId: string,
+    currency: CurrencyCode,
+    limit = 20,
+  ): Promise<
+    Array<{ at: string; before: string; after: string; userName: string | null; currency: string }>
+  > {
+    const currencies = await this.prisma.client.currency.findMany({
+      where: { accountId },
+      select: { id: true, code: true, isoCode: true },
+    });
+    const target = currencies.find((c) => alphaCurrencyCode(c) === currency);
+    if (!target) return [];
+
+    const rows = await this.prisma.client.auditLog.findMany({
+      where: { accountId, entity: 'currency', entityId: target.id, action: 'rate_change' },
+      orderBy: { at: 'desc' },
+      take: Math.min(Math.max(limit, 1), 100),
+      include: { user: { select: { name: true, email: true } } },
+    });
+
+    return rows.map((r) => {
+      const changes = (r.fieldChanges ?? {}) as {
+        rate?: { before?: unknown; after?: unknown };
+      };
+      return {
+        at: r.at.toISOString(),
+        before: String(changes.rate?.before ?? ''),
+        after: String(changes.rate?.after ?? ''),
+        userName: r.user?.name ?? r.user?.email ?? null,
+        currency,
+      };
+    });
   }
 
   /**

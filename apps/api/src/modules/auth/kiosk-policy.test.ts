@@ -347,3 +347,30 @@ describe('F8 — zakaz to`lovi yo`llari', () => {
     expect(isKioskAllowed('DELETE', ORDER)).toBe(false);
   });
 });
+
+describe("Qo'lda kurs yo'li — kiosk ro'yxati (2026-08-17)", () => {
+  it('PUT /exchange-rates/manual kioskda OCHIQ', () => {
+    // Egasi kursni planshetdan o'zgartiradi. Marshrut yopiq bo'lsa tugma
+    // bosilganda 403 keladi va sabab ko'rinmaydi (real hodisa sinfi).
+    expect(isKioskAllowed('PUT', '/exchange-rates/manual')).toBe(true);
+  });
+
+  it('boshqa metodlar shu yo`lda YOPIQ (faqat PUT ochilgan)', () => {
+    expect(isKioskAllowed('POST', '/exchange-rates/manual')).toBe(false);
+    expect(isKioskAllowed('DELETE', '/exchange-rates/manual')).toBe(false);
+  });
+
+  it('`exact` — ostidagi yo`llar ochilmaydi', () => {
+    expect(isKioskAllowed('PUT', '/exchange-rates/manual/anything')).toBe(false);
+  });
+
+  it('CBRU sinxronlash kioskda YOPIQ qoladi', () => {
+    // Kassirning markaziy bank sinxronini otishiga hech qanday sabab yo'q.
+    expect(isKioskAllowed('POST', '/exchange-rates/sync')).toBe(false);
+  });
+
+  it("kurs O'QISH hamon ochiq (kassa kursni ko'rsatadi)", () => {
+    expect(isKioskAllowed('GET', '/exchange-rates/rate')).toBe(true);
+    expect(isKioskAllowed('GET', '/exchange-rates/manual/changes')).toBe(true);
+  });
+});

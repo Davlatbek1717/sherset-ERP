@@ -1,4 +1,6 @@
-import { Controller, Get, Inject, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Inject, Post, Put, Query, UseGuards } from '@nestjs/common';
+import type { AuthenticatedUser } from '../auth/auth.schema.js';
+import { CurrentUser } from '../auth/current-user.decorator.js';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
 import { RequirePermission } from '../permissions/require-permission.decorator.js';
 import { CurrencyCodeSchema } from './exchange-rate.schema.js';
@@ -41,6 +43,38 @@ export class ExchangeRateController {
     const ccy = CurrencyCodeSchema.parse(currency);
     const d = date ? new Date(date) : new Date();
     return this.svc.getRate(ccy, d);
+  }
+
+  /**
+   * PUT /exchange-rates/manual  { currency, rate }
+   *
+   * Kursni QO'LDA qo'yish. Bitta amal ikkala qatlamni yozadi (kassa o'qiydigan
+   * `exchange_rates` MANUAL qatori + ERP ishlatadigan `Currency.rateValue`) va
+   * `AuditLog` ga «kim, qachon, nimadan nimaga» izini qoldiradi.
+   *
+   * 🔴 IKKI QULF (loyihada bu sinf ikki marta kuydirgan): bu yo'l kiosk
+   * ro'yxatiga QO'SHILGAN (planshetdan chaqirilsin), lekin `update` ruxsati
+   * kassirda YO'Q ⇒ kassir ko'radi, o'zgartira olmaydi.
+   */
+  @Put('manual')
+  @RequirePermission({ entity: 'exchangerate', action: 'update' })
+  async setManual(@CurrentUser() user: AuthenticatedUser, @Body() body: unknown) {
+    return this.svc.setManualRate(user.accountId, user.sub, body);
+  }
+
+  /**
+   * GET /exchange-rates/manual/changes?currency=USD&limit=20
+   * Qo'lda kurs o'zgarishlari tarixi (kim, qachon, nimadan nimaga).
+   */
+  @Get('manual/changes')
+  @RequirePermission({ entity: 'exchangerate', action: 'view' })
+  async manualChanges(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query('currency') currency: string,
+    @Query('limit') limit?: string,
+  ) {
+    const ccy = CurrencyCodeSchema.parse(currency);
+    return this.svc.listManualChanges(user.accountId, ccy, limit ? Number.parseInt(limit, 10) : 20);
   }
 
   /**
