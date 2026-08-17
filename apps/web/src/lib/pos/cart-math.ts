@@ -384,7 +384,60 @@ export function saleCashLikeMinor(
   if (!payments || payments.length === 0) return null;
   let sum = 0n;
   for (const p of payments) {
-    if (p.method !== 'CASH_UZS' && p.method !== 'CASH_USD') continue;
+    // 🔴 2026-08-17: `CASH_USD` BU YERDAN CHIQARILDI (egasi qarori, prodda
+    // o'lchangan yo'qotishdan keyin). Dollar so'm ekvivalentida «naqd-o'xshash»
+    // sanalgani uchun dollarli chek to'liq SO'MDA qaytarilib ketardi:
+    // ТРН-2026-00318 (4 690 000 so'm + $100) → 5 890 000 so'm chiqdi ⇒ so'm
+    // kassasi 1 200 000 ga kamaydi, $100 yashiqda qoldi. Dollar endi
+    // `saleCashUsdMinor` orqali, O'Z birligida qaytariladi.
+    if (p.method !== 'CASH_UZS') continue;
+    try {
+      sum += BigInt(p.amountBaseMinor);
+    } catch {
+      // Buzuq qiymat pul yaratmasin.
+    }
+  }
+  return sum;
+}
+
+/**
+ * Chek DOLLARDA olgan pul — **SENTDA** (`CASH_USD.amountMinor`).
+ *
+ * So'm yig'indilariga hech qachon qo'shilmaydi: ikkalasi ham `bigint`,
+ * aralashtirilsa typecheck ko'rmaydi va kassa 12 000× xato hisoblardi.
+ * `null` = o'lchanmagan (to'lov qatorlari yo'q eski chek) ⇒ dollar
+ * qaytarish taklif qilinmaydi.
+ */
+export function saleCashUsdMinor(
+  payments: ReadonlyArray<{ method: string; amountMinor: string }> | null | undefined,
+): bigint | null {
+  if (!payments || payments.length === 0) return null;
+  let cents = 0n;
+  for (const p of payments) {
+    if (p.method !== 'CASH_USD') continue;
+    try {
+      cents += BigInt(p.amountMinor);
+    } catch {
+      // Buzuq qiymat pul yaratmasin.
+    }
+  }
+  return cents;
+}
+
+/**
+ * Dollar to'lovining SO'M ekvivalenti (tiyin) — `CASH_USD.amountBaseMinor`.
+ *
+ * So'm pul ulushidan chiqarish uchun kerak: server ham
+ * `money = sum − debt − usdBase` qiladi. Ikkalasi bir formulada bo'lmasa POS
+ * serverning cap'iga urilib qaytarishni bloklardi.
+ */
+export function saleUsdBaseMinor(
+  payments: ReadonlyArray<{ method: string; amountBaseMinor: string }> | null | undefined,
+): bigint {
+  if (!payments || payments.length === 0) return 0n;
+  let sum = 0n;
+  for (const p of payments) {
+    if (p.method !== 'CASH_USD') continue;
     try {
       sum += BigInt(p.amountBaseMinor);
     } catch {
@@ -417,28 +470,53 @@ export function refundTenderSplit(i: {
   originalDebtMinor: bigint;
   /** `saleCashLikeMinor` natijasi; `null` = o'lchanmagan ⇒ eski xulq (naqd). */
   originalCashLikeMinor: bigint | null;
+  /**
+   * `saleCashUsdMinor` natijasi — SENT. Dollar ulushi so'm kanallariga
+   * QO'SHILMAYDI: u `cashUsdReturnMinor` bo'lib alohida ketadi.
+   */
+  originalCashUsdMinor?: bigint | null;
+  /** Dollarning SO'M ekvivalenti (tiyin) — so'm pul ulushidan chiqarish uchun. */
+  originalUsdBaseMinor?: bigint;
   refundSumMinor: bigint;
-}): { cashMinor: bigint; cardMinor: bigint } {
+}): { cashMinor: bigint; cardMinor: bigint; usdMinor: bigint } {
+  // Dollar ulushi so'm pul ulushidan CHIQARILADI — server ham aynan shunday
+  // (`money = sum − debt − usdBase`), aks holda POS serverning `moneyMax`
+  // qo'riqchisiga urilib qaytarib bo'lmasdi.
+  const usdBase =
+    i.originalUsdBaseMinor && i.originalUsdBaseMinor > 0n ? i.originalUsdBaseMinor : 0n;
   const moneyMinor = refundCashShareMinor({
     originalSumMinor: i.originalSumMinor,
-    originalDebtMinor: i.originalDebtMinor,
+    originalDebtMinor: i.originalDebtMinor + usdBase,
     refundSumMinor: i.refundSumMinor,
   });
-  if (i.originalCashLikeMinor == null) return { cashMinor: moneyMinor, cardMinor: 0n };
+
+  const sumForUsd = i.originalSumMinor > 0n ? i.originalSumMinor : 0n;
+  const refundedForUsd =
+    i.refundSumMinor < 0n ? 0n : i.refundSumMinor > sumForUsd ? sumForUsd : i.refundSumMinor;
+  // Dollar ham proporsional (qisman qaytarishda) — server bilan bir formula.
+  const usdMinor =
+    i.originalCashUsdMinor == null || sumForUsd === 0n || i.originalCashUsdMinor <= 0n
+      ? 0n
+      : (i.originalCashUsdMinor * refundedForUsd) / sumForUsd;
+
+  if (i.originalCashLikeMinor == null) return { cashMinor: moneyMinor, cardMinor: 0n, usdMinor };
 
   const sum = i.originalSumMinor > 0n ? i.originalSumMinor : 0n;
-  if (sum === 0n) return { cashMinor: 0n, cardMinor: 0n };
+  if (sum === 0n) return { cashMinor: 0n, cardMinor: 0n, usdMinor };
   const refunded = i.refundSumMinor < 0n ? 0n : i.refundSumMinor > sum ? sum : i.refundSumMinor;
   // Server ham AYNAN shu qisishni qiladi: naqd ulushi pul ulushidan katta
   // bo'lolmaydi (qaytim tufayli `amountBaseMinor` chek jamidan oshishi mumkin).
   const cashLikeRaw = i.originalCashLikeMinor < 0n ? 0n : i.originalCashLikeMinor;
   const debt =
     i.originalDebtMinor < 0n ? 0n : i.originalDebtMinor > sum ? sum : i.originalDebtMinor;
-  const cashLike = cashLikeRaw > sum - debt ? sum - debt : cashLikeRaw;
+  // Qisish bazasi PUL ulushi — dollar bazasi ham chiqarilgan holda (server
+  // `clamp(cashLike, 0, money)` qiladi, `money` esa usdBase'siz).
+  const moneyShare = sum - debt - usdBase > 0n ? sum - debt - usdBase : 0n;
+  const cashLike = cashLikeRaw > moneyShare ? moneyShare : cashLikeRaw;
 
   const cashMinor = (cashLike * refunded) / sum;
   const cardMinor = moneyMinor - cashMinor;
-  return { cashMinor, cardMinor: cardMinor > 0n ? cardMinor : 0n };
+  return { cashMinor, cardMinor: cardMinor > 0n ? cardMinor : 0n, usdMinor };
 }
 
 /**

@@ -18,7 +18,9 @@ import {
   refundPayoutMinor,
   refundTenderSplit,
   saleCashLikeMinor,
+  saleCashUsdMinor,
   saleDebtMinor,
+  saleUsdBaseMinor,
 } from '@/lib/pos/cart-math';
 import { printReceiptViaAgent } from '@/lib/print-agent';
 import { formatMoney, useConfirm, useToast } from '@moysklad/ui';
@@ -62,7 +64,11 @@ interface ChekDetailData {
    * Chek QANDAY yopilgani (`RetailSalePayment`). Qaytarishda naqd ulushi
    * shundan chiqadi — qarzga olingan tovar uchun kassa pul olmagan.
    */
-  payments?: Array<{ method: string; amountBaseMinor: string }> | null;
+  // `amountMinor` — to'lov valyutasidagi ASL summa (dollar qatorida SENT).
+  // Server detal endpointi uni QAYTARADI (`retail-sale.service.ts` findOne
+  // select: method/amountMinor/currency/rateMinor/amountBaseMinor) — tip
+  // ilgari toroygan edi, shuning uchun dollar sentini o'qib bo'lmasdi.
+  payments?: Array<{ method: string; amountMinor: string; amountBaseMinor: string }> | null;
   agent: { id: string; name: string } | null;
   session: {
     cashier: { id: string; name: string };
@@ -78,6 +84,60 @@ interface ChekDetailData {
  * bo'lsa tugma ko'rinib turib 400 qaytarardi.
  */
 const CANCELLABLE_STATES = ['draft', 'picking', 'ready'];
+
+/**
+ * Chek holati NISHONI — ro'yxat va detal-panel uchun YAGONA ta'rif
+ * (egasi, 2026-08-17: «har bir chekni oldida statusini yozib qo'y»).
+ *
+ * 🔴 NEGA KERAK: ro'yxatda holat UMUMAN ko'rinmasdi — 31 000 so'mlik
+ * «Qoralama» ham, to'langan chek ham, bekor qilingani ham bir xil ko'rinardi.
+ * Kassir xato kiritilgan chekni ajratib olishi uchun detalni ochishi shart
+ * edi (egasi bugun aynan shu ikki chekni ko'rsatib «olib tashla» degan).
+ *
+ * Ranglar SEMANTIK: yashil = pul olindi · sariq = hali tugamagan · ko'k =
+ * omborchi zanjirida · kulrang = o'lik (bekor) · qizil = qaytarilgan.
+ * Ilgari detal panelida shu qaror inline ternar bilan yozilgan edi va
+ * ro'yxatda umuman yo'q edi — ikki nusxa bo'lmasligi uchun bitta joyga
+ * chiqarildi.
+ */
+const STATE_TONE: Record<string, string> = {
+  posted: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+  draft: 'bg-amber-50 text-amber-700 border-amber-200',
+  picking: 'bg-sky-50 text-sky-700 border-sky-200',
+  ready: 'bg-sky-50 text-sky-700 border-sky-200',
+  cancelled: 'bg-[var(--ms-bg-app)] text-[var(--ms-text-muted)] border-[var(--ms-border)]',
+  refunded: 'bg-rose-50 text-rose-700 border-rose-200',
+};
+
+/** «O'lik» cheklar — sotuv sifatida o'qilmasligi kerak (summa xiralashadi). */
+const DEAD_STATES = ['cancelled', 'refunded'];
+
+/** Tarjima kalitlari bitta joyda — ro'yxat va detal bir xil so'zni ko'rsatadi. */
+function chekStateLabels(t: (k: string) => string): Record<string, string> {
+  return {
+    posted: t('state_posted'),
+    draft: t('state_draft'),
+    picking: t('state_picking'),
+    ready: t('state_ready'),
+    cancelled: t('state_cancelled'),
+    refunded: t('state_refunded'),
+  };
+}
+
+function ChekStateBadge({ state, label }: { state: string; label: string }) {
+  return (
+    <span
+      data-test-id="chek-state-badge"
+      data-state={state}
+      className={`shrink-0 rounded-md border px-1.5 py-0.5 font-medium text-[12px] leading-none ${
+        STATE_TONE[state] ??
+        'bg-[var(--ms-bg-app)] text-[var(--ms-text-muted)] border-[var(--ms-border)]'
+      }`}
+    >
+      {label}
+    </span>
+  );
+}
 
 function ChekDetailPanel({
   saleId,
@@ -165,12 +225,18 @@ function ChekDetailPanel({
         originalSumMinor: BigInt(data?.sumMinor ?? '0'),
         originalDebtMinor: saleDebtMinor(data?.payments),
         originalCashLikeMinor: saleCashLikeMinor(data?.payments),
+        // 2026-08-17: dollar ulushi O'Z birligida (sent) qaytadi. Busiz server
+        // `moneyMax` qo'riqchisi dollarli chekni RAD etadi — ya'ni bu qator
+        // bo'lmasa dollarli chekni POS'dan umuman qaytarib bo'lmaydi.
+        originalCashUsdMinor: saleCashUsdMinor(data?.payments),
+        originalUsdBaseMinor: saleUsdBaseMinor(data?.payments),
         refundSumMinor: refundValue,
       });
       await api.post(`/retail-sales/${saleId}/refund`, {
         positions,
         cashAmountMinor: split.cashMinor.toString(),
         cardAmountMinor: split.cardMinor.toString(),
+        cashUsdReturnMinor: split.usdMinor.toString(),
         // ⚠️ i18n-emas, ATAYLAB: bu hujjatning DB'da saqlanadigan izohi, ekran
         // matni emas. Kassirning tiliga bog'lasak bir xil hujjat kim yaratganiga
         // qarab turlicha yozilib qolardi (hisobot/qidiruv buziladi).
@@ -207,14 +273,7 @@ function ChekDetailPanel({
   const cash = BigInt(data.cashAmountMinor ?? '0');
   const card = BigInt(data.cardAmountMinor ?? '0');
   const terminal = BigInt(data.terminalAmountMinor ?? '0');
-  const stateLabel: Record<string, string> = {
-    posted: t('state_posted'),
-    draft: t('state_draft'),
-    picking: t('state_picking'),
-    ready: t('state_ready'),
-    cancelled: t('state_cancelled'),
-    refunded: t('state_refunded'),
-  };
+  const stateLabel = chekStateLabels(t);
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
@@ -237,17 +296,7 @@ function ChekDetailPanel({
               minute: '2-digit',
             })}
             {' · '}
-            <span
-              className={
-                data.state === 'posted'
-                  ? 'text-emerald-600 font-medium'
-                  : data.state === 'cancelled'
-                    ? 'text-red-500'
-                    : ''
-              }
-            >
-              {stateLabel[data.state] ?? data.state}
-            </span>
+            <ChekStateBadge state={data.state} label={stateLabel[data.state] ?? data.state} />
           </div>
         </div>
         <button
@@ -326,7 +375,14 @@ function ChekDetailPanel({
           ))}
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-4">
+      {/* 🔴 `[&>*]:shrink-0` SHART (2026-08-17, egasi: «chekni scrol qilib
+          bo'lmayapti»). Brauzerda o'lchandi: scroll konteyneri `flex flex-col`
+          bo'lgani uchun farzandlar sukut bo'yicha `flex-shrink: 1` bilan
+          QISILARDI — pozitsiyalar bloki 71,7px dan 4,3px ga ezilib,
+          `scrollHeight === clientHeight` bo'lib qolardi, ya'ni oshib chiqmagani
+          uchun SCROLL UMUMAN paydo bo'lmasdi. Farzandlar qisilmasa kontent
+          tabiiy balandligini oladi (186 → 254px) va panel scroll bo'ladi. */}
+      <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-4 [&>*]:shrink-0">
         {/* Kassir + mijoz */}
         <div className="rounded-xl border border-[var(--ms-border)] bg-[var(--ms-bg-app)] divide-y divide-[var(--ms-border)]">
           <div className="flex justify-between px-4 py-2.5 text-sm">
@@ -450,6 +506,8 @@ function ChekDetailPanel({
               originalSumMinor: BigInt(data.sumMinor),
               originalDebtMinor: saleDebt,
               originalCashLikeMinor: saleCashLikeMinor(data.payments),
+              originalCashUsdMinor: saleCashUsdMinor(data.payments),
+              originalUsdBaseMinor: saleUsdBaseMinor(data.payments),
               refundSumMinor: refundValue,
             });
             const refundMinor = split.cashMinor;
@@ -483,6 +541,22 @@ function ChekDetailPanel({
                     </span>
                     <span className="shrink-0 font-semibold tabular-nums text-[var(--ms-text-primary)]">
                       {formatMoney(split.cardMinor)}
+                    </span>
+                  </div>
+                )}
+                {split.usdMinor > 0n && (
+                  <div
+                    className="mb-3 flex items-start justify-between gap-3"
+                    data-test-id="pos-refund-usd-share"
+                  >
+                    <span className="text-sm text-[var(--ms-text-muted)]">
+                      {t('refund_amount_usd')}
+                      <span className="mt-0.5 block text-[11px] text-[var(--ms-text-muted)]">
+                        {t('refund_amount_usd_hint')}
+                      </span>
+                    </span>
+                    <span className="shrink-0 font-semibold tabular-nums text-[var(--ms-text-primary)]">
+                      {`$${(Number(split.usdMinor) / 100).toFixed(2)}`}
                     </span>
                   </div>
                 )}
@@ -538,6 +612,7 @@ export function CheklarMode({
   onCopyToCart,
 }: CheklarModeProps) {
   const t = useTranslations('pages.sotuv');
+  const listStateLabel = chekStateLabels(t);
   const chekQuery = chekSearch.trim();
 
   // F4 (spec §5.3) — to'liq-ekran: chapda ro'yxat (64px qatorlar), o'ngda
@@ -582,7 +657,13 @@ export function CheklarMode({
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center justify-between gap-2">
-                    <span className="text-[18px] font-semibold tabular-nums text-[var(--ms-text-primary)]">
+                    <span
+                      className={`text-[18px] font-semibold tabular-nums ${
+                        DEAD_STATES.includes(sale.state)
+                          ? 'text-[var(--ms-text-muted)] line-through'
+                          : 'text-[var(--ms-text-primary)]'
+                      }`}
+                    >
                       {formatMoney(BigInt(sale.sumMinor))}
                     </span>
                     <span className="shrink-0 text-[14px] text-[var(--ms-text-muted)]">
@@ -593,6 +674,13 @@ export function CheklarMode({
                     </span>
                   </div>
                   <div className="mt-0.5 flex items-center gap-2 text-[14px] text-[var(--ms-text-muted)]">
+                    {/* Holat — ma'lumot satrining ENG CHAPIDA: pul eng katta
+                        element bo'lib qoladi, holat esa birinchi o'qiladigan
+                        yorliq. */}
+                    <ChekStateBadge
+                      state={sale.state}
+                      label={listStateLabel[sale.state] ?? sale.state}
+                    />
                     {/* Server include'i buni kafolatlaydi (qo'riqchi:
                         api → retail-sale-list-contract.test.ts), lekin
                         kassir ismi — kosmetik maydon: u yetib kelmasa

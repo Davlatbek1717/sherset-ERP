@@ -52,7 +52,13 @@ function makeHarness(opts: {
    * `amountBaseMinor` berilmasa `amountMinor` deb olinadi (so'm qatorlarida
    * ular teng) — dublyor SERVER select'ining shaklini takrorlaydi.
    */
-  payments?: { method: string; amountMinor: bigint; amountBaseMinor?: bigint }[];
+  payments?: {
+    method: string;
+    amountMinor: bigint;
+    amountBaseMinor?: bigint;
+    /** `CASH_USD` qatorining MUZLATILGAN kursi (×10^8). */
+    rateMinor?: bigint;
+  }[];
   priorRefunds?: PriorRefund[];
   agentId?: string | null;
   /** The SOLD_ON_CREDIT audit event of the original sale, if one was written. */
@@ -77,6 +83,9 @@ function makeHarness(opts: {
     // refund() endi smenani post() dagi SALES-07 naqshida SHARTLI claim
     // qiladi (`updateMany where state:'open'`) — dublyor shu yuzani beradi.
     cashierSession: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
+    // 2026-08-17 — dollar qaytarish mirror chekka `CASH_USD` qatori yozadi
+    // (smenaning dollar hisobi aynan shu qatorni o'qiydi).
+    retailSalePayment: { create: vi.fn().mockResolvedValue({}) },
   };
 
   const client = {
@@ -123,6 +132,9 @@ function makeHarness(opts: {
         },
         payments: (opts.payments ?? []).map((p) => ({
           amountBaseMinor: p.amountMinor,
+          // Server select'i `rateMinor` ni ham o'qiydi — dublyor shu shaklni
+          // takrorlaydi (uzatilmasa `null`, ya'ni «kurs yozilmagan» holati).
+          rateMinor: null,
           ...p,
         })),
         positions: opts.positions.map((p) => ({
@@ -567,19 +579,27 @@ describe('refund() — yashiq olmagan pulni qaytara olmaydi (P5)', () => {
     expect(money.applyDeltas).not.toHaveBeenCalled();
   });
 
-  it('🔴 MK31 — DOLLAR cheki so`mda qaytariladi: `amountBaseMinor` o`qiladi, sent EMAS', async () => {
-    // $8.38 ≈ 100 000 tiyin. `amountMinor` (838 sent) naqd cap deb o'qilsa
-    // dollar chekni umuman qaytarib bo'lmasdi (cap 8,38 so'm chiqardi).
-    const { svc, money } = makeHarness({
+  it('🔴 DOLLAR cheki SO`MDA qaytarilmaydi — dollar ulushi so`m cap`iga kirmaydi', async () => {
+    // 2026-08-17 da SHARTNOMA O'ZGARDI (egasi qarori, prodda o'lchangan
+    // yo'qotishdan keyin). Ilgari bu test «dollar chek so'mda qaytariladi»
+    // deb qulflab turgan edi va aynan shu prodda pul yo'qotdi:
+    // ТРН-2026-00318 (4 690 000 so'm + $100) → ТРН-2026-00323 5 890 000
+    // so'm NAQD qaytardi ⇒ so'm kassasi 1 200 000 ga kamaydi, $100 esa
+    // yashiqda qolib ketdi (smena dollar hisobi hech qachon kamaymadi).
+    //
+    // Endi: $8.38 dollar ulushi so'm naqd cap'iga KIRMAYDI, shuning uchun
+    // 100 000 tiyin naqd qaytarish RAD etiladi. Dollar `cashUsdReturnMinor`
+    // orqali, o'z birligida qaytariladi.
+    const { svc } = makeHarness({
       positions: TEN,
       payments: [{ method: 'CASH_USD', amountMinor: 838n, amountBaseMinor: 100_000n }],
     });
 
-    await svc.refund(ACCOUNT, USER_ID, SALE_ID, refundReq('10', { cashAmountMinor: '100000' }));
-
-    expect(money.applyDeltas.mock.calls[0]?.[2]).toEqual([
-      expect.objectContaining({ deltaMinor: -100_000n }),
-    ]);
+    await expect(
+      svc.refund(ACCOUNT, USER_ID, SALE_ID, refundReq('10', { cashAmountMinor: '100000' })),
+      // Xabar kassirga DOLLAR maydonini ko'rsatadi — «rad etildi, nega
+      // ekani noma'lum» holati bo'lmasin.
+    ).rejects.toThrow(/DOLLARDA to'langan/);
   });
 
   it('QISMAN qaytarishlar zanjirida naqd cap KÜMÜLATIV (bo`lib chiqarib bo`lmaydi)', async () => {
@@ -606,5 +626,158 @@ describe('refund() — yashiq olmagan pulni qaytara olmaydi (P5)', () => {
       svc.refund(ACCOUNT, USER_ID, SALE_ID, refundReq('10', { cashAmountMinor: '1' })),
     ).rejects.toBeInstanceOf(BadRequestException);
     expect(money.applyDeltas).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * DOLLAR QAYTARISH (2026-08-17, egasi qarori — prodda o'lchangan yo'qotishdan keyin).
+ *
+ * Ilgari dollarda to'langan chek to'liq SO'M bilan qaytarilardi: so'm yashig'i
+ * kamayib, mijozning dollari yashiqda qolib ketardi va smenaning dollar hisobi
+ * («expectedUsdCash») hech qachon kamaymasdi. Endi dollar O'Z birligida qaytadi.
+ *
+ * Qulflanadigan shartnomalar:
+ *   1. mirror chekka `CASH_USD` qatori yoziladi — SENTDA (smena hisobi shuni o'qiydi);
+ *   2. kurs ASL chekdan MUZLATILGAN holda olinadi (joriy kurs EMAS);
+ *   3. dollar cap'i: olingandan ko'p dollar chiqmaydi;
+ *   4. dollar SO'M pul daftariga TUSHMAYDI (ikki karra chiqim bo'lmasin);
+ *   5. kursi yozilmagan dollar qatorida dollar qaytarish TAQIQ (jim 0 emas).
+ */
+describe('refund() — DOLLAR dollarda qaytadi (2026-08-17)', () => {
+  // IZCHIL FIKSTURA: kurs 12 000 so'm/$ (×10^8). $1.00 = 100 sent ⇒
+  // 100 × 1.2e12 / 1e8 = 1 200 000 tiyin (= 12 000 so'm). Chek ham shu qiymatda,
+  // ya'ni «to'liq dollarda to'langan 12 000 so'mlik chek».
+  const RATE_E8 = 1_200_000_000_000n;
+  const USD_CENTS = 100n;
+  const USD_BASE = 1_200_000n;
+  const USD_POSITIONS: OriginalPosition[] = [
+    {
+      productId: PRODUCT_ID,
+      quantity: '10',
+      priceMinor: 120_000n,
+      discount: '0',
+      sumMinor: USD_BASE,
+    },
+  ];
+  const usdReceipt = () => ({
+    positions: USD_POSITIONS,
+    payments: [
+      {
+        method: 'CASH_USD',
+        amountMinor: USD_CENTS,
+        amountBaseMinor: USD_BASE,
+        rateMinor: RATE_E8,
+      },
+    ],
+  });
+
+  it('mirror chekka `CASH_USD` qatori yozadi — SENTDA', async () => {
+    const { svc, tx } = makeHarness(usdReceipt());
+
+    await svc.refund(ACCOUNT, USER_ID, SALE_ID, refundReq('10', { cashUsdReturnMinor: '100' }));
+
+    expect(tx.retailSalePayment.create).toHaveBeenCalledTimes(1);
+    const arg = tx.retailSalePayment.create.mock.calls[0]?.[0] as {
+      data: { method: string; amountMinor: bigint; currency: string; rateMinor: bigint };
+    };
+    expect(arg.data.method).toBe('CASH_USD');
+    expect(arg.data.amountMinor).toBe(USD_CENTS); // SENT, tiyin emas
+    expect(arg.data.currency).toBe('USD');
+  });
+
+  it('kurs ASL chekdan MUZLATILGAN holda olinadi', async () => {
+    const { svc, tx } = makeHarness(usdReceipt());
+
+    await svc.refund(ACCOUNT, USER_ID, SALE_ID, refundReq('10', { cashUsdReturnMinor: '100' }));
+
+    const arg = tx.retailSalePayment.create.mock.calls[0]?.[0] as {
+      data: { rateMinor: bigint; amountBaseMinor: bigint };
+    };
+    // Joriy kurs olinsa kurs o'zgarganda do'konga foyda/zarar yasalardi.
+    expect(arg.data.rateMinor).toBe(RATE_E8);
+    expect(arg.data.amountBaseMinor).toBe(USD_BASE);
+  });
+
+  it('dollar SO`M pul daftariga TUSHMAYDI (ikki karra chiqim yo`q)', async () => {
+    const { svc, money } = makeHarness(usdReceipt());
+
+    await svc.refund(ACCOUNT, USER_ID, SALE_ID, refundReq('10', { cashUsdReturnMinor: '100' }));
+
+    // So'm naqd 0 ⇒ so'm kassasidan hech narsa chiqmaydi.
+    expect(money.applyDeltas).not.toHaveBeenCalled();
+  });
+
+  it('🔴 olingandan KO`P dollar qaytarib bo`lmaydi', async () => {
+    const { svc } = makeHarness(usdReceipt());
+
+    await expect(
+      svc.refund(ACCOUNT, USER_ID, SALE_ID, refundReq('10', { cashUsdReturnMinor: '101' })),
+    ).rejects.toThrow(/Dollar qaytarish/);
+  });
+
+  it('kursi yozilmagan dollar qatorida dollar qaytarish TAQIQ (jimgina 0 emas)', async () => {
+    const { svc } = makeHarness({
+      positions: USD_POSITIONS,
+      // `rateMinor` yo'q — eski chek.
+      payments: [{ method: 'CASH_USD', amountMinor: USD_CENTS, amountBaseMinor: USD_BASE }],
+    });
+
+    await expect(
+      svc.refund(ACCOUNT, USER_ID, SALE_ID, refundReq('10', { cashUsdReturnMinor: '100' })),
+    ).rejects.toThrow(/kursi yozilmagan/);
+  });
+
+  it('ARALASH chek: so`m ulushi so`mda, dollar ulushi dollarda', async () => {
+    // 1 200 000 tiyin chek: 600 000 so'm naqd + $0.50 (50 sent = 600 000 tiyin).
+    const { svc, money, tx } = makeHarness({
+      positions: USD_POSITIONS,
+      payments: [
+        { method: 'CASH_UZS', amountMinor: 600_000n },
+        { method: 'CASH_USD', amountMinor: 50n, amountBaseMinor: 600_000n, rateMinor: RATE_E8 },
+      ],
+    });
+
+    await svc.refund(
+      ACCOUNT,
+      USER_ID,
+      SALE_ID,
+      refundReq('10', { cashAmountMinor: '600000', cashUsdReturnMinor: '50' }),
+    );
+
+    // So'm: aynan olingan 600 000 chiqadi (dollar ulushi qo'shilmaydi).
+    expect(money.applyDeltas.mock.calls[0]?.[2]).toEqual([
+      expect.objectContaining({ deltaMinor: -600_000n }),
+    ]);
+    // Dollar: alohida qator, sentda.
+    const arg = tx.retailSalePayment.create.mock.calls[0]?.[0] as {
+      data: { amountMinor: bigint };
+    };
+    expect(arg.data.amountMinor).toBe(50n);
+  });
+
+  it('so`m ulushidan ko`p so`m qaytarib bo`lmaydi (dollar cap`ni ko`tarmaydi)', async () => {
+    const { svc } = makeHarness({
+      positions: USD_POSITIONS,
+      payments: [
+        { method: 'CASH_UZS', amountMinor: 600_000n },
+        { method: 'CASH_USD', amountMinor: 50n, amountBaseMinor: 600_000n, rateMinor: RATE_E8 },
+      ],
+    });
+
+    // To'liq 1 200 000 so'm naqd — dollar ulushi so'mga aylantirilib berilmaydi.
+    await expect(
+      svc.refund(ACCOUNT, USER_ID, SALE_ID, refundReq('10', { cashAmountMinor: '1200000' })),
+    ).rejects.toThrow(/so'm pul olgan/);
+  });
+
+  it('dollar qatori YO`Q chekda dollar qaytarish 0 bilan cheklanadi', async () => {
+    const { svc } = makeHarness({
+      positions: TEN,
+      payments: [{ method: 'CASH_UZS', amountMinor: 100_000n }],
+    });
+
+    await expect(
+      svc.refund(ACCOUNT, USER_ID, SALE_ID, refundReq('10', { cashUsdReturnMinor: '1' })),
+    ).rejects.toThrow(/Dollar qaytarish/);
   });
 });

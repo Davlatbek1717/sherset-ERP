@@ -187,6 +187,17 @@ export const RefundRetailSaleSchema = z.object({
   cashAmountMinor: z.coerce.string().regex(/^\d+$/).default('0'),
   cardAmountMinor: z.coerce.string().regex(/^\d+$/).default('0'),
   /**
+   * Dollar naqd qaytarish — **SENTDA** (2026-08-17, egasi qarori).
+   *
+   * 🔴 Nega alohida maydon: ilgari dollarda to'langan chek to'liq SO'M bilan
+   * qaytarilardi (`CASH_USD` «naqd-o'xshash» sanalgani uchun) va prodda
+   * o'lchangan yo'qotish berdi — so'm kassasi 1 200 000 ga kamayib, mijozning
+   * $100 yashiqda qolib ketdi. Endi dollar dollarda qaytadi va smenaning
+   * dollar hisobi (`returnsUsdMinor`) mirror chekning `CASH_USD` qatoridan
+   * o'qiladi. So'm maydonlariga QO'SHILMAYDI — birligi boshqa.
+   */
+  cashUsdReturnMinor: z.coerce.string().regex(/^\d+$/).default('0'),
+  /**
    * SALES-04 — qarzga sotilgan chek qaytarilganda mijoz balansidan
    * o'chiriladigan qarz ulushi. **Berilmasa** server o'zi hisoblaydi:
    * chekning qarz ulushi qaytarilgan qiymatga proporsional yopiladi.

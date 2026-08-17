@@ -108,6 +108,64 @@ describe('Chekni bekor qilish — to`lanmagan holatlar', () => {
   });
 });
 
+/**
+ * RO'YXATDA HOLAT KO'RINADI (egasi, 2026-08-17: «har bir chekni oldida
+ * statusini yozib qo'y»).
+ *
+ * 🔴 Ilgari ro'yxatda holat UMUMAN yo'q edi: 31 000 so'mlik «Qoralama» ham,
+ * to'langan chek ham, bekor qilingani ham bir xil ko'rinardi — kassir xato
+ * chekni ajratish uchun har birini ochishga majbur edi.
+ */
+describe('Cheklar ro`yxati — holat nishoni', () => {
+  it.each([
+    ['draft', 'Qoralama'],
+    ['posted', 'Yakunlandi'],
+    ['cancelled', 'Bekor qilindi'],
+  ])('%s → ro`yxat qatorida «%s» ko`rinadi', async (state, _label) => {
+    vi.mocked(api.get).mockImplementation(
+      router(
+        salesRoutes([
+          {
+            match: /limit=100/,
+            value: { items: [SALE_ROW({ state, sumMinor: '3100000' })], total: 1 },
+          },
+        ]),
+      ),
+    );
+    const user = userEvent.setup();
+    renderWithProviders(<SotuvPage />);
+
+    await user.click(await screen.findByRole('button', { name: /^Cheklar/ }));
+
+    const badge = await screen.findByTestId('chek-state-badge');
+    expect(badge.getAttribute('data-state')).toBe(state);
+    expect((badge.textContent ?? '').trim().length).toBeGreaterThan(0);
+  });
+
+  it('🔴 bekor qilingan chek summasi USTIDAN CHIZIQ — sotuv deb o`qilmasin', async () => {
+    vi.mocked(api.get).mockImplementation(
+      router(
+        salesRoutes([
+          {
+            match: /limit=100/,
+            value: { items: [SALE_ROW({ state: 'cancelled', sumMinor: '3100000' })], total: 1 },
+          },
+        ]),
+      ),
+    );
+    const user = userEvent.setup();
+    renderWithProviders(<SotuvPage />);
+    await user.click(await screen.findByRole('button', { name: /^Cheklar/ }));
+
+    const badge = await screen.findByTestId('chek-state-badge');
+    const row = badge.closest('button');
+    const sum = [...(row?.querySelectorAll('span') ?? [])].find((el) =>
+      (el.textContent ?? '').includes('31'),
+    );
+    expect(sum?.className).toContain('line-through');
+  });
+});
+
 describe('🔴 To`langan chek bu yo`l bilan YO`QOLMAYDI', () => {
   it('posted: bekor qilish tugmasi YO`Q (faqat qaytarish)', async () => {
     vi.mocked(api.get).mockImplementation(router(routes('posted')));

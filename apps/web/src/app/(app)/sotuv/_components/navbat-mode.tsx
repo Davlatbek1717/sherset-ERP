@@ -162,7 +162,7 @@ export function NavbatMode({
             <p className="text-[14px]">{t('picking_empty_hint')}</p>
           </div>
         ) : (
-          <div className="flex flex-1 flex-col gap-2 overflow-y-auto p-2">
+          <div className="flex flex-1 flex-col gap-2 overflow-y-auto p-2 [&>*]:shrink-0">
             {pickingSales.map((s) => (
               <NavbatCard key={s.id} sale={s} tone="picking" now={now} {...actions} />
             ))}
@@ -189,7 +189,7 @@ export function NavbatMode({
             <p className="text-[14px]">{t('ready_empty_hint')}</p>
           </div>
         ) : (
-          <div className="flex flex-1 flex-col gap-2 overflow-y-auto p-2">
+          <div className="flex flex-1 flex-col gap-2 overflow-y-auto p-2 [&>*]:shrink-0">
             {readySales.map((s) => (
               <NavbatCard key={s.id} sale={s} tone="ready" now={now} {...actions} />
             ))}

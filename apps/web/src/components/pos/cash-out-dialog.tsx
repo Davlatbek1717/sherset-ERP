@@ -150,7 +150,7 @@ export function CashOutDialog({ open, onOpenChange, sessionId, currency = 'UZS',
             </Dialog.Close>
           </div>
 
-          <div className="flex flex-1 flex-col gap-4 overflow-y-auto px-5 py-4">
+          <div className="flex flex-1 flex-col gap-4 overflow-y-auto px-5 py-4 [&>*]:shrink-0">
             {/* ── Tur ─────────────────────────────────────────────────────── */}
             <div className="flex gap-2">
               <button

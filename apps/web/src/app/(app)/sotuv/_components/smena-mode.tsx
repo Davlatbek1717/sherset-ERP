@@ -190,7 +190,7 @@ export function SmenaMode({
     (closeVarianceUsd !== null && closeVarianceUsd !== 0n);
 
   return (
-    <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-4">
+    <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-4 [&>*]:shrink-0">
       {/* Session info */}
       <div className="rounded-xl border border-[var(--ms-border)] bg-[var(--ms-bg-app)] px-4 py-3 text-sm">
         <div className="flex justify-between mb-1">

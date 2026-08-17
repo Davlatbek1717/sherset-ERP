@@ -254,6 +254,30 @@ export interface RefundSettlementInput {
    * qaytarilmaydigan bo'lib qolardi — o'lchanmaganlik taqiqqa aylanmasin.
    */
   originalCashLikeMinor: bigint | null;
+  /**
+   * Σ `CASH_USD.amountMinor` — SENTDA (dollar naqd, mijoz JISMONAN bergan pul).
+   *
+   * 🔴 2026-08-17 (egasi qarori, prodda o'lchangan yo'qotishdan keyin): dollar
+   * ulushi endi so'm cap'iga KIRMAYDI. Ilgari `CASH_USD` «naqd-o'xshash» deb
+   * so'm ekvivalentida sanalardi va shu sabab dollarda to'langan chek to'liq
+   * SO'M bilan qaytarilib ketardi. Prodda o'lchandi (ТРН-2026-00318 →
+   * ТРН-2026-00323): so'm yashig'iga 4 690 000 kirgan, undan 5 890 000 chiqib
+   * ketgan ⇒ so'm kassasi 1 200 000 so'mga kamaydi, mijozning $100 esa
+   * yashiqda qolib ketdi va smenaning dollar hisobi hech qachon kamaymadi.
+   * Endi dollar O'Z BUCKET'ida: `usdMaxMinor` (sent) alohida cheklanadi.
+   *
+   * `null` = o'lchanmagan (to'lov qatorlari yo'q eski chek) ⇒ dollar cap'i
+   * QO'YILMAYDI va dollar qaytarish yo'li ochilmaydi (0).
+   */
+  originalCashUsdMinor?: bigint | null;
+  /**
+   * `CASH_USD` ning SO'M ekvivalenti (tiyin) — pul ulushidan CHIQARIB
+   * tashlash uchun. Busiz kassir dollar ulushini KARTA orqali so'mda
+   * qaytarib yuborishi mumkin edi (naqd cap'i to'sadi, `moneyMax` esa yo'q).
+   */
+  originalUsdBaseMinor?: bigint;
+  /** Σ SENT — bu chekdan avvalgi qaytarishlar allaqachon bergan dollar. */
+  priorUsdReturnedMinor?: bigint;
   /** Σ value of the refunds already mirrored from this receipt. */
   priorRefundedSumMinor: bigint;
   /** Σ cash+card those earlier refunds already paid back. */
@@ -277,6 +301,13 @@ export interface RefundSettlementCaps {
   cashMaxMinor: bigint;
   /** Most debt this refund may write off the customer's balance. */
   debtMaxMinor: bigint;
+  /**
+   * Eng ko'p qaytarilishi mumkin bo'lgan DOLLAR — SENTDA (2026-08-17).
+   * So'm jamlarига HECH QACHON qo'shilmaydi: ikkalasi ham `bigint`, shuning
+   * uchun aralashtirish typecheck'dan jim o'tib ketardi ([[ShiftUsdCashInputs]]
+   * bilan bir xil sabab). O'lchanmagan chekda 0.
+   */
+  usdMaxMinor: bigint;
 }
 
 const clamp = (v: bigint, lo: bigint, hi: bigint): bigint => (v < lo ? lo : v > hi ? hi : v);
@@ -304,7 +335,11 @@ export function computeRefundSettlementCaps(i: RefundSettlementInput): RefundSet
   // Corrupt/legacy data (debt recorded above the receipt total) must never
   // produce a money cap out of thin air — clamp before subtracting.
   const debt = clamp(i.originalDebtMinor, 0n, originalSum);
-  const money = originalSum - debt;
+  // 2026-08-17: dollar ulushi SO'M pul ulushidan chiqariladi — u o'z
+  // bucket'ida (`usdMaxMinor`, sent) qaytariladi. Clamp: buzuq ma'lumot
+  // (dollar bazasi chek jamidan katta) manfiy pul ulushi yasamasin.
+  const usdBase = clamp(i.originalUsdBaseMinor ?? 0n, 0n, originalSum - debt);
+  const money = originalSum - debt - usdBase;
 
   const refundedTotal = clamp(
     (i.priorRefundedSumMinor > 0n ? i.priorRefundedSumMinor : 0n) +
@@ -330,14 +365,23 @@ export function computeRefundSettlementCaps(i: RefundSettlementInput): RefundSet
         ? 0n
         : (clamp(i.originalCashLikeMinor, 0n, money) * refundedTotal) / originalSum;
 
+  // Dollar cap'i — AYNI kümülativ bazada (qisman qaytarishlar zanjirida
+  // drift bo'lmasin), lekin SENTDA va so'm jamlariga qo'shilmasdan.
+  const usdCapTotal =
+    i.originalCashUsdMinor == null || originalSum === 0n
+      ? 0n
+      : (clamp(i.originalCashUsdMinor, 0n, i.originalCashUsdMinor) * refundedTotal) / originalSum;
+
   const moneyMaxMinor = moneyCapTotal - i.priorMoneyReturnedMinor;
   const cashMaxMinor =
     i.originalCashLikeMinor == null ? moneyMaxMinor : cashCapTotal - i.priorCashReturnedMinor;
   const debtMaxMinor = debtCapTotal - i.priorDebtReturnedMinor;
+  const usdMaxMinor = usdCapTotal - (i.priorUsdReturnedMinor ?? 0n);
   return {
     moneyMaxMinor: moneyMaxMinor > 0n ? moneyMaxMinor : 0n,
     cashMaxMinor: cashMaxMinor > 0n ? cashMaxMinor : 0n,
     debtMaxMinor: debtMaxMinor > 0n ? debtMaxMinor : 0n,
+    usdMaxMinor: usdMaxMinor > 0n ? usdMaxMinor : 0n,
   };
 }
 
@@ -352,13 +396,35 @@ export function validateRefundSettlement(
   cashReturnMinor: bigint,
   cardReturnMinor: bigint,
   debtReturnMinor: bigint,
+  /** Dollar qaytarish — SENTDA. Uzatilmasa 0 (eski chaqiruvchilar). */
+  usdReturnMinor = 0n,
 ): string | null {
   if (cashReturnMinor < 0n || cardReturnMinor < 0n || debtReturnMinor < 0n) {
     return 'Refund cash/card/debt amounts must be non-negative';
   }
+  if (usdReturnMinor < 0n) return 'Refund USD amount must be non-negative';
+  // 🔴 Dollar cap'i (2026-08-17, prodda o'lchangan yo'qotish): kassa bu chek
+  // uchun olgan dollardan ko'p dollar chiqarib bo'lmaydi. Xabar kassirga
+  // ko'rinadi — nima qilish kerakligi bilan.
+  if (usdReturnMinor > caps.usdMaxMinor) {
+    return (
+      `Dollar qaytarish $${(usdReturnMinor / 100n).toString()} — kassa bu chek uchun ` +
+      `atigi $${(caps.usdMaxMinor / 100n).toString()} dollar olgan. Qolgan qismini so'mda qaytaring.`
+    );
+  }
   const payout = cashReturnMinor + cardReturnMinor;
   if (payout > caps.moneyMaxMinor) {
-    return `Refund payout ${payout.toString()} exceeds the money actually taken for these goods (${caps.moneyMaxMinor.toString()})`;
+    // 2026-08-17: bu yo'l endi KASSIR uchun ham yetib keladigan holat bo'ldi
+    // (dollarda to'langan chek so'mda qaytarilmoqchi bo'lsa) — shuning uchun
+    // xabar o'zbekcha va nima qilish kerakligi bilan. Ilgari inglizcha edi.
+    const hint =
+      caps.usdMaxMinor > 0n
+        ? ` Bu chekning $${(caps.usdMaxMinor / 100n).toString()} qismi DOLLARDA to'langan — uni «dollarda qaytarish» maydoniga kiriting.`
+        : '';
+    return (
+      `Qaytarish ${(payout / 100n).toString()} so'm — kassa bu chek uchun atigi ` +
+      `${(caps.moneyMaxMinor / 100n).toString()} so'm pul olgan.${hint}`
+    );
   }
   // P5 — kanal cap'i. Prodda o'lchandi (R1): 100% KARTA cheki naqd qaytarilib
   // yashiqdan hech qachon kirmagan pul chiqib ketdi. Xabar KASSIRGA

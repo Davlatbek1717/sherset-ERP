@@ -283,7 +283,7 @@ export function CartLineEditModal({
             </div>
           </div>
 
-          <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-4">
+          <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-4 [&>*]:shrink-0">
             {/* Soni + Narx — katta bosiladigan kartochkalar */}
             <div className="grid grid-cols-2 gap-3">
               {(

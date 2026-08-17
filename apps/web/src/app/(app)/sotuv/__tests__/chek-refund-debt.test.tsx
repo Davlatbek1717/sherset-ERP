@@ -123,6 +123,7 @@ describe('ChekDetailPanel — qarzli chekni qaytarish', () => {
       positions: [{ productId: 'p-1', quantity: '2' }],
       cashAmountMinor: '600000',
       cardAmountMinor: '0',
+      cashUsdReturnMinor: '0',
       description: 'POS qaytarish',
     });
   });
@@ -232,6 +233,7 @@ describe('ChekDetailPanel — karta/terminal chekini qaytarish (P5)', () => {
       positions: [{ productId: 'p-1', quantity: '2' }],
       cashAmountMinor: '0',
       cardAmountMinor: '1800000',
+      cashUsdReturnMinor: '0',
       description: 'POS qaytarish',
     });
   });
@@ -269,5 +271,64 @@ describe('ChekDetailPanel — karta/terminal chekini qaytarish (P5)', () => {
     await openRefund(user);
 
     expect(screen.queryByTestId('pos-refund-card-share')).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * DOLLAR ulushi bo'lgan chekni qaytarish (2026-08-17, prodda o'lchangan
+ * yo'qotishdan keyin).
+ *
+ * 🔴 Ilgari POS dollar ulushini SO'M naqd qatoriga qo'shib yuborardi va
+ * kassa so'm bilan to'lab, dollarni yashiqda ushlab qolardi (ТРН-2026-00318:
+ * 1 200 000 so'm yo'qotish). Endi dollar `cashUsdReturnMinor` bo'lib, SENTDA,
+ * alohida ketadi va so'm qatori faqat so'mda olingan pulni o'z ichiga oladi.
+ */
+describe('dollarli chekni qaytarish — dollar dollarda ketadi', () => {
+  // 18 000 so'mlik chek: 6 000 so'm naqd + $1.00 (kurs 12 000 ⇒ 12 000 so'm).
+  const USD_MIX = [
+    {
+      method: 'CASH_UZS',
+      amountMinor: '600000',
+      currency: 'UZS',
+      rateMinor: null,
+      amountBaseMinor: '600000',
+    },
+    {
+      method: 'CASH_USD',
+      amountMinor: '100',
+      currency: 'USD',
+      rateMinor: '1200000000000',
+      amountBaseMinor: '1200000',
+    },
+  ];
+
+  it('so`m qatori faqat SO`MDA olingan pul, dollar alohida SENTDA', async () => {
+    vi.mocked(api.get).mockImplementation(router(chekRoutes({ payments: USD_MIX })));
+    const user = userEvent.setup();
+    renderWithProviders(<SotuvPage />);
+    await openRefund(user);
+
+    await user.click(screen.getByRole('button', { name: /Qaytarishni tasdiqlash/ }));
+    await waitFor(() => expect(api.post).toHaveBeenCalled());
+
+    expect(api.post).toHaveBeenCalledWith('/retail-sales/s-1/refund', {
+      positions: [{ productId: 'p-1', quantity: '2' }],
+      // 🔴 Bu yerda 1 800 000 (to'liq summa) TURSA — aynan prodda pul
+      // yo'qotgan xato qaytgan bo'ladi.
+      cashAmountMinor: '600000',
+      cardAmountMinor: '0',
+      cashUsdReturnMinor: '100',
+      description: 'POS qaytarish',
+    });
+  });
+
+  it('kassirga dollar qatori KO`RSATILADI (nima qaytarishini bilsin)', async () => {
+    vi.mocked(api.get).mockImplementation(router(chekRoutes({ payments: USD_MIX })));
+    const user = userEvent.setup();
+    renderWithProviders(<SotuvPage />);
+    await openRefund(user);
+
+    const row = screen.getByTestId('pos-refund-usd-share');
+    expect(row.textContent).toContain('$1.00');
   });
 });

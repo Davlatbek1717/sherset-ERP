@@ -86,6 +86,7 @@ import {
   legacyTotals,
   lineBaseMinor,
   lineCurrency,
+  usdBaseMinor,
 } from './retail-tenders.js';
 
 /**
@@ -1624,7 +1625,17 @@ export class RetailSaleService {
         // P5 — `amountBaseMinor` HAM kerak: `CASH_USD` qatorida `amountMinor`
         // SENTDA turadi, uni tiyin deb qo'shish naqd cap'ini ~12 000× kichik
         // ko'rsatib, dollar chekni qaytarib bo'lmaydigan qilardi.
-        payments: { select: { method: true, amountMinor: true, amountBaseMinor: true } },
+        // `rateMinor` — dollar qatorining MUZLATILGAN kursi: qaytarishda
+        // aynan shu ishlatiladi (joriy kurs bilan hisoblash do'konga
+        // kurs-farqi foyda/zararini yasab qo'yardi).
+        payments: {
+          select: {
+            method: true,
+            amountMinor: true,
+            amountBaseMinor: true,
+            rateMinor: true,
+          },
+        },
       },
     });
     if (!original) throw new NotFoundException(`RetailSale ${originalSaleId} not found`);
@@ -1680,6 +1691,10 @@ export class RetailSaleService {
         cardAmountMinor: true,
         debtReturnMinor: true,
         positions: { select: { productId: true, quantity: true } },
+        // Dollar qaytarish mirror chekning `CASH_USD` to'lov qatorida turadi
+        // (smenaning dollar hisobi ham AYNI qatorni o'qiydi) — kümülativ
+        // dollar cap'i uchun shu yerdan yig'iladi.
+        payments: { select: { method: true, amountMinor: true } },
       },
     });
     const priorLines = priorRefunds.flatMap((r) =>
@@ -1694,8 +1709,17 @@ export class RetailSaleService {
         // olinmagan pulni chiqarish mumkin bo'lardi.
         cashMinor: acc.cashMinor + r.cashAmountMinor,
         debtMinor: acc.debtMinor + r.debtReturnMinor,
+        // SENTDA — so'm jamlariga QO'SHILMAYDI (ikkalasi ham bigint,
+        // aralashtirilsa typecheck ko'rmaydi).
+        // `?? []` — dollar qatori yo'q mirror (bu o'zgarishdan OLDIN
+        // yaratilgan qaytarishlar) 0 beradi, yiqilmaydi.
+        usdMinor:
+          acc.usdMinor +
+          (r.payments ?? [])
+            .filter((p) => p.method === TENDER.cashUsd)
+            .reduce((a, p) => a + p.amountMinor, 0n),
       }),
-      { sumMinor: 0n, moneyMinor: 0n, cashMinor: 0n, debtMinor: 0n },
+      { sumMinor: 0n, moneyMinor: 0n, cashMinor: 0n, debtMinor: 0n, usdMinor: 0n },
     );
 
     // §105 over-refund guard: refunded products/qty must be a subset of
@@ -1731,6 +1755,26 @@ export class RetailSaleService {
 
     const cashReturn = BigInt(parsed.cashAmountMinor);
     const cardReturn = BigInt(parsed.cardAmountMinor);
+    /** Dollar qaytarish — SENTDA. So'm jamlariga hech qachon qo'shilmaydi. */
+    const usdReturn = BigInt(parsed.cashUsdReturnMinor);
+    /**
+     * Dollar qatorining ASL chekdagi muzlatilgan kursi. Joriy kursni olish
+     * XATO bo'lardi: kurs o'zgargan bo'lsa qaytarish do'konga foyda/zarar
+     * yasab qo'yardi — mijoz qancha bergan bo'lsa, shuncha qaytadi.
+     */
+    const usdRateMinor =
+      original.payments.find((p) => p.method === TENDER.cashUsd && p.rateMinor != null)
+        ?.rateMinor ?? null;
+    /**
+     * Dollar qaytarishning SO'M ekvivalenti — muzlatilgan kurs bilan, yagona
+     * `usdBaseMinor` formulasidan (nusxa yozilsa bir kun ikkisi ayrilardi).
+     * Kurs yo'q bo'lsa 0: bu holat cap tekshiruvidan KEYIN taqiqlanadi
+     * (tartib muhim — dollar qatori umuman yo'q chekda kassir «kurs
+     * yozilmagan» degan chalg'ituvchi xabar emas, «dollar olinmagan» ni
+     * ko'rishi kerak).
+     */
+    const usdReturnBaseMinor =
+      usdReturn > 0n && usdRateMinor != null ? usdBaseMinor(usdReturn, usdRateMinor) : 0n;
 
     // §105: cannot pay back more money than the refunded goods are
     // worth. Now that `refundPositions.totalMinor` is derived from the
@@ -1759,16 +1803,44 @@ export class RetailSaleService {
     // OLDINGI hujjat (prodda o'lchandi: eski posted cheklarda 0 qator).
     // Uni «naqd olinmagan» deb o'qish butun tarixiy chekni naqd
     // qaytarilmaydigan qilardi, ya'ni o'lchanmaganlik taqiqqa aylanardi.
+    //
+    // 🔴 2026-08-17 (egasi qarori): `CASH_USD` bu yerdan CHIQARILDI. Ilgari u
+    // so'm ekvivalentida «naqd-o'xshash» sanalardi va dollarda to'langan chek
+    // to'liq SO'M bilan qaytarilib ketardi. Prodda o'lchandi
+    // (ТРН-2026-00318 → ТРН-2026-00323): so'm yashig'iga 4 690 000 kirgan,
+    // 5 890 000 chiqib ketgan ⇒ so'm kassasi 1 200 000 ga kamaydi, mijozning
+    // $100 esa yashiqda qoldi va smena dollar hisobi kamaymadi. Endi dollar
+    // o'z bucket'ida qaytariladi (`usdReturn`, sent).
     const originalCashLikeMinor =
       original.payments.length === 0
         ? null
         : original.payments
-            .filter((p) => p.method === TENDER.cashUzs || p.method === TENDER.cashUsd)
+            .filter((p) => p.method === TENDER.cashUzs)
             .reduce((a, p) => a + p.amountBaseMinor, 0n);
+    // ⚠️ Mutant-tekshirilgan: BU qatorning o'zi hozir kuzatilmaydi — dollarni
+    // yana «naqd-o'xshash» qilib qo'ysak ham testlar YASHIL qoladi, chunki
+    // haqiqiy qulf `moneyMax` (dollar bazasi pul ulushidan chiqarilishi,
+    // `originalUsdBaseMinor`). Bu filtr shunga QARAMAY so'm-only qoldirildi:
+    // semantik to'g'ri va karta aralashgan holatda ikkinchi qatlam bo'ladi.
+    // Dollar: SENTDA (`amountMinor`) — mijoz jismonan bergan pul.
+    const originalCashUsdMinor =
+      original.payments.length === 0
+        ? null
+        : original.payments
+            .filter((p) => p.method === TENDER.cashUsd)
+            .reduce((a, p) => a + p.amountMinor, 0n);
+    // Dollarning so'm ekvivalenti — SO'M pul ulushidan chiqarib tashlash uchun
+    // (aks holda dollar ulushi karta orqali so'mda chiqib ketishi mumkin edi).
+    const originalUsdBaseMinor = original.payments
+      .filter((p) => p.method === TENDER.cashUsd)
+      .reduce((a, p) => a + p.amountBaseMinor, 0n);
     const caps = computeRefundSettlementCaps({
       originalSumMinor: original.sumMinor,
       originalDebtMinor,
       originalCashLikeMinor,
+      originalCashUsdMinor,
+      originalUsdBaseMinor,
+      priorUsdReturnedMinor: priorTotals.usdMinor,
       priorRefundedSumMinor: priorTotals.sumMinor,
       priorMoneyReturnedMinor: priorTotals.moneyMinor,
       priorCashReturnedMinor: priorTotals.cashMinor,
@@ -1780,8 +1852,21 @@ export class RetailSaleService {
     // bug being fixed. An explicit value is still capped.
     const debtReturn =
       parsed.debtReturnMinor === undefined ? caps.debtMaxMinor : BigInt(parsed.debtReturnMinor);
-    const settleError = validateRefundSettlement(caps, cashReturn, cardReturn, debtReturn);
+    const settleError = validateRefundSettlement(
+      caps,
+      cashReturn,
+      cardReturn,
+      debtReturn,
+      usdReturn,
+    );
     if (settleError) throw new BadRequestException(settleError);
+    // Cap o'tdi, ya'ni chekda dollar HAQIQATAN olingan — lekin kursi
+    // yozilmagan bo'lsa so'm ekvivalentini to'qib chiqarmaymiz.
+    if (usdReturn > 0n && usdRateMinor == null) {
+      throw new BadRequestException(
+        `${original.name} — chekda dollar to'lovining kursi yozilmagan, dollar qaytarib bo'lmaydi. So'mda qaytaring.`,
+      );
+    }
 
     // The debtor is whoever the credit was booked against on post() — which is
     // why post() now persists that counterparty onto the receipt. Receipts sold
@@ -1870,7 +1955,10 @@ export class RetailSaleService {
           // qarz), pastdan tenglikni talab qilmaydi. Tovari qaytarilgan-u puli
           // hali berilmagan qaytarish qonuniy holat, va u «to'liq to'langan»
           // bo'lib yozilmasligi kerak.
-          payedSumMinor: cashReturn + cardReturn + debtReturn,
+          // Dollar ulushi ham «yopilgan» hisoblanadi: uning so'm ekvivalenti
+          // (asl chekning MUZLATILGAN kursi bilan) qo'shiladi — aks holda
+          // dollar qaytarilgan chek abadiy «to'liq yopilmagan» ko'rinardi.
+          payedSumMinor: cashReturn + cardReturn + debtReturn + usdReturnBaseMinor,
           // SALES-04: the credit share this return wrote off. Persisted (not
           // recomputed) because the cumulative caps of every LATER partial
           // refund are measured against it.
@@ -1892,6 +1980,27 @@ export class RetailSaleService {
           },
         },
       });
+
+      // Dollar qaytarish qatori (2026-08-17). Smenaning DOLLAR hisobi
+      // (`collectUsdCashInputs` → `returnsUsdMinor`) aynan mirror chekning
+      // `CASH_USD` qatorini o'qiydi — bu qator bo'lmasa dollar hech qachon
+      // yashiqdan «chiqmagan» bo'lib qolardi (bug'ning aynan o'zi).
+      // So'm qatori ATAYLAB yozilmaydi: so'm oqimi `cashAmountMinor` ustuni +
+      // pul daftari orqali yuradi va u allaqachon to'g'ri ishlaydi; ikkinchi
+      // manba qo'shish Z-hisobotning to'lov-turlari kesimini ikkilantirardi.
+      if (usdReturn > 0n && usdRateMinor != null) {
+        await tx.retailSalePayment.create({
+          data: {
+            accountId,
+            saleId: refundSale.id,
+            method: TENDER.cashUsd,
+            amountMinor: usdReturn,
+            currency: 'USD',
+            rateMinor: usdRateMinor,
+            amountBaseMinor: usdReturnBaseMinor,
+          },
+        });
+      }
 
       // Kassa TZ §9 — qaytarish erkin (Q11), shuning uchun iz qoladi.
       // `docId` = OYNA chek: pul aynan o'sha hujjat orqali harakat qiladi;

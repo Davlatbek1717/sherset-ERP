@@ -317,7 +317,7 @@ describe('computeRefundSettlementCaps — payout bounded by what was actually ta
         originalCashLikeMinor: 0n,
         refundSumMinor: 100_000n,
       }),
-    ).toEqual({ moneyMaxMinor: 0n, cashMaxMinor: 0n, debtMaxMinor: 100_000n });
+    ).toEqual({ moneyMaxMinor: 0n, cashMaxMinor: 0n, debtMaxMinor: 100_000n, usdMaxMinor: 0n });
   });
 
   it('a cash receipt pays the full refund value back in money', () => {
@@ -329,7 +329,12 @@ describe('computeRefundSettlementCaps — payout bounded by what was actually ta
         originalCashLikeMinor: 100_000n,
         refundSumMinor: 100_000n,
       }),
-    ).toEqual({ moneyMaxMinor: 100_000n, cashMaxMinor: 100_000n, debtMaxMinor: 0n });
+    ).toEqual({
+      moneyMaxMinor: 100_000n,
+      cashMaxMinor: 100_000n,
+      debtMaxMinor: 0n,
+      usdMaxMinor: 0n,
+    });
   });
 
   it('splits the caps in the proportion the receipt was settled', () => {
@@ -342,7 +347,12 @@ describe('computeRefundSettlementCaps — payout bounded by what was actually ta
         originalCashLikeMinor: 40_000n,
         refundSumMinor: 50_000n,
       }),
-    ).toEqual({ moneyMaxMinor: 20_000n, cashMaxMinor: 20_000n, debtMaxMinor: 30_000n });
+    ).toEqual({
+      moneyMaxMinor: 20_000n,
+      cashMaxMinor: 20_000n,
+      debtMaxMinor: 30_000n,
+      usdMaxMinor: 0n,
+    });
   });
 
   it('subtracts what earlier refunds already returned', () => {
@@ -357,7 +367,12 @@ describe('computeRefundSettlementCaps — payout bounded by what was actually ta
         priorDebtReturnedMinor: 30_000n,
         refundSumMinor: 50_000n,
       }),
-    ).toEqual({ moneyMaxMinor: 20_000n, cashMaxMinor: 20_000n, debtMaxMinor: 30_000n });
+    ).toEqual({
+      moneyMaxMinor: 20_000n,
+      cashMaxMinor: 20_000n,
+      debtMaxMinor: 30_000n,
+      usdMaxMinor: 0n,
+    });
   });
 
   it('rounding never lets the cumulative money paid out exceed the money taken', () => {
@@ -413,7 +428,7 @@ describe('computeRefundSettlementCaps — payout bounded by what was actually ta
         priorDebtReturnedMinor: 0n,
         refundSumMinor: 0n,
       }),
-    ).toEqual({ moneyMaxMinor: 0n, cashMaxMinor: 0n, debtMaxMinor: 0n });
+    ).toEqual({ moneyMaxMinor: 0n, cashMaxMinor: 0n, debtMaxMinor: 0n, usdMaxMinor: 0n });
   });
 
   it('a zero-value receipt yields zero caps (no division by zero)', () => {
@@ -425,7 +440,7 @@ describe('computeRefundSettlementCaps — payout bounded by what was actually ta
         originalCashLikeMinor: 0n,
         refundSumMinor: 0n,
       }),
-    ).toEqual({ moneyMaxMinor: 0n, cashMaxMinor: 0n, debtMaxMinor: 0n });
+    ).toEqual({ moneyMaxMinor: 0n, cashMaxMinor: 0n, debtMaxMinor: 0n, usdMaxMinor: 0n });
   });
 
   it('a debt bigger than the receipt (corrupt data) cannot mint a money cap', () => {
@@ -449,7 +464,9 @@ describe('validateRefundSettlement — enforces both caps', () => {
   });
 
   it('REJECTS cash+card above the money actually taken (SALES-04)', () => {
-    expect(validateRefundSettlement(caps, 40_000n, 1n, 0n)).toMatch(/money actually taken/);
+    // 2026-08-17: xabar o'zbekchaga o'tdi — bu yo'l endi kassir ko'radigan
+    // holat (dollarli chekni so'mda qaytarish urinishi).
+    expect(validateRefundSettlement(caps, 40_000n, 1n, 0n)).toMatch(/so'm pul olgan/);
   });
 
   it('REJECTS writing off more debt than the receipt put on the account', () => {

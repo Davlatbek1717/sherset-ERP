@@ -17,6 +17,7 @@ import {
   refundTenderSplit,
   revenueBaseMinor,
   saleCashLikeMinor,
+  saleCashUsdMinor,
   saleDebtMinor,
   toMinorOrNull,
 } from './cart-math';
@@ -587,7 +588,7 @@ describe('refundTenderSplit — naqd/naqdsiz ulushlar (P5)', () => {
         originalCashLikeMinor: 100_000n,
         refundSumMinor: 100_000n,
       }),
-    ).toEqual({ cashMinor: 100_000n, cardMinor: 0n });
+    ).toEqual({ cashMinor: 100_000n, cardMinor: 0n, usdMinor: 0n });
   });
 
   it('🔴 100% KARTA chek: naqd 0, hammasi karta qatoriga', () => {
@@ -598,7 +599,7 @@ describe('refundTenderSplit — naqd/naqdsiz ulushlar (P5)', () => {
         originalCashLikeMinor: 0n,
         refundSumMinor: 100_000n,
       }),
-    ).toEqual({ cashMinor: 0n, cardMinor: 100_000n });
+    ).toEqual({ cashMinor: 0n, cardMinor: 100_000n, usdMinor: 0n });
   });
 
   it('ARALASH chek: har kanal o`z ulushida', () => {
@@ -611,7 +612,7 @@ describe('refundTenderSplit — naqd/naqdsiz ulushlar (P5)', () => {
         originalCashLikeMinor: 30_000n,
         refundSumMinor: 50_000n,
       }),
-    ).toEqual({ cashMinor: 15_000n, cardMinor: 35_000n });
+    ).toEqual({ cashMinor: 15_000n, cardMinor: 35_000n, usdMinor: 0n });
   });
 
   it('QARZLI chek: qarz ulushi ikkala kanalga ham tushmaydi', () => {
@@ -623,7 +624,7 @@ describe('refundTenderSplit — naqd/naqdsiz ulushlar (P5)', () => {
         originalCashLikeMinor: 40_000n,
         refundSumMinor: 100_000n,
       }),
-    ).toEqual({ cashMinor: 40_000n, cardMinor: 0n });
+    ).toEqual({ cashMinor: 40_000n, cardMinor: 0n, usdMinor: 0n });
   });
 
   it('yig`indi HECH QACHON `refundCashShareMinor` (pul ulushi) dan oshmaydi', () => {
@@ -653,7 +654,7 @@ describe('refundTenderSplit — naqd/naqdsiz ulushlar (P5)', () => {
         originalCashLikeMinor: 0n,
         refundSumMinor: 500n,
       }),
-    ).toEqual({ cashMinor: 0n, cardMinor: 0n });
+    ).toEqual({ cashMinor: 0n, cardMinor: 0n, usdMinor: 0n });
   });
 
   it('to`lov qatorlari YO`Q eski chek: eski xulq — hammasi naqd', () => {
@@ -668,12 +669,15 @@ describe('refundTenderSplit — naqd/naqdsiz ulushlar (P5)', () => {
         originalCashLikeMinor: null,
         refundSumMinor: 100_000n,
       }),
-    ).toEqual({ cashMinor: 100_000n, cardMinor: 0n });
+    ).toEqual({ cashMinor: 100_000n, cardMinor: 0n, usdMinor: 0n });
   });
 });
 
 describe('saleCashLikeMinor — yashiq olgan ulush (P5)', () => {
-  it('CASH_UZS va CASH_USD ni `amountBaseMinor` bo`yicha qo`shadi', () => {
+  it('FAQAT `CASH_UZS` ni qo`shadi — dollar CHIQARILDI (2026-08-17)', () => {
+    // Shartnoma egasi qarori bilan o'zgardi: dollar so'm cap'iga kirmaydi,
+    // aks holda dollarli chek to'liq so'mda qaytarilib kassa kamayardi
+    // (prodda o'lchandi: ТРН-2026-00318 → 1 200 000 so'm yo'qotish).
     expect(
       saleCashLikeMinor([
         { method: 'CASH_UZS', amountBaseMinor: '30000' },
@@ -682,7 +686,23 @@ describe('saleCashLikeMinor — yashiq olgan ulush (P5)', () => {
         { method: 'TERMINAL', amountBaseMinor: '10000' },
         { method: 'DEBT', amountBaseMinor: '5000' },
       ]),
-    ).toBe(53_869n);
+    ).toBe(30_000n);
+  });
+
+  it('dollar ulushi SENTDA alohida o`qiladi (`saleCashUsdMinor`)', () => {
+    expect(
+      saleCashUsdMinor([
+        { method: 'CASH_UZS', amountMinor: '30000' },
+        { method: 'CASH_USD', amountMinor: '200' },
+        { method: 'CARD', amountMinor: '10000' },
+      ]),
+    ).toBe(200n);
+  });
+
+  it('dollar qatori yo`q chekda 0, qatorlar umuman yo`q bo`lsa null', () => {
+    expect(saleCashUsdMinor([{ method: 'CASH_UZS', amountMinor: '1' }])).toBe(0n);
+    expect(saleCashUsdMinor([])).toBeNull();
+    expect(saleCashUsdMinor(null)).toBeNull();
   });
 
   it('faqat naqdsiz chek: 0 (null EMAS — qatorlar BOR)', () => {

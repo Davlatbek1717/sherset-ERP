@@ -141,7 +141,12 @@ describe('ChekDetailPanel — ko‘rinish', () => {
     renderWithProviders(<SotuvPage />);
     await openChekDetail(user);
 
-    expect(screen.getByText("To'langan")).toBeInTheDocument();
+    // 2026-08-17: holat nishoni RO'YXAT qatorida ham chiqadi (egasi so'ragan),
+    // ya'ni matn ikki joyda. Bu da'vo DETAL panelidagisini tekshiradi —
+    // `getByText` ikki mos kelishda otiladi va nima uchun ekani ko'rinmasdi.
+    const badges = screen.getAllByTestId('chek-state-badge');
+    expect(badges.length).toBeGreaterThanOrEqual(1);
+    expect(badges.some((b) => (b.textContent ?? '').includes("To'langan"))).toBe(true);
     expect(screen.getByText('Markaziy do‘kon')).toBeInTheDocument();
     // Mijoz nomi detalda ham turadi.
     expect(screen.getAllByText('Usta Vali').length).toBeGreaterThan(0);
@@ -362,6 +367,7 @@ describe('ChekDetailPanel — qaytarish', () => {
       positions: [{ productId: 'p-1', quantity: '2' }],
       cashAmountMinor: '1800000',
       cardAmountMinor: '0',
+      cashUsdReturnMinor: '0',
       // ⚠️ i18n-emas, ATAYLAB: hujjat izohi kassir tiliga bog‘lanmaydi.
       description: 'POS qaytarish',
     });

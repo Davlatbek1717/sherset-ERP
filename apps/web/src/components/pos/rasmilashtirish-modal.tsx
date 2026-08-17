@@ -366,7 +366,7 @@ export function RasmiyashtirishModal({
                 mijoz qidiruvi/ro'yxati sensorda juda tor edi. */}
             <div className="flex w-[30rem] shrink-0 flex-col border-r border-[var(--ms-border)]">
               {/* Scrollable area */}
-              <div className="flex-1 overflow-y-auto flex flex-col">
+              <div className="flex-1 overflow-y-auto flex flex-col [&>*]:shrink-0">
                 {/* Counterparty — always shown; optional for oddiy, required for usta/dokon */}
                 <div className="px-4 pt-4 pb-3 border-b border-[var(--ms-border)]">
                   <div className="mb-2">
