@@ -331,6 +331,44 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-08-17d (KASSA — dollarli qaytarishda PUL YO'QOLISHI + chek paneli scroll; `c47fdd3d`) — ✅ DEPLOYED `14d42fb7 → c47fdd3d`**
+> **1) Qaytarishda summa qaytmasligi — ildiz PRODDA o'lchandi.** `ТРН-2026-00318`:
+> `CASH_UZS 4 690 000` + `CASH_USD $100` (kurs 12 000 ⇒ 1 200 000). Qaytarish `ТРН-2026-00323`
+> **5 890 000 so'mni to'liq NAQD SO'M** chiqargan. Pul daftari: `+469 000 000` kirdi,
+> `−589 000 000` chiqdi ⇒ **so'm kassasi 1 200 000 ga kamaydi**, mijozning **$100 yashiqda qoldi**,
+> smena dollar hisobi kamaymadi. Ildiz: `CASH_USD` «naqd-o'xshash» deb SO'M ekvivalentida
+> sanalgan ⇒ to'liq so'm qaytarish kanal cap'idan o'tib ketardi.
+> **Yechim (egasi: «dollar dollarda qaytsin»):** dollar o'z bucket'ida — so'm pul ulushidan
+> chiqariladi (`money = sum − debt − usdBase`), yangi `cashUsdReturnMinor` (SENT) + `usdMaxMinor`,
+> mirror chekka `CASH_USD` qatori **ASL chekning MUZLATILGAN kursi** bilan (joriy kurs = kurs-farqi
+> foyda/zarari), smena dollar hisobi (`collectUsdCashInputs`) aynan shu qatorni o'qiydi. Kursi
+> yozilmagan eski qatorda dollar qaytarish TAQIQ. POS ham ayni formulaga keltirildi
+> (`saleCashUsdMinor`/`saleUsdBaseMinor`/`refundTenderSplit.usdMinor`) + «Dollarda qaytariladi» qatori.
+> 🔴 Server tuzatishini YOLG'IZ deploy qilib bo'lmaydi (POS maydonni yubormasa dollarli chek umuman
+> qaytarilmaydi) — shu sabab bitta commit.
+> ⚠️ **Mutant tekshiruvi:** `cashLike` filtri qatorining O'ZI kuzatilmaydi (eski xulq qaytarilsa ham
+> testlar yashil) — haqiqiy qulf `moneyMax`; kodda ochiq yozildi, asosiy qulf mutant bilan tasdiqlandi
+> (server 2 test, POS oqim testi qizardi).
+> **2) Chek paneli scroll bo'lmasligi — LIVE brauzerda tajriba bilan.** `overflow-y-auto` +
+> `flex flex-col` da farzandlar `flex-shrink: 1` ⇒ kontent oshib chiqmasdan **eziladi**: pozitsiyalar
+> bloki `71,7px → 4,3px`, `scrollHeight === clientHeight` ⇒ scroll sababi yo'q. `[&>*]:shrink-0`
+> bilan `186 → 254px`, panel **67px siljidi** (o'lchandi). Skript 21 joyni topdi; kassa panellari
+> tuzatildi (Smena · rasmiylashtirish · Navbat ×2 · savat qatori · kassadan chiqim), qolganlari
+> `apps/web/src/__tests__/pos-scroll-panel-shrink.test.ts` ro'yxatida OCHIQ (eskirsa test qizaradi).
+> Qo'riqchi STATIK — jsdom layoutni hisoblamaydi, bu sinf komponent testi bilan tutilmaydi.
+> **Parallel sessiya:** `cheklar-mode.tsx`/`chek-cancel.test.tsx` da boshqa sessiyaning «ro'yxatda chek
+> HOLATI nishoni» ishi ham shu commitga tushdi (egasi «hammasini bitta commit qil» dedi).
+> Gate: web **294 fayl / 4102 test** · api **8447** · tc 0 · biome 0 · i18n 19/19 · +19 test.
+> **Jonli o'lchandi:** box HEAD=`c47fdd3d`=stamp · sayt 200 · health ok · `:4001`+`:3011` LISTEN ·
+> yangi `BUILD_ID VkKABOz4ivbSVSUkGu6ba` xizmatdagi HTML'da · `sotuv` chunkida scroll tuzatishi ·
+> deploy'da «No pending migrations» · kassa kanali 200. Zaxira: `pre-deploy-kurs-20260817-123716.sql.gz`.
+> 🔴 **QOLDI (muhim):** (a) **prod ma'lumoti tuzatilmagan** — o'sha noto'g'ri qaytarish so'm kassasidan
+> 1 200 000 ortiqcha chiqargan va $100 yashiqda; egasi qarori kerak. (b) dollar qaytarish oqimi
+> **qurilmada sinalmagan**. (c) smena ekranida qaytarish ko'rinmaydi/ayirilmaydi (B nuqson).
+> (d) `kassa-chek-tahrir` merge qilinmagan.
+>
+> ---
+>
 > **🕒 2026-08-17c (KURS — qo'lda o'zgartirish; `1c4d81c4` + `2d39b697`) — ✅ DEPLOYED `303d20a1 → 2d39b697`**
 > Egasi: «dollar kursini qo'lda o'zgartirib bo'lishi kerak, professional qilib».
 > **O'LCHANGAN ILDIZ:** kurs IKKI joyda yashardi va kassa ishlatadigan joyda UI YO'Q edi
