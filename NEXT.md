@@ -331,6 +331,27 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-08-18a (XODIM — rolsiz yaratish JIM shoxi yopildi + 5 kassir tiklandi; `bc0dc0a2`) —**
+> ✅ DEPLOYED `2ab513d5 → bc0dc0a2`: sayt 200, api health ok, jonli buildda `employee-role-error`
+> BOR. Egasi: «kassir yaratib bo'lmayapti, rol tanlagan bo'lsam ham tanlanmadi deydi».
+> 🔴 **ISBOT (nginx, 18/Aug):** `POST /hr/employees → 201` **×4**, `PUT /roles/employee/:id`
+> **×0** — rol so'rovi umuman yuborilmagan. Mexanizm: `roleChoice` sukut `'user'` (radio
+> tanlangan KO'RINADI) ⇒ `onChange` ishlamaydi ⇒ `selectedRoleId=null` ⇒ saqlash bloki
+> `if (targetRoleId && changed)` JIMGINA o'tib ketardi ⇒ kartada «Rollar tanlanmagan».
+> **Tuzatish (3 qatlam):** validatsiya (saqlash to'xtaydi + sabab rol bo'limi tepasida) ·
+> jim skip o'rniga OSHKORA `throw` · yangi xodimda birinchi rol oldindan tanlanadi.
+> Qulf: `employee-role-required.test.tsx` (4 test, manba matni bo'yicha).
+> **MA'LUMOT (prodda BAJARILDI):** `apps/api/src/scripts/ops-fix-cashiers.ts` (idempotent,
+> DRY-RUN sukut, MAVJUD PIN qayta yozilmaydi, PIN unikalligi `posPinLookup` bo'yicha) —
+> Bahodir/Muxriddin/Sardor/Otabek + yangi **Jahongir**: beshalasiga rol `Kassir`/kiosk +
+> smena biriktirmasi + PIN. Tekshirildi: 5/5 `rol=Kassir, pin=t`.
+> ⚠️ PIN kodlar egasiga chatda berildi (kartadan almashtirsa bo'ladi).
+> Gate: tc 0 · lint 0 · i18n 0 · web **4110**. i18n darvozasi kalitni noto'g'ri namespace'ga
+> qo'yganimni tutdi (`pages.employees` → `pages.employee_card`) — tuzatildi.
+>
+> ---
+>
+
 > **🕒 2026-08-17d (KASSA — dollarli qaytarishda PUL YO'QOLISHI + chek paneli scroll; `c47fdd3d`) — ✅ DEPLOYED `14d42fb7 → c47fdd3d`**
 > **1) Qaytarishda summa qaytmasligi — ildiz PRODDA o'lchandi.** `ТРН-2026-00318`:
 > `CASH_UZS 4 690 000` + `CASH_USD $100` (kurs 12 000 ⇒ 1 200 000). Qaytarish `ТРН-2026-00323`
