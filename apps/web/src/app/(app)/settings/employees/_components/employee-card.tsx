@@ -324,6 +324,15 @@ export function EmployeeCard({ id }: { id?: string }) {
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [roleChoice, setRoleChoice] = useState<RoleChoice>('user');
   const [selectedRoleId, setSelectedRoleId] = useState<string | null>(null);
+  // Yangi xodimda `roleChoice` sukut bo'yicha `'user'` va radio ALLAQACHON
+  // tanlangan ko'rinadi — lekin `onChange` ishlamagani uchun rol ID bo'sh
+  // qolardi. Rollar yuklangach birinchisini oldindan tanlaymiz: odatiy holat
+  // qo'shimcha bosishsiz ishlaydi, validatsiya esa qolgan holatlarni tutadi.
+  useEffect(() => {
+    if (isNew && roleChoice === 'user' && !selectedRoleId && customRoles[0]) {
+      setSelectedRoleId(customRoles[0].id);
+    }
+  }, [isNew, roleChoice, selectedRoleId, customRoles]);
   const [initialRole, setInitialRole] = useState<{ choice: RoleChoice; roleId: string | null }>({
     choice: 'user',
     roleId: null,
@@ -462,7 +471,11 @@ export function EmployeeCard({ id }: { id?: string }) {
           initialRole.choice !== roleChoice ||
           (roleChoice === 'user' && initialRole.roleId !== selectedRoleId) ||
           isNew;
-        if (targetRoleId && changed) {
+        if (changed) {
+          // Bu yerga rolsiz kelish — chaqiruvchi shartnomani buzgani
+          // (validatsiya uni ushlashi kerak edi). JIMGINA o'tkazib yuborish
+          // aynan shu bug-klassni tug'dirgan, shuning uchun oshkora xato.
+          if (!targetRoleId) throw new Error(t('err_role_required'));
           await api.put(`/roles/employee/${saved.id}`, { roleIds: [targetRoleId] });
         }
       }
@@ -524,6 +537,20 @@ export function EmployeeCard({ id }: { id?: string }) {
     // *Отдел — required (moysklad) once the account actually has departments.
     if (form.loginAllowed && groups.length > 0 && !form.groupId) {
       errs.groupId = t('required_field');
+    }
+    // 🔴 ROL — JIM O'TKAZIB YUBORISH YOPILDI (egasi, 2026-08-18).
+    //
+    // O'lchangan hodisa: prod nginx logida bir kunda 4 ta `POST /hr/employees
+    // → 201` bor, lekin `PUT /roles/employee/:id` BIRORTA HAM yo'q — ya'ni
+    // xodimlar rolsiz yaratilgan va kartada «Rollar tanlanmagan» chiqqan
+    // («rol tanlagan bo'lsam ham tanlanmadi deydi»). Sabab: `roleChoice`
+    // sukut bo'yicha `'user'`, `selectedRoleId` esa `null` — foydalanuvchi
+    // radio'ni bosmasa (u allaqachon tanlangan ko'rinadi) rol ID topilmasdi
+    // va saqlash bloki `if (targetRoleId && changed)` da JIMGINA o'tib
+    // ketardi. Rolsiz kassir esa smena ocholmaydi (403) — xato kassa
+    // ekranida, bir necha qadam keyin ko'rinardi.
+    if (roleChoice === 'user' && !selectedRoleId) {
+      errs.role = t('err_role_required');
     }
     if (isNew && (newUsername.trim() || newPassword)) {
       // Owner 2026-07-19 (second report): the login is FREE-FORM — any value
@@ -1000,6 +1027,16 @@ export function EmployeeCard({ id }: { id?: string }) {
           {/* Системные роли */}
           <section className="flex flex-col gap-3">
             <SectionHeading>{t('roles_section')}</SectionHeading>
+            {/* Sabab AYNAN shu yerda — bo'lim tepasida: saqlash to'xtab,
+                foydalanuvchi nega ekanini ko'rmasligi eng yomon holat. */}
+            {fieldErrors.role && (
+              <p
+                data-testid="employee-role-error"
+                className="rounded-[var(--ms-radius-sm)] bg-[var(--ms-destructive-50,#fef2f2)] px-3 py-2 text-[13px] text-[var(--ms-text-destructive)]"
+              >
+                {fieldErrors.role}
+              </p>
+            )}
             <Alert tone="warning">{t('roles_warning')}</Alert>
 
             {/* Владелец аккаунта */}
