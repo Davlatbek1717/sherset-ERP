@@ -263,8 +263,6 @@ interface SavatPanelProps {
   discountedTotal: bigint;
   cartProfitMinor: bigint | null;
   cartMarginPct: ReturnType<typeof marginPercent>;
-  /** P12 — narx siyosati buzilgan qator (0 narx yoki poldan past), bo'lmasa null. */
-  pricePolicyBlock: CartLine | null;
   directSellPending: boolean;
   onDirectSell: () => void;
   sendToPickingPending: boolean;
@@ -300,7 +298,6 @@ export function SavatPanel({
   discountedTotal,
   cartProfitMinor,
   cartMarginPct,
-  pricePolicyBlock,
   directSellPending,
   onDirectSell,
   onPrintProforma,
@@ -535,13 +532,15 @@ export function SavatPanel({
                       (markdown != null && markdown > 0n) ||
                       SHOW_MARGIN_ON_SCREEN) && (
                       <div className="mt-1 flex items-center gap-2 text-xs">
-                        {/* P12 — narxsiz qator JIM qolmaydi: prodda 488 tovarda
+                        {/* Narxsiz qator JIM qolmaydi: prodda 488 tovarda
                           chakana narx yo'q va ular savatga 0 so'm bilan
-                          tushardi. Chek bunday qator bilan yuborilmaydi. */}
+                          tushadi. Bu — MA'LUMOT, qulf EMAS (2026-08-16 dan
+                          bepulga sotish ruxsat etilgan), shuning uchun rang
+                          qizil «xato» emas, sariq ogohlantirish. */}
                         {line.priceMinor <= 0n && (
                           <span
                             data-test-id="sotuv-cart-no-price"
-                            className="rounded bg-red-600 px-1.5 py-0.5 font-bold text-[10px] text-white"
+                            className="rounded bg-amber-500 px-1.5 py-0.5 font-bold text-[10px] text-white"
                           >
                             {t('cart_no_price')}
                           </span>
@@ -722,19 +721,6 @@ export function SavatPanel({
           )}
         </div>
 
-        {/* P12 — sabab tugmadan OLDIN: kassir nega yubora olmayotganini
-            ko'rmasa, o'chgan tugmani nosozlik deb o'ylardi. */}
-        {pricePolicyBlock != null && (
-          <div
-            data-test-id="sotuv-price-blocked"
-            className="mb-2 rounded-xl bg-red-600 px-3 py-2 font-bold text-sm text-white"
-          >
-            {pricePolicyBlock.priceMinor <= 0n
-              ? `${pricePolicyBlock.productName}: ${t('cart_no_price')}`
-              : `${pricePolicyBlock.productName}: ${t('cart_floor_blocked')}`}
-          </div>
-        )}
-
         {/* SOTUVSIZ CHEK (2026-08-16, egasi): sotuv YARATILMAYDI — savatdan
             chek chiqadi, savat qoralamaga o'tadi. Narx-siyosat quli AYNI:
             0-narx/pol buzilishi buni ham bloklaydi (chek narx-hujjatdek
@@ -743,7 +729,7 @@ export function SavatPanel({
           <button
             type="button"
             onClick={onPrintProforma}
-            disabled={cart.length === 0 || pricePolicyBlock != null}
+            disabled={cart.length === 0}
             data-test-id="sotuv-proforma"
             className="mb-2 flex h-[var(--pos-touch-min)] w-full items-center justify-center gap-2 rounded-2xl border border-[var(--ms-border)] bg-[var(--ms-bg-surface)] font-semibold text-[16px] text-[var(--ms-text-primary)] shadow-sm transition-all hover:bg-[var(--ms-bg-hover)] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40"
           >
@@ -763,7 +749,7 @@ export function SavatPanel({
         <button
           type="button"
           onClick={onDirectSell}
-          disabled={cart.length === 0 || directSellPending || pricePolicyBlock != null}
+          disabled={cart.length === 0 || directSellPending}
           data-test-id="sotuv-sell-direct"
           className="mb-2 flex h-[72px] w-full items-center justify-center gap-2 rounded-2xl bg-emerald-600 font-semibold text-[18px] text-white shadow-lg transition-all hover:bg-emerald-700 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40"
         >
@@ -799,7 +785,7 @@ export function SavatPanel({
         <button
           type="button"
           onClick={onSendToPicking}
-          disabled={cart.length === 0 || sendToPickingPending || pricePolicyBlock != null}
+          disabled={cart.length === 0 || sendToPickingPending}
           data-test-id="sotuv-pay"
           className="flex h-[var(--pos-touch-min)] w-full items-center justify-center gap-2 rounded-2xl bg-emerald-500 font-semibold text-[18px] text-white shadow-lg transition-all hover:bg-emerald-600 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40"
         >

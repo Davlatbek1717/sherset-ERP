@@ -7943,8 +7943,6 @@
       "cart_cost_missing": "себестоимость не собрана",
       "cart_empty_hint": "Выберите товар",
       "cart_empty_title": "Корзина пуста",
-      "cart_floor": "Минимум",
-      "cart_floor_blocked": "Цена ниже минимума — сохранить нельзя",
       "cart_loss": "УБЫТОК",
       "cart_markdown": "уступлено",
       "cart_min": "Опт",

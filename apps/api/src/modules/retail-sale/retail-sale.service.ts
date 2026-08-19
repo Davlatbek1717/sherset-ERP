@@ -40,9 +40,6 @@ import {
   planSaleAuditEvents,
 } from './cashier-audit.js';
 import { computePositions } from './compute-positions.js';
-// Kassa TZ §5.3 — pure cost/base-price snapshot rules (NULL = "not collected",
-// never 0), kept testable without a Prisma mock.
-import { checkSalePricePolicy } from './price-policy-guard.js';
 import {
   type FrozenPrices,
   type SalePricesJson,
@@ -831,23 +828,12 @@ export class RetailSaleService {
       sale.positions.map((p) => p.productId),
     );
 
-    // P12 — NARX SIYOSATI (egasining qarori 2026-08-12): 0-narxli qator TAQIQ,
-    // va narx poli (min(tan narx, karta chakana narxi)) buzilsa chek RAD etiladi.
-    // 🔴 Bu — HAQIQIY chegara: POS ekranidagi qulf chetlab o'tilishi mumkin
-    // (eski qobiq, boshqa klient, to'g'ridan-to'g'ri API). Tekshiruv tranzaksiya
-    // OCHILISHIDAN oldin turadi — rad etilgan chekda pul ham, ombor ham
-    // qimirlamaydi.
-    const policyError = checkSalePricePolicy(
-      sale.positions.map((p) => ({
-        productId: p.productId,
-        productName: p.product?.name ?? null,
-        quantity: p.quantity.toString(),
-        priceMinor: p.priceMinor,
-        discount: p.discount?.toString() ?? '0',
-      })),
-      frozen,
-    );
-    if (policyError) throw new BadRequestException(policyError);
+    // 🔴 2026-08-16, egasining qarori: KASSADA NARX CHEKLOVI YO'Q — kassir
+    // istalgan narxda, shu jumladan BEPULGA sotadi. Ilgari bu yerda P12 narx
+    // siyosati turardi (0-narx taqiqi + pol). U bayroq bilan emas, BUTUNLAY
+    // olib tashlangan: o'chiq bayroq bir kun jimgina yoqilib chekni yana rad
+    // etib qo'yishi mumkin edi. Shartnoma `retail-sale-price-floor.test.ts`
+    // da qulflangan — 0 so'mlik qator ham `posted` ga yetadi.
 
     const posted = await this.prisma.client.$transaction(async (tx) => {
       // Atomic state guard: only a postable state ('draft' | 'ready') → 'posted'.

@@ -103,12 +103,6 @@ export function CartLineEditModal({
    * ⌫ esa bu rejimni UZADI: u aynan mavjud qiymatni tahrirlash uchun bor.
    */
   const [replaceNext, setReplaceNext] = useState(true);
-  /**
-   * P03 (2026-08-13, egasi): «Minimal» qiymati sukutda YASHIRIN — kassir/mijoz
-   * ko'zi oldida pol narxi ochiq turmasin; o'rnidagi «•••» bosilganda ochiladi.
-   * Qulf mantiqqa (`belowFloor`/`blocked`) TEGILMAGAN — bu faqat ko'rsatish.
-   */
-  const [floorRevealed, setFloorRevealed] = useState(false);
   /** Kassa qobig'imi (exe)? Effektda — SSR/hydration xavfsiz. Qobiqda faol
    *  maydon haqiqiy input EMAS (`rasmilashtirish-modal.tsx` bilan bir sabab:
    *  input fokusi qobiq ekran-klaviaturasini chaqirib, oynaning o'z numpadini
@@ -132,7 +126,6 @@ export function CartLineEditModal({
     setPriceInput(line.priceStr);
     setActiveField('qty');
     setReplaceNext(true);
-    setFloorRevealed(false); // P03: boshqa qator ochilsa pol yana yashirin
   }
   // Yopilganda «yuklangan» belgisi tozalanadi — aks holda AYNI qator qayta
   // ochilganda saqlanmagan eski tahrir qaytib chiqardi.
@@ -171,32 +164,15 @@ export function CartLineEditModal({
   // (K-3 shartnomasi: ko'ringan narsa = yuboriladigan narsa).
   const priceMinor = parseAmountToMinor(priceInput, currency);
   /**
-   * P12 — NARX POLI (egasining qarori 2026-08-11/12). Pol = min(tan narx, karta
-   * chakana narxi); tan narx NULL bo'lsa pol YO'Q (NULL ≠ 0). Qiymat
-   * `@moysklad/money` dan — server `post()` AYNI funksiyani o'qiydi, aks holda
-   * ekran «bo'ladi» degan chekni server rad etardi.
+   * Pol = min(tan narx, karta chakana narxi); tan narx NULL bo'lsa pol YO'Q
+   * (NULL ≠ 0). 🔴 2026-08-16 dan bu QULF EMAS — sotishni hech nima to'smaydi;
+   * qiymat faqat narx TASMASINI (rang) hisoblash uchun qoldi, ya'ni kassir
+   * «bu narx tan narxdan past» ekanini ko'radi, lekin baribir sotaveradi.
    */
   const floorMinor = priceFloorMinor({
     costMinor: line.costMinor,
     basePriceMinor: line.basePriceMinor,
   });
-  const belowFloor = floorMinor != null && priceMinor < floorMinor;
-  /**
-   * 0-narx TAQIQI (egasining qarori 2026-08-12) — poldan MUSTAQIL: prodda
-   * 488 tovarda karta narxi umuman yo'q va ularning ko'pida tan narx ham NULL
-   * (pol yo'q), ya'ni faqat polga tayansak 0 so'mlik qator jimgina o'tib
-   * ketardi. Server ham shu qoidani qo'llaydi (`price-policy-guard.ts`).
-   */
-  const noPrice = priceMinor <= 0n;
-  /**
-   * 🔴 2026-08-16, egasining qarori: KASSADA NARX CHEKLOVI YO'Q — kassir
-   * istalgan narxda, shu jumladan BEPULGA sotadi. Server tomonida ham
-   * o'chirilgan (`price-policy-guard.ts` → `PRICE_POLICY_ENFORCED`); ikkovi
-   * BIRGA o'zgarishi shart, aks holda ekran «bo'ladi» degan chekni server rad
-   * etardi (yoki teskarisi). Qaytarish uchun ikkala bayroqni `true` qilish kifoya.
-   */
-  const PRICE_LOCK_ENFORCED: boolean = false;
-  const blocked = PRICE_LOCK_ENFORCED && (belowFloor || noPrice) && quantity !== '0';
   // Tasma endi POLga nisbatan (tan narxga emas): karta narxining o'zi tan
   // narxdan past bo'lgan 46 tovarda (prodda o'lchangan) o'z narxida sotish
   // ruxsat etilgan — ular qizil «zarar» deb belgilanmasligi kerak.
@@ -209,10 +185,8 @@ export function CartLineEditModal({
 
   const handleSave = () => {
     if (readOnly) return;
-    // Poldan past yoki 0 narx SAQLANMAYDI — bu ogohlantirish emas, qulf. Soni 0
-    // (qatorni o'chirish) bundan mustasno: chiqish yo'li berkilmasligi kerak,
-    // aks holda noto'g'ri narxli qatorni oynadan olib tashlab bo'lmasdi.
-    if (blocked) return;
+    // 🔴 2026-08-16, egasi: NARX CHEKLOVI YO'Q — poldan past ham, 0 ham (bepul)
+    // saqlanadi. Ilgari shu yerda `blocked` qulfi turardi.
     // Soni 0 ⇒ qator o'chadi — savatdagi «−» tugmasi bilan AYNI xulq
     // (`addQtyDecimal` manfiy natijani `'0'` ga qisadi, chaqiruvchi qatorni
     // olib tashlaydi). Aks holda savatda 0 dona qator qolib, chek unga
@@ -370,63 +344,12 @@ export function CartLineEditModal({
                     tushirsa bo'ladi» kerak. Foyda RAQAMI hamon yashirin
                     (`ui-flags.ts`) — faqat chegara ko'rinadi, egasi buni bilib
                     tanladi. */}
-                {/* P03 (2026-08-13): qiymat sukutda yashirin — «•••» bosilganda
-                    ochiladi. Poldan pastda ham QIZIL bo'lib qoladi (qulf banneri
-                    bilan birga) — faqat SON berkitilgan, signal emas. */}
-                {PRICE_LOCK_ENFORCED &&
-                  floorMinor != null &&
-                  (floorRevealed ? (
-                    <span
-                      data-test-id="pos-line-edit-floor"
-                      className={
-                        belowFloor
-                          ? 'font-bold text-red-700'
-                          : 'font-semibold text-[var(--ms-text-primary)]'
-                      }
-                    >
-                      {t('cart_floor')}:{' '}
-                      <span className="tabular-nums">{formatMoney(floorMinor)}</span>
-                    </span>
-                  ) : (
-                    <button
-                      type="button"
-                      data-test-id="pos-line-edit-floor-toggle"
-                      onClick={() => setFloorRevealed(true)}
-                      className={`cursor-pointer ${
-                        belowFloor
-                          ? 'font-bold text-red-700'
-                          : 'font-semibold text-[var(--ms-text-primary)]'
-                      }`}
-                    >
-                      {t('cart_floor')}: •••
-                    </button>
-                  ))}
                 {band === 'below-wholesale' && (
                   <span className="rounded bg-amber-500 px-1.5 py-0.5 font-semibold text-[10px] text-white">
                     {t('cart_below_wholesale')}
                   </span>
                 )}
               </div>
-              {/* Cheklov o'chirilgan (2026-08-16) ⇒ «rad etildi» bannerlari ham
-                  chizilmaydi: qizil «qabul qilinmaydi» yozuvi turib, Saqlash
-                  ishlayversa kassirni chalg'itardi. */}
-              {!PRICE_LOCK_ENFORCED ? null : noPrice ? (
-                <div
-                  data-test-id="pos-line-edit-no-price"
-                  className="mt-2 rounded-lg bg-red-600 px-3 py-2 font-bold text-sm text-white"
-                >
-                  {t('cart_no_price')}
-                </div>
-              ) : (
-                belowFloor && (
-                  <div
-                    data-test-id="pos-line-edit-floor-blocked"
-                    className="mt-2 rounded-lg bg-red-600 px-3 py-2 font-bold text-sm text-white"
-                  >
-                    {t('cart_floor_blocked')}
-                  </div>
-                )
-              )}
             </div>
 
             {readOnly ? (
@@ -500,20 +423,13 @@ export function CartLineEditModal({
               >
                 {tCommon('delete')}
               </button>
-              {/* Poldan past narxda tugma O'CHIQ: bosilib «hech nima bo'lmadi»
-                  holati kassirni chalg'itardi — sabab tepada qizil yozuv bilan
-                  turadi. `disabled` EMAS, chunki soni 0 bo'lsa (qatorni
-                  o'chirish) bosilishi kerak — qaror `handleSave` ichida. */}
+              {/* Narx cheklovi yo'q ⇒ tugma HAR DOIM faol: istalgan narx,
+                  shu jumladan 0 (bepul), saqlanadi. */}
               <button
                 type="button"
                 data-test-id="pos-line-edit-save"
                 onClick={handleSave}
-                aria-disabled={blocked}
-                className={`h-14 flex-1 rounded-xl font-bold text-base text-white shadow-md active:scale-[0.99] ${
-                  blocked
-                    ? 'cursor-not-allowed bg-[var(--ms-text-muted)] opacity-60'
-                    : 'bg-emerald-500 hover:bg-emerald-600'
-                }`}
+                className="h-14 flex-1 rounded-xl bg-emerald-500 font-bold text-base text-white shadow-md hover:bg-emerald-600 active:scale-[0.99]"
               >
                 {tCommon('save')}
               </button>

@@ -77,7 +77,7 @@ import type {
   ListEnvelope as ListResponse,
   PosProductRow as ProductRow,
 } from '@moysklad/contracts';
-import { Money, lineFloorBreach, marginPercent, priceFloorMinor } from '@moysklad/money';
+import { Money, marginPercent } from '@moysklad/money';
 import { isCurrencyCode } from '@moysklad/money/currencies';
 import { Button, Input, formatMoney, useConfirm, useToast } from '@moysklad/ui';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -719,50 +719,13 @@ function SalesScreen({
   // varianti (u `bigint` miqdor talab qiladi, ya'ni 1.5 kg ni ifodalay olmaydi).
   // `complete` shartnomasi o'zgarmagan: NULL tan narx qo'shilmaydi va jami
   // «to'liq emas» deb belgilanadi (NULL ≠ 0).
-  /**
-   * P12 — savatda narx siyosati buzilgan qator bormi (egasining qarori
-   * 2026-08-11/12): (a) narxsiz qator — prodda 488 tovar narxsiz, savatga
-   * tushsa 0 so'mga ketardi; (b) narx poli — chek chegirmasi qo'llangandan
-   * KEYIN ham qator poldan past bo'lsa chek yuborilmaydi (chegirma jimgina
-   * qisilmaydi — egasi shu variantni tanladi).
-   *
-   * 🔴 Bu ekran qulfi HIMOYA EMAS, faqat kassirni erta ogohlantirish: haqiqiy
-   * chegara serverda (`price-policy-guard.ts`), va ikkalasi ham bitta
-   * `@moysklad/money` funksiyasini o'qiydi.
-   *
-   * Zakazga bog'langan (qulflangan) savat CHETLAB o'tiladi: u yerda narx zakaz
-   * hujjatining ishi, kassir uni tuzata olmaydi — tugmani o'chirish uni chiqish
-   * yo'lisiz qoldirardi. Bunday chekni server rad etadi va sabab ko'rinadi.
-   */
-  /**
-   * 🔴 2026-08-16, egasining qarori: KASSADA NARX CHEKLOVI YO'Q — kassir
-   * istalgan narxda, shu jumladan BEPULGA sotadi. Bu — uchinchi majburlash
-   * nuqtasi: u «To'lash / Sotish / Omborchiga yuborish» tugmalarini
-   * o'chirar edi, ya'ni 0 so'mlik savatni chiqarib bo'lmasdi.
-   *
-   * Qaytarish uchun UCHALASI birga yoqilsin, aks holda ekran bilan server
-   * ayriladi: shu yerdagi `PRICE_POLICY_UI`,
-   * `cart-line-edit-modal.tsx` → `PRICE_LOCK_ENFORCED`,
-   * `price-policy-guard.ts` → `PRICE_POLICY_ENFORCED`.
-   */
-  const PRICE_POLICY_UI: boolean = false;
-  const pricePolicyBlock =
-    !PRICE_POLICY_UI || cartLocked
-      ? null
-      : (cart.find((l) => l.priceMinor <= 0n) ??
-        cart.find(
-          (l) =>
-            lineFloorBreach({
-              quantity: normalizeQtyDecimal(l.quantity),
-              priceMinor: l.priceMinor,
-              discount: String(discountPct),
-              floorMinor: priceFloorMinor({
-                costMinor: l.costMinor,
-                basePriceMinor: l.basePriceMinor,
-              }),
-            }) != null,
-        ) ??
-        null);
+  // 🔴 2026-08-16, egasining qarori: KASSADA NARX CHEKLOVI YO'Q — kassir
+  // istalgan narxda, shu jumladan BEPULGA sotadi. Ilgari bu yerda
+  // `pricePolicyBlock` turardi va u «To'lash / Sotish / Omborchiga
+  // yuborish» tugmalarini o'chirardi. Bayroq bilan o'chirilgan emas, BUTUNLAY olib
+  // tashlangan — o'chiq bayroq jimgina yoqilib qulfni qaytarishi mumkin edi.
+  // Serverda ham hech qanday narx tekshiruvi qolmadi
+  // (`retail-sale.service.ts` → `post()`).
 
   const cartCost = cartCostMinor(cart);
   // Foyda asosi = kassa HAQIQATAN oladigan pul. Mavjud chekni to'layotgan
@@ -948,7 +911,7 @@ function SalesScreen({
   // bilan to'qnashmaydi). Muvaffaqiyatda savat qoralamaga o'tadi — «chekni
   // o'zgartirish» = chipni ochish → o'zgartirish → yana chiqarish.
   const printProforma = useCallback(async () => {
-    if (cart.length === 0 || pricePolicyBlock != null || cartLocked || payingSale != null) return;
+    if (cart.length === 0 || cartLocked || payingSale != null) return;
     const now = new Date();
     const two = (n: number) => n.toString().padStart(2, '0');
     const input = cartToProformaReceipt(cart, discountPct, {
@@ -964,7 +927,7 @@ function SalesScreen({
     }
     // Chekning o'zi — kassirga «chiqdi» signali; qoralama toast'i parkdan keladi.
     parkCart();
-  }, [cart, discountPct, pricePolicyBlock, cartLocked, payingSale, session, parkCart, toast, t]);
+  }, [cart, discountPct, cartLocked, payingSale, session, parkCart, toast, t]);
 
   // Tiklash — chip bosilganda. Savatda tovar bo'lsa u AVVAL avtomatik
   // qoralamaga olinadi (almashish): kassir hech qachon «tiklasam savatim
@@ -1597,7 +1560,6 @@ function SalesScreen({
                   discountedTotal={discountedTotal}
                   cartProfitMinor={cartProfitMinor}
                   cartMarginPct={cartMarginPct}
-                  pricePolicyBlock={pricePolicyBlock}
                   directSellPending={directSellMut.isPending}
                   onDirectSell={() => directSellMut.mutate()}
                   sendToPickingPending={sendToPickingMut.isPending}

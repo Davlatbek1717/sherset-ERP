@@ -5,14 +5,14 @@ import { RetailSaleService } from './retail-sale.service.js';
 /**
  * 🔴 2026-08-16, egasining qarori: KASSADA NARX CHEKLOVI YO'Q.
  *
- * P12 da (2026-08-12) yoqilgan pol va 0-narx taqiqi O'CHIRILDI
- * (`price-policy-guard.ts` → `PRICE_POLICY_ENFORCED = false`). Bu fayl endi
+ * P12 da (2026-08-12) yoqilgan pol va 0-narx taqiqi 2026-08-19 da BUTUNLAY
+ * olib tashlandi (`price-policy-guard.ts` o'chirildi; ilgari u bayroq bilan
+ * o'chiq turardi — o'chiq bayroq jimgina yoqilishi mumkin edi). Bu fayl
  * TESKARI shartnomani qulflaydi: ilgari 400 qaytargan har bir holat chekni
  * `posted` holatiga olib borishi shart — shu jumladan 0 so'mlik qator.
  *
- * Nega baribir `post()` darajasida sinaladi: qoidaning o'zi (`price-policy-
- * guard.test.ts`) yashil bo'lib, chek yopish yo'li boshqa joyda ikkinchi
- * tekshiruv ushlab turishi mumkin — «yetim modul» klassining teskarisi.
+ * Nega `post()` darajasida sinaladi: chek yopish yo'lida boshqa joyda ikkinchi
+ * tekshiruv paydo bo'lishi mumkin — bu yagona ishonchli qamrov.
  *
  * Harness `retail-sale-post-guards.test.ts` dagi dublyordan olingan: `findFirst`
  * — detached snapshot, `updateMany` — jonli qator.

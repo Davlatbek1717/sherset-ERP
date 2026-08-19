@@ -276,9 +276,10 @@ describe('Savat qatori tahrir oynasi — narx tasmalari JONLI', () => {
  * «rad etildi» bannerlari CHIZILMAYDI — chegara yo'q joyda «minimal» yozuvi
  * turishi kassirni chalg'itardi.
  *
- * Bu blok TESKARI shartnomani qulflaydi. Qaytarish kerak bo'lsa:
- * `cart-line-edit-modal.tsx` → `PRICE_LOCK_ENFORCED` va
- * `price-policy-guard.ts` → `PRICE_POLICY_ENFORCED` — IKKALASI birga.
+ * Bu blok TESKARI shartnomani qulflaydi. 2026-08-19 da qulf mantig'i
+ * bayroq ostida emas, BUTUNLAY olib tashlandi (`PRICE_LOCK_ENFORCED`,
+ * `pricePolicyBlock`, `price-policy-guard.ts`) — o'chiq bayroq bir kun
+ * jimgina yoqilib kassani yana to'sib qo'yishi mumkin edi.
  */
 describe('Savat qatori tahrir oynasi — narx cheklovi OLIB TASHLANGAN (2026-08-16)', () => {
   it('«Minimal» qatori ham, «•••» tugmasi ham CHIZILMAYDI', () => {

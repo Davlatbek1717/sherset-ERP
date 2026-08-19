@@ -210,9 +210,13 @@ export function RasmiyashtirishModal({
   // `retail-sale.service.ts` da talab qilinadi), ya'ni to'siq faqat ekranda
   // edi.
   //
-  // Sharti «bo'sh chek»ni ochib yubormasligi uchun ikkiga bo'lindi: summasi 0
-  // chekda `totalPaid >= sumMinor` (0 >= 0) rost bo'lardi va tugma yonardi.
-  const hasSomethingToSettle = totalPaid > 0n || debtMinor > 0n;
+  // 🔴 2026-08-19, egasi: «bepulga ham sota olishi kerak». Jami 0 bo'lgan chek
+  // (hamma qator 0 so'm) SHU YERDA qolib ketardi: to'lov ham, qarz ham 0 ⇒
+  // tugma o'lik, ya'ni narx cheklovi olib tashlangani bilan chekni YOPIB
+  // bo'lmasdi — «cheklov o'chdi» degani yarim rost edi. Bo'sh savat xavfi yo'q:
+  // savat bo'sh bo'lsa POS tugmalarining o'zi o'chiq (`cart.length === 0`) va
+  // bu oyna umuman ochilmaydi.
+  const hasSomethingToSettle = totalPaid > 0n || debtMinor > 0n || sumMinor === 0n;
   const canConfirm =
     !loading &&
     hasSomethingToSettle &&

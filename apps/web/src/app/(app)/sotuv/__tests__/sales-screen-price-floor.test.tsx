@@ -4,14 +4,13 @@
  * Nima qulflanadi:
  *  🔴 narxsiz tovar savatga tushsa kassir OCHIQ ogohlantirish ko'radi — jim
  *     0 so'mlik qator emas (prodda 488 tovar narxsiz — o'lchangan);
- *  🔴 narxsiz qator bilan chekni yuborib bo'lmaydi (server ham rad etadi);
- *  🔴 chek chegirmasi qator narxini pol ostiga tushirsa — yuborish bloklanadi
- *     (egasining qarori: chegirma jimgina QISILMAYDI, chek to'xtaydi);
+ *  🔴 narxsiz qator bilan ham chek YUBORILADI (2026-08-16 dan cheklov yo'q);
+ *  🔴 polni buzadigan chegirma ham o'tadi;
  *  🔴 polni buzmaydigan chegirma odatdagidek ishlaydi.
  *
- * Ekran qulfi — himoyaning faqat ko'rinadigan qismi; haqiqiy chegara serverda
- * (`apps/api/.../price-policy-guard.ts`). Ikkalasi `@moysklad/money` dagi bitta
- * funksiyani o'qiydi.
+ * 2026-08-19: ekranda ham, serverda ham hech qanday narx qulfi QOLMADI
+ * (`pricePolicyBlock` va `price-policy-guard.ts` o'chirildi). `@moysklad/money`
+ * dagi pol funksiyasi faqat narx TASMASINI (rang) hisoblash uchun qoldi.
  */
 
 import { api } from '@/lib/api-client';

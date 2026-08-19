@@ -20,9 +20,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
  * Bu yerda qulflanadigan xulq:
  *  🔴 mijoz tanlangan bo'lsa 0 to'lov bilan rasmiylashtirish MUMKIN;
  *  · mijozsiz 0 to'lov hamon bloklangan (qarz hech kimga yozilmasin);
- *  · summasi 0 bo'lgan chek hamon bloklangan — «to'lov ham yo'q, qarz ham
- *    yo'q» holat tugmani ochib yubormasin (shartni olib tashlashning
- *    yon ta'siri aynan shu bo'lardi).
+ *  🔴 summasi 0 bo'lgan chek endi O'TADI (2026-08-19, egasi: «bepulga ham
+ *    sota olishi kerak»). Ilgari bu yerda `hasSomethingToSettle` to'sardi:
+ *    narx cheklovi olib tashlangani bilan hamma qatori 0 so'mlik chekni YOPIB
+ *    bo'lmasdi. Bo'sh savat xavfi boshqa qatlamda yopilgan — savat bo'sh
+ *    bo'lsa POS tugmalari o'chiq va bu oyna ochilmaydi.
  */
 
 vi.mock('@/lib/api-client', () => ({
@@ -99,16 +101,36 @@ describe("Rasmilashtirish oynasi — to'liq qarz (0 to'lov)", () => {
     );
   });
 
-  it('summasi 0 bo‘lgan chek mijoz tanlansa ham bloklangan qoladi', async () => {
+  it('🔴 summasi 0 bo‘lgan chek (BEPUL savdo) rasmiylashtiriladi', async () => {
+    const onConfirm = open(0n);
+
+    // Mijoz TANLANMAGAN: bepul savdoda qarz tug'ilmaydi, demak mijoz shart emas.
+    const submit = screen.getByRole('button', { name: /Rasmilashtirish/ });
+    await waitFor(() => expect(submit).toBeEnabled());
+    await userEvent.setup().click(submit);
+
+    // Hech qanday to'lov qatori tug'ilmaydi — na naqd, na qarz.
+    expect(onConfirm).toHaveBeenCalledTimes(1);
+    expect(onConfirm.mock.calls[0]?.[0]).toMatchObject({
+      cashAmountMinor: 0n,
+      cardAmountMinor: 0n,
+      terminalAmountMinor: 0n,
+      cashUsdAmountMinor: 0n,
+      debtAmountMinor: 0n,
+    });
+  });
+
+  it('bepul chekda mijoz tanlansa ham qarz qatori tug‘ilmaydi', async () => {
     const user = userEvent.setup();
-    open(0n);
+    const onConfirm = open(0n);
 
     await pickCustomer(user);
 
-    // To'lov ham, qarz ham yo'q — rasmiylashtiradigan narsa yo'q.
-    await waitFor(() =>
-      expect(screen.getByRole('button', { name: /Rasmilashtirish/ })).toBeDisabled(),
-    );
+    const submit = screen.getByRole('button', { name: /Rasmilashtirish/ });
+    await waitFor(() => expect(submit).toBeEnabled());
+    await user.click(submit);
+
+    expect(onConfirm.mock.calls[0]?.[0]).toMatchObject({ debtAmountMinor: 0n });
   });
 
   it('qisman qarz (naqd + qarz) avvalgidek ishlaydi', async () => {

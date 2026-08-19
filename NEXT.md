@@ -331,6 +331,31 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-08-19a (KASSA — narx cheklovi ILDIZI bilan olib tashlandi; bepul savdo ishlaydi) —**
+> Egasi: «kassada sotuvda tovarlarni xarid narxidan kamida sotish cheklovini to'liq olib tashla,
+> bepulga ham qo'yib sota olishi kerak».
+> 🔴 **O'LCHOV:** uchala eski bayroq (`PRICE_POLICY_ENFORCED` · `PRICE_POLICY_UI` ·
+> `PRICE_LOCK_ENFORCED`) 2026-08-16 dan (`357b200c`) ALLAQACHON `false` edi va prodda ham
+> shunday (prod HEAD `bc0dc0a2`, api `src/main.ts` tsx orqali, web build 18/Aug) — ya'ni
+> narx qulfi emas, **BOSHQA joy** to'sardi.
+> 🔴 **HAQIQIY TO'SIQ (topildi):** `rasmilashtirish-modal.tsx` →
+> `hasSomethingToSettle = totalPaid > 0n || debtMinor > 0n`. Jami 0 bo'lgan chekda (hamma qator
+> bepul) to'lov ham, qarz ham 0 ⇒ «Rasmilashtirish» tugmasi O'LIK. Cheklov «o'chirilgan» deb
+> yozilgan-u, bepul chekni YOPIB bo'lmasdi. Tuzatildi: `|| sumMinor === 0n` (bo'sh savat
+> boshqa qatlamda yopilgan — `cart.length === 0` da tugmalar o'chiq).
+> **Tozalash:** o'chiq bayroq bir kun jimgina yoqilishi mumkin edi ⇒ qulf mantig'i BUTUNLAY
+> olib tashlandi — `price-policy-guard.ts`(+test) o'chirildi va `post()` dan chiqarildi,
+> `pricePolicyBlock` (banner + 3 tugma qulfi) va modal `blocked`/`noPrice`/pol UI o'chdi,
+> o'lik i18n kalitlari (`cart_floor`, `cart_floor_blocked`) olib tashlandi. Savatdagi
+> «Narx yo'q» belgisi qizil «xato»dan **sariq ma'lumot**ga tushirildi (0 so'm endi qonuniy).
+> Narx tasmasi (zarar/optom rangi) MA'LUMOT sifatida qoldi — u hech nimani to'smaydi.
+> Qulf: `rasmilashtirish-full-debt.test.tsx` (+2 test: bepul chek o'tadi, qarz qatori
+> tug'ilmaydi) · mavjud `retail-sale-price-floor.test.ts` (0 so'mlik chek `posted`).
+> Gate: tc 0 · biome 0 xato · web POS 400 · api retail-sale 415.
+> ⏭️ **Deploy kerak** — o'zgarish hali prodda emas.
+>
+> ---
+>
 > **🕒 2026-08-18a (XODIM — rolsiz yaratish JIM shoxi yopildi + 5 kassir tiklandi; `bc0dc0a2`) —**
 > ✅ DEPLOYED `2ab513d5 → bc0dc0a2`: sayt 200, api health ok, jonli buildda `employee-role-error`
 > BOR. Egasi: «kassir yaratib bo'lmayapti, rol tanlagan bo'lsam ham tanlanmadi deydi».
