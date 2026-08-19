@@ -179,6 +179,13 @@ export const MarkCallSchema = z
      * (2026-08-08 gacha ×10^4 edi — migratsiya 10 000×ga ko'paytirib o'tkazdi.)
      */
     exchangeRate: z.string().regex(/^\d+$/, 'Kurs — butun son').optional(),
+    /**
+     * NAQD to'lov tushadigan kassa (2026-08-19, egasi: «olingan pul ham
+     * kassaga tushadi, u kassadagi pulga qo'shilishi kerak»). Ixtiyoriy:
+     * akkauntda bitta faol kassa bo'lsa server o'zi oladi; bir nechta bo'lsa
+     * TALAB qiladi — noto'g'ri kassaga jim yozilgan pul topilmaydi.
+     */
+    cashDeskId: z.string().uuid().optional(),
     /** Click to'lovida chek rasmi MAJBURIY (data-URI yoki toza base64). */
     screenshotBase64: z.string().optional(),
     filename: z.string().max(255).default('chek.png'),

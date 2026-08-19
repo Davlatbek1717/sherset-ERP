@@ -7676,6 +7676,8 @@
       "call_save": "Сохранить",
       "call_save_failed": "Не сохранено",
       "call_saved": "Результат звонка сохранён",
+      "cash_desk_label": "В какую кассу поступило",
+      "cash_desk_placeholder": "Выберите кассу",
       "called_col_answer": "Ответ",
       "called_col_outcome": "Результат",
       "called_date": "Дата",

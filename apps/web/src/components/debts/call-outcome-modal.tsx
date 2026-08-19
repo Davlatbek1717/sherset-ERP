@@ -21,6 +21,7 @@
  */
 
 import { type ReceiptShot, ReceiptShotPicker } from '@/components/debts/receipt-shot-picker';
+import { api } from '@/lib/api-client';
 import {
   type CallOutcome,
   type CallPaymentKind,
@@ -35,11 +36,12 @@ import {
   Input,
   Modal,
   MoneyInput,
+  NativeSelect,
   Textarea,
   formatMoney,
   useToast,
 } from '@moysklad/ui';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { useState } from 'react';
 
@@ -98,6 +100,11 @@ export function CallOutcomeForm({
 }) {
   const t = useTranslations('pages.debts');
   const qc = useQueryClient();
+  const { data: deskList } = useQuery<{ items: Array<{ id: string; name: string }> }>({
+    queryKey: ['cash-desks-for-call'],
+    queryFn: () => api.get('/cash-desks?limit=50'),
+  });
+  const desks = deskList?.items ?? [];
   const { toast } = useToast();
 
   const [outcome, setOutcome] = useState<CallOutcome | null>(null);
@@ -119,6 +126,16 @@ export function CallOutcomeForm({
 
   // MUAMMOLI MIJOZ (2026-07-14). Natijadan MUSTAQIL: mijoz «qisman to'ladi»
   // bo'lib ham muammoli bo'lishi mumkin (har safar va'da berib, kam to'laydi).
+  /**
+   * NAQD to'lov tushadigan kassa (2026-08-19, egasi: «olingan pul ham kassaga
+   * tushadi — u kassadagi pulga qo'shilishi kerak»). Ilgari bu oynadan yozilgan
+   * naqd pul HECH QAYSI kassaga tushmasdi.
+   *
+   * Bitta faol kassa bo'lsa u avtomatik tanlanadi (operator uchun qadam
+   * qo'shilmaydi); bir nechta bo'lsa TANLASH majburiy — server ham taxmin
+   * qilmaydi, chunki noto'g'ri kassaga jim yozilgan pul topilmaydi.
+   */
+  const [cashDeskId, setCashDeskId] = useState<string>('');
   const [problem, setProblem] = useState(false);
   const [problemReason, setProblemReason] = useState('');
 
@@ -189,6 +206,11 @@ export function CallOutcomeForm({
               amountOriginalMinor: originalMinor ?? undefined,
               // Kurs so'm to'lovda ham yuboriladi (ixtiyoriy ma'lumot).
               exchangeRate: rateMinor ?? undefined,
+              // Naqd pul QAYSI kassaga tushgani (2026-08-19). Bitta faol kassa
+              // bo'lsa bo'sh ketadi — serverning o'zi oladi.
+              ...(kind === 'cash' && (cashDeskId || desks.length === 1)
+                ? { cashDeskId: cashDeskId || (desks[0]?.id as string) }
+                : {}),
               // Click'da chek majburiy; hisob raqamda ixtiyoriy — bor bo'lsa ketadi.
               ...((kind === 'click' || kind === 'account') && shot
                 ? { screenshotBase64: shot.dataUri, filename: shot.name, mime: shot.mime }
@@ -298,9 +320,33 @@ export function CallOutcomeForm({
             ))}
           </div>
 
-          {/* ── NAQD formasi: valyuta + summa + kurs ── */}
+          {/* ── NAQD formasi: kassa + valyuta + summa + kurs ── */}
           {kind === 'cash' && (
             <div className="mt-3 flex flex-col gap-3">
+              {/* Pul QAYSI kassaga tushdi — bir nechta faol kassa bo'lgandagina
+                  so'raladi (bitta bo'lsa qo'shimcha qadam kerak emas). */}
+              {desks.length > 1 && (
+                <div>
+                  <div className="mb-1 text-[var(--ms-text-muted)] text-xs">
+                    {t('cash_desk_label')}
+                  </div>
+                  <NativeSelect
+                    data-test-id="call-cash-desk"
+                    value={cashDeskId}
+                    onChange={(e) => {
+                      setCashDeskId(e.target.value);
+                      setError(null);
+                    }}
+                  >
+                    <option value="">{t('cash_desk_placeholder')}</option>
+                    {desks.map((d) => (
+                      <option key={d.id} value={d.id}>
+                        {d.name}
+                      </option>
+                    ))}
+                  </NativeSelect>
+                </div>
+              )}
               <div>
                 <div className="mb-1 text-[var(--ms-text-muted)] text-xs">
                   {t('currency_label')}

@@ -300,6 +300,12 @@ export const debtApi = {
       amountOriginalMinor?: string;
       /** Kurs ×10000 — USD to'lovda majburiy. */
       exchangeRate?: string;
+      /**
+       * NAQD to'lov tushadigan kassa (2026-08-19, egasi: «olingan pul ham
+       * kassaga tushadi»). Akkauntda bitta faol kassa bo'lsa server o'zi
+       * oladi; bir nechta bo'lsa TALAB qiladi.
+       */
+      cashDeskId?: string;
       /** Click to'lovida chek rasmi (data-URI) — majburiy. */
       screenshotBase64?: string;
       filename?: string;

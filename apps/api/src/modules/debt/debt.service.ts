@@ -534,6 +534,26 @@ export class DebtService {
     await this.money.applyDeltas(tx, accountId, deltas);
   }
 
+  /**
+   * Yagona FAOL kassa — qo'ng'iroq oynasidan kelgan naqd to'lov uchun sukut.
+   * Bir nechta bo'lsa TAXMIN QILINMAYDI: noto'g'ri kassaga jimgina yozilgan
+   * pul keyin qo'lda topilmaydi (prodda 2 ta bir xil nomli «Asosiy kassa»
+   * bor — aynan shu tuzoq).
+   */
+  private async soleCashDeskId(accountId: string): Promise<string> {
+    const desks = await this.prisma.client.cashDesk.findMany({
+      where: { accountId, archived: false },
+      select: { id: true },
+      take: 2,
+    });
+    if (desks.length === 1) return desks[0]?.id as string;
+    throw new BadRequestException(
+      desks.length === 0
+        ? 'Faol kassa yo‘q — naqd to‘lovni yozib bo‘lmaydi'
+        : 'Kassani tanlang: bir nechta faol kassa bor',
+    );
+  }
+
   private async mustFind(accountId: string, id: string) {
     const debt = await this.prisma.client.debt.findFirst({
       where: { id, accountId, deletedAt: null },
@@ -993,6 +1013,47 @@ export class DebtService {
             ? "Naqd (dollar) — qo'ng'iroqda"
             : "Naqd — qo'ng'iroqda";
 
+    /**
+     * 🔴 2026-08-19, egasi: «mijoz kartasida ko'rsatadi, lekin olingan pul ham
+     * kassaga tushadi — u kassadagi pulga qo'shilishi kerak».
+     *
+     * O'LCHANGAN NUQSON: bu yo'l (qo'ng'iroq natijasi «To'ladi») `DebtPayment`
+     * qatorini yozardi-yu, `cashDeskId` ham, `retailShiftId` ham QO'YMASDI va
+     * pul daftariga UMUMAN tegmasdi. Prodda 5 ta naqd to'lov — 44 947 075
+     * so'm — shu sababli kassa qoldig'ida ham, smenada ham ko'rinmagan.
+     * Kassir yo'li (`addCashPayment`, `pos-debt-payment.service.ts`) esa
+     * boshidan pul daftariga yozadi — ya'ni bitta hodisaning ikki yo'li
+     * ayrilib qolgan edi.
+     *
+     * Endi NAQD to'lov ham kassaga tushadi:
+     *  · kassa OSHKORA tanlanadi (`cashDeskId`); bitta faol kassa bo'lsa u
+     *    sukut sifatida olinadi, bir nechta bo'lsa — BALAND OVOZDA xato
+     *    (noto'g'ri kassaga jim yozish pulni ikkinchi marta yo'qotardi);
+     *  · o'sha kassada OCHIQ smena bo'lsa, to'lov unga biriktiriladi —
+     *    aks holda yashiqqa fizik kirgan pul kassirning kutilgan naqdida
+     *    ko'rinmay, unga SOXTA KAMOMAD yozilardi;
+     *  · pul harakati kassir yo'li bilan AYNI funksiyadan (`debtCashDeskDeltas`)
+     *    yoziladi — ikkinchi formula yo'q.
+     */
+    let payCashDeskId: string | null = null;
+    let payDeskCurrency: string = NO_CASH_DESK_CURRENCY;
+    let payShiftId: string | null = null;
+    if (isPayment && method === 'cash') {
+      payCashDeskId = input.cashDeskId ?? (await this.soleCashDeskId(accountId));
+      const desk = await this.prisma.client.cashDesk.findFirst({
+        where: { id: payCashDeskId, accountId },
+        select: { currency: true },
+      });
+      if (!desk) throw new BadRequestException('Kassa topilmadi');
+      payDeskCurrency = desk.currency;
+      const openShift = await this.prisma.client.cashierSession.findFirst({
+        where: { accountId, cashDeskId: payCashDeskId, state: 'open' },
+        orderBy: { openedAt: 'desc' },
+        select: { id: true },
+      });
+      payShiftId = openShift?.id ?? null;
+    }
+
     const result = await this.prisma.client.$transaction(async (tx) => {
       // To'lov bo'lgan bo'lsa — HAQIQIY to'lov yozuvi (2026-07-13). Ilgari
       // «to'ladi» faqat statusni o'zgartirardi va to'lov na lentada, na
@@ -1012,12 +1073,30 @@ export class DebtService {
             exchangeRate: rate,
             method,
             sourceName,
+            cashDeskId: payCashDeskId,
+            retailShiftId: payShiftId,
             comment: input.text?.length ? input.text : null,
             receivedById: userId,
             receivedByRole: role === 'admin' ? 'operator' : role,
           },
         });
         paymentId = created.id;
+
+        // Kassa daftari — kassir yo'li bilan AYNI predikat va AYNI funksiya
+        // (`debt-cash-ledger.ts`): naqd bo'lmasa yoki kassa/valyuta mos
+        // kelmasa bo'sh ro'yxat qaytadi, ya'ni terminal/Click/hisob-raqam
+        // to'lovlari yashiqqa TUSHMAYDI. Qator SAQLANGANIDAN o'qiladi —
+        // storno ham shu qatorni o'qiydi, ikki tomon bir manbadan.
+        await this.money.applyDeltas(
+          tx,
+          accountId,
+          debtCashDeskDeltas(created, {
+            sign: 1n,
+            documentId: debtLedgerDocumentId(created),
+            deskCurrency: payDeskCurrency,
+            counterpartyId: debt.counterpartyId,
+          }),
+        );
       }
 
       await tx.debtNote.create({

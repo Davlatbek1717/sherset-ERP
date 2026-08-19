@@ -331,6 +331,30 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-08-19d (QARZ — «qo'ng'iroq natijasi» naqdi KASSAGA umuman tushmasdi) —**
+> Egasi: «mijoz kartasida ko'rsatadi, lekin olingan pul ham kassaga tushadi — u
+> kassadagi pulga qo'shilishi kerak».
+> 🔴 **O'LCHOV (prodda):** naqd qarz to'lovlarining uch yo'li bor, biri ayrilib qolgan:
+> POS (`pos-debt-payment.service`) va kassir dialogi (`addCashPayment`) kassa qoldig'ini
+> kreditlaydi; **`markCall`** (qo'ng'iroq natijasi «To'ladi») esa `DebtPayment` yozardi-yu
+> `cash_desk_id`/`retail_shift_id` QO'YMASDI va `money.applyDeltas` ga TEGMASDI.
+> Natija: **5 ta naqd to'lov = 44 947 075 so'm** kassa qoldig'ida ham, smenada ham,
+> pul daftarida ham YO'Q (18–19 avgust). *(Yana 5 ta `account` to'lov 163 100 300 so'm —
+> bank yo'nalishi, alohida masala; 4 ta «daftarsiz» naqd esa DOLLAR to'lovlar — bu
+> ataylab: so'm yashig'iga dollar tushmaydi.)*
+> **Tuzatish:** `markCall` naqd to'lovda kassani oladi (`cashDeskId`; bitta faol kassa
+> bo'lsa sukut, bir nechta bo'lsa BALAND OVOZDA xato — prodda 2 ta bir xil nomli
+> «Asosiy kassa» bor), o'sha kassaning OCHIQ smenasiga biriktiradi (aks holda yashiqqa
+> fizik kirgan pul kassirda soxta KAMOMAD berardi) va pul harakatini kassir yo'li bilan
+> AYNI funksiyadan (`debtCashDeskDeltas`) yozadi. Oynaga «Qaysi kassaga tushdi»
+> tanlagichi qo'shildi (faqat 2+ kassa bo'lsa ko'rinadi).
+> Qulflar: `call-payment-cash-desk.test.ts` (8) · `call-cash-desk.test.tsx` (2).
+> Gate: tc 0 · biome 0 xato · api debt 286 · web to'liq suite.
+> ⏭️ **Egasidan javob kutilmoqda:** eski 5 to'lov (44 947 075 so'm) kassa qoldig'iga
+> qo'shilsinmi va qaysi kassaga — skript tayyorlanadi (idempotent, DRY-RUN).
+>
+> ---
+>
 > **🕒 2026-08-19c (SMENA — qabul qilingan naqd qarz puli EKRANDA ko'rinmasdi) —**
 > Egasi: «kassada №EA8E779A qarz to'lovi naqtga olingan, lekin kassirning smenasida
 > bo'lishi kerak bo'lgan summaga qo'shilgani yo'q, u ko'rinmayapti».
