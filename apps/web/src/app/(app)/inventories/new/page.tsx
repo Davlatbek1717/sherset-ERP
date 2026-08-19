@@ -23,7 +23,7 @@
 import { InventoryPositionsPanel } from '@/components/inventories/inventory-positions-panel';
 import { usePrintTemplatesManager } from '@/components/print/print-templates-provider';
 import { useDocumentEditorLabels } from '@/hooks/use-document-editor-labels';
-import { useUserDefaults } from '@/hooks/use-user-defaults';
+import { defaultDocStore, useUserDefaults } from '@/hooks/use-user-defaults';
 import { api } from '@/lib/api-client';
 import { useAuth } from '@/lib/auth-store';
 import {
@@ -132,12 +132,12 @@ export default function NewInventoryPage() {
       if (fromParam) {
         setStoreId(fromParam.id);
         setStoreLabel(fromParam.name);
-      } else if (us?.defaultStore) {
-        setStoreId(us.defaultStore.id);
-        setStoreLabel(us.defaultStore.name);
-      } else if (storesData.items[0]) {
-        setStoreId(storesData.items[0].id);
-        setStoreLabel(storesData.items[0].name);
+      } else {
+        const store = defaultDocStore(us, storesData.items);
+        if (store) {
+          setStoreId(store.id);
+          setStoreLabel(store.name);
+        }
       }
     }
   }, [

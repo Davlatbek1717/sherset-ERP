@@ -14,7 +14,7 @@
 
 import { useDocumentEditorLabels } from '@/hooks/use-document-editor-labels';
 import { useTotalsLabels } from '@/hooks/use-totals-labels';
-import { useUserDefaults } from '@/hooks/use-user-defaults';
+import { defaultDocStore, useUserDefaults } from '@/hooks/use-user-defaults';
 import { api } from '@/lib/api-client';
 import { useAuth } from '@/lib/auth-store';
 import {
@@ -182,7 +182,7 @@ export default function NewProcessingPage() {
         setOrganizationLabel(orgsData.items[0].name);
       }
     }
-    const store = us?.defaultStore ?? storesData.items[0] ?? null;
+    const store = defaultDocStore(us, storesData.items) ?? null;
     if (store) {
       if (!materialsStoreId) {
         setMaterialsStoreId(store.id);

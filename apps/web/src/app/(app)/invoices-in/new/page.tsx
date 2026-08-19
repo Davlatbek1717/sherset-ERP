@@ -28,7 +28,7 @@ import { useNewDocStaging } from '@/components/documents/use-new-doc-staging';
 import { usePrintTemplatesManager } from '@/components/print/print-templates-provider';
 import { useDocumentEditorLabels } from '@/hooks/use-document-editor-labels';
 import { useTotalsLabels } from '@/hooks/use-totals-labels';
-import { useUserDefaults } from '@/hooks/use-user-defaults';
+import { defaultDocStore, useUserDefaults } from '@/hooks/use-user-defaults';
 import { api } from '@/lib/api-client';
 import { computeLineTotalSafe } from '@/lib/doc-totals';
 import { distributeAgreementDelta } from '@/lib/position-agreement';
@@ -262,7 +262,7 @@ export default function NewInvoiceInPage() {
       }
     }
     if (!storeId) {
-      const store = us?.defaultStore ?? storesData.items[0];
+      const store = defaultDocStore(us, storesData.items);
       if (store) {
         setStoreId(store.id);
         setStoreLabel(store.name);

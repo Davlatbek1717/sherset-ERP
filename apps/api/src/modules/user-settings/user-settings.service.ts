@@ -17,6 +17,16 @@ export class UserSettingsService {
    * Lookups are tenant-scoped by `accountId` and exclude archived rows; a stale,
    * cross-tenant, deleted OR archived id resolves to null (the picker then shows
    * empty — self-healing, so a since-archived default never pre-fills a new doc).
+   *
+   * Also returns `mainStore` — the account's «основной склад» = the EARLIEST
+   * created active warehouse. It is NOT the user's choice (`defaultStore` stays
+   * honestly null when unset); it is the deterministic fallback a new document
+   * uses when the user has no default of their own. Before this, each /new form
+   * fell back to the first item of the NAME-sorted `/stores` list — an
+   * alphabetical accident. On prod that was an empty leftover warehouse while
+   * every unit of stock sat in another one, so every new document read
+   * «На складе: 0» and two real receipts were booked into the wrong warehouse
+   * (2026-08-19).
    */
   async getForEmployee(employeeId: string, accountId: string) {
     const settings =
@@ -24,39 +34,50 @@ export class UserSettingsService {
       (await this.prisma.client.userSettings.create({ data: { employeeId } }));
 
     const pick = { id: true, name: true } as const;
-    const [defaultCompany, defaultStore, defaultProject, defaultCustomer, defaultSupplier] =
-      await Promise.all([
-        settings.defaultCompanyId
-          ? this.prisma.client.organization.findFirst({
-              where: { id: settings.defaultCompanyId, accountId, archived: false },
-              select: pick,
-            })
-          : null,
-        settings.defaultStoreId
-          ? this.prisma.client.store.findFirst({
-              where: { id: settings.defaultStoreId, accountId, archived: false },
-              select: pick,
-            })
-          : null,
-        settings.defaultProjectId
-          ? this.prisma.client.project.findFirst({
-              where: { id: settings.defaultProjectId, accountId, archived: false },
-              select: pick,
-            })
-          : null,
-        settings.defaultCustomerId
-          ? this.prisma.client.counterparty.findFirst({
-              where: { id: settings.defaultCustomerId, accountId, archived: false },
-              select: pick,
-            })
-          : null,
-        settings.defaultSupplierId
-          ? this.prisma.client.counterparty.findFirst({
-              where: { id: settings.defaultSupplierId, accountId, archived: false },
-              select: pick,
-            })
-          : null,
-      ]);
+    const [
+      defaultCompany,
+      defaultStore,
+      defaultProject,
+      defaultCustomer,
+      defaultSupplier,
+      mainStore,
+    ] = await Promise.all([
+      settings.defaultCompanyId
+        ? this.prisma.client.organization.findFirst({
+            where: { id: settings.defaultCompanyId, accountId, archived: false },
+            select: pick,
+          })
+        : null,
+      settings.defaultStoreId
+        ? this.prisma.client.store.findFirst({
+            where: { id: settings.defaultStoreId, accountId, archived: false },
+            select: pick,
+          })
+        : null,
+      settings.defaultProjectId
+        ? this.prisma.client.project.findFirst({
+            where: { id: settings.defaultProjectId, accountId, archived: false },
+            select: pick,
+          })
+        : null,
+      settings.defaultCustomerId
+        ? this.prisma.client.counterparty.findFirst({
+            where: { id: settings.defaultCustomerId, accountId, archived: false },
+            select: pick,
+          })
+        : null,
+      settings.defaultSupplierId
+        ? this.prisma.client.counterparty.findFirst({
+            where: { id: settings.defaultSupplierId, accountId, archived: false },
+            select: pick,
+          })
+        : null,
+      this.prisma.client.store.findFirst({
+        where: { accountId, archived: false },
+        orderBy: { createdAt: 'asc' },
+        select: pick,
+      }),
+    ]);
 
     return {
       ...settings,
@@ -65,6 +86,7 @@ export class UserSettingsService {
       defaultProject,
       defaultCustomer,
       defaultSupplier,
+      mainStore,
     };
   }
 

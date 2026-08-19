@@ -41,7 +41,7 @@ import { usePrintTemplatesManager } from '@/components/print/print-templates-pro
 import { ProductSelectModal } from '@/components/products/product-select-modal';
 import { useDocumentEditorLabels } from '@/hooks/use-document-editor-labels';
 import { useTotalsLabels } from '@/hooks/use-totals-labels';
-import { useUserDefaults } from '@/hooks/use-user-defaults';
+import { defaultDocStore, useUserDefaults } from '@/hooks/use-user-defaults';
 import { api } from '@/lib/api-client';
 import { useAuth } from '@/lib/auth-store';
 import { computeLineTotalSafe } from '@/lib/doc-totals';
@@ -236,12 +236,10 @@ export default function NewInternalOrderPage() {
       }
     }
     if (!storeId) {
-      if (us?.defaultStore) {
-        setStoreId(us.defaultStore.id);
-        setStoreLabel(us.defaultStore.name);
-      } else if (storesData.items[0]) {
-        setStoreId(storesData.items[0].id);
-        setStoreLabel(storesData.items[0].name);
+      const store = defaultDocStore(us, storesData.items);
+      if (store) {
+        setStoreId(store.id);
+        setStoreLabel(store.name);
       }
     }
     if (!projectId && us?.defaultProject) {

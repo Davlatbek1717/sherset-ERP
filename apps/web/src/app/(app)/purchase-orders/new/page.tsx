@@ -27,7 +27,7 @@ import { usePrintTemplatesManager } from '@/components/print/print-templates-pro
 import { type KitPrintForm, KitPrintModal } from '@/components/purchase-orders/kit-print-modal';
 import { useDocumentEditorLabels } from '@/hooks/use-document-editor-labels';
 import { useTotalsLabels } from '@/hooks/use-totals-labels';
-import { useUserDefaults } from '@/hooks/use-user-defaults';
+import { defaultDocStore, useUserDefaults } from '@/hooks/use-user-defaults';
 import { api } from '@/lib/api-client';
 import { useAuth } from '@/lib/auth-store';
 import { computeLineTotalSafe } from '@/lib/doc-totals';
@@ -358,7 +358,7 @@ export default function NewPurchaseOrderPage() {
       }
     }
     if (!storeId) {
-      const store = us?.defaultStore ?? storesData.items[0];
+      const store = defaultDocStore(us, storesData.items);
       if (store) {
         setStoreId(store.id);
         setStoreLabel(store.name);

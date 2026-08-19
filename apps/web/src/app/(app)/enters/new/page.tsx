@@ -28,7 +28,7 @@ import { PositionColumnCustomizer } from '@/components/documents/position-column
 import { PositionPriceMenu } from '@/components/documents/position-price-menu';
 import { usePrintTemplatesManager } from '@/components/print/print-templates-provider';
 import { useDocumentEditorLabels } from '@/hooks/use-document-editor-labels';
-import { useUserDefaults } from '@/hooks/use-user-defaults';
+import { defaultDocStore, useUserDefaults } from '@/hooks/use-user-defaults';
 import { api } from '@/lib/api-client';
 import { useAuth } from '@/lib/auth-store';
 import { imageRawUrl } from '@/lib/image-url';
@@ -303,7 +303,7 @@ export default function NewEnterPage() {
       }
     }
     if (!storeId) {
-      const store = us?.defaultStore ?? storesData.items[0];
+      const store = defaultDocStore(us, storesData.items);
       if (store) {
         setStoreId(store.id);
         setStoreLabel(store.name);

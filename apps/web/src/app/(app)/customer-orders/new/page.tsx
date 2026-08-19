@@ -29,6 +29,7 @@ import { usePrintTemplatesManager } from '@/components/print/print-templates-pro
 import { ProductSelectModal } from '@/components/products/product-select-modal';
 import { useDocumentEditorLabels } from '@/hooks/use-document-editor-labels';
 import { useTotalsLabels } from '@/hooks/use-totals-labels';
+import { type UserDefaults, defaultDocStore } from '@/hooks/use-user-defaults';
 import { api } from '@/lib/api-client';
 import { useAuth } from '@/lib/auth-store';
 import { computeLineTotalSafe } from '@/lib/doc-totals';
@@ -68,14 +69,6 @@ interface RefItem {
   name: string;
   legalTitle?: string | null;
   code?: string | null;
-}
-/** GET /user-settings — «Значения по умолчанию» with resolved reference names. */
-interface UserSettingsResponse {
-  defaultCompany: { id: string; name: string } | null;
-  defaultStore: { id: string; name: string } | null;
-  defaultProject: { id: string; name: string } | null;
-  defaultCustomer: { id: string; name: string } | null;
-  defaultSupplier: { id: string; name: string } | null;
 }
 interface ProductItem {
   id: string;
@@ -219,9 +212,9 @@ export default function NewCustomerOrderPage() {
   // moysklad «Настройки пользователя → Значения по умолчанию»: a NEW document
   // pre-fills Организация / Склад / Контрагент / Проект from the current user's
   // defaults. The GET resolves the reference names so we can show labels.
-  const userSettingsQuery = useQuery<UserSettingsResponse>({
+  const userSettingsQuery = useQuery<UserDefaults>({
     queryKey: ['user-settings'],
-    queryFn: () => api.get<UserSettingsResponse>('/user-settings'),
+    queryFn: () => api.get<UserDefaults>('/user-settings'),
   });
   // Account-defined custom fields (moysklad доп. поля, e.g. «Уста»/«Санаси»).
   // Backend validates required-ness on create (validateAndNormalize), so no
@@ -674,12 +667,10 @@ export default function NewCustomerOrderPage() {
       }
     }
     if (!storeId) {
-      if (us?.defaultStore) {
-        setStoreId(us.defaultStore.id);
-        setStoreLabel(us.defaultStore.name);
-      } else if (storesData.items[0]) {
-        setStoreId(storesData.items[0].id);
-        setStoreLabel(storesData.items[0].name);
+      const store = defaultDocStore(us, storesData.items);
+      if (store) {
+        setStoreId(store.id);
+        setStoreLabel(store.name);
       }
     }
     if (!agentId && us?.defaultCustomer) {

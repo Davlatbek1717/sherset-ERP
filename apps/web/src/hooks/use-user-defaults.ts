@@ -17,6 +17,32 @@ export interface UserDefaults {
   defaultProject: UserDefaultRef | null;
   defaultCustomer: UserDefaultRef | null;
   defaultSupplier: UserDefaultRef | null;
+  /**
+   * «Основной склад» — the ACCOUNT's main warehouse (earliest-created active
+   * one), resolved server-side. Not a user choice: it is the deterministic
+   * fallback for a user who has not set `defaultStore`. See `defaultDocStore`.
+   */
+  mainStore: UserDefaultRef | null;
+}
+
+/**
+ * The warehouse a NEW document should pre-select.
+ *
+ * Order: the user's own «Склад по умолчанию» → the account's main store → the
+ * first store in the list.
+ *
+ * 🔴 Why the middle step exists (2026-08-19, jonli prod bug): the list is sorted
+ * by NAME, so `stores[0]` picked whichever warehouse happened to sort first in
+ * the alphabet. On prod that was an empty leftover («Ombor 1») while all 5063
+ * stock rows lived in «Ombor 2» — so every new document showed «На складе: 0»
+ * and two real receipts (27,7 mln so'm) were posted into the wrong warehouse
+ * before anyone noticed. An alphabetical accident must never choose a warehouse.
+ */
+export function defaultDocStore(
+  us: UserDefaults | undefined,
+  stores: UserDefaultRef[] | undefined,
+): UserDefaultRef | undefined {
+  return us?.defaultStore ?? us?.mainStore ?? stores?.[0];
 }
 
 export function useUserDefaults() {

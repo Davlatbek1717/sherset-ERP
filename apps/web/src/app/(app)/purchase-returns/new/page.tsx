@@ -39,7 +39,7 @@ import { SendEmailDialog } from '@/components/send-email-dialog';
 import { useDocumentEditorLabels } from '@/hooks/use-document-editor-labels';
 import { usePickSheet } from '@/hooks/use-pick-sheet';
 import { useTotalsLabels } from '@/hooks/use-totals-labels';
-import { useUserDefaults } from '@/hooks/use-user-defaults';
+import { defaultDocStore, useUserDefaults } from '@/hooks/use-user-defaults';
 import { api } from '@/lib/api-client';
 import { useAuth } from '@/lib/auth-store';
 import { computeLineTotalSafe } from '@/lib/doc-totals';
@@ -355,7 +355,7 @@ export default function NewPurchaseReturnPage() {
       }
     }
     if (!storeId) {
-      const store = us?.defaultStore ?? storesData.items[0];
+      const store = defaultDocStore(us, storesData.items);
       if (store) {
         setStoreId(store.id);
         setStoreLabel(store.name);
