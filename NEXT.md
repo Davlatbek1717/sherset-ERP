@@ -331,6 +331,26 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-08-19b (KATALOG — egasining Excel jamlanmasidan narxlar + 503 tovar o'chirildi) —**
+> ✅ **PRODDA BAJARILDI**. Egasi fayl berdi (`Tovarlar_jamlanmasi_…122.xlsx`, 4340 qator):
+> «optom, xarid, sotilish narxlarini shu bilan bir xil qil; qizil tovarlarni saytdan o'chir»
+> + «dollar tovarlarni ham so'mga o'tkazib hisobla».
+> **Skript:** `apps/api/src/scripts/ops-apply-price-sheet.ts` (idempotent, DRY-RUN sukut,
+> `--file=` + `--usd-rate=`). Kalit = `external_code` (xom MoySklad UUID).
+> **O'lchangan qo'llash:** mos 4338/4340 · narx yangilandi **2413 tovar** (sotilish 109 ·
+> optom 2369 · xarid 462) · **503 qizil tovar** `deleted_at` bilan saytdan olib tashlandi
+> (yumshoq — ilovaning O'Z «O'chirish» tugmasi bilan bir xil, hujjat tarixi butun).
+> **Dollar:** 297 katakcha (238 tovar) **12 000** kursida so'mga o'girildi — kurs kassa
+> ishlatadigan ayni manbadan (`getRate()`: oxirgi MANUAL qator CBRU'dan ustun).
+> Ikkinchi yugurish: **0 o'zgarish** (idempotentlik tasdiqlandi). Zaxira:
+> `/root/sherset-v2-backups/products-pre-price-sheet-20260819.sql.gz` (437K, gzip OK).
+> **Natija:** saytda ko'rinadigan tovar **5064 → 4561**.
+> ⚠️ **Egasiga aytilgan qoldiqlar:** faylda YO'Q 726 tovar tegilmadi (ularning 125 tasida
+> chakana narx yo'q) · faylning o'zida 56 tovarda sotilish narxi 0 · optom > chakana 57 ·
+> xarid > chakana 80 (bepul/zararga sotish endi ruxsat — 19a).
+>
+> ---
+>
 > **🕒 2026-08-19a (KASSA — narx cheklovi ILDIZI bilan olib tashlandi; bepul savdo ishlaydi) —**
 > Egasi: «kassada sotuvda tovarlarni xarid narxidan kamida sotish cheklovini to'liq olib tashla,
 > bepulga ham qo'yib sota olishi kerak».
