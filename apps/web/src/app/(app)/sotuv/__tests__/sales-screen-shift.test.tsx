@@ -91,7 +91,21 @@ function shiftRoutes(over: Route[] = []): Route[] {
     ...over,
     {
       match: /\/z-report$/,
-      value: { expectedCashMinor: '5000000', expectedUsdCashMinor: '0' },
+      value: {
+        expectedCashMinor: '5000000',
+        expectedUsdCashMinor: '0',
+        // «Kassada bo'lishi kerak» summasining tarkibi — smena kartasidagi
+        // «Qarz to'lovlari (naqd)» qatorining manbai (egasi, 2026-08-19).
+        cashBreakdown: {
+          openingMinor: '1000000',
+          salesCashMinor: '1500000',
+          debtCashMinor: '2500000',
+          drawerInMinor: '0',
+          drawerOutMinor: '0',
+          returnsCashMinor: '0',
+          sumMinor: '5000000',
+        },
+      },
     },
     { match: /^\/expense-items/, value: { items: [{ id: 'ei-1', name: 'Ijara' }] } },
     {
@@ -158,6 +172,55 @@ describe('Smena yorlig‘i — ma‘lumot', () => {
       'href',
       `/retail/sessions/${SESSION_ID}`,
     );
+  });
+});
+
+/**
+ * 🔴 Egasi, 2026-08-19 (chek №EA8E779A): kassir naqd qarz to‘lovini qabul
+ * qildi — pul yashiqqa tushdi, smenaga bog‘landi va kutilgan naqd
+ * formulasiga ham KIRDI, lekin kassa ekranida smena bo‘yicha faqat
+ * «Sotuvlar» summasi turardi: qabul qilingan qarz puli hech qayerda
+ * ko‘rinmasdi. Endi alohida qator bor.
+ *
+ * Kutilgan naqd JAMISI bu kartada ATAYLAB yo‘q — yopish sanog‘i yopiq
+ * (F5/Q7): kassir kutilgan raqamni sanoqdan oldin ko‘rmasligi kerak.
+ */
+describe('Smena yorlig‘i — qabul qilingan naqd qarz to‘lovi', () => {
+  it('🔴 «Qarz to‘lovlari (naqd)» qatori summasi bilan ko‘rinadi', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<SotuvPage />);
+    await openShiftTab(user);
+
+    const row = await screen.findByTestId('smena-debt-cash');
+    expect(norm(row.textContent)).toContain('25 000,00');
+  });
+
+  it('kutilgan naqd JAMISI kartada CHIZILMAYDI (yopiq sanoq buzilmaydi)', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<SotuvPage />);
+    await openShiftTab(user);
+
+    await screen.findByTestId('smena-debt-cash');
+    // 5 000 000 tiyin = «50 000,00» — kutilgan naqd; kartada bo‘lmasligi shart.
+    expect(screen.queryByText(/50 000,00/)).not.toBeInTheDocument();
+  });
+
+  it('eski API javobida tarkib bo‘lmasa qator chizilmaydi (oq ekran EMAS)', async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.get).mockImplementation(
+      router([
+        {
+          match: /\/z-report$/,
+          value: { expectedCashMinor: '5000000', expectedUsdCashMinor: '0' },
+        },
+        ...shiftRoutes(),
+      ]),
+    );
+    renderWithProviders(<SotuvPage />);
+    await openShiftTab(user);
+
+    expect(screen.getAllByText('Kassir Aliyev').length).toBeGreaterThan(0);
+    expect(screen.queryByTestId('smena-debt-cash')).not.toBeInTheDocument();
   });
 });
 

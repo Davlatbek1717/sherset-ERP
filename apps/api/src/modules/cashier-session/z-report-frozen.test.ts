@@ -265,6 +265,99 @@ describe('zReport · ochiq smena — jonli preview', () => {
 });
 
 // ---------------------------------------------------------------------------
+// 3b. `cashBreakdown` — «kassada bo'lishi kerak» summasining TARKIBI
+// ---------------------------------------------------------------------------
+
+/**
+ * Jonli hodisa (egasi, 2026-08-19, chek №EA8E779A): kassir 20 000 000 so'mlik
+ * naqd qarz to'lovini qabul qildi, pul yashiqqa tushdi, `retail_shift_id`
+ * to'g'ri qo'yildi va kutilgan naqd formulasiga ham KIRDI — lekin ekranda
+ * smena bo'yicha faqat «Sotuvlar» summasi turardi, ya'ni qarz puli hech
+ * qayerda KO'RINMASDI.
+ *
+ * Shu sababli javob endi tarkibni ham qaytaradi: qaysi summa qayerdan
+ * yig'ilgani ko'rinadi. Jami — AYNI `expectedCashMinor()` formulasi
+ * (ikkinchi formula yozilmaydi, aks holda biri jimgina eskirardi).
+ */
+interface ZBreakdownShape extends ZShape {
+  cashBreakdown: {
+    openingMinor: string;
+    salesCashMinor: string;
+    debtCashMinor: string;
+    drawerInMinor: string;
+    drawerOutMinor: string;
+    returnsCashMinor: string;
+    sumMinor: string;
+  };
+}
+
+const zbOf = (client: unknown) => svcOf(client).zReport(ACC, SESSION) as Promise<ZBreakdownShape>;
+
+function debtPayment(over: Row = {}): Row {
+  return {
+    id: 'dp-1',
+    accountId: ACC,
+    retailShiftId: SESSION,
+    method: 'cash',
+    currency: 'UZS',
+    reversedAt: null,
+    amountMinor: 0n,
+    ...over,
+  };
+}
+
+describe('zReport · naqd tarkibi (`cashBreakdown`)', () => {
+  const withDebt = () =>
+    makeClient({
+      state: 'open',
+      openingCashMinor: 5_500_000n,
+      sales: [sale({ cashAmountMinor: 370_000_000n, sumMinor: 370_000_000n })],
+      debtPayments: [debtPayment({ amountMinor: 2_000_000_000n })],
+    });
+
+  it('🔴 naqd qarz to`lovi ALOHIDA qator bo`lib ko`rinadi', async () => {
+    const z = await zbOf(withDebt().client);
+    expect(z.cashBreakdown.debtCashMinor).toBe('2000000000');
+  });
+
+  it('tarkib qo`shiluvchilari kutilgan naqdga TENG yig`iladi', async () => {
+    const z = await zbOf(withDebt().client);
+    const b = z.cashBreakdown;
+    const sum =
+      BigInt(b.openingMinor) +
+      BigInt(b.salesCashMinor) +
+      BigInt(b.debtCashMinor) +
+      BigInt(b.drawerInMinor) -
+      BigInt(b.drawerOutMinor) -
+      BigInt(b.returnsCashMinor);
+    expect(b.sumMinor).toBe(sum.toString());
+    // Ochiq smenada jonli hisob — jami kutilgan naqd bilan bir xil.
+    expect(z.expectedCashMinor).toBe(b.sumMinor);
+    expect(z.expectedCashMinor).toBe('2375500000');
+  });
+
+  it('terminal (naqd bo`lmagan) qarz to`lovi yashiq tarkibiga KIRMAYDI', async () => {
+    const { client } = makeClient({
+      state: 'open',
+      openingCashMinor: 5_500_000n,
+      debtPayments: [debtPayment({ method: 'terminal', amountMinor: 900_000_000n })],
+    });
+    const z = await zbOf(client);
+    expect(z.cashBreakdown.debtCashMinor).toBe('0');
+    expect(z.cashBreakdown.sumMinor).toBe('5500000');
+  });
+
+  it('storno qilingan qarz to`lovi tarkibga kirmaydi', async () => {
+    const { client } = makeClient({
+      state: 'open',
+      debtPayments: [debtPayment({ amountMinor: 700_000n, reversedAt: new Date() })],
+    });
+    const z = await zbOf(client);
+    expect(z.cashBreakdown.debtCashMinor).toBe('0');
+  });
+});
+
+// ---------------------------------------------------------------------------
 // 4. Dollar tomoni — xuddi shu shartnoma (MK31 · §8.4)
 // ---------------------------------------------------------------------------
 

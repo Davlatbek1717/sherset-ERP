@@ -2,6 +2,7 @@
 
 import { useApiMutation } from '@/hooks/use-api-mutation';
 import { api } from '@/lib/api-client';
+import { isKioskUser, useAuth } from '@/lib/auth-store';
 import { RETAIL_SESSION_STATE_TONE, documentStateTone } from '@/lib/document-state-tone';
 import { Money } from '@moysklad/money';
 import { isCurrencyCode } from '@moysklad/money/currencies';
@@ -95,6 +96,21 @@ interface ZFull {
   collectionMinor: string;
   expenseByItem: Array<{ id: string | null; name: string | null; sumMinor: string }>;
   expectedCashMinor: string;
+  /**
+   * «Kassada bo'lishi kerak» summasining TARKIBI (server `collectCashInputs`
+   * dan). Ochiq smenada shu blok ko'rsatiladi — egasi, 2026-08-19: naqd qarz
+   * to'lovi (chek №EA8E779A) yashiqqa tushgan-u, ekranda smena bo'yicha
+   * «bo'lishi kerak bo'lgan summa» faqat YOPILGANDAN keyin chiqardi.
+   */
+  cashBreakdown: {
+    openingMinor: string;
+    salesCashMinor: string;
+    debtCashMinor: string;
+    drawerInMinor: string;
+    drawerOutMinor: string;
+    returnsCashMinor: string;
+    sumMinor: string;
+  };
   countedCashMinor: string | null;
   varianceMinor: string | null;
   variances: Array<{
@@ -114,6 +130,8 @@ export default function SessionDetailPage() {
   const tZ = useTranslations('pages.z_report');
   const tCommon = useTranslations('common');
   const tFields = useTranslations('fields');
+
+  const { user } = useAuth();
 
   const { data: session, isLoading } = useQuery<SessionDetail>({
     queryKey: ['cashier-session', id],
@@ -319,6 +337,73 @@ export default function SessionDetailPage() {
                   <span className="tabular-nums">{formatMoney(BigInt(i.sumMinor), currency)}</span>
                 </div>
               ))}
+            </div>
+          )}
+
+          {/* «Kassada bo'lishi kerak» — OCHIQ smenada ham (egasi, 2026-08-19,
+              chek №EA8E779A). Ilgari bu blok faqat `state === 'closed'` da
+              chizilardi: kassir naqd qarz to'lovini qabul qilgach, pul
+              yashiqqa tushar, kutilgan naqd formulasiga ham kirar edi —
+              lekin smena yopilmaguncha «bo'lishi kerak bo'lgan summa» hech
+              qayerda KO'RINMASDI. Yopilgan smenada quyidagi eski blok
+              muzlatilgan raqamni ko'rsatadi (hujjat), bu esa JONLI hisob.
+
+              🔴 Kassirning O'ZIGA ko'rsatilmaydi (kiosk foydalanuvchi yoki
+              shu smenaning kassiri): smena yopish sanog'i ataylab YOPIQ
+              (F5/Q7) — kutilgan raqamni oldindan ko'rgan kassir sanoqni
+              unga moslab yozardi. Menejer/egaga esa aynan shu son kerak. */}
+          {session.state === 'open' && !isKioskUser(user) && user?.id !== session.cashier.id && (
+            <div
+              className="mt-3 border-[var(--ms-border)] border-t pt-3"
+              data-test-id="shift-expected-live"
+            >
+              <div className="mb-1 text-[var(--ms-text-muted)] text-xs">
+                {tZ('expected_live_title')}
+              </div>
+              <div className="flex flex-col gap-1 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-[var(--ms-text-muted)]">{t('opening_cash')}</span>
+                  <span className="tabular-nums">
+                    {formatMoney(BigInt(zFull.cashBreakdown.openingMinor), currency)}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-[var(--ms-text-muted)]">{tZ('sales_cash')}</span>
+                  <span className="tabular-nums">
+                    {formatMoney(BigInt(zFull.cashBreakdown.salesCashMinor), currency)}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-[var(--ms-text-muted)]">{tZ('debt_cash')}</span>
+                  <span className="tabular-nums" data-test-id="shift-expected-debt-cash">
+                    {formatMoney(BigInt(zFull.cashBreakdown.debtCashMinor), currency)}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-[var(--ms-text-muted)]">{tZ('drawer_in')}</span>
+                  <span className="tabular-nums">
+                    {formatMoney(BigInt(zFull.cashBreakdown.drawerInMinor), currency)}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-[var(--ms-text-muted)]">{tZ('drawer_out')}</span>
+                  <span className="tabular-nums">
+                    −{formatMoney(BigInt(zFull.cashBreakdown.drawerOutMinor), currency)}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-[var(--ms-text-muted)]">{tZ('returns_cash')}</span>
+                  <span className="tabular-nums">
+                    −{formatMoney(BigInt(zFull.cashBreakdown.returnsCashMinor), currency)}
+                  </span>
+                </div>
+                <div className="mt-1 flex justify-between border-[var(--ms-border)] border-t pt-1 font-semibold">
+                  <span>{t('expected_cash')}</span>
+                  <span className="tabular-nums">
+                    {formatMoney(BigInt(zFull.cashBreakdown.sumMinor), currency)}
+                  </span>
+                </div>
+              </div>
             </div>
           )}
 

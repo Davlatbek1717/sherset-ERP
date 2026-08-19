@@ -1330,6 +1330,33 @@ export class CashierSessionService {
       // (ochiq smena preview'i yoki muzlatilmagan eski qator).
       basis,
       openingCashMinor: session.openingCashMinor.toString(),
+      /**
+       * «Kassada bo'lishi kerak» summasining TARKIBI — `expectedCashMinor()`
+       * formulasining aynan o'sha qo'shiluvchilari (`collectCashInputs` dan,
+       * ikkinchi formula YOZILMAYDI).
+       *
+       * 🔴 Nega qo'shildi (egasi, 2026-08-19, chek №EA8E779A): kassir naqd
+       * qarz to'lovini qabul qiladi, pul yashiqqa tushadi — lekin kassa
+       * ekranida smena bo'yicha FAQAT «Sotuvlar» summasi turardi. Qarz puli
+       * (o'sha smenada 30 000 000 so'm) hech qayerda ko'rinmasdi: kassir
+       * yashig'idagi pul nimadan yig'ilganini smena YOPILMAGUNCHA bila
+       * olmasdi. Raqamning o'zi TO'G'RI edi — yopish/z-hisobot uni hisobga
+       * olardi; yetishmagani KO'RINISH edi.
+       *
+       * `sumMinor` — shu tarkibning JONLI yig'indisi. Yopilgan smenada
+       * `expectedCashMinor` MUZLATILGAN qiymat bo'lishi mumkin (`basis`
+       * qarang) — ikkisi farq qilsa iste'molchi buni ko'radi, jim
+       * «yaxlitlash» yo'q.
+       */
+      cashBreakdown: {
+        openingMinor: cashInputs.openingCashMinor.toString(),
+        salesCashMinor: cashInputs.salesCashMinor.toString(),
+        debtCashMinor: (cashInputs.debtCashMinor ?? 0n).toString(),
+        drawerInMinor: cashInputs.drawerInMinor.toString(),
+        drawerOutMinor: cashInputs.drawerOutMinor.toString(),
+        returnsCashMinor: cashInputs.returnsCashMinor.toString(),
+        sumMinor: expectedCashMinor(cashInputs).toString(),
+      },
       expectedCashMinor: z.expectedCashMinor.toString(),
       countedCashMinor: z.countedCashMinor?.toString() ?? null,
       varianceMinor: z.varianceMinor?.toString() ?? null,

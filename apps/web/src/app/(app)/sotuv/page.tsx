@@ -1419,14 +1419,34 @@ function SalesScreen({
    * oldin raqamni ko'rishi kerak: farqni faqat menejer ertaga ko'rsa,
    * sababini hech kim eslamaydi.
    */
+  /**
+   * BITTA so'rov ikki iste'molchiga: yopish formasi preview'i va smena
+   * kartasidagi «Qarz to'lovlari (naqd)» qatori. Ikki alohida `queryKey`
+   * bir xil endpointni ikki marta chaqirardi.
+   *
+   * 🔴 Egasi, 2026-08-19 (chek №EA8E779A): kassir qabul qilgan naqd qarz
+   * puli ekranda HECH QAYERDA ko'rinmasdi — smena bo'yicha faqat «Sotuvlar»
+   * summasi turardi. Endi karta `cashBreakdown.debtCashMinor` ni chizadi.
+   *
+   * Kutilgan naqd JAMISI kartaga BERILMAYDI: yopish sanog'i ataylab YOPIQ
+   * (F5/Q7) — kassir sanoqdan oldin kutilgan raqamni ko'rsa, sanoqni unga
+   * moslab yozardi. Jami faqat `review` bosqichida chiqadi.
+   */
   const { data: closePreview } = useQuery<{
     expectedCashMinor: string;
     expectedUsdCashMinor: string;
+    cashBreakdown?: { debtCashMinor: string };
   }>({
     queryKey: ['z-report-preview', session.id],
     queryFn: () => api.get(`/cashier-sessions/${session.id}/z-report`),
-    enabled: showCloseForm,
+    enabled: showCloseForm || mode === 'smena',
   });
+  // `cashBreakdown?` ATAYLAB ixtiyoriy: deploy oralig'ida yangi ekran eski
+  // API'ga tushishi mumkin — maydonsiz javobda `BigInt(undefined)` butun
+  // kassa sahifasini oq ekranga aylantirardi. Yo'q bo'lsa qator chizilmaydi.
+  const debtCashMinor = closePreview?.cashBreakdown
+    ? BigInt(closePreview.cashBreakdown.debtCashMinor)
+    : null;
   const expectedCash = closePreview ? BigInt(closePreview.expectedCashMinor) : null;
   // Sanoq XAVFSIZ parse qilinadi: `type="number"` inputi `e` harfini
   // o'tkazadi («5e3») va `Money.fromMajor` render tanasida otilib butun
@@ -1644,6 +1664,7 @@ function SalesScreen({
             <div className="flex min-w-0 flex-1 flex-col overflow-hidden bg-[var(--ms-bg-surface)]">
               <SmenaMode
                 session={session}
+                debtCashMinor={debtCashMinor}
                 printZReport={printZReport}
                 drawerMode={drawerMode}
                 setDrawerMode={setDrawerMode}

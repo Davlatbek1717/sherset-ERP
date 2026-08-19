@@ -331,6 +331,30 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-08-19c (SMENA — qabul qilingan naqd qarz puli EKRANDA ko'rinmasdi) —**
+> Egasi: «kassada №EA8E779A qarz to'lovi naqtga olingan, lekin kassirning smenasida
+> bo'lishi kerak bo'lgan summaga qo'shilgani yo'q, u ko'rinmayapti».
+> 🔴 **O'LCHOV (prodda, taxmin emas):** ma'lumot TO'G'RI edi — `debt_payments` qatori
+> (batch `ea8e779a`, **20 000 000 so'm**, `method=cash`) `retail_shift_id=fd237be8` bilan
+> smenaga bog'langan, `money_operations` da +20 mln, kassa balansi oshgan, server
+> formulasi (`collectCashInputs`) uni kutilgan naqdga ham QO'SHGAN (o'sha smenada jami
+> 30 mln qarz naqdi; kutilgan naqd = 5 500 + 3 700 000 + 30 000 000 = **33 755 000** so'm).
+> **Yetishmagani KO'RINISH edi:** (a) kassa «Smena» kartasida faqat «Sotuvlar» summasi
+> turardi; (b) ERP smena sahifasida «Kassada bo'lishi kerak» bloki FAQAT
+> `state === 'closed'` da chizilardi — ochiq smenada raqam hech qayerda yo'q edi.
+> **Tuzatish:** `zReport()` javobiga `cashBreakdown` (ochilish · naqd savdo · **naqd
+> qarz to'lovlari** · yashiq kirim/chiqim · qaytarish · jami) — AYNI `expectedCashMinor()`
+> qo'shiluvchilari, ikkinchi formula yozilmadi. Kassa kartasida yangi «Qarz to'lovlari
+> (naqd)» qatori; ERP sahifasida ochiq smena uchun jonli «Kassada hozir bo'lishi kerak»
+> bloki — **kassirning o'ziga va kiosk foydalanuvchiga KO'RSATILMAYDI** (yopiq sanoq
+> F5/Q7 buzilmasin).
+> Qulflar: `z-report-frozen.test.ts` (+4), `sales-screen-shift.test.tsx` (+3, shundan
+> biri «eski API javobida oq ekran EMAS»), yangi `shift-expected-live.test.tsx` (5).
+> Gate: tc 0 · biome 0 xato · api cashier-session+debt 580 · web to'liq suite.
+> ⏭️ **Deploy kerak.**
+>
+> ---
+>
 > **🕒 2026-08-19b (KATALOG — egasining Excel jamlanmasidan narxlar + 503 tovar o'chirildi) —**
 > ✅ **PRODDA BAJARILDI**. Egasi fayl berdi (`Tovarlar_jamlanmasi_…122.xlsx`, 4340 qator):
 > «optom, xarid, sotilish narxlarini shu bilan bir xil qil; qizil tovarlarni saytdan o'chir»

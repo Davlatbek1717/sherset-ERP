@@ -48,6 +48,18 @@ function formatUsd(minor: bigint): string {
 
 interface SmenaModeProps {
   session: CurrentSession;
+  /**
+   * Smenada qabul qilingan NAQD qarz to'lovlari (tiyin); `null` = hali
+   * yuklanmadi. Egasi, 2026-08-19 (chek №EA8E779A): «kassirning smenasida
+   * bo'lishi kerak bo'lgan summaga olgan qarzining puli qo'shilgani yo'q,
+   * u ko'rinmayapti» — pul yashiqqa TUSHGAN va kutilgan naqd formulasiga
+   * ham kirgan edi, lekin ekranda smena bo'yicha faqat «Sotuvlar» summasi
+   * turardi.
+   *
+   * 🔴 Bu yerda faqat SHU qator chiziladi, kutilgan naqd JAMISI emas:
+   * yopish sanog'i ataylab yopiq (F5/Q7) va jami faqat `review` da chiqadi.
+   */
+  debtCashMinor: bigint | null;
   /** Z-hisobotni chop etish — chek bilan ayni yo'l (agent → popup fallback). */
   printZReport: (sessionId: string) => Promise<void>;
   drawerMode: 'in' | 'out' | null;
@@ -93,6 +105,7 @@ interface SmenaModeProps {
 
 export function SmenaMode({
   session,
+  debtCashMinor,
   printZReport,
   drawerMode,
   setDrawerMode,
@@ -225,6 +238,16 @@ export function SmenaMode({
             {formatMoney(BigInt(session.salesSumMinor))}
           </span>
         </div>
+        {/* Qabul qilingan NAQD qarz to'lovi — «Sotuvlar» dan alohida qator:
+            u sotuv EMAS, lekin puli AYNI shu yashiqda yotadi. Yuklanmagan
+            bo'lsa (`null`) qator umuman chizilmaydi — 0 deb ko'rsatish
+            «bugun qarz to'lovi bo'lmagan» degan yolg'on bo'lardi. */}
+        {debtCashMinor !== null && (
+          <div className="mt-1 flex justify-between" data-test-id="smena-debt-cash">
+            <span className="text-[var(--ms-text-muted)]">{t('debt_cash_received')}</span>
+            <span className="font-medium tabular-nums">{formatMoney(debtCashMinor)}</span>
+          </div>
+        )}
       </div>
 
       {/* Z-hisobot link */}
