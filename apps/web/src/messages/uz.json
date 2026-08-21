@@ -6715,6 +6715,7 @@
       "err_name_required": "Ism familiya kiritilishi shart",
       "err_password_required": "Parol kiritilishi shart",
       "err_password_too_short": "Parol kamida 4 belgi bo'lishi kerak",
+      "err_phone_format": "Telefon raqami noto'g'ri formatda",
       "err_phone_required": "Telefon raqam kiritilishi shart",
       "err_role_required": "Kamida bitta rol tanlanishi shart",
       "err_username_required": "Login kiritilishi shart",

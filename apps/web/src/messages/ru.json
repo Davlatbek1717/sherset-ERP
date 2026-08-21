@@ -6715,6 +6715,7 @@
       "err_name_required": "Укажите фамилию и имя",
       "err_password_required": "Укажите пароль",
       "err_password_too_short": "Пароль не короче 4 символов",
+      "err_phone_format": "Неверный формат телефона",
       "err_phone_required": "Укажите номер телефона",
       "err_role_required": "Выберите хотя бы одну роль",
       "err_username_required": "Укажите логин",

@@ -393,6 +393,17 @@ export function EmployeeModal({
       setError(t('err_phone_required'));
       return;
     }
+    // Shakl tekshiruvi `Sozlamalar → Xodimlar` kartasidagi bilan BIR XIL
+    // (`^[\d+()\-\s]{4,20}$`). Ilgari bu ekran telefonga har qanday matnni
+    // o'tkazib yuborardi — ikki ekran bir maydonni ikki xil qabul qilardi.
+    // ⚠️ Qiymat ATAYLAB normallashtirilmaydi: telegram normalizatori mobil
+    // raqamga mo'ljallangan va shahar raqamini buzadi («71 200 00 00» →
+    // «+712000000», 998 kodi yo'qoladi). Shu sababli saqlash formati
+    // o'zgarmaydi, faqat qabul qilinadigan shakl cheklanadi.
+    if (!/^[\d+()\-\s]{4,20}$/.test(form.phone.trim())) {
+      setError(t('err_phone_format'));
+      return;
+    }
     if (form.hrRoles.length === 0) {
       setError(t('err_role_required'));
       return;
