@@ -21,10 +21,20 @@ export const CreateHrEmployeeSchema = z.object({
   name: z.string().min(1, 'Ism kiritilishi shart').max(255),
   email: z.string().email("Email noto'g'ri").max(255).optional(),
   phone: z.string().max(20).optional().nullable(),
-  // Telegram phone with +998 format (santexnika do'koni standart)
+  /**
+   * Telegram telefoni (+998 standart).
+   *
+   * 🔴 2026-08-21: bu yerda faqat qat'iy regex turardi va u servisdagi
+   * `normalizeTelegramPhone()` dan OLDIN ishlardi. Normalizator esa aynan
+   * probel/tire/qavsni tozalash uchun yozilgan — ya'ni odam yozadigan
+   * «+998 90 123 45 67» formatiga navbat hech qachon yetmasdi, foydalanuvchi
+   * 400 olardi. Endi tartib to'g'ri: avval AJRATGICHLAR tozalanadi, keyin
+   * shakl tekshiriladi. Harfli qiymat avvalgidek rad etiladi.
+   */
   telegramPhone: z
     .string()
-    .regex(/^\+?[0-9]{9,15}$/, "Telegram telefon raqami noto'g'ri")
+    .transform((v) => v.replace(/[\s\-()]/g, ''))
+    .pipe(z.string().regex(/^\+?[0-9]{9,15}$/, "Telegram telefon raqami noto'g'ri"))
     .optional()
     .nullable(),
   department: z.string().max(100).optional().nullable(),

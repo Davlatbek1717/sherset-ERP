@@ -22,6 +22,7 @@
 
 import { WeekScheduleGrid } from '@/components/hr/week-schedule-grid';
 import { useConflictReload } from '@/hooks/use-conflict-reload';
+import { api } from '@/lib/api-client';
 import {
   hrDepartmentApi,
   hrEmployeeApi,
@@ -79,6 +80,12 @@ interface FormState {
   moyskladAgentId: string | null;
   username: string;
   password: string;
+  /**
+   * ERP (RBAC) roli — `roles` jadvali, HR rollaridan BUTUNLAY boshqa narsa.
+   * HR rollari (`hrRoles`) faqat HR sahifalarini ochadi; ERP bo'limlariga
+   * (buyurtma, mijoz, faktura…) kirish AYNAN shu roldan keladi. '' = tanlanmagan.
+   */
+  erpRoleId: string;
   // TimePay catalog assignment ('' = biriktirilmagan).
   positionId: string;
   departmentId: string;
@@ -101,6 +108,7 @@ function emptyForm(): FormState {
     moyskladAgentId: null,
     username: '',
     password: '',
+    erpRoleId: '',
     positionId: '',
     departmentId: '',
     scheduleId: '',
@@ -124,6 +132,7 @@ function rowToForm(row: HrEmployeeRow | HrEmployeeDetail): FormState {
     moyskladAgentId: row.moyskladAgentId,
     username: '',
     password: '',
+    erpRoleId: '',
     positionId: detail.positionId ?? '',
     departmentId: detail.departmentId ?? '',
     scheduleId: detail.scheduleId ?? '',
@@ -147,6 +156,21 @@ export function EmployeeModal({
   const [form, setForm] = useState<FormState>(emptyForm);
   const [error, setError] = useState<string | null>(null);
   const [version, setVersion] = useState<number>(0);
+  /** Xodim saqlangan, lekin keyingi qadamlardan biri bajarilmagan holatlar. */
+  const [postSaveWarnings, setPostSaveWarnings] = useState<string[]>([]);
+
+  /**
+   * ERP (RBAC) rollari — `GET /roles`. HR xodimida `role:view` ruxsati
+   * bo'lmasligi mumkin (403) — o'shanda maydon KO'RSATILMAYDI, xato
+   * chiqarilmaydi: HR kartasi ERP roli bo'lmasa ham ishlashi kerak.
+   */
+  const erpRolesQuery = useQuery<{ items: Array<{ id: string; name: string }> }>({
+    queryKey: ['roles'],
+    queryFn: () => api.get<{ items: Array<{ id: string; name: string }> }>('/roles'),
+    enabled: open,
+    retry: false,
+  });
+  const erpRoles = erpRolesQuery.data?.items ?? [];
 
   // Filiallar ro'yxati — "Ish joyi" dropdown uchun.
   const { data: workLocations = [] } = useQuery<HrWorkLocation[]>({
@@ -197,6 +221,7 @@ export function EmployeeModal({
       setVersion(0);
     }
     setError(null);
+    setPostSaveWarnings([]);
   }, [open, mode, initialValues]);
 
   const buildPayload = (): HrEmployeeCreateInput => ({
@@ -213,9 +238,15 @@ export function EmployeeModal({
     positionId: form.positionId || null,
     departmentId: form.departmentId || null,
     scheduleId: form.scheduleId || null,
-    ...(mode === 'create' && form.username.trim() && { username: form.username.trim() }),
-    ...(mode === 'create' && form.password && { password: form.password }),
   });
+  // 🔴 `username`/`password` bu payloadga QO'SHILMAYDI. Ilgari shu yerda
+  // `...(mode === 'create' && form.username.trim() && { username })` turardi va
+  // u JIMGINA yo'qolardi: `CreateHrEmployeeSchema` da bunday maydon yo'q, Zod
+  // esa noma'lum kalitlarni sukut bo'yicha TASHLAB yuboradi. TypeScript ham
+  // tutmagan — spread natijasida ortiqcha-maydon tekshiruvi ishlamaydi.
+  // Natija: xodim LOGINSIZ yaratilardi, oyna esa «saqlandi» derdi va odam
+  // faqat kira olmaganda bilardi. Login alohida endpoint bilan qo'yiladi
+  // (`POST /hr/employees/:id/set-password`) — pastdagi saqlash zanjiriga qara.
 
   // On an optimistic-lock 409 (another user / the staff form / a self-profile
   // edit changed this employee while the modal was open) show the localized
@@ -239,6 +270,38 @@ export function EmployeeModal({
           ? await hrEmployeeApi.update(initialValues.id, { ...payload, version })
           : await hrEmployeeApi.create(payload);
 
+      // ── Yaratishdan keyingi zanjir ────────────────────────────────────────
+      // Xodim ALLAQACHON bazada. Shu sababli quyidagi qadamlarning har biri
+      // alohida ushlanadi: bittasi yiqilsa ham oyna «yaratilmadi» degan
+      // taassurot bermasligi kerak — aks holda foydalanuvchi qayta bosib
+      // DUBLIKAT xodim yasaydi. Nima bajarilmagani `postSaveWarnings` ga
+      // yig'iladi va oshkora ko'rsatiladi (jimgina yutilmaydi).
+      const warnings: string[] = [];
+
+      // (a) Login + parol — `create` payloadi bilan YUBORIB BO'LMAYDI
+      //     (server sxemasida bunday maydon yo'q, Zod tashlab yuboradi).
+      if (mode === 'create' && form.username.trim() && form.password) {
+        try {
+          await hrEmployeeApi.setPassword(saved.id, {
+            username: form.username.trim(),
+            password: form.password,
+          });
+        } catch (e) {
+          warnings.push(`${t('warn_login_failed')} ${e instanceof Error ? e.message : String(e)}`);
+        }
+      }
+
+      // (b) ERP roli — HR rollari ERP bo'limlarini OCHMAYDI, bu alohida tizim.
+      if (form.erpRoleId) {
+        try {
+          await api.put(`/roles/employee/${saved.id}`, { roleIds: [form.erpRoleId] });
+        } catch (e) {
+          warnings.push(
+            `${t('warn_erp_role_failed')} ${e instanceof Error ? e.message : String(e)}`,
+          );
+        }
+      }
+
       // MASTER-TODO #2 (2026-07-28): bu yerda «Sklad» (omborchi) biriktirish
       // bloki turardi — `/sklad-keepers` GET/PUT/DELETE. Lekin `sklad-keeper`
       // BE moduli climart adoption'ida DROP qilingan (`omborchi` oilasi bilan
@@ -257,12 +320,17 @@ export function EmployeeModal({
 
       // GPS-davomat: ish joyi/ruxsat + haftalik jadval — xodim yangi
       // yaratilgan bo'lsa ham, `saved.id` shu yerda allaqachon mavjud.
-      await hrScheduleApi.setConfig(saved.id, {
-        workLocationId: form.workLocationId || null,
-        attendanceOptIn: form.attendanceOptIn,
-      });
-      await hrScheduleApi.replaceWeek(saved.id, form.scheduleDays);
+      try {
+        await hrScheduleApi.setConfig(saved.id, {
+          workLocationId: form.workLocationId || null,
+          attendanceOptIn: form.attendanceOptIn,
+        });
+        await hrScheduleApi.replaceWeek(saved.id, form.scheduleDays);
+      } catch (e) {
+        warnings.push(`${t('warn_schedule_failed')} ${e instanceof Error ? e.message : String(e)}`);
+      }
 
+      if (warnings.length > 0) setPostSaveWarnings(warnings);
       return saved;
     },
     onSuccess: (row) => {
@@ -271,7 +339,10 @@ export function EmployeeModal({
         qc.invalidateQueries({ queryKey: ['hr-employee', initialValues.id] });
       }
       onSuccess?.(row);
-      onOpenChange(false);
+      // Ogohlantirish bo'lsa oyna OCHIQ qoladi: xodim saqlangan, lekin
+      // login/rol/jadval qadamlaridan biri o'tmagan — buni ko'rsatmasdan
+      // yopib yuborish aynan «jim muvaffaqiyat» bug-klassi bo'lardi.
+      if (postSaveWarnings.length === 0) onOpenChange(false);
     },
     onError: (e: Error) => {
       if (isOptimisticConflict(e)) {
@@ -285,28 +356,28 @@ export function EmployeeModal({
   const submit = () => {
     setError(null);
     if (!form.name.trim()) {
-      setError('Ism familiya kiritilishi shart');
+      setError(t('err_name_required'));
       return;
     }
     if (!form.phone.trim()) {
-      setError('Telefon raqam kiritilishi shart');
+      setError(t('err_phone_required'));
       return;
     }
     if (form.hrRoles.length === 0) {
-      setError('Kamida bitta rol tanlanishi shart');
+      setError(t('err_role_required'));
       return;
     }
     if (mode === 'create') {
       if (!form.username.trim()) {
-        setError('Login kiritilishi shart');
+        setError(t('err_username_required'));
         return;
       }
       if (!form.password) {
-        setError('Parol kiritilishi shart');
+        setError(t('err_password_required'));
         return;
       }
       if (form.password.length < 4) {
-        setError('Parol kamida 4 belgi bolishi kerak');
+        setError(t('err_password_too_short'));
         return;
       }
     }
@@ -455,9 +526,31 @@ export function EmployeeModal({
           <RoleMultiSelect value={form.hrRoles} onChange={(next) => update('hrRoles', next)} />
         </Field>
 
+        {/* ERP roli — HR rollaridan boshqa tizim; ERP bo'limlarini AYNAN shu ochadi. */}
+        {erpRoles.length > 0 && (
+          <Field
+            label={t('form_erp_role')}
+            hint={t('form_erp_role_hint')}
+            className="sm:col-span-2"
+          >
+            <NativeSelect
+              value={form.erpRoleId}
+              onChange={(e) => update('erpRoleId', e.target.value)}
+              data-test-id="hr-employee-erp-role"
+            >
+              <option value="">{t('form_erp_role_none')}</option>
+              {erpRoles.map((r) => (
+                <option key={r.id} value={r.id}>
+                  {r.name}
+                </option>
+              ))}
+            </NativeSelect>
+          </Field>
+        )}
+
         {mode === 'create' && (
           <>
-            <Field label="Login" required>
+            <Field label={t('form_username')} required>
               <Input
                 type="text"
                 value={form.username}
@@ -468,7 +561,7 @@ export function EmployeeModal({
               />
             </Field>
 
-            <Field label="Parol" required>
+            <Field label={t('form_password')} required>
               <Input
                 type="password"
                 value={form.password}
@@ -562,6 +655,21 @@ export function EmployeeModal({
             />
           </div>
         </div>
+
+        {postSaveWarnings.length > 0 && (
+          <div
+            className="rounded-[var(--ms-radius-default)] border border-[var(--ms-border-default)] p-2 text-[var(--ms-text-destructive)] text-sm sm:col-span-2"
+            data-test-id="hr-employee-modal-warnings"
+            role="alert"
+          >
+            <div className="font-medium">{t('warn_partial_title')}</div>
+            <ul className="mt-1 list-disc pl-5">
+              {postSaveWarnings.map((w) => (
+                <li key={w}>{w}</li>
+              ))}
+            </ul>
+          </div>
+        )}
 
         {error && (
           <div

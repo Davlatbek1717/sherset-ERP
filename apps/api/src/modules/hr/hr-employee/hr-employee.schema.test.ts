@@ -189,3 +189,25 @@ describe('UpdateHrEmployeeSchema — optimistic-lock contract (2026-06-08i)', ()
     expect('version' in parsed).toBe(false);
   });
 });
+
+describe('telegramPhone — ajratgichli formatlar (2026-08-21)', () => {
+  /**
+   * 🔴 Nosozlik: sxemadagi qat'iy `^\+?[0-9]{9,15}$` regex'i BIRINCHI ishlardi,
+   * servisdagi `normalizeTelegramPhone()` esa probel/tire/qavsni tozalash
+   * uchun ATAYLAB yozilgan edi — lekin unga navbat hech qachon yetmasdi.
+   * Natija: «+998 90 123 45 67» deb yozgan foydalanuvchi 400 olardi, garchi
+   * tizimda o'sha formatni tushunadigan kod bor bo'lsa ham.
+   * Endi sxema avval ajratgichlarni tozalaydi, keyin shaklni tekshiradi.
+   */
+  it('probel / tire / qavs bilan yozilgan raqamni qabul qiladi va tozalaydi', () => {
+    for (const raw of ['+998 90 123 45 67', '90-123-45-67', '(90) 123 45 67']) {
+      const parsed = CreateHrEmployeeSchema.parse({ name: 'X', telegramPhone: raw });
+      expect(parsed.telegramPhone, raw).toMatch(/^\+?[0-9]{9,15}$/);
+    }
+  });
+
+  it("harfli qiymat AVVALGIDEK rad etiladi (bo'shashib ketmadi)", () => {
+    expect(() => CreateHrEmployeeSchema.parse({ name: 'X', telegramPhone: 'abc' })).toThrow();
+    expect(() => CreateHrEmployeeSchema.parse({ name: 'X', telegramPhone: '12' })).toThrow();
+  });
+});
