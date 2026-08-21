@@ -567,6 +567,26 @@ export function EmployeeModal({
           <RoleMultiSelect value={form.hrRoles} onChange={(next) => update('hrRoles', next)} />
         </Field>
 
+        {/*
+          Ikkinchi yarmi qayerda — bu oyna xodimning HAMMASINI sozlamaydi.
+          O'lchandi (2026-08-21): 14 maydon faqat shu yerda, 14 tasi faqat
+          «Sozlamalar → Xodimlar» kartasida (oylik, INN, rasm, IP cheklovi,
+          bildirishnomalar, kassa PIN'i), umumiy atigi 5 ta. Havolasiz
+          foydalanuvchi ikkinchi yarmi borligini bilmasdi.
+        */}
+        {mode === 'edit' && initialValues && (
+          <p className="text-[13px] text-[var(--ms-text-muted)] sm:col-span-2">
+            {t('other_half_hint')}{' '}
+            <a
+              href={`/settings/employees/${initialValues.id}`}
+              className="text-[var(--ms-text-link)] hover:underline"
+              data-test-id="hr-employee-settings-link"
+            >
+              {t('other_half_link_settings')}
+            </a>
+          </p>
+        )}
+
         {/* ERP roli — HR rollaridan boshqa tizim; ERP bo'limlarini AYNAN shu ochadi. */}
         {erpRoles.length > 0 && (
           <Field

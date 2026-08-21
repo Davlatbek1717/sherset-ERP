@@ -1037,6 +1037,29 @@ export function EmployeeCard({ id }: { id?: string }) {
           {/* Системные роли */}
           <section className="flex flex-col gap-3">
             <SectionHeading>{t('roles_section')}</SectionHeading>
+            {/*
+              🔴 Xodim sozlamalari IKKI ekranga bo'lingan va buni hech narsa
+              aytmasdi. O'lchandi (2026-08-21): 14 maydon FAQAT shu kartada
+              (oylik, INN, rasm, IP cheklovi, bildirishnomalar, PIN…), 14 tasi
+              FAQAT «HR → Xodimlar» oynasida (HR roli, Telegram, davomat,
+              haftalik jadval, haydovchi bayrog'i, MoySklad agenti); umumiy
+              atigi 5 ta. Ya'ni xodimni to'liq sozlash uchun IKKALASIGA ham
+              kirish shart — lekin ikkinchisi borligini foydalanuvchi bilmasdi.
+              Ekranlarni birlashtirmaymiz (ruxsat konturlari boshqa), lekin
+              ular bir-birini KO'RSATADI.
+            */}
+            {!isNew && id && (
+              <p className="text-[13px] text-[var(--ms-text-muted)]">
+                {t('other_half_hint')}{' '}
+                <a
+                  href={`/hr/employees/${id}`}
+                  className="text-[var(--ms-text-link)] hover:underline"
+                  data-testid="employee-hr-link"
+                >
+                  {t('other_half_link_hr')}
+                </a>
+              </p>
+            )}
             {/* Sabab AYNAN shu yerda — bo'lim tepasida: saqlash to'xtab,
                 foydalanuvchi nega ekanini ko'rmasligi eng yomon holat. */}
             {fieldErrors.role && (
