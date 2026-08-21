@@ -114,7 +114,17 @@ export const MoneyInput = React.forwardRef<HTMLInputElement, MoneyInputProps>(
         type="text"
         inputMode="decimal"
         value={draft}
-        onFocus={() => setEditing(true)}
+        onFocus={(e) => {
+          setEditing(true);
+          // 🔴 Tiyin kiritish shu yerda buzilardi (egasi, 2026-08-21).
+          // Maydon dam olishda «1 000,00» ko'rsatadi — ikkita tiyin raqami
+          // ALLAQACHON bor. Matn tanlanmasa, foydalanuvchi oxiriga bosib
+          // yozgan belgi kasr 2 xonaga kesilgani uchun jimgina yo'qolardi
+          // («umuman ishlamayapti»). Fokusda butun qiymat tanlanadi, ya'ni
+          // «1000,50» deb yozish eski qiymat ustiga tushadi.
+          e.currentTarget.select();
+          rest.onFocus?.(e);
+        }}
         onBlur={() => {
           setEditing(false);
           setDraft(canonical(valueMinor));

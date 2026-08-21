@@ -89,17 +89,39 @@ export function minorToMajorInput(minor: string | number | null | undefined): st
  *   groupMajorDraft("1234567,8")=> "1 234 567,8"
  *   groupMajorDraft("")         => ""
  */
-export function groupMajorDraft(raw: string | number | null | undefined): string {
-  if (raw === null || raw === undefined) return '';
-  // Keep digits + the first decimal separator (normalised to comma); drop spaces/junk.
-  const m = String(raw)
+/**
+ * Pul kiritishning YAGONA tozalash manbai — ekran ham, saqlanadigan tiyin ham
+ * shundan chiqadi.
+ *
+ * 🔴 2026-08-21 gacha bunday umumiy manba YO'Q edi: `MoneyInput` ekranga
+ * `groupMajorDraft(raw)` ni, qiymatga esa `majorToMinorInput(raw)` ni berardi
+ * va ular boshqacha tozalardi. Natijada ekran bir raqamni, hujjat boshqasini
+ * ko'rsatardi (o'lchangan: «1 000,005» → ekran «1 000,00», qiymat 100001;
+ * «1 000,00,» → ekran «1 000,00», qiymat 0 — pul jimgina yo'qolardi).
+ * Ikkalasi endi shu funksiyadan o'tadi, ya'ni ajralib keta olmaydi.
+ *
+ * Faqat raqam va BIRINCHI ajratgich saqlanadi (nuqta ham vergulga keltiriladi),
+ * kasr 2 xonaga kesiladi — moysklad tiyin aniqligi.
+ */
+export function splitMajorDraft(raw: string | number | null | undefined): {
+  intRaw: string;
+  hasComma: boolean;
+  dec: string;
+} {
+  const m = String(raw ?? '')
     .replace(/[^\d.,]/g, '')
     .replace(/\./g, ',')
     .match(/^(\d*)(,?)(\d*)/);
-  if (!m) return '';
-  const intRaw = m[1] ?? '';
-  const hasComma = m[2] === ',';
-  const dec = (m[3] ?? '').slice(0, 2);
+  return {
+    intRaw: m?.[1] ?? '',
+    hasComma: m?.[2] === ',',
+    dec: (m?.[3] ?? '').slice(0, 2),
+  };
+}
+
+export function groupMajorDraft(raw: string | number | null | undefined): string {
+  if (raw === null || raw === undefined) return '';
+  const { intRaw, hasComma, dec } = splitMajorDraft(raw);
   // Trim leading zeros (keep a single one), then thin-space group every 3.
   const intTrimmed = intRaw.replace(/^0+(?=\d)/, '');
   const grouped = intTrimmed.replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
@@ -115,11 +137,17 @@ export function groupMajorDraft(raw: string | number | null | undefined): string
  */
 export function majorToMinorInput(major: string | number | null | undefined): string {
   if (major === null || major === undefined) return '0';
-  const t = String(major).trim().replace(/\s/g, '').replace(',', '.');
-  if (t === '' || t === '-' || t === '.') return '0';
-  const n = Number(t);
-  if (!Number.isFinite(n) || n < 0) return '0';
-  return String(Math.round(n * 100));
+  const t = String(major).trim();
+  // Manfiylikni TOZALASHDAN OLDIN ushlaymiz: tozalagich '-' ni olib tashlaydi,
+  // ya'ni keyin tekshirilsa «-5» → 500 bo'lib ketardi (mavjud shartnoma: '0').
+  if (t === '' || t.startsWith('-')) return '0';
+  const { intRaw, dec } = splitMajorDraft(t);
+  if (intRaw === '' && dec === '') return '0';
+  // Satr arifmetikasi: `Math.round(n * 100)` katta summada suzuvchi nuqta
+  // xatosini beradi va «1 000,005» kabi kiritishda ekrandan FARQ qiladigan
+  // qiymat chiqarardi (100001). Bu yerda ekrandagi kesilgan kasr ishlatiladi.
+  const minor = BigInt(intRaw || '0') * 100n + BigInt(dec.padEnd(2, '0') || '0');
+  return minor.toString();
 }
 
 /** Format ISO or Date — short (DD.MM.YYYY HH:MM).

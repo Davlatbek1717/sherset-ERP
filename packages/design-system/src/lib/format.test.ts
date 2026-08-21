@@ -178,3 +178,51 @@ describe('groupMajorDraft (live money-input formatting)', () => {
     expect(majorToMinorInput(groupMajorDraft('1234567,89'))).toBe('123456789');
   });
 });
+
+describe('pul kiritish — ekran va QIYMAT bir manbadan (2026-08-21)', () => {
+  /**
+   * 🔴 Egasi: «(. va ,) dan keyin nechi tiyin bo'lishini yozish umuman
+   * ishlamayapti». O'lchanganda ikki alohida nuqson chiqdi:
+   *
+   * 1. `MoneyInput` ekranga `groupMajorDraft(raw)` ni, qiymatga esa
+   *    `majorToMinorInput(raw)` ni berardi — IKKI XIL manba. Ular ajralib
+   *    ketardi va ekran YOLG'ON gapirardi.
+   * 2. `majorToMinorInput` da `.replace(',', '.')` faqat BIRINCHI vergulni
+   *    almashtirardi; ikkinchisi qolib `Number(...)` NaN berardi ⇒ jimgina '0'.
+   *
+   * Maydon dam olish holatida «1 000,00» ko'rsatadi — ya'ni ikkita tiyin
+   * raqami ALLAQACHON bor. Foydalanuvchi oxiriga bosib yozganda:
+   *   «1 000,00,»  → ekran «1 000,00», qiymat 0        (pul YO'QOLARDI)
+   *   «1 000,005»  → ekran «1 000,00», qiymat 100001   (ekran boshqa, hujjat boshqa)
+   *
+   * Shartnoma: ekrandagi matn va yuboriladigan tiyin BIR XIL tozalashdan
+   * o'tadi — qanday yozilmasin, ko'rinayotgan raqam saqlanadigan raqam.
+   */
+  const holatlar: Array<[string, string]> = [
+    ['1 000,00,', '100000'],
+    ['1 000,005', '100000'],
+    ['1 000,00.', '100000'],
+    // Ikkinchi vergulda tahlil TO'XTAYDI — ekran ham «1 000,0» ko'rsatadi,
+    // ya'ni qiymat ekranga MOS (asosiy shartnoma shu).
+    ['1 000,0,5', '100000'],
+    ['0,00.5', '0'],
+  ];
+
+  it('ortiqcha ajratgich/raqam qiymatni BUZMAYDI', () => {
+    for (const [yozilgan, kutilgan] of holatlar) {
+      expect(majorToMinorInput(yozilgan), yozilgan).toBe(kutilgan);
+    }
+  });
+
+  it('ekrandagi matn aynan o‘sha tiyinni beradi (ajralish yo‘q)', () => {
+    for (const [yozilgan] of holatlar) {
+      const ekran = groupMajorDraft(yozilgan);
+      expect(majorToMinorInput(ekran), `${yozilgan} -> ${ekran}`).toBe(majorToMinorInput(yozilgan));
+    }
+  });
+
+  it('katta summada suzuvchi nuqta xatosi yo‘q', () => {
+    // Math.round(n * 100) 2^53 dan katta summalarda adashadi; satr bilan hisob aniq.
+    expect(majorToMinorInput('99999999999999,99')).toBe('9999999999999999');
+  });
+});
