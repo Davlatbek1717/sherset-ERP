@@ -38,11 +38,24 @@ export const MODULE_ENTITIES: Record<string, string[]> = {
   production: ['processingorder', 'processing', 'bom', 'workorder'],
   tasks: ['task'],
   apps: [],
-  hr: [],
-  // Menejer bo'limi — `hr` bilan bir xil: ro'yxat BO'SH, ya'ni menyu hammaga
-  // ko'rinadi. Haqiqiy chek backendda: `HrPermissionGuard` (`employees:read`)
-  // + FSM aktyor qoidalari. FE gating bu yerda FAIL-OPEN — qulf emas, qulaylik.
-  menejer: [],
+  /**
+   * HR va Menejer — 2026-08-21 gacha ro'yxati BO'SH edi, ya'ni «har doim
+   * ko'rinadi». Egasi o'lchagan hodisa: B2B/B2G sotuvchi rolida bu ikkalasi
+   * menyuda turaverardi va bosilganda 403 berardi — ma'lumot sizmasa ham,
+   * foydalanuvchi «hamma bo'limga kirishim bor» deb ko'radi.
+   *
+   * Server ikkalasini AYNAN bir narsa bilan qo'riqlaydi:
+   * `@RequireHrPermission('employees', …)` — `manager` modulida 42 marshrut,
+   * HR modulida ham shu. Shuning uchun menyu ham `hremployee` ga bog'landi.
+   *
+   * Prod tekshiruvi — hech bir rol HR'ni yo'qotmaydi: AccountOwner ·
+   * Administrator · Manager · ReadOnly = ALL, Employee = OWN_GROUP
+   * (NO emas ⇒ ko'rinadi), Kassir/PointOfSale kiosk (yuqori menyusi yo'q).
+   *
+   * `homepage` va `apps` ATAYLAB bo'sh qoladi — ular ma'lumot ko'rsatmaydi.
+   */
+  hr: ['hremployee', 'hrdashboard', 'hrtask', 'hrreport', 'hrsettings'],
+  menejer: ['hremployee'],
   analitika: ['analitika'],
 };
 
