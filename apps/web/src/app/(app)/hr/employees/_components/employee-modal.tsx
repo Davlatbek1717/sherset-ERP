@@ -158,6 +158,13 @@ export function EmployeeModal({
   const [version, setVersion] = useState<number>(0);
   /** Xodim saqlangan, lekin keyingi qadamlardan biri bajarilmagan holatlar. */
   const [postSaveWarnings, setPostSaveWarnings] = useState<string[]>([]);
+  /**
+   * ERP roli HAQIQATAN o'qib olindimi. Bu bayroqsiz tahrir rejimi xavfli
+   * bo'lardi: `role:view` ruxsati bo'lmagan HR xodimi oynani ochib saqlasa,
+   * bo'sh `erpRoleId` «rolni olib tashla» deb uzatilib, xodimning MAVJUD
+   * ERP roli jimgina o'chib ketardi. Yuklanmagan bo'lsa — TEGMAYMIZ.
+   */
+  const [erpRoleLoaded, setErpRoleLoaded] = useState(false);
 
   /**
    * ERP (RBAC) rollari — `GET /roles`. HR xodimida `role:view` ruxsati
@@ -205,6 +212,19 @@ export function EmployeeModal({
       // rowToForm's attendance-config fields may be stale (list rows don't
       // carry them) — always refetch the full detail + real week schedule
       // so the modal shows the employee's true current davomat setup.
+      // ERP roli AYRIM so'rov bilan keladi (`roles` va `hr_role` — boshqa
+      // tizimlar). Buni yuklamasak, roli BOR xodimda ham maydon «Tanlanmagan»
+      // ko'rsatardi — ya'ni ekran yolg'on gapirardi va foydalanuvchi mavjud
+      // rolni «yo'q» deb o'ylardi.
+      api
+        .get<{ roleIds?: string[] }>(`/roles/employee/${initialValues.id}`)
+        .then((r) => {
+          setForm((prev) => ({ ...prev, erpRoleId: r?.roleIds?.[0] ?? '' }));
+          setErpRoleLoaded(true);
+        })
+        .catch(() => {
+          /* role:view ruxsati yo'q — maydon ko'rsatilmaydi va TEGILMAYDI */
+        });
       Promise.all([
         hrEmployeeApi.findOne(initialValues.id),
         hrScheduleApi.getWeek(initialValues.id),
@@ -222,6 +242,7 @@ export function EmployeeModal({
     }
     setError(null);
     setPostSaveWarnings([]);
+    setErpRoleLoaded(false);
   }, [open, mode, initialValues]);
 
   const buildPayload = (): HrEmployeeCreateInput => ({
@@ -292,9 +313,18 @@ export function EmployeeModal({
       }
 
       // (b) ERP roli — HR rollari ERP bo'limlarini OCHMAYDI, bu alohida tizim.
-      if (form.erpRoleId) {
+      // Bo'sh qiymat ham MA'NOLI: «rolni olib tashlash». Shuning uchun
+      // `if (form.erpRoleId)` emas — tahrirda foydalanuvchi rolni ataylab
+      // bo'shatgan bo'lishi mumkin. Yaratishda esa rolsiz holat normal.
+      // Tahrirda faqat rolni HAQIQATAN o'qib olgan bo'lsak yozamiz — aks
+      // holda bo'sh qiymat mavjud rolni o'chirib yuborardi (yuqoriga qara).
+      const writeErpRole =
+        mode === 'create' ? Boolean(form.erpRoleId) : erpRoleLoaded && erpRoles.length > 0;
+      if (writeErpRole) {
         try {
-          await api.put(`/roles/employee/${saved.id}`, { roleIds: [form.erpRoleId] });
+          await api.put(`/roles/employee/${saved.id}`, {
+            roleIds: form.erpRoleId ? [form.erpRoleId] : [],
+          });
         } catch (e) {
           warnings.push(
             `${t('warn_erp_role_failed')} ${e instanceof Error ? e.message : String(e)}`,
