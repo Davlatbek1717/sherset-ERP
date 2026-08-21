@@ -74,6 +74,7 @@ import {
   RefundRetailSaleSchema,
   RetailSaleFilterSchema,
   UpdateRetailSaleSchema,
+  UpdateSaleCommentSchema,
   ZReportQuerySchema,
 } from './retail-sale.schema.js';
 // Kassa TZ §6 — aralash to'lov qoidalari (sof, testlangan).
@@ -1399,6 +1400,60 @@ export class RetailSaleService {
    * (F6, 2026-08-13): asl smena yopiq bo'lishi mumkin va uning Z-hisoboti
    * allaqachon chiqarilgan.
    */
+  /**
+   * CHEK IZOHI (2026-08-19, egasi: «kassada har bir chekka izoh ham qo'shish
+   * funksiyasini qilish kerak»).
+   *
+   * ATAYLAB tor yo'l — `update()` faqat `draft` chekni qabul qiladi (pul
+   * olingan, ombor yechilgan chekni qayta yozishdan saqlaydigan qulf), izoh esa
+   * summa/ombor/holat/to'lovga UMUMAN tegmaydigan metama'lumot. Shu sababli
+   * qulfni yumshatish o'rniga FAQAT shu maydonni yozadigan alohida metod:
+   * chekning istalgan holatida ishlaydi va boshqa hech nimani o'zgartira
+   * olmaydi (`data` da bitta maydon bor).
+   *
+   * · optimistik qulf `version` bilan — ikki kishi bir vaqtda yozsa
+   *   ikkinchisi 409 oladi, jimgina ustiga yozmaydi;
+   * · har o'zgarish `AuditLog` ga tushadi: kim, qachon, ESKI matn → YANGI
+   *   matn (kassir ham tahrirlay olgani uchun iz qolishi SHART);
+   * · o'chirilgan chek tahrirlanmaydi.
+   */
+  async updateComment(accountId: string, userId: string, saleId: string, raw: unknown) {
+    const parsed = UpdateSaleCommentSchema.parse(raw);
+    const sale = await this.prisma.client.retailSale.findFirst({
+      where: { id: saleId, accountId, deletedAt: null },
+      select: { id: true, name: true, version: true, description: true },
+    });
+    if (!sale) throw new NotFoundException(`RetailSale ${saleId} not found`);
+
+    // Matn o'zgarmagan bo'lsa — YOZILMAYDI: aks holda har ochib-yopish
+    // jurnalga bo'sh «o'zgardi» qatorini qo'shib, izni o'qib bo'lmas qilardi.
+    if ((sale.description ?? null) === parsed.description) return sale;
+
+    try {
+      const updated = await this.prisma.client.retailSale.update({
+        where: { id: saleId, accountId, version: parsed.version },
+        data: { description: parsed.description },
+        select: { id: true, name: true, version: true, description: true },
+      });
+      await this.prisma.client.auditLog.create({
+        data: {
+          accountId,
+          userId,
+          entity: 'retailsale',
+          entityId: saleId,
+          action: 'comment_change',
+          fieldChanges: {
+            description: { before: sale.description ?? null, after: parsed.description },
+          },
+        },
+      });
+      return updated;
+    } catch (e) {
+      mapVersionedUpdateError(e, 'RetailSale');
+      throw e;
+    }
+  }
+
   async edit(accountId: string, userId: string, saleId: string, raw: unknown) {
     const parsed = EditRetailSaleSchema.parse(raw);
     const paidMinor = BigInt(parsed.paidMinor);

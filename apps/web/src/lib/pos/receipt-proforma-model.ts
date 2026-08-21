@@ -27,6 +27,11 @@ export interface ProformaContext {
   moment: string;
   cashierName: string;
   organization: { name: string; legalTitle?: string | null; phone?: string | null };
+  /**
+   * Savatga yozilgan izoh (2026-08-19, egasi: «har bir chekka izoh»).
+   * Bo'sh/berilmagan bo'lsa `null` — chekda «Izoh:» qatori umuman chizilmaydi.
+   */
+  comment?: string | null;
 }
 
 /** Savat + savat-chegirmasi(%) → chek-kirishi. Sof funksiya, DB/tarmoq yo'q. */
@@ -58,7 +63,7 @@ export function cartToProformaReceipt(
     cashAmountMinor: totalMinor.toString(),
     cardAmountMinor: '0',
     changeMinor: '0',
-    description: null,
+    description: ctx.comment?.trim() ? ctx.comment.trim() : null,
     agent: null,
     session: {
       cashier: { name: ctx.cashierName },

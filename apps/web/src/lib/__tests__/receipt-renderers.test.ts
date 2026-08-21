@@ -43,6 +43,11 @@ const SALE = (over: Record<string, unknown> = {}) => ({
 });
 
 const MIXED = SALE({
+  // 2026-08-19: «Izoh» qatori endi SHARTLI — izoh bo'sh bo'lsa chizilmaydi
+  // (ilgari har chekda bo'sh «Izoh:» chiqardi). Shablon-parity ro'yxati shu
+  // qatorni ham tekshirgani uchun namunada izoh BOR bo'lishi kerak; bo'sh
+  // holat esa pastda alohida qulflangan.
+  description: 'Ertaga olib ketadi',
   payments: [
     {
       method: 'CASH_UZS',
@@ -198,6 +203,12 @@ describe('chek shabloni — uchala renderer bir xil bloklarni chiqaradi', () => 
     for (const line of buildReceiptText(MIXED as never).split('\n')) {
       expect(line.length, `uzun qator: «${line}»`).toBeLessThanOrEqual(32);
     }
+  });
+
+  it('🔴 izoh BO`SH bo`lsa «Izoh» qatori UMUMAN chizilmaydi', () => {
+    const noComment = SALE({ description: null }) as never;
+    expect(buildReceiptText(noComment)).not.toContain('Izoh');
+    expect(buildReceiptHtml(noComment)).not.toContain('Izoh');
   });
 
   it('eski «JAMI»/«Xarid uchun rahmat!» matnlari qaytib kelmaydi', () => {

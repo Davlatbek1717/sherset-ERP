@@ -113,6 +113,22 @@ export class RetailSaleController {
     return this.sales.edit(user.accountId, user.sub, id, body);
   }
 
+  /**
+   * CHEK IZOHI (2026-08-19, egasi). Ruxsat `update` — `approve` EMAS: izoh
+   * pulga ham, omborga ham, chek holatiga ham tegmaydi, ya'ni uni `post`
+   * darajasidagi ruxsat ortiga yashirish kassirni o'z chekiga eslatma yozish
+   * imkonidan mahrum qilardi. Iz `AuditLog` da (kim, qachon, eski → yangi).
+   */
+  @Patch(':id/comment')
+  @RequirePermission({ entity: 'retailsale', action: 'update' })
+  async updateComment(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ) {
+    return this.sales.updateComment(user.accountId, user.sub, id, body);
+  }
+
   @Post(':id/refund')
   @RequirePermission({ entity: 'salesreturn', action: 'create' })
   async refund(

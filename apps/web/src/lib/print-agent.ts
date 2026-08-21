@@ -310,7 +310,8 @@ export function buildSheetText(sheet: AgentPickingSheet, res: AgentPickingSheets
   L.push(`Sotuvchi: ${res.sellerName ?? ''}`);
   L.push(`Xaridor: ${res.buyerName ?? ''}`);
   L.push(`Telefon: ${res.buyerPhone ?? ''}`);
-  L.push(`Izoh: ${res.comment ?? ''}`);
+  // Bo'sh izoh qatori chizilmaydi (2026-08-19).
+  if (res.comment?.trim()) L.push(`Izoh: ${res.comment}`);
   L.push(dash);
   // Birlashtirilgan ro'yxatda sarlavha yo'q (server `null` yuboradi).
   if (sheet.groupLabel != null) L.push(sheet.groupLabel);
@@ -363,7 +364,7 @@ th{text-align:center;font-weight:700}
 <div>Продавец: ${escapeHtml(res.sellerName ?? '')}</div>
 <div>Покупатель: ${escapeHtml(res.buyerName ?? '')}</div>
 <div>Телефон: ${escapeHtml(res.buyerPhone ?? '')}</div>
-<div>Комментарий: ${escapeHtml(res.comment ?? '')}</div>
+${res.comment?.trim() ? `<div>Комментарий: ${escapeHtml(res.comment)}</div>` : ''}
 </div>
 ${sheet.groupLabel != null ? `<div class="grp">${escapeHtml(sheet.groupLabel)}</div>` : ''}
 <table><thead><tr><th style="width:5mm">№</th><th>Наименование</th><th style="width:7mm">Ед.изм</th><th style="width:8mm">Кол-во</th><th style="width:19mm">Yacheyka</th></tr></thead><tbody>${rows}</tbody></table>
@@ -513,7 +514,9 @@ export function buildReceiptText(sale: ReceiptSale): string {
   // ── Rekvizitlar ──
   push(L, `${RECEIPT_LABELS.seller}: ${m.sellerName}`);
   push(L, `${RECEIPT_LABELS.buyer}: ${m.buyerName}`);
-  push(L, `${RECEIPT_LABELS.comment}: ${m.comment}`);
+  // Izoh bo'sh bo'lsa qator UMUMAN chizilmaydi (2026-08-19): ilgari har
+  // chekda bo'sh «Izoh:» chiqib turardi va qog'oz ham, o'qish ham behuda edi.
+  if (m.comment.trim()) push(L, `${RECEIPT_LABELS.comment}: ${m.comment}`);
   L.push(bar);
   // ── Ustun sarlavhalari. Namunadagi 6 ustun 32 belgiga sig'maydi, shuning
   //    uchun ular ikki qatorli «legenda» bo'lib chiqadi — nomlar YO'QOLMAYDI,
@@ -626,7 +629,7 @@ ${m.orgPhone ? `<div class="h">${e(m.orgPhone)}</div>` : ''}
 <div class="req">
 <div>${e(RECEIPT_LABELS.seller)}: ${e(m.sellerName)}</div>
 <div>${e(RECEIPT_LABELS.buyer)}: ${e(m.buyerName)}</div>
-<div>${e(RECEIPT_LABELS.comment)}: ${e(m.comment)}</div>
+${m.comment.trim() ? `<div>${e(RECEIPT_LABELS.comment)}: ${e(m.comment)}</div>` : ''}
 </div>
 <table>
 <tr><td class="c">№</td><td class="c">${e(RECEIPT_LABELS.colName)}</td><td class="c">${e(RECEIPT_LABELS.colUom)}</td><td class="c">${e(RECEIPT_LABELS.colQty)}</td><td class="c">${e(RECEIPT_LABELS.colPrice)}</td><td class="c">${e(RECEIPT_LABELS.colSum)}</td></tr>

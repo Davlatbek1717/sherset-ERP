@@ -331,6 +331,30 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-08-21a (KASSA — har bir chekka IZOH) —**
+> Egasi: «kassada har bir chekga izoh ham qo'shish funksiyasini qilish kerak».
+> Tasdiqlangan qamrov: izoh SAVATDA ham (chek yopilishidan oldin), YOPILGAN chekda ham;
+> chop etilgan chekda CHIQADI; kassir ham tahrirlay oladi (iz jurnalda).
+> **O'LCHOV:** yarim zanjir allaqachon bor edi — `retail_sales.description` ustuni, chek
+> yaratishda serverning uni qabul qilishi va UCHALA chek-rendererida «Izoh:» qatori.
+> Yetishmagani: kassada yozadigan joy va yopilgan chekni tahrirlash yo'li.
+> **Server:** `PATCH /retail-sales/:id/comment` — ATAYLAB tor yo'l. `update()` faqat
+> `draft` chekni qabul qiladi (pul olingan chekni qayta yozishdan saqlaydigan qulf),
+> izoh esa metama'lumot ⇒ qulfni yumshatish o'rniga FAQAT shu maydonni yozadigan metod:
+> `data` da bitta maydon, `version` bilan optimistik qulf (409), har o'zgarish `AuditLog`
+> ga (`action: comment_change`, eski → yangi), matn o'zgarmasa yozuv ham jurnal ham YO'Q.
+> Ruxsat `update` (`approve` EMAS — izoh pulga tegmaydi, kassir o'z chekiga yozadi).
+> **Kassa:** savat panelida inline «Izoh qo'shish» (Radix modal EMAS — qobiq OSK sababi);
+> izoh UCHALA yo'lda ketadi (Sotish · Omborchiga yuborish · Sotuvsiz chek) va savat
+> tozalanganda tozalanadi. «Cheklar» panelida chek izohi ko'rinadi va tahrirlanadi.
+> ERP chek sahifasida ko'rinadi.
+> **Chop:** bo'sh izohda «Izoh:» qatori endi UMUMAN chizilmaydi (ilgari har chekda bo'sh
+> qator chiqardi) — uchala renderer: React shabloni, ESC/POS matni, Electron HTML.
+> Qulflar: `retail-sale-comment.test.ts` (8) · `chek-comment.test.tsx` (6) ·
+> `receipt-comment.test.ts` (4). Gate: tc 0 · biome 0 xato · api retail-sale 903.
+>
+> ---
+>
 > **🕒 2026-08-19d (QARZ — «qo'ng'iroq natijasi» naqdi KASSAGA umuman tushmasdi) —**
 > Egasi: «mijoz kartasida ko'rsatadi, lekin olingan pul ham kassaga tushadi — u
 > kassadagi pulga qo'shilishi kerak».

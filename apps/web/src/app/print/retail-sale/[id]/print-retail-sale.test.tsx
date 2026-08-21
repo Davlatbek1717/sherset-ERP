@@ -30,7 +30,10 @@ const SALE = (over: Record<string, unknown> = {}) => ({
   cashAmountMinor: '0',
   cardAmountMinor: '0',
   changeMinor: '0',
-  description: null,
+  // 2026-08-19: «Izoh» qatori SHARTLI bo'ldi — bo'sh izohda chizilmaydi
+  // (ilgari har chekda bo'sh «Izoh:» chiqardi). Shablon-bloklar ro'yxati shu
+  // qatorni ham tekshirgani uchun namunada izoh BOR.
+  description: 'Ertaga olib ketadi',
   agent: null,
   session: {
     cashDesk: { name: 'Asosiy kassa', currency: 'UZS' },

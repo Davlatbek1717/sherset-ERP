@@ -177,6 +177,14 @@ export default function RetailSaleDetailPage() {
             <div className="tabular-nums">{sale.externalCode}</div>
           </div>
         )}
+        {/* CHEK IZOHI (2026-08-19, egasi). Tahrir kassada — bu yerda ko'rinadi.
+            Butun kenglikni oladi: izoh jumla, qisqa maydon emas. */}
+        {sale.description?.trim() && (
+          <div className="sm:col-span-2" data-test-id="sale-description">
+            <div className="mb-0.5 text-[var(--ms-text-muted)] text-xs">{tFields('comment')}</div>
+            <div className="whitespace-pre-wrap break-words">{sale.description}</div>
+          </div>
+        )}
       </div>
 
       {/* Positions */}

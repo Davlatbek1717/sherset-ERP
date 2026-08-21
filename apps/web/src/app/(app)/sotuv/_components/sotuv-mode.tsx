@@ -35,11 +35,11 @@ import type {
   PosProductRow as ProductRow,
 } from '@moysklad/contracts';
 import { classifyPrice, formatPercent, marginPercent, priceFloorMinor } from '@moysklad/money';
-import { Alert, Button, Input, formatMoney } from '@moysklad/ui';
+import { Alert, Button, Input, Textarea, formatMoney } from '@moysklad/ui';
 import { Search, ShoppingCart } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import type { Dispatch, RefObject, SetStateAction } from 'react';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { CartLine } from './pos-types';
 
 // ── Chap panel: qidiruv + tovar setkasi ─────────────────────────────────────
@@ -235,6 +235,12 @@ interface SavatPanelProps {
   cartLocked: boolean;
   /** Savatni tozalash — zakaz/chek bog'lanishini ham uzadi (sahifada). */
   onClearCart: () => void;
+  /**
+   * CHEK IZOHI (2026-08-19, egasi: «har bir chekka izoh»). Savat bilan birga
+   * yashaydi va chek yaratilganda serverga `description` bo'lib ketadi.
+   */
+  cartComment: string;
+  setCartComment: Dispatch<SetStateAction<string>>;
   /** Bitta qatorni o'chirish (egasi so'rovi, 2026-08-15): «Tozalash» hammasini
    *  olib tashlaydi, bitta tovarni esa faqat qator-oynasi ichidan o'chirish
    *  mumkin edi — kassir bu yo'lni topolmadi. Endi har qatorda ochiq ✕ bor. */
@@ -280,6 +286,8 @@ export function SavatPanel({
   cart,
   cartLocked,
   onClearCart,
+  cartComment,
+  setCartComment,
   onRemoveLine,
   canPark,
   onPark,
@@ -306,6 +314,9 @@ export function SavatPanel({
 }: SavatPanelProps) {
   const t = useTranslations('pages.sotuv');
   const tCommon = useTranslations('common');
+  /** Izoh maydoni ochiqmi — chegirma inputi bilan AYNI naqsh (inline, Radix
+   *  dialog EMAS: qobiq ekran-klaviaturasi bilan muammosiz ishlashi uchun). */
+  const [commentEditing, setCommentEditing] = useState(false);
 
   return (
     <>
@@ -720,6 +731,56 @@ export function SavatPanel({
             </div>
           )}
         </div>
+
+        {/* ── CHEK IZOHI (2026-08-19, egasi: «har bir chekka izoh») ──
+            Inline, chegirma naqshi bilan bir xil. Yozilgan izoh chekda
+            «Izoh:» qatori bo'lib chiqadi va chek kartochkasida ko'rinadi. */}
+        {cart.length > 0 && (
+          <div className="mb-2">
+            {commentEditing ? (
+              <div className="flex items-start gap-2 rounded-xl border border-[var(--ms-border)] bg-[var(--ms-bg-app)] px-3 py-2">
+                <Textarea
+                  // biome-ignore lint/a11y/noAutofocus: POS oqimi — kassir tugmani bosgach darhol yozadi.
+                  autoFocus
+                  rows={2}
+                  maxLength={400}
+                  value={cartComment}
+                  onChange={(e) => setCartComment(e.target.value)}
+                  onBlur={() => setCommentEditing(false)}
+                  placeholder={t('cart_comment_placeholder')}
+                  data-test-id="sotuv-comment-input"
+                  className="w-full resize-none border-0 bg-transparent p-0 text-[14px] shadow-none focus-visible:ring-0"
+                />
+                <button
+                  type="button"
+                  onClick={() => setCommentEditing(false)}
+                  className="shrink-0 rounded-lg px-2 py-1 font-bold text-emerald-600 text-sm hover:bg-emerald-50"
+                >
+                  ✓
+                </button>
+              </div>
+            ) : cartComment.trim() ? (
+              <button
+                type="button"
+                onClick={() => setCommentEditing(true)}
+                data-test-id="sotuv-comment-text"
+                className="flex w-full items-start gap-2 rounded-xl border border-[var(--ms-border)] bg-[var(--ms-bg-app)] px-3 py-2 text-left text-[13px] text-[var(--ms-text-primary)] hover:bg-[var(--ms-bg-hover)]"
+              >
+                <span className="shrink-0 text-[var(--ms-text-muted)]">✎</span>
+                <span className="line-clamp-2 break-words">{cartComment}</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setCommentEditing(true)}
+                data-test-id="sotuv-comment-add"
+                className="flex h-9 w-full items-center justify-center gap-2 rounded-xl border border-[var(--ms-border)] border-dashed bg-transparent font-medium text-[13px] text-[var(--ms-text-muted)] hover:bg-[var(--ms-bg-hover)]"
+              >
+                ✎ {t('cart_comment_add')}
+              </button>
+            )}
+          </div>
+        )}
 
         {/* SOTUVSIZ CHEK (2026-08-16, egasi): sotuv YARATILMAYDI — savatdan
             chek chiqadi, savat qoralamaga o'tadi. Narx-siyosat quli AYNI:

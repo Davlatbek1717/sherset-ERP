@@ -23,7 +23,7 @@ import {
   saleUsdBaseMinor,
 } from '@/lib/pos/cart-math';
 import { printReceiptViaAgent } from '@/lib/print-agent';
-import { formatMoney, useConfirm, useToast } from '@moysklad/ui';
+import { Textarea, formatMoney, useConfirm, useToast } from '@moysklad/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Receipt, User } from 'lucide-react';
 import { useTranslations } from 'next-intl';
@@ -71,6 +71,8 @@ interface ChekDetailData {
   // select: method/amountMinor/currency/rateMinor/amountBaseMinor) — tip
   // ilgari toroygan edi, shuning uchun dollar sentini o'qib bo'lmasdi.
   payments?: Array<{ method: string; amountMinor: string; amountBaseMinor: string }> | null;
+  /** Chek izohi (2026-08-19, egasi). Chekda «Izoh:» qatori bo'lib chiqadi. */
+  description?: string | null;
   agent: { id: string; name: string } | null;
   session: {
     cashier: { id: string; name: string };
@@ -184,6 +186,14 @@ function ChekDetailPanel({
    * Modal EMAS — ichki blok (qobiqda Radix modali ekran-klaviaturasini
    * o'ldiradi; qaytarish bloki bilan bir naqsh).
    */
+  /**
+   * CHEK IZOHI (2026-08-19, egasi: «har bir chekka izoh»). Yopilgan chekda ham
+   * tahrirlanadi — server tor yo'l bilan (`PATCH :id/comment`) faqat shu
+   * maydonni yozadi, pul/ombor/holatga tegmaydi va har o'zgarish `AuditLog`
+   * ga tushadi (kim, qachon, eski → yangi).
+   */
+  const [commentOpen, setCommentOpen] = useState(false);
+  const [commentDraft, setCommentDraft] = useState('');
   const [editOpen, setEditOpen] = useState(false);
   /** Qarzga yoziladigan qism (tiyin, satr) — naqd = jami − shu. */
   const [editDebtMinor, setEditDebtMinor] = useState('0');
@@ -206,6 +216,18 @@ function ChekDetailPanel({
     onSuccess: () => {
       toast.success(t('chek_edit_success'));
       setEditOpen(false);
+      qc.invalidateQueries({ queryKey: ['retail-sale-detail', saleId] });
+      qc.invalidateQueries({ queryKey: ['retail-sales-session'] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const commentMut = useMutation({
+    mutationFn: (body: { version: number; description: string | null }) =>
+      api.patch(`/retail-sales/${saleId}/comment`, body),
+    onSuccess: () => {
+      toast.success(t('chek_comment_saved'));
+      setCommentOpen(false);
       qc.invalidateQueries({ queryKey: ['retail-sale-detail', saleId] });
       qc.invalidateQueries({ queryKey: ['retail-sales-session'] });
     },
@@ -422,6 +444,24 @@ function ChekDetailPanel({
             ✎ {t('chek_edit')}
           </button>
         )}
+        {/* IZOH — chekning har qanday holatida (izoh pulga tegmaydi). */}
+        {!returnMode && (
+          <button
+            type="button"
+            data-test-id="chek-comment-open"
+            onClick={() => {
+              setCommentDraft(data.description ?? '');
+              setCommentOpen((v) => !v);
+            }}
+            className={`flex h-8 items-center gap-1.5 rounded-lg border px-3 font-medium text-xs ${
+              commentOpen
+                ? 'border-[var(--ms-text-brand)] text-[var(--ms-text-brand)]'
+                : 'border-[var(--ms-border)] hover:bg-[var(--ms-bg-hover)]'
+            }`}
+          >
+            ✎ {t('chek_comment')}
+          </button>
+        )}
         {data.state === 'posted' &&
           (returnMode ? (
             <button
@@ -450,6 +490,61 @@ function ChekDetailPanel({
           uchun SCROLL UMUMAN paydo bo'lmasdi. Farzandlar qisilmasa kontent
           tabiiy balandligini oladi (186 → 254px) va panel scroll bo'ladi. */}
       <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-4 [&>*]:shrink-0">
+        {/* ── CHEK IZOHI ────────────────────────────────────────────────
+            Modal EMAS — ichki blok (qobiqda Radix modali ekran-klaviaturasini
+            o'ldiradi; tahrir/qaytarish bloklari bilan bir naqsh). */}
+        {commentOpen ? (
+          <div
+            data-test-id="chek-comment-panel"
+            className="flex flex-col gap-2 rounded-xl border border-[var(--ms-text-brand)] p-3"
+          >
+            <p className="text-[var(--ms-text-muted)] text-xs">{t('chek_comment_hint')}</p>
+            <Textarea
+              rows={3}
+              maxLength={400}
+              value={commentDraft}
+              onChange={(e) => setCommentDraft(e.target.value)}
+              data-test-id="chek-comment-input"
+              className="w-full resize-none text-[14px]"
+            />
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setCommentOpen(false)}
+                className="h-9 flex-1 rounded-lg border border-[var(--ms-border)] text-xs hover:bg-[var(--ms-bg-hover)]"
+              >
+                {tCommon('cancel')}
+              </button>
+              <button
+                type="button"
+                data-test-id="chek-comment-save"
+                disabled={commentMut.isPending}
+                onClick={() =>
+                  commentMut.mutate({
+                    version: data.version,
+                    // Bo'sh matn — izohni OLIB TASHLASH (server ham `null` ga
+                    // tushiradi): chekda bo'sh «Izoh:» qatori qolmasin.
+                    description: commentDraft.trim() ? commentDraft.trim() : null,
+                  })
+                }
+                className="h-9 flex-1 rounded-lg bg-[var(--ms-text-brand)] font-bold text-white text-xs disabled:opacity-50"
+              >
+                {tCommon('save')}
+              </button>
+            </div>
+          </div>
+        ) : (
+          data.description?.trim() && (
+            <div
+              data-test-id="chek-comment-text"
+              className="rounded-xl border border-[var(--ms-border)] bg-[var(--ms-bg-app)] px-3 py-2 text-[13px]"
+            >
+              <span className="text-[var(--ms-text-muted)]">{t('chek_comment')}: </span>
+              <span className="break-words">{data.description}</span>
+            </div>
+          )
+        )}
+
         {/* ── «Naqd ⇄ qarz» tuzatish bloki ─────────────────────────────── */}
         {editOpen && data.state === 'posted' && (
           <div

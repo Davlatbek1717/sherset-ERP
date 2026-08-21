@@ -173,9 +173,13 @@ export function TovarChek({
             {t('chek_phone')}: {buyerPhone}
           </div>
         )}
-        <div>
-          {t('chek_comment')}: {comment ?? ''}
-        </div>
+        {/* Izoh bo'sh bo'lsa qator UMUMAN chizilmaydi (2026-08-19): ilgari
+            har chekda bo'sh «Izoh:» turardi. */}
+        {comment?.trim() && (
+          <div>
+            {t('chek_comment')}: {comment}
+          </div>
+        )}
         {reference && (
           <div style={{ fontWeight: 400 }}>
             {t('chek_reference')}: {reference}

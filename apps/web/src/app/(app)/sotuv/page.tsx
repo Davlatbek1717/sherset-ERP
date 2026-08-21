@@ -864,6 +864,7 @@ function SalesScreen({
     setCart([]);
     setDiscountPct(0);
     setDiscountEditing(false);
+    setCartComment('');
     toast.success(t('draft_saved'));
   }, [cart, cartLocked, payingSale, discountPct, toast, t]);
 
@@ -919,6 +920,8 @@ function SalesScreen({
       moment: now.toISOString(),
       cashierName: session.cashier.name,
       organization: { name: session.organization.name },
+      // Sotuvsiz chekda ham izoh chiqadi — u ham chek (2026-08-19).
+      comment: cartComment,
     });
     const r = await printProformaReceiptViaAgent(input);
     if (!r.handled || !r.ok) {
@@ -1023,6 +1026,17 @@ function SalesScreen({
   // Savat darajasidagi chegirma (`discountPct`) har bir pozitsiyaga foiz sifatida
   // yoziladi — shunda backend chegirmali `sumMinor`'ni saqlaydi va chek «Chegirma»
   // qatorini ko'rsata oladi (aks holda chegirma faqat ekranda qolib, yo'qolardi).
+  /**
+   * CHEK IZOHI (2026-08-19, egasi: «har bir chekka izoh»). Savatga yoziladi va
+   * chek yaratilganda `description` bo'lib serverga ketadi — «Sotish»,
+   * «Omborchiga yuborish» va «Sotuvsiz chek» yo'llarining UCHALASIDA ham
+   * (bittasida unutilsa, kassir yozgan izoh jimgina yo'qolardi).
+   * Savat tozalanganda izoh ham tozalanadi.
+   */
+  const [cartComment, setCartComment] = useState('');
+  /** Serverga ketadigan shakl: bo'sh izoh — maydonsiz (null yozilmasin). */
+  const commentPatch = () => (cartComment.trim() ? { description: cartComment.trim() } : {});
+
   const positions = () =>
     cart.map((l) => ({
       productId: l.productId,
@@ -1047,6 +1061,7 @@ function SalesScreen({
     // (solishtir: `sendToPickingMut.onSuccess` ham shunday tozalaydi).
     setCart([]);
     setDiscountPct(0);
+    setCartComment('');
     qc.invalidateQueries({ queryKey: ['cashier-session-current'] });
     qc.invalidateQueries({ queryKey: ['products-sotuv'] });
     qc.invalidateQueries({ queryKey: ['retail-sales-session', session.id] });
@@ -1226,6 +1241,7 @@ function SalesScreen({
       const draft = await api.post<{ id: string; sumMinor?: string }>('/retail-sales', {
         sessionId: session.id,
         positions: positions(),
+        ...commentPatch(),
       });
       // Summa SERVERNIKI: `post()` `expectedSumMinor` ni chek `sumMinor`i
       // bilan QAT'IY solishtiradi va farq bo'lsa 409 beradi. Server qator-
@@ -1250,6 +1266,7 @@ function SalesScreen({
       const draft = await api.post<{ id: string }>('/retail-sales', {
         sessionId: session.id,
         positions: positions(),
+        ...commentPatch(),
       });
       await api.post(`/retail-sales/${draft.id}/send-to-picking`, {});
       return draft.id;
@@ -1258,6 +1275,7 @@ function SalesScreen({
       setCart([]);
       setDiscountPct(0);
       setDiscountEditing(false);
+      setCartComment('');
       qc.invalidateQueries({ queryKey: ['retail-sales-ready', session.id] });
       qc.invalidateQueries({ queryKey: ['retail-sales-picking', session.id] });
       toast.success(t('sent_to_picker'));
@@ -1560,8 +1578,11 @@ function SalesScreen({
                   draftsLocked={cartLocked || payingSale != null}
                   onRestoreDraft={restoreDraft}
                   onDeleteDraft={deleteDraft}
+                  cartComment={cartComment}
+                  setCartComment={setCartComment}
                   onClearCart={() => {
                     setCart([]);
+                    setCartComment('');
                     // F8 — savatni tozalash zakaz/chek bog'lanishini ham uzadi:
                     // aks holda bo'sh-u QULFLANGAN savat qolib, kassir undan
                     // chiqolmasdi.

@@ -235,6 +235,32 @@ export const EditRetailSaleSchema = z.object({
 });
 export type EditRetailSaleInput = z.infer<typeof EditRetailSaleSchema>;
 
+/**
+ * CHEK IZOHI (2026-08-19, egasi: «kassada har bir chekka izoh ham qo'shish»).
+ *
+ * ATAYLAB alohida sxema va alohida yo'l: `UpdateRetailSaleSchema` faqat
+ * `draft` chekka ishlaydi (pul olingan va ombor yechilgan chekni qayta
+ * yozishdan saqlaydigan qulf), izoh esa summa/ombor/holatga UMUMAN tegmaydigan
+ * metama'lumot. Shuning uchun u o'sha qulfni yumshatish orqali emas, faqat
+ * SHU maydonni yozadigan tor yo'l bilan qo'yiladi.
+ *
+ * `null` — izohni butunlay olib tashlash (bo'sh satr ham `null` ga tushadi,
+ * pastdagi `transform`): chekda «Izoh:» qatori bo'sh turmasin.
+ */
+export const UpdateSaleCommentSchema = z.object({
+  /** Optimistik qulf — ikki kishi bir vaqtda yozsa ikkinchisi 409 oladi. */
+  version: z.coerce.number().int().nonnegative(),
+  description: z
+    .string()
+    .max(4000, 'Izoh 4000 belgidan oshmasligi kerak')
+    .nullable()
+    .transform((v) => {
+      const t = v?.trim();
+      return t ? t : null;
+    }),
+});
+export type UpdateSaleCommentInput = z.infer<typeof UpdateSaleCommentSchema>;
+
 // --- Z-report query ---
 
 /**
