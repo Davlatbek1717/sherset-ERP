@@ -1,9 +1,18 @@
 import { z } from 'zod';
 
-// IPv4 «доступ только с адресов» entry (moysklad employee card → Сеть).
-const IPV4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/;
-// IPv4 CIDR «доступ только из сети» entry, e.g. 192.168.0.0/24.
-const IPV4_CIDR = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})\/(\d{1,2})$/;
+/**
+ * IPv4 «доступ только с адресов» (moysklad employee card → Сеть).
+ *
+ * 🔴 2026-08-21: ilgari `(\d{1,3})` ishlatilardi — u faqat RAQAM SONINI
+ * sanardi, qiymatini emas, ya'ni «999.999.999.999» va «256.1.1.1» bemalol
+ * o'tardi. Bu kirish ro'yxati bo'lgani uchun bunday yozuv hech qachon mos
+ * kelmaydi: admin «IP qo'shdim» deb o'ylaydi, qoida esa o'lik bo'ladi.
+ * Endi oktet 0..255 bilan, CIDR prefiksi 0..32 bilan chegaralangan.
+ */
+const IPV4 =
+  /^(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])(\.(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])){3}$/;
+const IPV4_CIDR =
+  /^(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])(\.(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])){3}\/(3[0-2]|[12]?[0-9])$/;
 
 /**
  * moysklad employee card «Уведомления» matrix — one row per notification

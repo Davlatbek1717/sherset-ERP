@@ -211,3 +211,38 @@ describe('telegramPhone — ajratgichli formatlar (2026-08-21)', () => {
     expect(() => CreateHrEmployeeSchema.parse({ name: 'X', telegramPhone: '12' })).toThrow();
   });
 });
+
+describe('allowedIps / allowedNetworks — oktet chegarasi (2026-08-21)', () => {
+  /**
+   * Eski regex `^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$` faqat
+   * RAQAM SONINI sanardi, qiymatini emas — «999.999.999.999» yoki
+   * «256.1.1.1» bemalol o'tardi. Bu kirish ro'yxati bo'lgani uchun bunday
+   * yozuv hech qachon mos kelmaydi, ya'ni admin IP qo'shdim deb o'ylaydi-yu
+   * aslida qoida o'lik bo'ladi — jim nosozlik. Endi oktet 0..255 bilan
+   * chegaralangan.
+   */
+  it('oktet 255 dan oshsa RAD etadi', () => {
+    for (const ip of ['999.999.999.999', '256.1.1.1', '1.1.1.300']) {
+      expect(CreateHrEmployeeSchema.safeParse({ name: 'X', allowedIps: [ip] }).success, ip).toBe(
+        false,
+      );
+    }
+  });
+
+  it("haqiqiy manzillar avvalgidek o'tadi", () => {
+    for (const ip of ['192.168.0.1', '10.0.0.255', '0.0.0.0', '255.255.255.255']) {
+      expect(CreateHrEmployeeSchema.safeParse({ name: 'X', allowedIps: [ip] }).success, ip).toBe(
+        true,
+      );
+    }
+  });
+
+  it('tarmoq (CIDR) prefiksi 32 dan oshsa RAD etadi', () => {
+    expect(
+      CreateHrEmployeeSchema.safeParse({ name: 'X', allowedNetworks: ['192.168.0.0/33'] }).success,
+    ).toBe(false);
+    expect(
+      CreateHrEmployeeSchema.safeParse({ name: 'X', allowedNetworks: ['192.168.0.0/24'] }).success,
+    ).toBe(true);
+  });
+});

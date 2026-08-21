@@ -242,7 +242,17 @@ function IpListEditor({
   return (
     <div className="flex flex-col gap-1.5" data-testid={testId}>
       {values.map((v, i) => (
-        <div key={`${testId}-${i}-${v.length}`} className="flex items-center gap-1.5">
+        // 🔴 `key` ichida QIYMAT bo'lmasligi kerak edi. Ilgari u
+        // `${testId}-${i}-${v.length}` edi: har belgi kiritilganda uzunlik
+        // o'zgarardi ⇒ key o'zgarardi ⇒ React input'ni QAYTA YARATARDI va
+        // FOKUS YO'QOLARDI. Brauzerda o'lchandi (2026-08-21): to'rt belgi
+        // ketma-ket yozilganda DOM tuguni to'rt marta almashdi. Natijada IP
+        // manzilni yozib bo'lmasdi — har belgidan keyin qayta bosish kerak edi.
+        // Pozitsion ro'yxatda kalit faqat INDEKS bo'ladi; qiymat o'zgarganda
+        // React o'sha tugunni yangilaydi, almashtirmaydi.
+        // Shu klass: [[conditional-adornment-remounts-input]].
+        // biome-ignore lint/suspicious/noArrayIndexKey: qatorning O'ZI pozitsion — indeks aynan identifikator; kalitga QIYMAT qo'shilsa input har belgida qayta yaratiladi (fokus yo'qoladi, yuqoriga qara)
+        <div key={`${testId}-${i}`} className="flex items-center gap-1.5">
           <Input
             value={v}
             placeholder={placeholder}
