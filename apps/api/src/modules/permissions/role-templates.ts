@@ -353,7 +353,17 @@ export const ROLE_TEMPLATES: Record<RoleTemplateSlug, RoleTemplate> = {
       // `…/transitions/confirmed`).
       grant(['customerorder'], { view: 'ALL', approve: 'ALL' }),
       grant(['cashout'], { view: 'ALL', create: 'ALL', print: 'ALL' }),
-      grant(['expenseitem', 'currency', 'exchangerate'], { view: 'ALL' }),
+      grant(['expenseitem', 'currency'], { view: 'ALL' }),
+      // 🔴 Dollar kursini KASSIR o'zgartiradi (egasi, 2026-08-21: «barcha
+      // kassirlarga dollar kursini o'zgartirish uchun dostup ber»). Kurs
+      // kunda o'zgaradi va uni kassa oynasidan qo'ymasa, dollar to'lovi
+      // eskirgan kurs bilan hisoblanardi.
+      //
+      // IKKI QULF BIRGA: marshrut `KIOSK_ALLOWED` da allaqachon ochiq
+      // (`PUT /exchange-rates/manual`, exact) — ruxsatsiz u faqat 403
+      // berardi; endi ikkovi mos. `update` — `approve`/`create` EMAS:
+      // kassir mavjud kursni tuzatadi, valyuta yaratmaydi.
+      grant(['exchangerate'], { view: 'ALL', update: 'ALL' }),
       grant(['settings'], { view: 'ALL' }),
     ),
   },

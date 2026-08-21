@@ -193,7 +193,7 @@ exports[`MK29 — shablon matritsasi snapshot (10/10) > cashier matritsasi 1`] =
   "customerorder": "view:ALL approve:ALL",
   "debt": "view:ALL create:ALL",
   "debtpayment": "view:ALL create:ALL",
-  "exchangerate": "view:ALL",
+  "exchangerate": "view:ALL update:ALL",
   "expenseitem": "view:ALL",
   "pricetype": "view:ALL",
   "product": "view:ALL",

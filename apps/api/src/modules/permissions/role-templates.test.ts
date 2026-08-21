@@ -200,6 +200,11 @@ const KIOSK_ROUTE_OVERRIDE: Record<string, string> = {
   // F6 sababi: kassirning `salesreturn.create` ruxsati kiosk'da AYNAN
   // `POST /retail-sales/:id/refund` orqali ishlaydi.
   'salesreturn.create': '/retail-sales/8f7d1c22-0000-4000-8000-000000000003/refund',
+  // 2026-08-21 (egasi: «barcha kassirlarga dollar kursini o'zgartirish uchun
+  // dostup ber»): kassirning `exchangerate.update` ruxsati kiosk'da AYNAN
+  // `PUT /exchange-rates/manual` orqali yashaydi. Bazaviy `/exchange-rates`
+  // ga PUT — kurs jadvalini tahrirlash — ataylab yopiq.
+  'exchangerate.update': '/exchange-rates/manual',
 };
 
 const METHOD_BY_ACTION: Record<PermissionAction, string> = {
