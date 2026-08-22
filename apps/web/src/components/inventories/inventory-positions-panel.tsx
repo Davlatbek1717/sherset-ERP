@@ -457,10 +457,11 @@ export function InventoryPositionsPanel({
     if (!onRowsChange || !g.cellId) return;
     const idx = rows.findIndex((r) => r.assortmentId === g.assortmentId && r.cellId === g.cellId);
     const next = [...rows];
+    const cur = idx >= 0 ? next[idx] : undefined;
     if (value === '') {
       if (idx >= 0) next.splice(idx, 1);
-    } else if (idx >= 0) {
-      next[idx] = { ...next[idx], actualQty: value };
+    } else if (cur) {
+      next[idx] = { ...cur, actualQty: value };
     } else {
       next.push({
         id: uid(),
