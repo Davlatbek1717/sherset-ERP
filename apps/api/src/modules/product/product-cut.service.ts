@@ -8,6 +8,7 @@ import { computePerUnitCost } from '../shared/decimal.js';
 import { resolveCreatorGroupId } from '../shared/group-stamp.js';
 import { type StockDelta, StockService } from '../stock/stock.service.js';
 import { WebhookFireService } from '../webhook/webhook-fire.service.js';
+import { allocateAssortmentCode } from './product-code.util.js';
 import {
   CutRequestSchema,
   distributeCutCost,
@@ -171,31 +172,14 @@ export class ProductCutService {
             continue;
           }
           const pieceMm = lengthToMm(piece.lengthM);
-          const codeN = await allocateDocumentNumber(tx, accountId, 'product', async () => {
-            const [products, variants] = await Promise.all([
-              tx.product.findMany({
-                where: { accountId, code: { not: null } },
-                select: { code: true },
-              }),
-              tx.variant.findMany({
-                where: { accountId, code: { not: null } },
-                select: { code: true },
-              }),
-            ]);
-            let max = 0;
-            for (const r of [...products, ...variants]) {
-              const n = Number.parseInt(r.code ?? '', 10);
-              if (Number.isFinite(n) && n > max) max = n;
-            }
-            return max;
-          });
+          const remnantCode = await allocateAssortmentCode(tx, accountId);
           const created = await tx.product.create({
             data: {
               accountId,
               ownerId: userId,
               modifiedById: userId,
               name: remnantName(rootName, piece.lengthM),
-              code: String(codeN).padStart(5, '0'),
+              code: remnantCode,
               kind: 'product',
               uom: source.uom,
               productFolderId: source.productFolderId,

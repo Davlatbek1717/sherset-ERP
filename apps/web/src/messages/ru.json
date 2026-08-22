@@ -2711,6 +2711,8 @@
       "mxik_placeholder": "17 цифр",
       "name_label": "Наименование товара",
       "name_required": "Наименование обязательно",
+      "no_permission_desc": "Для создания товара нужно право «Товары → Создание». Обратитесь к администратору.",
+      "no_permission_title": "Нет прав",
       "number_invalid": "Только цифры",
       "owner_label": "Сотрудник",
       "owner_pick_title": "Сотрудник",

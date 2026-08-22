@@ -163,10 +163,55 @@ async function main(): Promise<void> {
   }
 
   const after = await prisma.product.count({ where: { accountId: ACCOUNT_ID } });
+  const seqNote = DRY ? '(dry-run — tegilmadi)' : await resyncProductSequence();
   console.log(
     `✅ Ko'rildi ${total} · yangi ${created} · yangilandi ${updated} · xato ${failed}` +
-      `\n   Bazada tovarlar: ${before} → ${after}`,
+      `\n   Bazada tovarlar: ${before} → ${after}` +
+      `\n   «Код» hisoblagichi: ${seqNote}`,
   );
+}
+
+/**
+ * «Код» hisoblagichini import yozgan kodlardan YUQORIGA surish.
+ *
+ * Nega kerak: bu skript `code` ni MoySklad'dan to'g'ridan yozadi, `document_sequences`
+ * esa faqat BIR MARTA (birinchi ishlatishda) seed qilinadi va keyin faqat +1 bo'ladi.
+ * 2026-08-16 importidan keyin hisoblagich 4953 da qoldi-yu bazada 05106 gacha kod bor edi
+ * ⇒ har yangi tovar «Duplicate value on unique field: account_id, code» bilan rad etildi
+ * (ketma-ket 153 ta muvaffaqiyatsiz urinish; 6 kun davomida birorta tovar qo'shilmadi).
+ *
+ * `value: { lt: max }` sharti — hisoblagich allaqachon oldinda bo'lsa ORQAGA tortmaydi.
+ * API tomonida ham himoya bor (`allocateAssortmentCode` to'qnashuvni sezib o'zini
+ * tuzatadi); bu yerdagi surish o'sha sekin yo'lga umuman tushmaslik uchun.
+ */
+async function resyncProductSequence(): Promise<string> {
+  const [products, variants] = await Promise.all([
+    prisma.product.findMany({
+      where: { accountId: ACCOUNT_ID, code: { not: null } },
+      select: { code: true },
+    }),
+    prisma.variant.findMany({
+      where: { accountId: ACCOUNT_ID, code: { not: null } },
+      select: { code: true },
+    }),
+  ]);
+  let max = 0;
+  for (const r of [...products, ...variants]) {
+    const n = Number.parseInt(r.code ?? '', 10);
+    if (Number.isFinite(n) && n > max) max = n;
+  }
+  const current = await prisma.documentSequence.findUnique({
+    where: { accountId_key: { accountId: ACCOUNT_ID, key: 'product' } },
+    select: { value: true },
+  });
+  if (current === null) return `qator yo'q — birinchi ishlatishda ${max} dan seed bo'ladi`;
+  const { count } = await prisma.documentSequence.updateMany({
+    where: { accountId: ACCOUNT_ID, key: 'product', value: { lt: max } },
+    data: { value: max },
+  });
+  return count > 0
+    ? `${current.value} → ${max} ga surildi (keyingi kod ${max + 1})`
+    : `${current.value} — allaqachon max (${max}) dan yuqori, tegilmadi`;
 }
 
 main()

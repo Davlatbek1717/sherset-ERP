@@ -6,11 +6,11 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { allocateDocumentNumber } from '../../prisma/document-number.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { resolveCreatorGroupId } from '../shared/group-stamp.js';
 import { mapVersionedUpdateError } from '../shared/optimistic-lock.js';
 import { formatCellCode, parseCellCode } from './cell-code.util.js';
+import { allocateAssortmentCode } from './product-code.util.js';
 import {
   type BulkUpdatePatch,
   ProductRepository,
@@ -241,10 +241,7 @@ export class ProductService {
     // form didn't supply one (a manual code still wins). 5-digit zero-padded to match
     // moysklad's display (e.g. 07758). The /new form pre-consumes one via allocateCode().
     if (!parsed.code) {
-      const n = await allocateDocumentNumber(this.prisma.client, accountId, 'product', () =>
-        this.maxProductCode(accountId),
-      );
-      parsed.code = String(n).padStart(5, '0');
+      parsed.code = await allocateAssortmentCode(this.prisma.client, accountId);
     }
     try {
       const created = await this.repo.create(accountId, userId, parsed);
@@ -262,40 +259,7 @@ export class ProductService {
    * then stores the supplied value; abandoning the form leaves a gap (moysklad parity).
    */
   async allocateCode(accountId: string): Promise<string> {
-    const n = await allocateDocumentNumber(this.prisma.client, accountId, 'product', () =>
-      this.maxProductCode(accountId),
-    );
-    return String(n).padStart(5, '0');
-  }
-
-  /**
-   * Seed value for the 'product' code counter: the MAX existing numeric code in
-   * the account (NOT the row count — `code` is UNIQUE per account, and existing
-   * codes can exceed the count via gaps/manual entries, so a count-based seed
-   * would collide). Non-numeric codes parse to 0. The counter's first allocation
-   * is this + 1, so auto-codes always land above every existing code.
-   */
-  private async maxProductCode(accountId: string): Promise<number> {
-    // moysklad shares ONE «Код» sequence across products AND their variants
-    // (Скоч маляр = 00001 → its modifications 00002, 00003). So the seed is the
-    // MAX numeric code across BOTH tables; the 'product' counter is shared by the
-    // product create-form and the variant module (variant.service.allocateCode).
-    const [products, variants] = await Promise.all([
-      this.prisma.client.product.findMany({
-        where: { accountId, code: { not: null } },
-        select: { code: true },
-      }),
-      this.prisma.client.variant.findMany({
-        where: { accountId, code: { not: null } },
-        select: { code: true },
-      }),
-    ]);
-    let max = 0;
-    for (const r of [...products, ...variants]) {
-      const n = Number.parseInt(r.code ?? '', 10);
-      if (Number.isFinite(n) && n > max) max = n;
-    }
-    return max;
+    return allocateAssortmentCode(this.prisma.client, accountId);
   }
 
   async update(accountId: string, userId: string, id: string, input: unknown) {

@@ -50,6 +50,22 @@ function makeFakeClient() {
         row.value += data.value.increment;
         return { value: row.value };
       },
+      // Conditional bump used by the stale-counter resync: raises the counter to
+      // `value` only while it is still BELOW it (compiles to a single guarded
+      // UPDATE, so a concurrent resync cannot lower it).
+      updateMany({
+        where,
+        data,
+      }: {
+        where: { accountId: string; key: string; value: { lt: number } };
+        data: { value: number };
+      }) {
+        const k = `${where.accountId}::${where.key}`;
+        const row = rows.get(k);
+        if (!row || row.value >= where.value.lt) return { count: 0 };
+        row.value = data.value;
+        return { count: 1 };
+      },
     },
   };
   // biome-ignore lint/suspicious/noExplicitAny: structural fake of the Prisma delegate
@@ -107,6 +123,74 @@ describe('allocateDocumentNumber', () => {
     expect(co).toBe(11);
     expect(pko).toBe(100);
     expect(co2).toBe(12); // ЗП counter advanced independently of ПКО
+  });
+
+  /**
+   * Stale-counter regression (prod 2026-08-22). The counter row is seeded ONCE and
+   * then only ever incremented — so a bulk write that inserts rows ABOVE it (the
+   * MoySklad catalog import wrote 5064 products with codes up to 05106 while the
+   * 'product' counter sat at 4953) leaves it permanently behind, and every auto
+   * allocation collides with an imported row: `Duplicate value on unique field:
+   * account_id, code`, with 153 consecutive failures queued up before the first
+   * free code. `isTaken` lets the allocator notice the collision and resync.
+   */
+  describe('stale counter (bulk write landed above it)', () => {
+    it('resyncs to the current max and returns the first FREE number', async () => {
+      const client = makeFakeClient();
+      // counter behind: sits at 4953 while codes 4954..5106 are all occupied
+      await allocateDocumentNumber(client, 'acc-1', 'product', async () => 4952);
+      const taken = new Set(Array.from({ length: 153 }, (_, i) => 4954 + i));
+      let seedCalls = 0;
+      const n = await allocateDocumentNumber(
+        client,
+        'acc-1',
+        'product',
+        async () => {
+          seedCalls++;
+          return 5106; // real max across products+variants
+        },
+        { isTaken: async (v) => taken.has(v) },
+      );
+      expect(n).toBe(5107); // first free code, NOT 153 collisions later
+      expect(seedCalls).toBe(1); // reseeded exactly once, on the collision
+    });
+
+    it('leaves a healthy counter alone — no reseed when the number is free', async () => {
+      const client = makeFakeClient();
+      let seedCalls = 0;
+      const seed = async () => {
+        seedCalls++;
+        return 10;
+      };
+      const a = await allocateDocumentNumber(client, 'acc-1', 'product', seed, {
+        isTaken: async () => false,
+      });
+      const b = await allocateDocumentNumber(client, 'acc-1', 'product', seed, {
+        isTaken: async () => false,
+      });
+      expect([a, b]).toEqual([11, 12]);
+      expect(seedCalls).toBe(1); // only the lazy first seed; the resync never fired
+    });
+
+    it('never lowers a counter that is already ahead of the max', async () => {
+      const client = makeFakeClient();
+      await allocateDocumentNumber(client, 'acc-1', 'product', async () => 500);
+      // 501 is somehow taken but the real max is far BELOW the counter — the
+      // conditional resync must not drag the counter backwards.
+      const n = await allocateDocumentNumber(client, 'acc-1', 'product', async () => 10, {
+        isTaken: async (v) => v === 501,
+      });
+      expect(n).toBe(502);
+    });
+
+    it('gives up with a clear error instead of looping forever', async () => {
+      const client = makeFakeClient();
+      await expect(
+        allocateDocumentNumber(client, 'acc-1', 'product', async () => 0, {
+          isTaken: async () => true, // every number taken — pathological
+        }),
+      ).rejects.toThrow(/could not allocate a free number/i);
+    });
   });
 
   it('keeps independent counters per account (tenant isolation)', async () => {

@@ -6,8 +6,8 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { allocateDocumentNumber } from '../../prisma/document-number.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
+import { allocateAssortmentCode } from '../product/product-code.util.js';
 import { mapVersionedUpdateError } from '../shared/optimistic-lock.js';
 import {
   type Characteristic,
@@ -93,30 +93,7 @@ export class VariantService {
    * its variants never overlap. 5-digit zero-padded.
    */
   private async allocateCode(accountId: string): Promise<string> {
-    const n = await allocateDocumentNumber(this.prisma.client, accountId, 'product', () =>
-      this.maxAssortmentCode(accountId),
-    );
-    return String(n).padStart(5, '0');
-  }
-
-  /** MAX numeric «Код» across products AND variants — the shared-sequence seed. */
-  private async maxAssortmentCode(accountId: string): Promise<number> {
-    const [products, variants] = await Promise.all([
-      this.prisma.client.product.findMany({
-        where: { accountId, code: { not: null } },
-        select: { code: true },
-      }),
-      this.prisma.client.variant.findMany({
-        where: { accountId, code: { not: null } },
-        select: { code: true },
-      }),
-    ]);
-    let max = 0;
-    for (const r of [...products, ...variants]) {
-      const n = Number.parseInt(r.code ?? '', 10);
-      if (Number.isFinite(n) && n > max) max = n;
-    }
-    return max;
+    return allocateAssortmentCode(this.prisma.client, accountId);
   }
 
   async create(accountId: string, userId: string, raw: unknown) {

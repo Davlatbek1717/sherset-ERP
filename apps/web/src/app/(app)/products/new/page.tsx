@@ -20,9 +20,10 @@ import { ProductFormLeftCards } from '@/components/products/product-form-left-ca
 import { ProductPriceEditor } from '@/components/products/product-price-editor';
 import { useProductForm } from '@/components/products/use-product-form';
 import { useApiMutation } from '@/hooks/use-api-mutation';
+import { usePermissions } from '@/hooks/use-permissions';
 import { api } from '@/lib/api-client';
 import { useAuth } from '@/lib/auth-store';
-import { Button, Input, Tabs, TabsContent, TabsList, TabsTrigger } from '@moysklad/ui';
+import { Alert, Button, Input, Tabs, TabsContent, TabsList, TabsTrigger } from '@moysklad/ui';
 import { useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
@@ -46,17 +47,26 @@ export default function NewProductPage() {
   // (consumed on open), one auto-generated EAN13 barcode row, and «Сотрудник» =
   // the current user. Run once on mount (ref-guarded against StrictMode double-run).
   const { user } = useAuth();
+  // Without `product.create` the server rejects BOTH calls this page makes, and
+  // the old page swallowed the first one: `/products/allocate-code` 403'd into an
+  // empty `.catch()`, so «Код» silently stayed blank, the user filled the whole
+  // form, and only «Сохранить» revealed the 403 (measured in prod 2026-08-22 —
+  // four such allocate-code 403s from Kassir/B2B accounts). Gate the page instead.
+  // Fail-open while the matrix loads, like every other FE gate; the real lock is
+  // `@RequirePermission({ entity: 'product', action: 'create' })` on the handlers.
+  const { can } = usePermissions();
+  const allowedToCreate = can('product', 'create');
   const initedRef = useRef(false);
   // biome-ignore lint/correctness/useExhaustiveDependencies: one-time mount init; pf.addBarcode/form.setValue are stable (adding pf/form would re-run and double-allocate the code)
   useEffect(() => {
-    if (initedRef.current) return;
+    if (initedRef.current || !allowedToCreate) return;
     initedRef.current = true;
     pf.addBarcode();
     api
       .post<{ code: string }>('/products/allocate-code', {})
       .then((r) => form.setValue('code', r.code))
       .catch(() => {});
-  }, []);
+  }, [allowedToCreate]);
   // «Сотрудник» (owner) = current user, set once the auth user resolves.
   const ownerSetRef = useRef(false);
   // biome-ignore lint/correctness/useExhaustiveDependencies: do-once when user resolves; pf.setOwnerLabel/form.setValue are stable
@@ -168,6 +178,16 @@ export default function NewProductPage() {
       {t('tab_inert_hint')}
     </div>
   );
+
+  if (!allowedToCreate) {
+    return (
+      <div className="px-8 py-6" data-test-id="product-new-forbidden">
+        <Alert tone="destructive" title={t('no_permission_title')}>
+          {t('no_permission_desc')}
+        </Alert>
+      </div>
+    );
+  }
 
   return (
     <>

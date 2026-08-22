@@ -2711,6 +2711,8 @@
       "mxik_placeholder": "17 raqam",
       "name_label": "Tovar nomi",
       "name_required": "Nomi majburiy",
+      "no_permission_desc": "Tovar yaratish uchun «Tovarlar → Yaratish» ruxsati kerak. Administratorga murojaat qiling.",
+      "no_permission_title": "Ruxsat yo'q",
       "number_invalid": "Faqat raqam",
       "owner_label": "Xodim",
       "owner_pick_title": "Xodim",

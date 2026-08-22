@@ -31,14 +31,16 @@ function makeService() {
         createMany: vi.fn(async () => ({ count: 1 })),
         update: vi.fn(async () => ({ value: 1 })),
       },
-      product: { findMany: vi.fn(async () => []) },
+      // `findFirst` = the free-code collision probe (`assortmentCodeTaken`); null
+      // means the allocated code is unused, which is the healthy-counter path.
+      product: { findMany: vi.fn(async () => []), findFirst: vi.fn(async () => null) },
       // MASTER-TODO #24: `maxProductCode` seeds the shared «Код» sequence from
       // BOTH tables — moysklad gives a product and its modifications one
       // sequence (Скоч маляр 00001 → its variants 00002, 00003). The mock only
       // had `product`, so create() threw «Cannot read properties of undefined
       // (reading 'findMany')» and the VAT / audit / owner tests failed for a
       // reason unrelated to what they assert.
-      variant: { findMany: vi.fn(async () => []) },
+      variant: { findMany: vi.fn(async () => []), findFirst: vi.fn(async () => null) },
     },
   };
 
