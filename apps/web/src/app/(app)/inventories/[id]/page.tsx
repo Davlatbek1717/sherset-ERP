@@ -44,6 +44,8 @@ interface PositionDetail {
   actualQty: string;
   varianceQty: string;
   costMinor: string | null;
+  cellId: string | null;
+  cell: string | null;
   product: { id: string; name: string; code: string | null; uom: string | null } | null;
 }
 
@@ -99,6 +101,8 @@ function formFromData(d: InventoryDetail): FormState {
       postedExpectedQty: p.expectedQty,
       postedVarianceQty: p.varianceQty,
       postedCostMinor: p.costMinor,
+      cellId: p.cellId,
+      cell: p.cell,
     })),
     attributes: (d as { attributes?: Record<string, unknown> }).attributes ?? {},
   };
@@ -114,6 +118,7 @@ function snapshot(s: FormState): string {
     positions: s.positions.map((p) => ({
       assortmentId: p.assortmentId,
       actualQty: p.actualQty,
+      cellId: p.cellId ?? null,
     })),
     attributes: s.attributes,
   });
@@ -193,7 +198,10 @@ export default function InventoryDetailPage() {
         payload.positions = form.positions.map((p) => ({
           assortmentKind: 'product',
           assortmentId: p.assortmentId,
-          actualQty: p.actualQty || '0',
+          // Trailing '.' can survive mid-typing in the cell grid — normalize.
+          actualQty: (p.actualQty || '0').replace(/\.$/, ''),
+          cellId: p.cellId ?? null,
+          cell: p.cell ?? null,
         }));
       }
       payload.attributes = form.attributes;
@@ -225,7 +233,12 @@ export default function InventoryDetailPage() {
     try {
       if (isDirty) await saveMut.mutateAsync();
       const metaRes = await api.post<{
-        items: Array<{ assortmentId: string; stockQty: string; unitCostMinor: string | null }>;
+        items: Array<{
+          assortmentId: string;
+          stockQty: string;
+          unitCostMinor: string | null;
+          cells?: Array<{ cellId: string; qty: string }>;
+        }>;
       }>('/inventories/position-meta', {
         storeId: form.storeId,
         assortmentIds: Array.from(new Set(form.positions.map((p) => p.assortmentId))),
@@ -235,9 +248,13 @@ export default function InventoryDetailPage() {
       const lines = form.positions
         .map((p) => {
           const m = metaMap.get(p.assortmentId);
+          // Cell row's draft «расчетный» is that CELL's balance, not the store's.
+          const liveExpected = p.cellId
+            ? Number(m?.cells?.find((c) => c.cellId === p.cellId)?.qty ?? '0')
+            : Number(m?.stockQty ?? '0');
           const variance = data.applicable
             ? Number(p.postedVarianceQty ?? '0')
-            : Number(p.actualQty || '0') - Number(m?.stockQty ?? '0');
+            : Number(p.actualQty || '0') - liveExpected;
           const cost = (data.applicable ? p.postedCostMinor : null) ?? m?.unitCostMinor ?? '0';
           return { p, variance, cost };
         })
@@ -251,11 +268,17 @@ export default function InventoryDetailPage() {
                 assortmentId: x.p.assortmentId,
                 quantity: fmt(Math.abs(x.variance)),
                 costMinor: x.cost,
+                // Loss/Enter carry the cell too — the downstream doc adjusts the
+                // same StockByCell row the recount was made against.
+                cellId: x.p.cellId ?? null,
+                cell: x.p.cell ?? null,
               }
             : {
                 assortmentId: x.p.assortmentId,
                 quantity: fmt(x.variance),
                 costMinor: x.cost,
+                cellId: x.p.cellId ?? null,
+                cell: x.p.cell ?? null,
               },
         ),
       });

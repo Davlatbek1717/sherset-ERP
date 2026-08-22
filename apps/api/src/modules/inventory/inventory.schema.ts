@@ -15,6 +15,12 @@ export const InventoryPositionInputSchema = z.object({
   assortmentKind: z.enum(['product']).default('product'),
   assortmentId: z.string().uuid(),
   actualQty: z.coerce.string().regex(/^\d+(\.\d{1,6})?$/, 'actualQty must be non-negative'),
+  // moysklad «Ячейка» — per-cell recount row. `cellId` = counted StoreCell
+  // (validated against the doc's store); `cell` = denormalized «Зона / Ячейка»
+  // label. On a cell row expectedQty is snapshot from StockByCell at post time
+  // and the variance delta carries cellId (Stock + StockByCell move together).
+  cellId: z.string().uuid().nullish(),
+  cell: z.string().max(255).nullish(),
 });
 export type InventoryPositionInput = z.infer<typeof InventoryPositionInputSchema>;
 

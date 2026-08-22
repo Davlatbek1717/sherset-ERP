@@ -20,10 +20,16 @@
  * The two «Дополнить…» modals fetch candidate ids from
  * GET /inventories/fill-candidates and append rows CLIENT-SIDE.
  *
- * «Остатки по ячейке» is a read-only per-cell breakdown (StockByCell): our
- * InventoryPosition has no cellId column (migration forbidden on this machine),
- * so per-cell ACTUAL counting is not persisted — Фактический/Разница render «—»
- * on cell rows. Documented Phase-1 debt in NEXT.md.
+ * «Остатки по ячейке» — per-cell COUNTING surface (2026-08-22): InventoryPosition
+ * now carries cellId/cell, so the cell tab's «Фактический» is editable on drafts.
+ * Entering a value upserts a CELL row (assortmentId + cellId) into the parent
+ * grid state; posting snapshots that cell's StockByCell as expected and aligns
+ * Stock + StockByCell together (see InventoryService.post).
+ *
+ * Double-count guard: when the FIRST cell row appears for a product, its
+ * UNTOUCHED (actual = 0) store-level row is dropped — otherwise post would
+ * align the whole store balance to 0 alongside the cell rows. A store row the
+ * operator explicitly counted (actual > 0) is kept — their call.
  */
 
 import {
@@ -71,6 +77,11 @@ export interface InventoryPanelRow {
   postedExpectedQty?: string;
   postedVarianceQty?: string;
   postedCostMinor?: string | null;
+  /** «Ячейка» — set on a per-cell count row (the cell tab writes these);
+   *  null/absent = store-level row (pre-cell behaviour unchanged). */
+  cellId?: string | null;
+  /** Denormalized cell label (survives cell deletion). */
+  cell?: string | null;
 }
 
 interface MetaItem {
@@ -257,11 +268,16 @@ export function InventoryPositionsPanel({
     };
   }, [flatFolders]);
 
+  // Store-level rows drive the «Остатки по складу» grid; cell rows live only
+  // on the «Остатки по ячейке» tab (one product may have MANY cell rows).
+  const storeRows = useMemo(() => rows.filter((r) => !r.cellId), [rows]);
+  const cellCountRows = useMemo(() => rows.filter((r) => !!r.cellId), [rows]);
+
   // ---------------------------------------------------------------- filter
-  const filteredRows = useMemo(() => {
+  const rowPasses = useMemo(() => {
     const f = filterValues;
     const subtree = f.productOrGroup?.kind === 'folder' ? folderSubtree(f.productOrGroup.id) : null;
-    return rows.filter((r) => {
+    return (r: InventoryPanelRow) => {
       const m = metaMap.get(r.assortmentId);
       const name = r.productLabel || m?.name || '';
       const code = r.productCode ?? m?.code ?? '';
@@ -287,8 +303,10 @@ export function InventoryPositionsPanel({
       }
       if (f.supplierId && m?.supplierId !== f.supplierId) return false;
       return true;
-    });
-  }, [rows, metaMap, filterValues, search, folderSubtree]);
+    };
+  }, [metaMap, filterValues, search, folderSubtree]);
+
+  const filteredRows = useMemo(() => storeRows.filter(rowPasses), [storeRows, rowPasses]);
 
   const pageCount = Math.max(1, Math.ceil(filteredRows.length / PAGE_SIZE));
   const safePage = Math.min(page, pageCount - 1);
@@ -342,44 +360,125 @@ export function InventoryPositionsPanel({
     };
   });
 
-  // «Остатки по ячейке» — per-cell breakdown rows (read-only).
+  // «Остатки по ячейке» — per-cell COUNTING grid. One display row per
+  // (product × cell): candidates come from StockByCell (position-meta) plus any
+  // persisted cell rows whose cell no longer holds stock. `row` is the backing
+  // InventoryPanelRow when the cell has been counted (else null = not counted).
+  interface CellGridRow {
+    key: string;
+    assortmentId: string;
+    name: string;
+    productCode?: string;
+    productUom?: string | null;
+    cellId: string | null;
+    cellName: string;
+    calcQty: string;
+    costMinor: number | null;
+    row: InventoryPanelRow | null;
+  }
   const cellRows = useMemo(() => {
-    const out: Array<{
-      key: string;
-      name: string;
-      cellName: string;
-      calcQty: string;
-      costMinor: number | null;
-    }> = [];
-    for (const r of filteredRows) {
-      const m = metaMap.get(r.assortmentId);
+    const out: CellGridRow[] = [];
+    const byKey = new Map<string, InventoryPanelRow>();
+    for (const r of cellCountRows) byKey.set(`${r.assortmentId}:${r.cellId}`, r);
+
+    // Unique products across the WHOLE doc (a product counted only by cells has
+    // no store row, so filteredRows alone would hide it).
+    const seenProducts = new Map<string, InventoryPanelRow>();
+    for (const r of rows) {
+      if (!seenProducts.has(r.assortmentId) && rowPasses(r)) seenProducts.set(r.assortmentId, r);
+    }
+
+    for (const [assortmentId, r] of seenProducts) {
+      const m = metaMap.get(assortmentId);
       const cost = unitCostOf(r);
+      const name = r.productLabel || m?.name || '…';
+      const consumed = new Set<string>();
       const cells = (m?.cells ?? []).filter(
         (c) => !filterValues.cell || contains(c.name, filterValues.cell),
       );
-      if (cells.length === 0) {
-        out.push({
-          key: r.id,
-          name: r.productLabel || m?.name || '…',
-          cellName: '—',
-          calcQty: fmtQty(Number(m?.stockQty ?? '0')),
-          costMinor: cost,
-        });
-        continue;
-      }
       for (const c of cells) {
+        consumed.add(c.cellId);
         out.push({
-          key: `${r.id}:${c.cellId}`,
-          name: r.productLabel || m?.name || '…',
+          key: `${assortmentId}:${c.cellId}`,
+          assortmentId,
+          name,
+          productCode: r.productCode ?? m?.code ?? undefined,
+          productUom: r.productUom ?? m?.uom ?? null,
+          cellId: c.cellId,
           cellName: c.name,
           calcQty: fmtQty(Number(c.qty)),
           costMinor: cost,
+          row: byKey.get(`${assortmentId}:${c.cellId}`) ?? null,
+        });
+      }
+      // Persisted cell rows outside the live StockByCell list (cell emptied or
+      // deleted since counting) — still shown so the count isn't invisible.
+      for (const cr of cellCountRows) {
+        if (cr.assortmentId !== assortmentId || consumed.has(cr.cellId ?? '')) continue;
+        if (filterValues.cell && !contains(cr.cell, filterValues.cell)) continue;
+        out.push({
+          key: `${assortmentId}:${cr.cellId}`,
+          assortmentId,
+          name,
+          productCode: cr.productCode,
+          productUom: cr.productUom,
+          cellId: cr.cellId ?? null,
+          cellName: cr.cell ?? '—',
+          calcQty: readOnly ? fmtQty(Number(cr.postedExpectedQty ?? '0')) : '0',
+          costMinor: cost,
+          row: cr,
+        });
+      }
+      // Product without a single cell — orientation row (not countable by cell).
+      if (cells.length === 0 && !cellCountRows.some((cr) => cr.assortmentId === assortmentId)) {
+        out.push({
+          key: r.id,
+          assortmentId,
+          name,
+          cellId: null,
+          cellName: '—',
+          calcQty: fmtQty(Number(m?.stockQty ?? '0')),
+          costMinor: cost,
+          row: null,
         });
       }
     }
     return out;
-  }, [filteredRows, metaMap, filterValues.cell, unitCostOf]);
+  }, [rows, cellCountRows, rowPasses, metaMap, filterValues.cell, unitCostOf, readOnly]);
   const pagedCellRows = cellRows.slice(safePage * PAGE_SIZE, (safePage + 1) * PAGE_SIZE);
+
+  /**
+   * Cell-tab «Фактический» editor: '' clears the count (row removed), any value
+   * upserts the (product × cell) row. Creating the FIRST cell row for a product
+   * drops its untouched (actual = 0) store-level row — otherwise post would
+   * align the whole store balance to 0 alongside the cell counts.
+   */
+  const setCellActual = (g: CellGridRow, value: string) => {
+    if (!onRowsChange || !g.cellId) return;
+    const idx = rows.findIndex((r) => r.assortmentId === g.assortmentId && r.cellId === g.cellId);
+    const next = [...rows];
+    if (value === '') {
+      if (idx >= 0) next.splice(idx, 1);
+    } else if (idx >= 0) {
+      next[idx] = { ...next[idx], actualQty: value };
+    } else {
+      next.push({
+        id: uid(),
+        assortmentId: g.assortmentId,
+        productLabel: g.name,
+        productCode: g.productCode,
+        productUom: g.productUom,
+        actualQty: value,
+        cellId: g.cellId,
+        cell: g.cellName,
+      });
+      const sIdx = next.findIndex(
+        (r) => r.assortmentId === g.assortmentId && !r.cellId && Number(r.actualQty || '0') === 0,
+      );
+      if (sIdx >= 0) next.splice(sIdx, 1);
+    }
+    onRowsChange(next);
+  };
 
   // ---------------------------------------------------------------- actions
   const appendRows = (additions: InventoryPanelRow[]) => {
@@ -912,27 +1011,74 @@ export function InventoryPositionsPanel({
               </tr>
             </thead>
             <tbody>
-              {pagedCellRows.map((r) => (
-                <tr
-                  key={r.key}
-                  className="border-[var(--ms-border-default)] border-b last:border-0"
-                >
-                  <td className="px-2 py-1.5" />
-                  <td className="px-2 py-1.5">{r.name}</td>
-                  <td className="px-2 py-1.5">{r.cellName}</td>
-                  <td className="px-2 py-1.5 text-right tabular-nums">{r.calcQty}</td>
-                  {/* Per-cell ACTUAL counting is not persisted (no cellId on
-                      InventoryPosition — migration forbidden); honest «—». */}
-                  <td className="px-2 py-1.5 text-right text-[var(--ms-text-muted)]">—</td>
-                  <td className="px-2 py-1.5 text-right text-[var(--ms-text-muted)]">—</td>
-                  <td className="px-2 py-1.5 text-right tabular-nums">
-                    {r.costMinor != null
-                      ? formatMoney(String(r.costMinor), 'UZS', { displayAs: 'none' })
-                      : '—'}
-                  </td>
-                  <td className="px-2 py-1.5 text-right text-[var(--ms-text-muted)]">—</td>
-                </tr>
-              ))}
+              {pagedCellRows.map((g) => {
+                const counted = g.row != null;
+                const calcNum =
+                  readOnly && counted ? Number(g.row?.postedExpectedQty ?? '0') : Number(g.calcQty);
+                const actualNum = counted ? Number(g.row?.actualQty || '0') : null;
+                const diffNum = !counted
+                  ? null
+                  : readOnly
+                    ? Number(g.row?.postedVarianceQty ?? '0')
+                    : (actualNum ?? 0) - calcNum;
+                const editable = canEdit && !!g.cellId;
+                return (
+                  <tr
+                    key={g.key}
+                    className="border-[var(--ms-border-default)] border-b last:border-0"
+                  >
+                    <td className="px-2 py-1.5" />
+                    <td className="px-2 py-1.5">{g.name}</td>
+                    <td className="px-2 py-1.5">{g.cellName}</td>
+                    <td className="px-2 py-1.5 text-right tabular-nums">{fmtQty(calcNum)}</td>
+                    <td className="px-2 py-1.5 text-right">
+                      {editable ? (
+                        <Input
+                          value={g.row?.actualQty ?? ''}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            // actualQty schema: ^\d+(\.\d{1,6})?$ — reject other
+                            // keystrokes early (trailing '.' normalized on save).
+                            if (v === '' || /^\d*\.?\d{0,6}$/.test(v)) setCellActual(g, v);
+                          }}
+                          inputMode="decimal"
+                          className="ml-auto h-7 w-24 text-right"
+                          data-test-id="inventory-cell-actual"
+                        />
+                      ) : counted ? (
+                        <span className="tabular-nums">{fmtQty(actualNum ?? 0)}</span>
+                      ) : (
+                        <span className="text-[var(--ms-text-muted)]">—</span>
+                      )}
+                    </td>
+                    <td
+                      className={`px-2 py-1.5 text-right tabular-nums ${
+                        diffNum == null ? 'text-[var(--ms-text-muted)]' : ''
+                      }`}
+                    >
+                      {diffNum == null ? '—' : fmtSigned(diffNum)}
+                    </td>
+                    <td className="px-2 py-1.5 text-right tabular-nums">
+                      {g.costMinor != null
+                        ? formatMoney(String(g.costMinor), 'UZS', { displayAs: 'none' })
+                        : '—'}
+                    </td>
+                    <td
+                      className={`px-2 py-1.5 text-right tabular-nums ${
+                        diffNum == null ? 'text-[var(--ms-text-muted)]' : ''
+                      }`}
+                    >
+                      {diffNum == null || g.costMinor == null
+                        ? '—'
+                        : `${diffNum > 0 ? '+' : diffNum < 0 ? '−' : ''}${formatMoney(
+                            String(Math.abs(Math.round(diffNum * g.costMinor))),
+                            'UZS',
+                            { displayAs: 'none' },
+                          )}`}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </StickyHScroll>
