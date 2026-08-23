@@ -1,6 +1,6 @@
 # Ombor restrukturizatsiyasi — 7+ fizik ombor, yacheyka-birinchi hisob
 
-> **Yaratilgan:** 2026-08-23 · **Buyurtmachi:** Ozodbek (egasi) · **Holat:** F1 kutilmoqda
+> **Yaratilgan:** 2026-08-23 · **Buyurtmachi:** Ozodbek (egasi) · **Holat:** F1–F4 kod tayyor (deploy YO'Q), navbat: F1–F3 deploy, so'ng F5
 > **Ijro tartibi:** har faza ALOHIDA sessiyada. Agent shu faylni o'qiydi, O'Z fazasini bajaradi, testlardan o'tkazadi, pastdagi «Hisobotlar»ga yozadi va TO'XTAYDI.
 
 ---
@@ -337,6 +337,75 @@ Faqat F8 vazifalari, testlar, deploy, jonli tekshiruv, hisobot — va TO'XTA.
 > Shablon: **Faza · sana · commit(lar)** — nima qilindi (fayl ro'yxati bilan qisqa),
 > test natijalari (raqamlar), deploy holati (jonli tekshiruv dalili), ochiq qolganlar,
 > keyingi fazaga eslatmalar.
+
+### F4 — Ombor-split migratsiyasi: skript + LOKAL dry-run · 2026-08-23
+
+**Q1 tasdiqlandi** (egasi, shu sessiya): 4-bo'limdagi javob kuchda — kaskad 07→
+boshqalar (07 dan tashqarisi bosh omborchi tasdig'i orqali, G4), ayirish pul
+to'langanda. **F4/F5 uchun ma'nosi:** kassa/sotuv sozlamalariga TEGILMAYDI —
+RetailStore/hujjatlar eski Store id'siga ulanib qolaveradi, u esa split'da
+«Taqsimlanmagan» deb qayta nomlanadi (id o'zgarmaydi) ⇒ kassa uzluksiz ishlaydi.
+07-omborga o'tish F6 da quriladi.
+
+**Nima qilindi:**
+- **`packages/db/scripts/warehouse-split-core.ts`** (yangi) — SOF yadro, SQL'siz:
+  `parseCellCode` (NN 1–2 xona → «01» normallash; `00-`/3+ xona ombor emas),
+  `buildSplitPlan` — yacheyka prefiksidan reja: yaratiladigan Store'lar
+  («Ombor NN»), yacheyka-ko'chishlar (zona = 2-segment «SS»), StockByCell
+  qatorlari, cost-basis (apps/api `move-cost-basis.ts` bilan AYNAN bir
+  arifmetika: o'rtacha-tortilgan, manba bo'shasa qoldiq tiyin to'liq ketadi,
+  sequential — yaxlitlash yo'qotmaydi). Anomaliya turlari: unparsed-cell,
+  target-name-clash (shu jumladan ikki manbadan bir nomga), negative-cell-qty,
+  cell-exceeds-stock. Idempotent: «yacheyka o'z omborida» → rejaga kirmaydi.
+- **`packages/db/scripts/warehouse-split.ts`** (yangi CLI, `npx tsx` /
+  `pnpm warehouse-split`) — default DRY-RUN; `--apply` yozadi; `--verify`
+  invariantlar; **himoya: lokal bo'lmagan hostga `--apply` faqat
+  `--allow-remote` bilan** (F5 shu flag bilan yuritadi). Har ombor alohida
+  Serializable tranzaksiya: zonalar upsert → cell.storeId/zoneId → StockByCell
+  storeId → Stock juft upsert (qty+costBalanceMinor) → ledger createMany
+  (docType **`warehouse_split`**, reason 'post', har (yacheyka×assortiment)
+  uchun −/+ juftligi, costDeltaMinor bilan). So'ng: manba Store →
+  «Taqsimlanmagan» rename (id saqlanadi; nomzodlar = shu yugurish ∪ ledger'dagi
+  split-chiqimlilar — crash-resilient), bo'sh zonalar tozalanadi. Apply o'zi
+  V0 snapshot (Σqty/Σcost/Σrezerv har assortiment) oldin/keyin solishtiradi,
+  V1–V3 vertifikatsiya va qayta-reja-bo'shligini tekshiradi.
+- `packages/db/tsconfig.json` include + `package.json` script qatori.
+- **Test:** `apps/api/src/scripts/warehouse-split-core.test.ts` — 20 test
+  (parse, reja, zona, cost yaxlitlash/qisman/bo'shatish, idempotentlik,
+  clash/anomaliyalar, nomlash).
+
+**LOKAL ISBOT (sherset_v2_dev, jonli dump 2026-08-23):** jonli bazadan yangi
+`pg_dump -Fc --exclude-table-data=attachments` (7 MB; attachments 1.24 GB blob,
+FK yo'q — polimorf) olinib to'liq tiklandi: 1 store, 410 yacheyka, 273
+stock_by_cell, 5081 stocks, 13362 ledger. **Dry-run/apply raqamlari:**
+- Ombor 01: 119 yacheyka (hammasi `01-04-…` → 1 zona «04»), 0 qator, 0 dona.
+- Ombor 02: 291 yacheyka, 4 zona («01» 44, «02» 106, «03» 35, «04» 106),
+  273 qator, **2 949 085 dona**, 255 927 709 992 so'm tannarx.
+- «Ombor 2» → «Taqsimlanmagan» (id `968f9da2-…` o'zgarmadi), 4 bo'sh eski zona
+  o'chirildi; qolgan qoldiq 49 575 145 dona (4823 assortiment) — jami ≈52,5 mln ✓.
+- Ledger +546 qator (273×2). **Invariantlar:** V0 (5081 assortiment bo'yicha
+  qty/cost/rezerv o'zgarmadi) OK, V1 sbc↔cell store mosligi OK, V2 split-ledger
+  Σ==0 OK, V3 «Ombor NN»da Σyacheyka==Stock OK. **Ikkinchi `--apply` — no-op** ✓.
+
+**Testlar:** yangi core-test 20/20 ✅; typecheck db ✅, api (8G) ✅; web i18n
+gate'lar (i18n-key-existence + i18n-no-hardcoded, 19) ✅. Web kodi o'zgarmagan.
+
+**Deploy holati: YO'Q (ataylab)** — F4 faqat skript + lokal isbot; jonli bazaga
+yozish taqiqlangan edi va yozilmadi (VPS'dan faqat pg_dump o'qildi, /tmp fayl
+o'chirildi). Sxema o'zgarmagan, migratsiya yo'q.
+
+**Ochiq qolganlar / F5 ga eslatmalar:**
+- F1+F2+F3 commitlari HALI deploy qilinmagan (F3 hisobotidagi retsept kuchda).
+- F5: zaxira dump → `--apply --allow-remote` (avval dry-run!) → V0–V3 chiqishi
+  «YAKUN: OK» bo'lishi shart; keyin UI tekshiruvlari va F1 prefiks-hisoblarini
+  haqiqiy Store kesimiga moslashtirish.
+- «Ombor 01» yacheykalari kod bo'yicha bitta stelajda (`01-04-…`) — bu kod
+  haqiqati; egasi bilan F5 da bir tekshirib olish mumkin (03…07 raqamlashda F3
+  vositasi to'g'ri `NN-SS` beradi).
+- Yangi Store'larda `code = NN` (bo'sh bo'lsa), sozlamalar (shared,
+  allowNegativeStock, owner/group) asosiy manba ombordan nusxalanadi.
+- POS/RetailStore sozlamalari split'dan keyin ham «Taqsimlanmagan»ni ko'rsatadi
+  (Q1 rejasi) — F6 gacha shunday qoladi.
 
 ### F3 — Yangi omborni raqamlashtirish vositasi · 2026-08-23 · `8eb0128c`
 

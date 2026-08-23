@@ -16,6 +16,7 @@
     "migrate:reset": "prisma migrate reset --force",
     "studio": "prisma studio",
     "seed": "tsx prisma/seed.ts",
+    "warehouse-split": "tsx scripts/warehouse-split.ts",
     "seed:hr": "tsx prisma/seed-hr.ts",
     "typecheck": "tsc --noEmit",
     "db:sync-statuses": "node sync-doc-statuses.cjs"
