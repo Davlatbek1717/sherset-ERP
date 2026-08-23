@@ -292,6 +292,21 @@ export class StoreController {
     return this.addr.bulkCreateCells(user.accountId, id, body);
   }
 
+  /** F3 — «Yangi ombor raqamlashtirish» (reja 2026-08-23): ombor raqami + har
+   *  stelaj uchun qavat/o'rin soni → `NN-SS-QQ-OO` yacheykalar, zona = stelaj.
+   *  Ruxsat ATAYLAB alohida `warehousenumbering` entity'sida: katta omborchi
+   *  (ombor menejeri) yangi omborni O'ZI raqamlashtira olsin, buning uchun unga
+   *  butun `store.update` (kartochka tahriri) berish shart bo'lmasin. */
+  @Post(':id/warehouse-numbering')
+  @RequirePermission({ entity: 'warehousenumbering', action: 'create' })
+  async numberWarehouse(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ) {
+    return this.addr.numberWarehouse(user.accountId, id, body);
+  }
+
   @Patch(':id/cells/:cellId')
   @RequirePermission({ entity: 'store', action: 'update' })
   async updateCell(

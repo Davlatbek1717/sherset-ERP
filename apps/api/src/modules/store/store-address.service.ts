@@ -5,7 +5,13 @@ import { PrismaService } from '../../prisma/prisma.service.js';
 import { EnterService } from '../enter/enter.service.js';
 import { LossService } from '../loss/loss.service.js';
 import { assertCellStockEmpty } from '../shared/cell-stock-guard.js';
-import { CellRangeError, type CellRangeSpec, expandCellRange } from './cell-range.util.js';
+import {
+  CellRangeError,
+  type CellRangeSpec,
+  type ExpandedCell,
+  expandCellRange,
+  expandWarehouseNumbering,
+} from './cell-range.util.js';
 import {
   AssignProductsSchema,
   BulkCreateCellsSchema,
@@ -15,6 +21,7 @@ import {
   SetCellStockSchema,
   UpdateCellSchema,
   UpdateZoneSchema,
+  WarehouseNumberingSchema,
 } from './store-address.schema.js';
 
 /**
@@ -822,6 +829,41 @@ export class StoreAddressService {
       throw e;
     }
 
+    return this.createMissingCells(accountId, storeId, expanded, input.dryRun);
+  }
+
+  /**
+   * F3 — «Yangi ombor raqamlashtirish»: ombor raqami + har stelaj uchun
+   * qavat/o'rin soni → `NN-SS-QQ-OO` yacheykalar, zona = stelaj (`NN-SS`).
+   * Yozish qadami `bulkCreateCells` bilan BITTA (`createMissingCells`) —
+   * idempotentlik va dryRun kafolatlari o'sha yerda, ikki nusxada emas.
+   */
+  async numberWarehouse(accountId: string, storeId: string, raw: unknown) {
+    await this.assertStore(accountId, storeId);
+    const input = this.parse(WarehouseNumberingSchema, raw);
+
+    let expanded: ExpandedCell[];
+    try {
+      expanded = expandWarehouseNumbering(input);
+    } catch (e) {
+      if (e instanceof CellRangeError) throw new BadRequestException(e.message);
+      throw e;
+    }
+
+    return this.createMissingCells(accountId, storeId, expanded, input.dryRun);
+  }
+
+  /**
+   * Yoyilgan ro'yxatdan YETISHMAYOTGAN yacheyka/zonalarni yaratadi (yoki
+   * `dryRun` da faqat sanaydi). `bulkCreateCells` va `numberWarehouse` uchun
+   * yagona yozish yo'li — hisob va yozuv ajralib ketmasin.
+   */
+  private async createMissingCells(
+    accountId: string,
+    storeId: string,
+    expanded: ExpandedCell[],
+    dryRun: boolean,
+  ) {
     const names = expanded.map((c) => c.name);
     const existingRows = await this.prisma.client.storeCell.findMany({
       where: { accountId, storeId, name: { in: names } },
@@ -847,7 +889,7 @@ export class StoreAddressService {
       zonesToCreate,
       sample: missing.slice(0, 10).map((c) => c.name),
     };
-    if (input.dryRun) return { ...base, created: 0, zonesCreated: 0 };
+    if (dryRun) return { ...base, created: 0, zonesCreated: 0 };
 
     return this.prisma.client.$transaction(async (tx) => {
       // Zonalar: `createZone()` bu yerda ISHLATILMAYDI — u `this.prisma.client`

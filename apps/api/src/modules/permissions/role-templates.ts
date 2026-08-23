@@ -288,6 +288,11 @@ export const ROLE_TEMPLATES: Record<RoleTemplateSlug, RoleTemplate> = {
       // o'zgarishsiz qoladi, `store-cell-permission.test.ts` shuni qulflaydi.
       grant(['store'], { view: 'ALL', update: 'ALL' }),
       grant(['storecell'], { view: 'ALL', update: 'ALL' }),
+      // F3 (2026-08-23) — «Yangi ombor raqamlashtirish»: katta omborchi yangi
+      // omborni O'ZI raqamlashtiradi (bu funksiya, admin-migratsiya emas).
+      // Oddiy omborchi (`storekeeper`) esa OLMAYDI — u yacheyka bilan ishlaydi,
+      // ombor tuzilmasini yaratmaydi (warehouse-numbering-permission.test.ts).
+      grant(['warehousenumbering'], { view: 'ALL', create: 'ALL' }),
       grant(['product', 'variant', 'bundle', 'productfolder'], { view: 'ALL', update: 'ALL' }),
       // Yig'ish/jo'natish — realizatsiyani tasdiqlaydi, lekin YARATMAYDI.
       grant(['demand'], { view: 'ALL', update: 'ALL', approve: 'ALL', print: 'ALL' }),

@@ -55,6 +55,7 @@ const NEW_ENTITIES = [
   'branch',
   'store',
   'storecell',
+  'warehousenumbering',
   'cashdesk',
   'bankaccount',
   'employee',

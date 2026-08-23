@@ -70,6 +70,7 @@ async function main(): Promise<void> {
     'branch',
     'store',
     'storecell',
+    'warehousenumbering',
     'cashdesk',
     'bankaccount',
     'employee',

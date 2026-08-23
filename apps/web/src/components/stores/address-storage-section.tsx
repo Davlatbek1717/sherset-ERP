@@ -38,6 +38,8 @@ import { CellLabelPrintOverlay } from '@/components/stores/cell-label-print';
 import type { SegmentRange } from '@/components/stores/cell-name-range';
 import { CellRangeModal } from '@/components/stores/cell-range-modal';
 import { CellScanBindModal } from '@/components/stores/cell-scan-bind-modal';
+import { WarehouseNumberingModal } from '@/components/stores/warehouse-numbering-modal';
+import { usePermissions } from '@/hooks/use-permissions';
 import { api } from '@/lib/api-client';
 import { Button, Checkbox, Icons, Input, NativeSelect } from '@moysklad/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -715,6 +717,9 @@ export function AddressStorageSection({
   // «Diapazon bo'yicha» — ommaviy yacheyka generatori (faqat server rejimida:
   // yangi ombor hali saqlanmagan, `storeId` yo'q ⇒ endpoint ham yo'q).
   const [rangeOpen, setRangeOpen] = useState(false);
+  // «Yangi ombor raqamlashtirish» (F3, reja 2026-08-23) — katta omborchi oqimi.
+  const [numberingOpen, setNumberingOpen] = useState(false);
+  const { can } = usePermissions();
   // Diapazon bilan yaratilgandan keyin etiketka oynasi shu diapazon bilan
   // ochiladi — foydalanuvchi yuzlab katakchani qayta belgilamasin.
   const [labelRanges, setLabelRanges] = useState<Array<SegmentRange | null> | null>(null);
@@ -1419,6 +1424,16 @@ export function AddressStorageSection({
                   testId="add-cell-range"
                 />
               )}
+              {/* F3 — «Yangi ombor raqamlashtirish»: alohida ruxsat (katta
+                  omborchiga `store.update`siz ochiladi). Fail-open UX qatlami —
+                  haqiqiy qulf serverda. */}
+              {serverMode && storeId && can('warehousenumbering', 'create') && (
+                <PlusAddButton
+                  label={t('numbering_button')}
+                  onClick={() => setNumberingOpen(true)}
+                  testId="warehouse-numbering-open"
+                />
+              )}
             </div>
           </>
         )}
@@ -1451,6 +1466,20 @@ export function AddressStorageSection({
           storeId={storeId}
           storeCode={storeCode}
           onClose={() => setRangeOpen(false)}
+          onCreated={(ranges) => {
+            invalidate();
+            setLabelRanges(ranges);
+          }}
+        />
+      )}
+
+      {/* F3 — «Yangi ombor raqamlashtirish»: ombor raqami + stelajlar retsepti.
+          Yaratilgach etiketka oynasi yangi ombor diapazoni bilan ochiladi. */}
+      {serverMode && storeId && (
+        <WarehouseNumberingModal
+          open={numberingOpen}
+          storeId={storeId}
+          onClose={() => setNumberingOpen(false)}
           onCreated={(ranges) => {
             invalidate();
             setLabelRanges(ranges);

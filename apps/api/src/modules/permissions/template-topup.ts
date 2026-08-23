@@ -80,7 +80,14 @@ export interface ExistingPermissionRow {
  * run'da uni qaytarib olishi mumkin. Shuning uchun prod run'idan keyin
  * DARHOL olib tashlanadi.
  */
-export const TOPUP_ENTITIES: readonly PermissionEntity[] = ['storecell', 'customerorder'];
+// 🔴 `warehousenumbering` (F3, 2026-08-23) — YANGI entity: jonli bazadagi
+// shablon rollari (ombor menejeri, admin…) unga qator olmagan, ya'ni topup
+// yugurtirilmaguncha jonlida hamma 403 oladi. Prod run'dan keyin olib tashlanadi.
+export const TOPUP_ENTITIES: readonly PermissionEntity[] = [
+  'storecell',
+  'customerorder',
+  'warehousenumbering',
+];
 
 /**
  * Shablon matritsasidan roldagi YETISHMAYOTGAN qatorlar.
