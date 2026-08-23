@@ -33,6 +33,7 @@ import { api } from '@/lib/api-client';
 import { useAuth } from '@/lib/auth-store';
 import { imageRawUrl } from '@/lib/image-url';
 import { distributeAgreementDelta } from '@/lib/position-agreement';
+import { resolveSalePriceByType, useCurrencyRates } from '@/lib/sale-price';
 import { scaleMinorByQty } from '@moysklad/money';
 import {
   Button,
@@ -140,6 +141,9 @@ const DEFAULT_COL_VISIBLE: Record<string, boolean> = Object.fromEntries(
 export default function NewEnterPage() {
   const router = useRouter();
   const { user } = useAuth();
+  // Narx qavati valyutada saqlangan bo'lishi mumkin — «Расценить» uni JORIY
+  // kurs bilan bazaga o'giradi (2026-08-23; usiz «10 dollar» 10 so'm bo'lardi).
+  const rates = useCurrencyRates();
   const t = useTranslations('pages.enters');
   const tErrors = useTranslations('errors');
   const tFields = useTranslations('fields');
@@ -396,14 +400,20 @@ export default function NewEnterPage() {
 
   // «Цена ▾» → «Расценить» — re-price every row from the chosen price type (the
   // product's carried salePrices). moysklad lets you reprice enter lines from a type.
-  const repricePositions = useCallback((priceTypeId: string) => {
-    setPositions((ps) =>
-      ps.map((p) => {
-        const sp = p.salePrices?.find((x) => x.priceTypeId === priceTypeId);
-        return sp ? { ...p, priceMinor: sp.value } : p;
-      }),
-    );
-  }, []);
+  const repricePositions = useCallback(
+    (priceTypeId: string) => {
+      setPositions((ps) =>
+        ps.map((p) => {
+          // «Расценить» — qavat valyutada bo'lsa JORIY kurs bilan bazaga o'giriladi;
+          // kursi noma'lum bo'lsa qator narxi TEGILMAYDI (xom son yozishdan ko'ra
+          // eskisi qolgani xavfsizroq — 2026-08-23 auditi).
+          const next = resolveSalePriceByType(p.salePrices, priceTypeId, rates);
+          return next != null ? { ...p, priceMinor: next } : p;
+        }),
+      );
+    },
+    [rates],
+  );
   // «Цена ▾» → «Сохранить цены» — push each line's price back onto its product. On
   // an enter the line price IS the buy/cost basis, so save to Product.buyPrice.
   const saveProductPrices = useCallback(async () => {
@@ -416,6 +426,9 @@ export default function NewEnterPage() {
         await api.patch(`/products/${p.assortmentId}`, {
           version: prod.version,
           buyPrice: p.priceMinor,
+          // Qiymat BAZA valyutasida — eski valyuta belgisi qolib ketmasin
+          // (aks holda keyin u xorijiy deb o'qilardi). 2026-08-23.
+          buyPriceCurrency: null,
         });
       } catch {
         // skip products that can't be updated (e.g. concurrent edit); others proceed

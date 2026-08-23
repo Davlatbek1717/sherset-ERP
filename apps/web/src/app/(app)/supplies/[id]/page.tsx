@@ -37,6 +37,7 @@ import { api } from '@/lib/api-client';
 import { docTotals } from '@/lib/doc-totals';
 import { distributeAgreementDelta } from '@/lib/position-agreement';
 import { purchaseLinePriceMinor } from '@/lib/purchase-line-price';
+import { resolveSalePriceByType, useCurrencyRates } from '@/lib/sale-price';
 import {
   Alert,
   CatalogPicker,
@@ -359,6 +360,9 @@ export default function SupplyDetailPage() {
   const docEditorLabels = useDocumentEditorLabels();
   const router = useRouter();
   const qc = useQueryClient();
+  // Narx qavati valyutada saqlangan bo'lishi mumkin — «Расценить» uni JORIY
+  // kurs bilan bazaga o'giradi (2026-08-23; usiz «10 dollar» 10 so'm bo'lardi).
+  const rates = useCurrencyRates();
   const t = useTranslations('pages.supplies');
   const tCommon = useTranslations('common');
   const tFields = useTranslations('fields');
@@ -528,19 +532,25 @@ export default function SupplyDetailPage() {
   // «Расценить» — re-price every row by the chosen price-type (from each product's
   // carried salePrices). Loaded rows have no salePrices until the product is
   // re-picked, so they keep their current price (same limitation as PO/[id]).
-  const repricePositions = useCallback((priceTypeId: string) => {
-    setForm((s) =>
-      s
-        ? {
-            ...s,
-            positions: s.positions.map((p) => {
-              const sp = p.salePrices?.find((x) => x.priceTypeId === priceTypeId);
-              return sp ? { ...p, priceMinor: sp.value } : p;
-            }),
-          }
-        : s,
-    );
-  }, []);
+  const repricePositions = useCallback(
+    (priceTypeId: string) => {
+      setForm((s) =>
+        s
+          ? {
+              ...s,
+              positions: s.positions.map((p) => {
+                // «Расценить» — qavat valyutada bo'lsa JORIY kurs bilan bazaga o'giriladi;
+                // kursi noma'lum bo'lsa qator narxi TEGILMAYDI (xom son yozishdan ko'ra
+                // eskisi qolgani xavfsizroq — 2026-08-23 auditi).
+                const next = resolveSalePriceByType(p.salePrices, priceTypeId, rates);
+                return next != null ? { ...p, priceMinor: next } : p;
+              }),
+            }
+          : s,
+      );
+    },
+    [rates],
+  );
   // «Цена ▾» per-row quick-pick — the product's sale prices (Оптом / Sotilish),
   // labelled by price-type name; picking one sets the row price (owner 2026-07-27).
   // MUST be above the loading early-return (hooks-order — React #310) since /[id]
@@ -571,6 +581,9 @@ export default function SupplyDetailPage() {
         await api.patch(`/products/${p.assortmentId}`, {
           version: prod.version,
           buyPrice: p.priceMinor,
+          // Qiymat BAZA valyutasida — eski valyuta belgisi qolib ketmasin
+          // (aks holda keyin u xorijiy deb o'qilardi). 2026-08-23.
+          buyPriceCurrency: null,
         });
       } catch {
         // skip products that can't be updated (e.g. concurrent edit); others proceed

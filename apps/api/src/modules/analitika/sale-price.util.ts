@@ -14,8 +14,19 @@ export type SalePricesJson =
   | null
   | undefined;
 
-/** Valyuta kodi → kurs ma'lumoti (hisobga olish valyutasining O'ZI bo'lmaydi). */
-export type SalePriceRates = Readonly<Record<string, CurrencyRate>>;
+/**
+ * Akkauntning valyuta jadvali. Web tomonidagi `CurrencyRates` bilan AYNAN bir
+ * xil shakl — narx o'qish qoidasi ikkala tomonda bir xil bo'lsin.
+ *
+ * `base` SHART: server sxemasida `salePrices[].currencyCode` majburiy va
+ * sukut qiymati `'UZS'` (`SalePriceSchema`), ya'ni saqlangan har bir yangi
+ * narxda kod bo'ladi — bazani bilmasak, oddiy so'mlik narx ham «noma'lum
+ * valyuta» bo'lib 0 ga aylanardi.
+ */
+export interface SalePriceRates {
+  base: string | null;
+  byCode: Readonly<Record<string, CurrencyRate>>;
+}
 
 /**
  * `rates` berilsa, valyutali narx JORIY kurs bilan baza valyutasiga o'giriladi
@@ -47,7 +58,9 @@ export function pickSalePriceMinor(
   }
   const code = chosen?.currencyCode;
   if (!code) return minor;
-  const rate = rates?.[code];
+  if (!rates) return 0n;
+  if (code === rates.base) return minor;
+  const rate = rates.byCode[code];
   if (!rate) return 0n;
   return toBaseMinor(minor, rate);
 }

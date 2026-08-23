@@ -32,6 +32,7 @@ import { defaultDocStore, useUserDefaults } from '@/hooks/use-user-defaults';
 import { api } from '@/lib/api-client';
 import { computeLineTotalSafe } from '@/lib/doc-totals';
 import { distributeAgreementDelta } from '@/lib/position-agreement';
+import { resolveSalePriceByType, useCurrencyRates } from '@/lib/sale-price';
 import {
   Button,
   CatalogPicker,
@@ -119,6 +120,9 @@ const DEFAULT_COL_VISIBLE: Record<string, boolean> = Object.fromEntries(
 
 export default function NewInvoiceInPage() {
   const router = useRouter();
+  // Narx qavati valyutada saqlangan bo'lishi mumkin — «Расценить» uni JORIY
+  // kurs bilan bazaga o'giradi (2026-08-23; usiz «10 dollar» 10 so'm bo'lardi).
+  const rates = useCurrencyRates();
   const t = useTranslations('pages.invoices_in');
   const totalsLabels = useTotalsLabels();
   const tFields = useTranslations('fields');
@@ -352,14 +356,20 @@ export default function NewInvoiceInPage() {
   };
 
   // «Цена ▾» → «Расценить» (re-price every row from a price type's carried value).
-  const repricePositions = useCallback((priceTypeId: string) => {
-    setPositions((ps) =>
-      ps.map((p) => {
-        const sp = p.salePrices?.find((x) => x.priceTypeId === priceTypeId);
-        return sp ? { ...p, priceMinor: sp.value } : p;
-      }),
-    );
-  }, []);
+  const repricePositions = useCallback(
+    (priceTypeId: string) => {
+      setPositions((ps) =>
+        ps.map((p) => {
+          // «Расценить» — qavat valyutada bo'lsa JORIY kurs bilan bazaga o'giriladi;
+          // kursi noma'lum bo'lsa qator narxi TEGILMAYDI (xom son yozishdan ko'ra
+          // eskisi qolgani xavfsizroq — 2026-08-23 auditi).
+          const next = resolveSalePriceByType(p.salePrices, priceTypeId, rates);
+          return next != null ? { ...p, priceMinor: next } : p;
+        }),
+      );
+    },
+    [rates],
+  );
   // «Цена ▾» → «Сохранить цены» — on a PURCHASE doc the line price is the BUY price,
   // so save to Product.buyPrice (NOT salePrices). Fetch for the lock version, PATCH.
   const saveProductPrices = useCallback(async () => {
@@ -372,6 +382,9 @@ export default function NewInvoiceInPage() {
         await api.patch(`/products/${p.assortmentId}`, {
           version: prod.version,
           buyPrice: p.priceMinor,
+          // Qiymat BAZA valyutasida — eski valyuta belgisi qolib ketmasin
+          // (aks holda keyin u xorijiy deb o'qilardi). 2026-08-23.
+          buyPriceCurrency: null,
         });
       } catch {
         // skip products that can't be updated (e.g. concurrent edit); others proceed

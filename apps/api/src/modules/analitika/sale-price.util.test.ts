@@ -20,7 +20,13 @@ import { pickSalePriceMinor } from './sale-price.util.js';
 describe('pickSalePriceMinor — valyuta', () => {
   const id = 'pt-1';
   // 1 USD = 12 000 UZS
-  const rates = { USD: { rateValue: 12_000n * 100_000_000n, multiplicity: 1n, indirect: false } };
+  const rates = {
+    base: 'UZS',
+    byCode: {
+      UZS: { rateValue: 100_000_000n, multiplicity: 1n, indirect: false },
+      USD: { rateValue: 12_000n * 100_000_000n, multiplicity: 1n, indirect: false },
+    },
+  };
 
   it('valyutasiz narx tegilmaydi', () => {
     expect(pickSalePriceMinor([{ priceTypeId: id, value: '4500000' }], id, rates)).toBe(4500000n);
@@ -39,6 +45,11 @@ describe('pickSalePriceMinor — valyuta', () => {
   it('kurs jadvali berilmasa valyutali narx 0', () => {
     const sp = [{ priceTypeId: id, value: '1000', currencyCode: 'USD' }];
     expect(pickSalePriceMinor(sp, id)).toBe(0n);
+  });
+
+  it("baza valyutasi (UZS) o'girilmaydi — qiymat aynan qoladi", () => {
+    const sp = [{ priceTypeId: id, value: '4500000', currencyCode: 'UZS' }];
+    expect(pickSalePriceMinor(sp, id, rates)).toBe(4500000n);
   });
 
   it("mavjud xulq saqlanadi: narx yo'q → 0, buzuq qiymat → 0", () => {

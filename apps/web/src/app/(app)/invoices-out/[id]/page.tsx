@@ -56,7 +56,12 @@ import { api } from '@/lib/api-client';
 import { docTotals } from '@/lib/doc-totals';
 import { isOptimisticConflict } from '@/lib/optimistic-lock';
 import { distributeAgreementDelta, sumAgreementGross } from '@/lib/position-agreement';
-import { resolveDefaultSalePriceOrZero, useCurrencyRates, usePriceTypeIds } from '@/lib/sale-price';
+import {
+  resolveDefaultSalePriceOrZero,
+  resolveSalePriceByType,
+  useCurrencyRates,
+  usePriceTypeIds,
+} from '@/lib/sale-price';
 import {
   Alert,
   CatalogPicker,
@@ -474,19 +479,25 @@ export default function InvoiceOutDetailPage() {
       return { ...s, positions: next };
     });
   }, []);
-  const repricePositions = useCallback((priceTypeId: string) => {
-    setForm((s) =>
-      s
-        ? {
-            ...s,
-            positions: s.positions.map((p) => {
-              const sp = p.salePrices?.find((x) => x.priceTypeId === priceTypeId);
-              return sp ? { ...p, priceMinor: sp.value } : p;
-            }),
-          }
-        : s,
-    );
-  }, []);
+  const repricePositions = useCallback(
+    (priceTypeId: string) => {
+      setForm((s) =>
+        s
+          ? {
+              ...s,
+              positions: s.positions.map((p) => {
+                // «Расценить» — qavat valyutada bo'lsa JORIY kurs bilan bazaga o'giriladi;
+                // kursi noma'lum bo'lsa qator narxi TEGILMAYDI (xom son yozishdan ko'ra
+                // eskisi qolgani xavfsizroq — 2026-08-23 auditi).
+                const next = resolveSalePriceByType(p.salePrices, priceTypeId, rates);
+                return next != null ? { ...p, priceMinor: next } : p;
+              }),
+            }
+          : s,
+      );
+    },
+    [rates],
+  );
   // «Сохранить цены» — sales invoice line price is the SALE price → save to the
   // product's salePrices under the DEFAULT price type (preserving other tiers).
   const saveProductPrices = useCallback(async () => {
@@ -504,7 +515,9 @@ export default function InvoiceOutDetailPage() {
         const existing = prod.salePrices ?? [];
         const merged = existing.some((sp) => sp.priceTypeId === defaultPriceTypeId)
           ? existing.map((sp) =>
-              sp.priceTypeId === defaultPriceTypeId ? { ...sp, value: p.priceMinor } : sp,
+              sp.priceTypeId === defaultPriceTypeId
+                ? { ...sp, value: p.priceMinor, currencyCode: rates.base ?? undefined }
+                : sp,
             )
           : [...existing, { priceTypeId: defaultPriceTypeId, value: p.priceMinor }];
         await api.patch(`/products/${p.assortmentId}`, {

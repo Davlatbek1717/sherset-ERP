@@ -37,10 +37,21 @@ export interface CurrencyRateLite {
 }
 
 /**
- * Valyuta kodi → kurs ma'lumoti. `useCurrencyRates()` dan keladi; baza
- * valyutasining o'zi bu yerda BO'LMAYDI (unga o'girish kerak emas).
+ * Akkauntning valyuta jadvali — `useCurrencyRates()` dan keladi.
+ *
+ * `base` — hisobga olish valyutasi kodi (`Currency.default`). U SHART, chunki
+ * server sxemasida `salePrices[].currencyCode` MAJBURIY va sukut qiymati
+ * `'UZS'` (`SalePriceSchema`): ya'ni saqlangan har bir yangi narxda kod
+ * bo'ladi. Bazani alohida bilmasak, oddiy so'mlik narx ham «noma'lum valyuta»
+ * bo'lib ko'rinmay qolardi.
+ *
+ * `loaded` — jadval hali kelmaganini bildiradi (quyidagi `toBaseMinor` ga qara).
  */
-export type CurrencyRates = Readonly<Record<string, CurrencyRateLite>>;
+export interface CurrencyRates {
+  base: string | null;
+  loaded: boolean;
+  byCode: Readonly<Record<string, CurrencyRateLite>>;
+}
 
 /**
  * Bir narx yozuvini baza valyutasiga o'giradi.
@@ -58,8 +69,19 @@ function toBaseMinor(
   rates: CurrencyRates | undefined,
 ): string | null {
   if (value == null) return null;
+  // Kod yo'q — eski yozuvlar (import shu shaklda yozgan): allaqachon bazada.
   if (!currencyCode) return value;
-  const r = rates?.[currencyCode];
+  // Chaqiruvchi kurs jadvalini UMUMAN uzatmagan — bu chaqiruvchi xatosi
+  // (qo'riqchi test uni mexanik taqiqlaydi). Xom sonni o'tkazish «10 dollar =
+  // 10 so'm» xatosini qaytaradi, shuning uchun bunday narx ko'rsatilmaydi.
+  if (!rates) return null;
+  // Jadval yo'lda: qiymat XOMLIGICHA ko'rsatiladi — bu aynan kechagi xulq.
+  // Muqobili — har sahifa yuklanishida barcha narxlarni bir zumga bo'shatib
+  // qo'yish bo'lardi. Jadval kelgach qoida qat'iy ishlaydi.
+  if (!rates.loaded) return value;
+  // Baza valyutasining o'zi — o'girish kerak emas (identity).
+  if (currencyCode === rates.base) return value;
+  const r = rates.byCode[currencyCode];
   if (r == null) return null;
   return toBaseMinorExact(BigInt(value), {
     rateValue: BigInt(r.rateValue),
@@ -108,6 +130,27 @@ export function resolveDefaultSalePriceOrZero(
  * invent a floor out of the retail price and paint every normal sale yellow.
  * Returns null when the product has no wholesale tier.
  */
+/**
+ * Aniq narx qavati bo'yicha qiymat — «Расценить» (reprice) uchun.
+ *
+ * Hujjat sahifalari bu ishni `salePrices.find(...)?.value` bilan XOM qilardi
+ * va valyuta o'girishni chetlab o'tardi (2026-08-23 auditi) — resolver
+ * shartnomasi to'sib turgan xatoni boshqa eshikdan qaytarardi.
+ *
+ * `null` — qavat topilmadi YOKI kursi noma'lum: ikkala holatda ham chaqiruvchi
+ * qator narxiga TEGMASLIGI kerak (noto'g'ri son yozishdan ko'ra eskisi qolgani
+ * yaxshi).
+ */
+export function resolveSalePriceByType(
+  salePrices: SalePricesLike,
+  priceTypeId: string,
+  rates?: CurrencyRates,
+): string | null {
+  const chosen = (salePrices ?? []).find((p) => p.priceTypeId === priceTypeId);
+  if (!chosen) return null;
+  return toBaseMinor(chosen.value, chosen.currencyCode, rates);
+}
+
 export function resolveWholesaleSalePrice(
   salePrices: SalePricesLike,
   wholesalePriceTypeId?: string | null,
@@ -148,17 +191,20 @@ export function useCurrencyRates(): CurrencyRates {
   // esa o'sha memo'larni har safar qayta hisoblatadi (POS savati, jadval
   // ustunlari). Kurslar faqat so'rov javobi o'zgarganda qayta quriladi.
   return useMemo(() => {
-    const out: Record<string, CurrencyRateLite> = {};
+    const byCode: Record<string, CurrencyRateLite> = {};
+    let base: string | null = null;
     for (const c of data?.items ?? []) {
-      if (!c.default && c.code && c.rateValue != null) {
-        out[c.code] = {
+      if (!c.code) continue;
+      if (c.default) base = c.code;
+      if (c.rateValue != null) {
+        byCode[c.code] = {
           rateValue: String(c.rateValue),
           multiplicity: c.multiplicity,
           indirect: c.indirect,
         };
       }
     }
-    return out;
+    return { base, loaded: data != null, byCode };
   }, [data]);
 }
 

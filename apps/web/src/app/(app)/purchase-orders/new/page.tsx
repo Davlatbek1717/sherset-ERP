@@ -32,6 +32,7 @@ import { api } from '@/lib/api-client';
 import { useAuth } from '@/lib/auth-store';
 import { computeLineTotalSafe } from '@/lib/doc-totals';
 import { distributeAgreementDelta } from '@/lib/position-agreement';
+import { resolveSalePriceByType, useCurrencyRates } from '@/lib/sale-price';
 import {
   Button,
   CatalogPicker,
@@ -138,6 +139,9 @@ export default function NewPurchaseOrderPage() {
   const fromInternalOrderId = searchParams.get('fromInternalOrder')?.split(',')[0] ?? null;
   const fromOrderAvailability = searchParams.get('availability') === '1';
   const { user } = useAuth();
+  // Narx qavati valyutada saqlangan bo'lishi mumkin — «Расценить» uni JORIY
+  // kurs bilan bazaga o'giradi (2026-08-23; usiz «10 dollar» 10 so'm bo'lardi).
+  const rates = useCurrencyRates();
   const t = useTranslations('pages.purchase_orders');
   const totalsLabels = useTotalsLabels();
   const tFields = useTranslations('fields');
@@ -476,14 +480,20 @@ export default function NewPurchaseOrderPage() {
 
   // «Цена ▾» → «Расценить» — re-price every row from the chosen price type (the
   // product's carried salePrices). moysklad lets you reprice PO lines from any type.
-  const repricePositions = useCallback((priceTypeId: string) => {
-    setPositions((ps) =>
-      ps.map((p) => {
-        const sp = p.salePrices?.find((x) => x.priceTypeId === priceTypeId);
-        return sp ? { ...p, priceMinor: sp.value } : p;
-      }),
-    );
-  }, []);
+  const repricePositions = useCallback(
+    (priceTypeId: string) => {
+      setPositions((ps) =>
+        ps.map((p) => {
+          // «Расценить» — qavat valyutada bo'lsa JORIY kurs bilan bazaga o'giriladi;
+          // kursi noma'lum bo'lsa qator narxi TEGILMAYDI (xom son yozishdan ko'ra
+          // eskisi qolgani xavfsizroq — 2026-08-23 auditi).
+          const next = resolveSalePriceByType(p.salePrices, priceTypeId, rates);
+          return next != null ? { ...p, priceMinor: next } : p;
+        }),
+      );
+    },
+    [rates],
+  );
   // «Цена ▾» → «Сохранить цены» — push each line's price back onto its product. On a
   // PURCHASE order the line price is the BUY price, so save to Product.buyPrice (NOT
   // salePrices — that's customer-orders). Fetch for the lock version, then PATCH.
@@ -497,6 +507,9 @@ export default function NewPurchaseOrderPage() {
         await api.patch(`/products/${p.assortmentId}`, {
           version: prod.version,
           buyPrice: p.priceMinor,
+          // Qiymat BAZA valyutasida — eski valyuta belgisi qolib ketmasin
+          // (aks holda keyin u xorijiy deb o'qilardi). 2026-08-23.
+          buyPriceCurrency: null,
         });
       } catch {
         // skip products that can't be updated (e.g. concurrent edit); others proceed

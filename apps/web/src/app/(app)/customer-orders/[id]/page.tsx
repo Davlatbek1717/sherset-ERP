@@ -47,7 +47,12 @@ import { computeLineTotalSafe } from '@/lib/doc-totals';
 import { imageRawUrl } from '@/lib/image-url';
 import { distributeAgreementDelta } from '@/lib/position-agreement';
 import { buildPrintMenu } from '@/lib/print-menu';
-import { resolveDefaultSalePriceOrZero, useCurrencyRates, usePriceTypeIds } from '@/lib/sale-price';
+import {
+  resolveDefaultSalePriceOrZero,
+  resolveSalePriceByType,
+  useCurrencyRates,
+  usePriceTypeIds,
+} from '@/lib/sale-price';
 import {
   Button,
   CatalogPicker,
@@ -735,19 +740,25 @@ export default function CustomerOrderDetailPage() {
   // «Расценить» — re-price every row by the chosen price-type (from each
   // product's carried salePrices). Loaded rows have no salePrices until the
   // product is re-picked, so they keep their current price.
-  const repricePositions = useCallback((priceTypeId: string) => {
-    setForm((s) =>
-      s
-        ? {
-            ...s,
-            positions: s.positions.map((p) => {
-              const sp = p.salePrices?.find((x) => x.priceTypeId === priceTypeId);
-              return sp ? { ...p, priceMinor: sp.value } : p;
-            }),
-          }
-        : s,
-    );
-  }, []);
+  const repricePositions = useCallback(
+    (priceTypeId: string) => {
+      setForm((s) =>
+        s
+          ? {
+              ...s,
+              positions: s.positions.map((p) => {
+                // «Расценить» — qavat valyutada bo'lsa JORIY kurs bilan bazaga o'giriladi;
+                // kursi noma'lum bo'lsa qator narxi TEGILMAYDI (xom son yozishdan ko'ra
+                // eskisi qolgani xavfsizroq — 2026-08-23 auditi).
+                const next = resolveSalePriceByType(p.salePrices, priceTypeId, rates);
+                return next != null ? { ...p, priceMinor: next } : p;
+              }),
+            }
+          : s,
+      );
+    },
+    [rates],
+  );
   // «Сохранить цены» — push each row's price back onto its product.
   const saveProductPrices = useCallback(async () => {
     const positions = form?.positions ?? [];
@@ -767,7 +778,11 @@ export default function CustomerOrderDetailPage() {
         const idx = matchIdx < 0 && existing.length > 0 ? 0 : matchIdx;
         const salePrices =
           idx >= 0
-            ? existing.map((x, i) => (i === idx ? { ...x, value: p.priceMinor } : x))
+            ? existing.map((x, i) =>
+                i === idx
+                  ? { ...x, value: p.priceMinor, currencyCode: rates.base ?? undefined }
+                  : x,
+              )
             : [{ priceTypeId: defaultId ?? 'default', value: p.priceMinor }];
         await api.patch(`/products/${p.assortmentId}`, { version: prod.version, salePrices });
       } catch {

@@ -35,7 +35,12 @@ import { useAuth } from '@/lib/auth-store';
 import { computeLineTotalSafe } from '@/lib/doc-totals';
 import { imageRawUrl } from '@/lib/image-url';
 import { distributeAgreementDelta } from '@/lib/position-agreement';
-import { resolveDefaultSalePriceOrZero, useCurrencyRates, usePriceTypeIds } from '@/lib/sale-price';
+import {
+  resolveDefaultSalePriceOrZero,
+  resolveSalePriceByType,
+  useCurrencyRates,
+  usePriceTypeIds,
+} from '@/lib/sale-price';
 import {
   Button,
   CatalogPicker,
@@ -290,14 +295,20 @@ export default function NewCustomerOrderPage() {
   // «Расценить» — re-price every row by the chosen price-type (from the
   // product's carried salePrices). «Сохранить цены» — push each row's price
   // back onto its product (fetch for the lock version, then PATCH).
-  const repricePositions = useCallback((priceTypeId: string) => {
-    setPositions((ps) =>
-      ps.map((p) => {
-        const sp = p.salePrices?.find((x) => x.priceTypeId === priceTypeId);
-        return sp ? { ...p, priceMinor: sp.value } : p;
-      }),
-    );
-  }, []);
+  const repricePositions = useCallback(
+    (priceTypeId: string) => {
+      setPositions((ps) =>
+        ps.map((p) => {
+          // «Расценить» — qavat valyutada bo'lsa JORIY kurs bilan bazaga o'giriladi;
+          // kursi noma'lum bo'lsa qator narxi TEGILMAYDI (xom son yozishdan ko'ra
+          // eskisi qolgani xavfsizroq — 2026-08-23 auditi).
+          const next = resolveSalePriceByType(p.salePrices, priceTypeId, rates);
+          return next != null ? { ...p, priceMinor: next } : p;
+        }),
+      );
+    },
+    [rates],
+  );
   const saveProductPrices = useCallback(async () => {
     const seen = new Set<string>();
     for (const p of positions) {
@@ -321,7 +332,11 @@ export default function NewCustomerOrderPage() {
         const idx = matchIdx < 0 && existing.length > 0 ? 0 : matchIdx;
         const salePrices =
           idx >= 0
-            ? existing.map((x, i) => (i === idx ? { ...x, value: p.priceMinor } : x))
+            ? existing.map((x, i) =>
+                i === idx
+                  ? { ...x, value: p.priceMinor, currencyCode: rates.base ?? undefined }
+                  : x,
+              )
             : [{ priceTypeId: defaultId ?? 'default', value: p.priceMinor }];
         await api.patch(`/products/${p.assortmentId}`, { version: prod.version, salePrices });
       } catch {

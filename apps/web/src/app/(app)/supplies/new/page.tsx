@@ -43,6 +43,7 @@ import { computeLineTotalSafe } from '@/lib/doc-totals';
 import { parsePositionImport } from '@/lib/parse-position-import';
 import { distributeAgreementDelta } from '@/lib/position-agreement';
 import { purchaseLinePriceMinor } from '@/lib/purchase-line-price';
+import { resolveSalePriceByType, useCurrencyRates } from '@/lib/sale-price';
 import {
   Button,
   CatalogPicker,
@@ -139,6 +140,9 @@ const SHOW_NEW_EVENTS_TAB = false;
 export default function NewSupplyPage() {
   const router = useRouter();
   const { user } = useAuth();
+  // Narx qavati valyutada saqlangan bo'lishi mumkin — «Расценить» uni JORIY
+  // kurs bilan bazaga o'giradi (2026-08-23; usiz «10 dollar» 10 so'm bo'lardi).
+  const rates = useCurrencyRates();
   const t = useTranslations('pages.supplies');
   const totalsLabels = useTotalsLabels();
   const { toast } = useToast();
@@ -558,14 +562,20 @@ export default function NewSupplyPage() {
   // «Расценить» — re-price every row by the chosen price-type (from each product's
   // carried salePrices; rows picked before this session's mapping keep their price —
   // same limitation as supplies/[id]).
-  const repricePositions = useCallback((priceTypeId: string) => {
-    setPositions((ps) =>
-      ps.map((p) => {
-        const sp = p.salePrices?.find((x) => x.priceTypeId === priceTypeId);
-        return sp ? { ...p, priceMinor: sp.value } : p;
-      }),
-    );
-  }, []);
+  const repricePositions = useCallback(
+    (priceTypeId: string) => {
+      setPositions((ps) =>
+        ps.map((p) => {
+          // «Расценить» — qavat valyutada bo'lsa JORIY kurs bilan bazaga o'giriladi;
+          // kursi noma'lum bo'lsa qator narxi TEGILMAYDI (xom son yozishdan ko'ra
+          // eskisi qolgani xavfsizroq — 2026-08-23 auditi).
+          const next = resolveSalePriceByType(p.salePrices, priceTypeId, rates);
+          return next != null ? { ...p, priceMinor: next } : p;
+        }),
+      );
+    },
+    [rates],
+  );
   // «Сохранить цены» — push each line's price back onto its product; on a receipt
   // the line price is the BUY price → Product.buyPrice (mirror supplies/[id]).
   const saveProductPrices = useCallback(async () => {
@@ -578,6 +588,9 @@ export default function NewSupplyPage() {
         await api.patch(`/products/${p.assortmentId}`, {
           version: prod.version,
           buyPrice: p.priceMinor,
+          // Qiymat BAZA valyutasida — eski valyuta belgisi qolib ketmasin
+          // (aks holda keyin u xorijiy deb o'qilardi). 2026-08-23.
+          buyPriceCurrency: null,
         });
       } catch {
         // skip products that can't be updated (e.g. concurrent edit); others proceed

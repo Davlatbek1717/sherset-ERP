@@ -22,7 +22,7 @@ describe('loadSalePriceRates', () => {
       client([{ code: 'USD', rateValue: 1_200_000_000_000n, multiplicity: 1, indirect: false }]),
       'acc',
     );
-    expect(rates.USD).toEqual({
+    expect(rates.byCode.USD).toEqual({
       rateValue: 1_200_000_000_000n,
       multiplicity: 1n,
       indirect: false,
@@ -34,20 +34,38 @@ describe('loadSalePriceRates', () => {
       client([{ code: 'RUB', rateValue: 100_000_000n, multiplicity: 100, indirect: true }]),
       'acc',
     );
-    expect(rates.RUB?.multiplicity).toBe(100n);
-    expect(rates.RUB?.indirect).toBe(true);
+    expect(rates.byCode.RUB?.multiplicity).toBe(100n);
+    expect(rates.byCode.RUB?.indirect).toBe(true);
   });
 
   it("valyuta bo'lmasa bo'sh xarita", async () => {
-    expect(await loadSalePriceRates(client([]), 'acc')).toEqual({});
+    expect(await loadSalePriceRates(client([]), 'acc')).toEqual({ base: null, byCode: {} });
   });
 
-  it("faqat baza BO'LMAGAN valyutalar so'raladi", async () => {
+  it('baza valyutasi ham xaritaga kiradi va `base` sifatida qaytadi', async () => {
+    const rates = await loadSalePriceRates(
+      client([
+        { code: 'UZS', rateValue: 100_000_000n, multiplicity: 1, indirect: false, default: true },
+        {
+          code: 'USD',
+          rateValue: 1_200_000_000_000n,
+          multiplicity: 1,
+          indirect: false,
+          default: false,
+        },
+      ]),
+      'acc',
+    );
+    expect(rates.base).toBe('UZS');
+    expect(Object.keys(rates.byCode).sort()).toEqual(['USD', 'UZS']);
+  });
+
+  it("akkauntning BARCHA valyutalari so'raladi", async () => {
     const c = { currency: { findMany: vi.fn(async () => []) } };
     await loadSalePriceRates(c as never, 'acc-7');
     expect(c.currency.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: expect.objectContaining({ accountId: 'acc-7', default: false }),
+        where: expect.objectContaining({ accountId: 'acc-7' }),
       }),
     );
   });

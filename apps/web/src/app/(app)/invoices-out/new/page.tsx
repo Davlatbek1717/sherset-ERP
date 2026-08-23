@@ -35,7 +35,12 @@ import { defaultDocStore, useUserDefaults } from '@/hooks/use-user-defaults';
 import { api } from '@/lib/api-client';
 import { computeLineTotalSafe } from '@/lib/doc-totals';
 import { distributeAgreementDelta } from '@/lib/position-agreement';
-import { resolveDefaultSalePriceOrZero, useCurrencyRates, usePriceTypeIds } from '@/lib/sale-price';
+import {
+  resolveDefaultSalePriceOrZero,
+  resolveSalePriceByType,
+  useCurrencyRates,
+  usePriceTypeIds,
+} from '@/lib/sale-price';
 import {
   Button,
   CatalogPicker,
@@ -442,14 +447,20 @@ export default function NewInvoiceOutPage() {
   };
 
   // «Цена ▾» → «Расценить» (re-price every row from a price type's carried value).
-  const repricePositions = useCallback((priceTypeId: string) => {
-    setPositions((ps) =>
-      ps.map((p) => {
-        const sp = p.salePrices?.find((x) => x.priceTypeId === priceTypeId);
-        return sp ? { ...p, priceMinor: sp.value } : p;
-      }),
-    );
-  }, []);
+  const repricePositions = useCallback(
+    (priceTypeId: string) => {
+      setPositions((ps) =>
+        ps.map((p) => {
+          // «Расценить» — qavat valyutada bo'lsa JORIY kurs bilan bazaga o'giriladi;
+          // kursi noma'lum bo'lsa qator narxi TEGILMAYDI (xom son yozishdan ko'ra
+          // eskisi qolgani xavfsizroq — 2026-08-23 auditi).
+          const next = resolveSalePriceByType(p.salePrices, priceTypeId, rates);
+          return next != null ? { ...p, priceMinor: next } : p;
+        }),
+      );
+    },
+    [rates],
+  );
   // «Цена ▾» → «Сохранить цены» — on a SALES doc the line price is the SALE price,
   // so save to the product's salePrices under the DEFAULT price type (preserving the
   // other tiers + their currency). Fetch for the lock version, PATCH.
@@ -467,7 +478,9 @@ export default function NewInvoiceOutPage() {
         const existing = prod.salePrices ?? [];
         const merged = existing.some((sp) => sp.priceTypeId === defaultPriceTypeId)
           ? existing.map((sp) =>
-              sp.priceTypeId === defaultPriceTypeId ? { ...sp, value: p.priceMinor } : sp,
+              sp.priceTypeId === defaultPriceTypeId
+                ? { ...sp, value: p.priceMinor, currencyCode: rates.base ?? undefined }
+                : sp,
             )
           : [...existing, { priceTypeId: defaultPriceTypeId, value: p.priceMinor }];
         await api.patch(`/products/${p.assortmentId}`, {

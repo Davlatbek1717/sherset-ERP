@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   resolveDefaultSalePrice,
   resolveDefaultSalePriceOrZero,
+  resolveSalePriceByType,
   resolveWholesaleSalePrice,
 } from './sale-price';
 
@@ -74,7 +75,14 @@ describe('resolveDefaultSalePrice', () => {
 describe('sale price — valyuta konvertatsiyasi', () => {
   const id = 'pt-1';
   // 1 USD = 12 000 UZS → ×10^8 shkalada.
-  const rates = { USD: { rateValue: (12_000n * 100_000_000n).toString() } };
+  const rates = {
+    base: 'UZS',
+    loaded: true,
+    byCode: {
+      UZS: { rateValue: 100_000_000n.toString() },
+      USD: { rateValue: (12_000n * 100_000_000n).toString() },
+    },
+  };
 
   it('valyutasiz qiymat tegilmaydi (baza valyutasi)', () => {
     expect(resolveDefaultSalePrice([{ priceTypeId: id, value: '4500000' }], id, rates)).toBe(
@@ -99,8 +107,71 @@ describe('sale price — valyuta konvertatsiyasi', () => {
     expect(resolveDefaultSalePrice(sp, id)).toBeNull();
   });
 
+  /**
+   * Server sxemasida `currencyCode` MAJBURIY va sukut qiymati `'UZS'`
+   * (`SalePriceSchema`), ya'ni saqlanadigan HAR BIR yangi narxda kod bo'ladi.
+   * Agar baza valyutasi «noma'lum» hisoblansa, oddiy so'mlik narx ham
+   * ekrandan yo'qolardi — shu sabab baza kodi alohida bilinadi.
+   */
+  it("baza valyutasi (UZS) o'girilmaydi — qiymat aynan qoladi", () => {
+    const sp = [{ priceTypeId: id, value: '4500000', currencyCode: 'UZS' }];
+    expect(resolveDefaultSalePrice(sp, id, rates)).toBe('4500000');
+  });
+
+  /**
+   * Jadval hali kelmagan oyna: qiymat XOMLIGICHA ko'rsatiladi (kechagi xulq).
+   * Muqobili — har sahifa yuklanishida barcha narxlarni bo'shatib qo'yish.
+   */
+  it("jadval yuklanmagan bo'lsa qiymat xomligicha ko'rsatiladi", () => {
+    const loading = { base: null, loaded: false, byCode: {} };
+    const sp = [{ priceTypeId: id, value: '4500000', currencyCode: 'UZS' }];
+    expect(resolveDefaultSalePrice(sp, id, loading)).toBe('4500000');
+  });
+
   it("optom qavat ham xuddi shunday o'giriladi", () => {
     const sp = [{ priceTypeId: 'wholesale', value: '500', currencyCode: 'USD' }];
     expect(resolveWholesaleSalePrice(sp, null, rates)).toBe('6000000');
+  });
+});
+
+/**
+ * «Расценить» — TANLANGAN narx qavati bo'yicha qayta narxlash.
+ *
+ * 🔴 2026-08-23: 13 ta hujjat sahifasi bu ishni `salePrices.find(...)?.value`
+ * bilan XOM qilardi, ya'ni valyuta konvertatsiyasini butunlay chetlab o'tardi —
+ * aynan resolver shartnomasi to'sib turgan «10 dollar = 10 so'm» yo'li,
+ * boshqa eshikdan. Endi tanlash ham shu yerda, o'girish ham.
+ */
+describe('resolveSalePriceByType', () => {
+  const rates = {
+    base: 'UZS',
+    loaded: true,
+    byCode: {
+      UZS: { rateValue: 100_000_000n.toString() },
+      USD: { rateValue: (12_000n * 100_000_000n).toString() },
+    },
+  };
+
+  it('tanlangan qavat qiymatini beradi', () => {
+    const sp = [
+      { priceTypeId: 'pt-1', value: '100' },
+      { priceTypeId: 'pt-2', value: '200' },
+    ];
+    expect(resolveSalePriceByType(sp, 'pt-2', rates)).toBe('200');
+  });
+
+  it("valyutali qavat kurs bilan o'giriladi", () => {
+    const sp = [{ priceTypeId: 'pt-1', value: '1000', currencyCode: 'USD' }];
+    expect(resolveSalePriceByType(sp, 'pt-1', rates)).toBe('12000000');
+  });
+
+  it("kursi noma'lum valyuta → null (qator narxi O'ZGARMAYDI)", () => {
+    const sp = [{ priceTypeId: 'pt-1', value: '1000', currencyCode: 'EUR' }];
+    expect(resolveSalePriceByType(sp, 'pt-1', rates)).toBeNull();
+  });
+
+  it('qavat topilmasa null — chaqiruvchi qatorga tegmasligi uchun', () => {
+    expect(resolveSalePriceByType([{ priceTypeId: 'pt-1', value: '1' }], 'pt-9', rates)).toBeNull();
+    expect(resolveSalePriceByType(null, 'pt-1', rates)).toBeNull();
   });
 });
