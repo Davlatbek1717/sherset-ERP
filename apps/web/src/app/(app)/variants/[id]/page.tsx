@@ -17,7 +17,7 @@ import { useDetailNavigation } from '@/hooks/use-detail-navigation';
 import { api } from '@/lib/api-client';
 import { archivedTone } from '@/lib/archived-tone';
 import { isOptimisticConflict } from '@/lib/optimistic-lock';
-import { resolveDefaultSalePrice, usePriceTypeIds } from '@/lib/sale-price';
+import { resolveDefaultSalePrice, useCurrencyRates, usePriceTypeIds } from '@/lib/sale-price';
 import {
   Alert,
   Avatar,
@@ -86,6 +86,9 @@ export default function VariantDetailPage() {
   });
 
   const { defaultId } = usePriceTypeIds();
+  // Valyuta kurslari — valyutali salePrices'ni baza valyutasiga o'girish uchun.
+  // Erta `return`'dan OLDIN (usePriceTypeIds yonida) turishi SHART.
+  const rates = useCurrencyRates();
 
   // Editable state
   const [code, setCode] = useState('');
@@ -103,9 +106,13 @@ export default function VariantDetailPage() {
     buyPrice: '',
   });
 
+  // `rates` ham dep: kurslar `data`dan kech kelishi mumkin va kelganda
+  // valyutali narx qayta hisoblanishi kerak. `useCurrencyRates` memolangan,
+  // ya'ni identifikator faqat javob o'zgarganda almashadi (`defaultId` bilan
+  // bir xil rol).
   useEffect(() => {
     if (!data) return;
-    const defaultValue = resolveDefaultSalePrice(data.salePrices, defaultId);
+    const defaultValue = resolveDefaultSalePrice(data.salePrices, defaultId, rates);
     const chars: Characteristic[] = (data.characteristics ?? []).map((c) => ({
       _uid: uid(),
       name: c.name,
@@ -127,7 +134,7 @@ export default function VariantDetailPage() {
       salePrice: sp,
       buyPrice: bp,
     };
-  }, [data, defaultId]);
+  }, [data, defaultId, rates]);
 
   const isDirty =
     code !== snapshot.current.code ||

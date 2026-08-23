@@ -6,7 +6,12 @@ import { useBulkDocumentActions } from '@/hooks/use-bulk-actions';
 import { useColumnVisibility } from '@/hooks/use-column-visibility';
 import { useColumnWidths } from '@/hooks/use-column-widths';
 import { api } from '@/lib/api-client';
-import { resolveDefaultSalePrice, usePriceTypeIds } from '@/lib/sale-price';
+import {
+  type CurrencyRates,
+  resolveDefaultSalePrice,
+  useCurrencyRates,
+  usePriceTypeIds,
+} from '@/lib/sale-price';
 import {
   Badge,
   CatalogPicker,
@@ -49,8 +54,12 @@ interface VariantListResponse {
 // The tier id is REQUIRED: without it the resolver falls back to salePrices[0],
 // whose order is the write order — «Оптовая» can sit first and be shown as the
 // retail price (2026-08-23 audit).
-function getDefaultSalePrice(v: Variant, defaultPriceTypeId: string | null): string | null {
-  return resolveDefaultSalePrice(v.salePrices, defaultPriceTypeId);
+function getDefaultSalePrice(
+  v: Variant,
+  defaultPriceTypeId: string | null,
+  rates: CurrencyRates,
+): string | null {
+  return resolveDefaultSalePrice(v.salePrices, defaultPriceTypeId, rates);
 }
 
 const LIMIT = 25;
@@ -61,6 +70,7 @@ export default function VariantsPage() {
   const tFields = useTranslations('fields');
   const tFilters = useTranslations('filters');
   const { defaultId } = usePriceTypeIds();
+  const rates = useCurrencyRates();
 
   const [searchInput, setSearchInput] = useState('');
   const search = useDebounce(searchInput, 300);
@@ -217,7 +227,7 @@ export default function VariantsPage() {
       align: 'right',
       width: '160px',
       cell: (v) => {
-        const price = getDefaultSalePrice(v, defaultId);
+        const price = getDefaultSalePrice(v, defaultId, rates);
         return (
           <span className="font-medium tabular-nums">
             {price ? (
@@ -229,7 +239,7 @@ export default function VariantsPage() {
         );
       },
       cellText: (v) => {
-        const p = getDefaultSalePrice(v, defaultId);
+        const p = getDefaultSalePrice(v, defaultId, rates);
         return p ? formatMoney(p, 'UZS', { displayAs: 'none' }) : '';
       },
     },

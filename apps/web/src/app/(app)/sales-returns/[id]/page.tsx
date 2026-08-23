@@ -60,7 +60,7 @@ import { useUnsavedGuard } from '@/hooks/use-unsaved-guard';
 import { api } from '@/lib/api-client';
 import { docTotals } from '@/lib/doc-totals';
 import { distributeAgreementDelta, sumAgreementGross } from '@/lib/position-agreement';
-import { resolveDefaultSalePriceOrZero, usePriceTypeIds } from '@/lib/sale-price';
+import { resolveDefaultSalePriceOrZero, useCurrencyRates, usePriceTypeIds } from '@/lib/sale-price';
 import {
   Alert,
   CatalogPicker,
@@ -362,6 +362,9 @@ export default function SalesReturnDetailPage() {
   const router = useRouter();
   const qc = useQueryClient();
   const { defaultId } = usePriceTypeIds();
+  // Valyuta kurslari — valyutali salePrices'ni baza valyutasiga o'girish uchun.
+  // Hujjat yuklanmaguncha bo'ladigan erta `return`'dan OLDIN turishi SHART.
+  const rates = useCurrencyRates();
   const t = useTranslations('pages.sales_returns');
   const tCommon = useTranslations('common');
   const tFields = useTranslations('fields');
@@ -1642,7 +1645,11 @@ export default function SalesReturnDetailPage() {
                               primary: p.name,
                               code: p.code ?? undefined,
                               available: p.stock?.available != null ? Number(p.stock.available) : 0,
-                              priceMinor: resolveDefaultSalePriceOrZero(p.salePrices, defaultId),
+                              priceMinor: resolveDefaultSalePriceOrZero(
+                                p.salePrices,
+                                defaultId,
+                                rates,
+                              ),
                               uomLabel: p.uom ?? undefined,
                               raw: p,
                             })),
@@ -1694,7 +1701,11 @@ export default function SalesReturnDetailPage() {
                                       quantity: entry?.quantity ?? '1',
                                       priceMinor:
                                         entry?.priceMinor ??
-                                        resolveDefaultSalePriceOrZero(raw?.salePrices, defaultId),
+                                        resolveDefaultSalePriceOrZero(
+                                          raw?.salePrices,
+                                          defaultId,
+                                          rates,
+                                        ),
                                       discount: '0',
                                       vat: raw?.vat != null ? String(raw.vat) : '12',
                                       vatEnabled: s.vatEnabled,
@@ -1735,6 +1746,7 @@ export default function SalesReturnDetailPage() {
                                         priceMinor: resolveDefaultSalePriceOrZero(
                                           raw?.salePrices,
                                           defaultId,
+                                          rates,
                                         ),
                                         discount: '0',
                                         vat: raw?.vat != null ? String(raw.vat) : '12',
@@ -1924,7 +1936,7 @@ export default function SalesReturnDetailPage() {
             productUom: raw?.uom ?? null,
             demandPositionId: null,
             quantity: '1',
-            priceMinor: resolveDefaultSalePriceOrZero(raw?.salePrices, defaultId),
+            priceMinor: resolveDefaultSalePriceOrZero(raw?.salePrices, defaultId, rates),
             discount: '0',
             vat: raw?.vat != null ? String(raw.vat) : '12',
             vatEnabled: form.vatEnabled,
@@ -1949,7 +1961,7 @@ export default function SalesReturnDetailPage() {
             productLabel: String(item.primary),
             productCode: raw?.code ?? undefined,
             productUom: raw?.uom ?? null,
-            priceMinor: resolveDefaultSalePriceOrZero(raw?.salePrices, defaultId),
+            priceMinor: resolveDefaultSalePriceOrZero(raw?.salePrices, defaultId, rates),
             vat: raw?.vat != null ? String(raw.vat) : '12',
             stock: raw?.stock?.onHand,
             available: raw?.stock?.available,

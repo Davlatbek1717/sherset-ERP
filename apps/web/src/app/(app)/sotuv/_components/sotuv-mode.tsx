@@ -28,7 +28,7 @@ import {
   SHOW_MARGIN_ON_SCREEN,
   SHOW_WHOLESALE_IN_CART,
 } from '@/lib/pos/ui-flags';
-import { resolveDefaultSalePrice, usePriceTypeIds } from '@/lib/sale-price';
+import { resolveDefaultSalePrice, useCurrencyRates, usePriceTypeIds } from '@/lib/sale-price';
 import type {
   CurrentSession,
   ListEnvelope as ListResponse,
@@ -85,6 +85,10 @@ export function SotuvSearchGrid({
   // Narx qavati id'si SHART: usiz resolver `salePrices[0]` ga tushadi va u
   // yozilish tartibi bo'yicha «Оптовая» bo'lishi mumkin (2026-08-23 auditi).
   const { defaultId } = usePriceTypeIds();
+  // Valyuta kurslari SHART: narx `currencyCode` bilan saqlangan bo'lsa
+  // resolver uni joriy kurs bilan bazaga o'giradi, kurslarsiz esa `null`
+  // qaytaradi va setkada narx o'rniga «—» chiqadi.
+  const rates = useCurrencyRates();
 
   // F3 — skaner-javob (spec §5.1): qidiruv/skan hech narsa topmasa PAST ton.
   // Xabar («not_found») allaqachon setkada turadi — bu faqat OVOZ qatlami.
@@ -180,7 +184,7 @@ export function SotuvSearchGrid({
         ) : (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
             {products?.items.map((p) => {
-              const sale = resolveDefaultSalePrice(p.salePrices, defaultId);
+              const sale = resolveDefaultSalePrice(p.salePrices, defaultId, rates);
               const onHand = Number(p.stock?.onHand ?? '0');
               return (
                 <button

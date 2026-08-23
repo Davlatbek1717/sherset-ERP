@@ -1,4 +1,6 @@
+import { toBaseMinor as toBaseMinorExact } from '@moysklad/money';
 import { useQuery } from '@tanstack/react-query';
+import { useMemo } from 'react';
 import { api } from './api-client';
 
 /**
@@ -19,7 +21,52 @@ export interface SalePriceEntry {
   currencyCode?: string;
 }
 
-type SalePricesLike = ReadonlyArray<{ priceTypeId?: string; value?: string }> | null | undefined;
+type SalePricesLike =
+  | ReadonlyArray<{ priceTypeId?: string; value?: string; currencyCode?: string | null }>
+  | null
+  | undefined;
+
+/** Bitta valyutaning kurs ma'lumoti (server `/currencies` javobidan). */
+export interface CurrencyRateLite {
+  /** rate × 1e8, butun son satr ko'rinishida. */
+  rateValue: string;
+  /** «Кратность» — kurs necha birlik uchun berilgan (sukut 1). */
+  multiplicity?: number;
+  /** Teskari kotirovka: 1 baza = rate/multiplicity xorijiy. */
+  indirect?: boolean;
+}
+
+/**
+ * Valyuta kodi → kurs ma'lumoti. `useCurrencyRates()` dan keladi; baza
+ * valyutasining o'zi bu yerda BO'LMAYDI (unga o'girish kerak emas).
+ */
+export type CurrencyRates = Readonly<Record<string, CurrencyRateLite>>;
+
+/**
+ * Bir narx yozuvini baza valyutasiga o'giradi.
+ *
+ * Shartnoma (2026-08-23, egasining qarori «kurs bilan o'qilsin»):
+ *   • valyuta ko'rsatilmagan → qiymat allaqachon bazada, tegilmaydi;
+ *   • kursi ma'lum → yagona kanonik formula (`convertByRateE8`) bilan o'giriladi;
+ *   • kursi NOMA'LUM → `null`. Xom sonni qaytarish «10 dollar = 10 so'm»
+ *     xatosini qayta tug'diradi, shuning uchun bunday narx KO'RSATILMAYDI —
+ *     loyihaning «kursi yo'q pul jamiga qo'shilmaydi» shartnomasi bilan bir xil.
+ */
+function toBaseMinor(
+  value: string | undefined,
+  currencyCode: string | null | undefined,
+  rates: CurrencyRates | undefined,
+): string | null {
+  if (value == null) return null;
+  if (!currencyCode) return value;
+  const r = rates?.[currencyCode];
+  if (r == null) return null;
+  return toBaseMinorExact(BigInt(value), {
+    rateValue: BigInt(r.rateValue),
+    multiplicity: BigInt(r.multiplicity ?? 1),
+    indirect: r.indirect ?? false,
+  }).toString();
+}
 
 /**
  * Resolve the DEFAULT (retail) sale price value (minor-unit string) for a
@@ -30,6 +77,7 @@ type SalePricesLike = ReadonlyArray<{ priceTypeId?: string; value?: string }> | 
 export function resolveDefaultSalePrice(
   salePrices: SalePricesLike,
   defaultPriceTypeId?: string | null,
+  rates?: CurrencyRates,
 ): string | null {
   const list = salePrices ?? [];
   if (list.length === 0) return null;
@@ -37,7 +85,7 @@ export function resolveDefaultSalePrice(
     ? list.find((p) => p.priceTypeId === defaultPriceTypeId)
     : undefined;
   const chosen = byId ?? list.find((p) => p.priceTypeId === RETAIL_SENTINEL) ?? list[0];
-  return chosen?.value ?? null;
+  return toBaseMinor(chosen?.value, chosen?.currencyCode, rates);
 }
 
 /**
@@ -47,8 +95,9 @@ export function resolveDefaultSalePrice(
 export function resolveDefaultSalePriceOrZero(
   salePrices: SalePricesLike,
   defaultPriceTypeId?: string | null,
+  rates?: CurrencyRates,
 ): string {
-  return resolveDefaultSalePrice(salePrices, defaultPriceTypeId) ?? '0';
+  return resolveDefaultSalePrice(salePrices, defaultPriceTypeId, rates) ?? '0';
 }
 
 /**
@@ -62,13 +111,55 @@ export function resolveDefaultSalePriceOrZero(
 export function resolveWholesaleSalePrice(
   salePrices: SalePricesLike,
   wholesalePriceTypeId?: string | null,
+  rates?: CurrencyRates,
 ): string | null {
   const list = salePrices ?? [];
   if (list.length === 0) return null;
   const chosen =
     (wholesalePriceTypeId ? list.find((p) => p.priceTypeId === wholesalePriceTypeId) : undefined) ??
     list.find((p) => p.priceTypeId === WHOLESALE_SENTINEL);
-  return chosen?.value ?? null;
+  return toBaseMinor(chosen?.value, chosen?.currencyCode, rates);
+}
+
+interface CurrencyLite {
+  code: string;
+  /** Canonical ×10^8 rate to the account's base currency. */
+  rateValue: string;
+  multiplicity?: number;
+  indirect?: boolean;
+  default: boolean;
+}
+
+/**
+ * Valyuta kurslari (kod → ×10^8), narx o'girish uchun.
+ *
+ * Baza valyutasi ATAYLAB chiqarib tashlanadi: uning kursi 1 va uni jadvalda
+ * saqlash «bazani bazaga o'girish» degan ortiqcha yo'l ochadi. Narx yozuvida
+ * valyuta ko'rsatilmagan bo'lsa u allaqachon bazada deb qabul qilinadi.
+ */
+export function useCurrencyRates(): CurrencyRates {
+  const { data } = useQuery<{ items: CurrencyLite[] }>({
+    queryKey: ['currencies', 'rates'],
+    queryFn: () => api.get<{ items: CurrencyLite[] }>('/currencies?limit=100'),
+    staleTime: 60_000,
+  });
+  // Referens BARQAROR bo'lishi shart: chaqiruvchilar `rates` ni `useMemo` /
+  // `useCallback` bog'liqliklariga qo'shadi, har renderda yangi obyekt qaytarish
+  // esa o'sha memo'larni har safar qayta hisoblatadi (POS savati, jadval
+  // ustunlari). Kurslar faqat so'rov javobi o'zgarganda qayta quriladi.
+  return useMemo(() => {
+    const out: Record<string, CurrencyRateLite> = {};
+    for (const c of data?.items ?? []) {
+      if (!c.default && c.code && c.rateValue != null) {
+        out[c.code] = {
+          rateValue: String(c.rateValue),
+          multiplicity: c.multiplicity,
+          indirect: c.indirect,
+        };
+      }
+    }
+    return out;
+  }, [data]);
 }
 
 interface PriceTypeLite {

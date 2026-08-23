@@ -35,7 +35,7 @@ import { defaultDocStore, useUserDefaults } from '@/hooks/use-user-defaults';
 import { api } from '@/lib/api-client';
 import { computeLineTotalSafe } from '@/lib/doc-totals';
 import { distributeAgreementDelta } from '@/lib/position-agreement';
-import { resolveDefaultSalePriceOrZero, usePriceTypeIds } from '@/lib/sale-price';
+import { resolveDefaultSalePriceOrZero, useCurrencyRates, usePriceTypeIds } from '@/lib/sale-price';
 import {
   Button,
   CatalogPicker,
@@ -161,6 +161,8 @@ export default function NewInvoiceOutPage() {
     queryFn: () => api.get('/stores'),
   });
   const { priceTypes, defaultId: defaultPriceTypeId } = usePriceTypeIds();
+  // Valyuta kurslari — valyutali salePrices'ni baza valyutasiga o'girish uchun.
+  const rates = useCurrencyRates();
 
   // Header state
   const [docNumber, setDocNumber] = useState('');
@@ -417,7 +419,8 @@ export default function NewInvoiceOutPage() {
         productUom: raw?.uom ?? null,
         quantity: entry?.quantity ?? '1',
         priceMinor:
-          entry?.priceMinor ?? resolveDefaultSalePriceOrZero(raw?.salePrices, defaultPriceTypeId),
+          entry?.priceMinor ??
+          resolveDefaultSalePriceOrZero(raw?.salePrices, defaultPriceTypeId, rates),
         discount: '0',
         vat: raw?.vat != null ? String(raw.vat) : '12',
         vatEnabled: true,
@@ -1089,7 +1092,11 @@ export default function NewInvoiceOutPage() {
                       primary: p.name,
                       code: p.code ?? undefined,
                       available: p.stock?.available != null ? Number(p.stock.available) : 0,
-                      priceMinor: resolveDefaultSalePriceOrZero(p.salePrices, defaultPriceTypeId),
+                      priceMinor: resolveDefaultSalePriceOrZero(
+                        p.salePrices,
+                        defaultPriceTypeId,
+                        rates,
+                      ),
                       uomLabel: p.uom ?? undefined,
                       raw: p,
                     })),
@@ -1139,6 +1146,7 @@ export default function NewInvoiceOutPage() {
                         priceMinor: resolveDefaultSalePriceOrZero(
                           raw?.salePrices,
                           defaultPriceTypeId,
+                          rates,
                         ),
                         discount: '0',
                         vat: raw?.vat != null ? String(raw.vat) : '12',
@@ -1448,7 +1456,7 @@ export default function NewInvoiceOutPage() {
             productLabel: String(item.primary),
             productCode: raw?.code ?? undefined,
             productUom: raw?.uom ?? null,
-            priceMinor: resolveDefaultSalePriceOrZero(raw?.salePrices, defaultPriceTypeId),
+            priceMinor: resolveDefaultSalePriceOrZero(raw?.salePrices, defaultPriceTypeId, rates),
             vat: raw?.vat != null ? String(raw.vat) : '12',
             available: raw?.stock?.available,
             stock: raw?.stock?.onHand,

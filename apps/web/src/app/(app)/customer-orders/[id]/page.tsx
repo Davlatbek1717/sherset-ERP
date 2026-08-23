@@ -47,7 +47,7 @@ import { computeLineTotalSafe } from '@/lib/doc-totals';
 import { imageRawUrl } from '@/lib/image-url';
 import { distributeAgreementDelta } from '@/lib/position-agreement';
 import { buildPrintMenu } from '@/lib/print-menu';
-import { resolveDefaultSalePriceOrZero, usePriceTypeIds } from '@/lib/sale-price';
+import { resolveDefaultSalePriceOrZero, useCurrencyRates, usePriceTypeIds } from '@/lib/sale-price';
 import {
   Button,
   CatalogPicker,
@@ -459,6 +459,9 @@ export default function CustomerOrderDetailPage() {
   const detailNav = useDetailNavigation('customer-orders', id, { server: true });
   const { toast } = useToast();
   const { defaultId } = usePriceTypeIds();
+  // Valyuta kurslari — valyutali salePrices'ni baza valyutasiga o'girish uchun.
+  // Hujjat yuklanmaguncha bo'ladigan erta `return`'dan OLDIN turishi SHART.
+  const rates = useCurrencyRates();
   // Price types for the «Цена ▾» → «Расценить» (re-price by type) menu.
   const { data: priceTypesData } = useQuery<{ items: Array<{ id: string; name: string }> }>({
     queryKey: ['price-types'],
@@ -2163,7 +2166,11 @@ export default function CustomerOrderDetailPage() {
                             primary: p.name,
                             code: p.code ?? undefined,
                             available: p.stock?.available != null ? Number(p.stock.available) : 0,
-                            priceMinor: resolveDefaultSalePriceOrZero(p.salePrices, defaultId),
+                            priceMinor: resolveDefaultSalePriceOrZero(
+                              p.salePrices,
+                              defaultId,
+                              rates,
+                            ),
                             uomLabel: p.uom ?? undefined,
                             raw: p,
                           })),
@@ -2201,6 +2208,7 @@ export default function CustomerOrderDetailPage() {
                         const defaultPrice = resolveDefaultSalePriceOrZero(
                           raw?.salePrices,
                           defaultId,
+                          rates,
                         );
                         const newId = uid();
                         setForm((s) =>
@@ -2420,7 +2428,7 @@ export default function CustomerOrderDetailPage() {
             productArticle: raw?.article ?? undefined,
             productUom: raw?.uom ?? null,
             quantity: '1',
-            priceMinor: resolveDefaultSalePriceOrZero(raw?.salePrices, defaultId),
+            priceMinor: resolveDefaultSalePriceOrZero(raw?.salePrices, defaultId, rates),
             discount: '0',
             vat: raw?.vat != null ? String(raw.vat) : '12',
             vatEnabled: form.vatEnabled,
@@ -2453,7 +2461,7 @@ export default function CustomerOrderDetailPage() {
             productCode: raw?.code ?? undefined,
             productArticle: raw?.article ?? undefined,
             productUom: raw?.uom ?? null,
-            priceMinor: resolveDefaultSalePriceOrZero(raw?.salePrices, defaultId),
+            priceMinor: resolveDefaultSalePriceOrZero(raw?.salePrices, defaultId, rates),
             vat: raw?.vat != null ? String(raw.vat) : '12',
             stock: raw?.stock?.onHand,
             reserve: '0',

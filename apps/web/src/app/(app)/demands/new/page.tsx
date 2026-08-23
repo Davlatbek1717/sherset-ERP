@@ -28,7 +28,7 @@ import { api } from '@/lib/api-client';
 import { useAuth } from '@/lib/auth-store';
 import { computeLineTotalSafe, docMeasureTotals } from '@/lib/doc-totals';
 import { distributeAgreementDelta } from '@/lib/position-agreement';
-import { resolveDefaultSalePriceOrZero, usePriceTypeIds } from '@/lib/sale-price';
+import { resolveDefaultSalePriceOrZero, useCurrencyRates, usePriceTypeIds } from '@/lib/sale-price';
 import {
   Button,
   CatalogPicker,
@@ -113,6 +113,8 @@ export default function NewDemandPage() {
   const router = useRouter();
   const { user } = useAuth();
   const { defaultId } = usePriceTypeIds();
+  // Valyuta kurslari — valyutali salePrices'ni baza valyutasiga o'girish uchun.
+  const rates = useCurrencyRates();
   const t = useTranslations('pages.demands');
   const totalsLabels = useTotalsLabels();
   const tFields = useTranslations('fields');
@@ -442,7 +444,7 @@ export default function NewDemandPage() {
     entry?: { quantity: string; priceMinor: string },
   ) => {
     const raw = item.raw as ProductItem | undefined;
-    const defaultPrice = resolveDefaultSalePriceOrZero(raw?.salePrices, defaultId);
+    const defaultPrice = resolveDefaultSalePriceOrZero(raw?.salePrices, defaultId, rates);
     const newId = uid();
     setPositions((ps) => [
       ...ps,
@@ -1020,7 +1022,7 @@ export default function NewDemandPage() {
                     secondary: p.code ?? undefined,
                     // Band 1 pick modal: «Остаток» line needs the stock figure.
                     available: p.stock?.available != null ? Number(p.stock.available) : 0,
-                    priceMinor: resolveDefaultSalePriceOrZero(p.salePrices, defaultId),
+                    priceMinor: resolveDefaultSalePriceOrZero(p.salePrices, defaultId, rates),
                     uomLabel: p.uom ?? undefined,
                     raw: p,
                   }));
@@ -1054,6 +1056,7 @@ export default function NewDemandPage() {
                       const defaultPrice = resolveDefaultSalePriceOrZero(
                         raw?.salePrices,
                         defaultId,
+                        rates,
                       );
                       return {
                         id: uid(),
@@ -1638,7 +1641,7 @@ export default function NewDemandPage() {
         onSelect={(item) => {
           if (typeof openPicker !== 'object' || openPicker === null) return;
           const raw = (item as PickerItem & { raw?: ProductItem }).raw;
-          const defaultPrice = resolveDefaultSalePriceOrZero(raw?.salePrices, defaultId);
+          const defaultPrice = resolveDefaultSalePriceOrZero(raw?.salePrices, defaultId, rates);
           updatePosition(openPicker.rowUid, {
             assortmentId: item.id,
             productLabel: String(item.primary),
@@ -1683,7 +1686,7 @@ export default function NewDemandPage() {
                 productLabel: created.name,
                 productUom: created.uom ?? null,
                 quantity: '1',
-                priceMinor: resolveDefaultSalePriceOrZero(created.salePrices, defaultId),
+                priceMinor: resolveDefaultSalePriceOrZero(created.salePrices, defaultId, rates),
                 discount: '0',
                 vat: created.vat != null ? String(created.vat) : '12',
                 vatEnabled: true,

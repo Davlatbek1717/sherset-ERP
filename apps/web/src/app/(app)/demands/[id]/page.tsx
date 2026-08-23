@@ -60,7 +60,7 @@ import { computeLineTotalSafe, docMeasureTotals } from '@/lib/doc-totals';
 import { imageRawUrl } from '@/lib/image-url';
 import { distributeAgreementDelta } from '@/lib/position-agreement';
 import { buildPrintMenu } from '@/lib/print-menu';
-import { resolveDefaultSalePriceOrZero, usePriceTypeIds } from '@/lib/sale-price';
+import { resolveDefaultSalePriceOrZero, useCurrencyRates, usePriceTypeIds } from '@/lib/sale-price';
 import {
   Alert,
   CatalogPicker,
@@ -428,6 +428,9 @@ export default function DemandDetailPage() {
   const detailNav = useDetailNavigation('demands', id, { server: true });
   const { toast } = useToast();
   const { defaultId } = usePriceTypeIds();
+  // Valyuta kurslari — valyutali salePrices'ni baza valyutasiga o'girish uchun.
+  // Hujjat yuklanmaguncha bo'ladigan erta `return`'dan OLDIN turishi SHART.
+  const rates = useCurrencyRates();
 
   const { data: priceTypesData } = useQuery<{ items: Array<{ id: string; name: string }> }>({
     queryKey: ['price-types'],
@@ -1853,7 +1856,11 @@ export default function DemandDetailPage() {
                             primary: p.name,
                             code: p.code ?? undefined,
                             available: p.stock?.available != null ? Number(p.stock.available) : 0,
-                            priceMinor: resolveDefaultSalePriceOrZero(p.salePrices, defaultId),
+                            priceMinor: resolveDefaultSalePriceOrZero(
+                              p.salePrices,
+                              defaultId,
+                              rates,
+                            ),
                             uomLabel: p.uom ?? undefined,
                             raw: p,
                           })),
@@ -1872,6 +1879,7 @@ export default function DemandDetailPage() {
                         const defaultPrice = resolveDefaultSalePriceOrZero(
                           raw?.salePrices,
                           defaultId,
+                          rates,
                         );
                         const newId = uid();
                         setForm((s) =>
@@ -2291,7 +2299,7 @@ export default function DemandDetailPage() {
         fetcher={productFetcher}
         onSelect={(item) => {
           const raw = (item as { raw?: ProductItem }).raw;
-          const defaultPrice = resolveDefaultSalePriceOrZero(raw?.salePrices, defaultId);
+          const defaultPrice = resolveDefaultSalePriceOrZero(raw?.salePrices, defaultId, rates);
           if (productRowId) {
             // Swap the product on the clicked row.
             updatePosition(productRowId, {
@@ -2386,7 +2394,11 @@ export default function DemandDetailPage() {
                         productLabel: created.name,
                         productUom: created.uom ?? null,
                         quantity: '1',
-                        priceMinor: resolveDefaultSalePriceOrZero(created.salePrices, defaultId),
+                        priceMinor: resolveDefaultSalePriceOrZero(
+                          created.salePrices,
+                          defaultId,
+                          rates,
+                        ),
                         discount: '0',
                         vat: created.vat != null ? String(created.vat) : '12',
                         vatEnabled: s.vatEnabled,

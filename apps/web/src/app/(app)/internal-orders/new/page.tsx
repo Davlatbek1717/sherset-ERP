@@ -47,7 +47,7 @@ import { useAuth } from '@/lib/auth-store';
 import { computeLineTotalSafe } from '@/lib/doc-totals';
 import { imageRawUrl } from '@/lib/image-url';
 import { distributeAgreementDelta } from '@/lib/position-agreement';
-import { resolveDefaultSalePriceOrZero, usePriceTypeIds } from '@/lib/sale-price';
+import { resolveDefaultSalePriceOrZero, useCurrencyRates, usePriceTypeIds } from '@/lib/sale-price';
 import {
   Button,
   CatalogPicker,
@@ -121,6 +121,9 @@ export default function NewInternalOrderPage() {
   const router = useRouter();
   const { user } = useAuth();
   const { defaultId } = usePriceTypeIds();
+  // Valyuta kurslari — valyutali salePrices'ni baza valyutasiga o'girish uchun
+  // (kurssiz bunday narx '0' bo'lib ko'rinmay qoladi).
+  const rates = useCurrencyRates();
   const t = useTranslations('pages.internal_order');
   const totalsLabels = useTotalsLabels();
   const tErrors = useTranslations('errors');
@@ -292,7 +295,7 @@ export default function NewInternalOrderPage() {
     quantity,
     // «Цена» is indicative on an internal order — default to the product's
     // default sale price (what the destination would restock at list price).
-    priceMinor: resolveDefaultSalePriceOrZero(p.salePrices ?? null, defaultId),
+    priceMinor: resolveDefaultSalePriceOrZero(p.salePrices ?? null, defaultId, rates),
     discount: '0',
     vat: p.vat != null ? String(p.vat) : '0',
     vatEnabled: true,
@@ -725,7 +728,11 @@ export default function NewInternalOrderPage() {
                       imageUrl: p.mainImageId ? imageRawUrl(p.mainImageId) : undefined,
                       // Pick modal (owner 2026-07-18): reference «Цена» = the same
                       // default the row would get (default sale price on internal orders).
-                      priceMinor: resolveDefaultSalePriceOrZero(p.salePrices ?? null, defaultId),
+                      priceMinor: resolveDefaultSalePriceOrZero(
+                        p.salePrices ?? null,
+                        defaultId,
+                        rates,
+                      ),
                       uomLabel: p.uom ?? undefined,
                       raw: p,
                     })),

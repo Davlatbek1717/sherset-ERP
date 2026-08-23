@@ -35,7 +35,7 @@ import { useAuth } from '@/lib/auth-store';
 import { computeLineTotalSafe } from '@/lib/doc-totals';
 import { imageRawUrl } from '@/lib/image-url';
 import { distributeAgreementDelta } from '@/lib/position-agreement';
-import { resolveDefaultSalePriceOrZero, usePriceTypeIds } from '@/lib/sale-price';
+import { resolveDefaultSalePriceOrZero, useCurrencyRates, usePriceTypeIds } from '@/lib/sale-price';
 import {
   Button,
   CatalogPicker,
@@ -183,6 +183,9 @@ export default function NewCustomerOrderPage() {
   const tBulk = useTranslations('bulk_actions');
   const docEditorLabels = useDocumentEditorLabels();
   const { defaultId } = usePriceTypeIds();
+  // Valyuta kurslari — valyutali salePrices'ni baza valyutasiga o'girish uchun
+  // (kurssiz bunday narx KO'RSATILMAYDI, «10 dollar = 10 so'm» xatosining oldini oladi).
+  const rates = useCurrencyRates();
   // moysklad «Статус» = account-defined custom statuses (State rows,
   // entityType="customerorder") with colours — NOT the internal `state` FSM.
   // Fetched live and rendered as the header status dropdown (mirrors the real
@@ -1413,7 +1416,7 @@ export default function NewCustomerOrderPage() {
                       primary: p.name,
                       code: p.code ?? undefined,
                       available: p.stock?.available != null ? Number(p.stock.available) : 0,
-                      priceMinor: resolveDefaultSalePriceOrZero(p.salePrices, defaultId),
+                      priceMinor: resolveDefaultSalePriceOrZero(p.salePrices, defaultId, rates),
                       uomLabel: p.uom ?? undefined,
                       raw: p,
                     })),
@@ -1446,7 +1449,11 @@ export default function NewCustomerOrderPage() {
                       .catch(() => toast.error(tPos('pick_modal_price_save_failed')));
                   }
                   const raw = item.raw as ProductItem | undefined;
-                  const defaultPrice = resolveDefaultSalePriceOrZero(raw?.salePrices, defaultId);
+                  const defaultPrice = resolveDefaultSalePriceOrZero(
+                    raw?.salePrices,
+                    defaultId,
+                    rates,
+                  );
                   const newId = uid();
                   setPositions((ps) => [
                     ...ps,
@@ -1947,7 +1954,7 @@ export default function NewCustomerOrderPage() {
         onSelect={(item) => {
           if (typeof openPicker !== 'object' || openPicker === null) return;
           const raw = (item as PickerItem & { raw?: ProductItem }).raw;
-          const defaultPrice = resolveDefaultSalePriceOrZero(raw?.salePrices, defaultId);
+          const defaultPrice = resolveDefaultSalePriceOrZero(raw?.salePrices, defaultId, rates);
           updatePosition(openPicker.rowUid, {
             assortmentId: item.id,
             productLabel: String(item.primary),
@@ -2077,7 +2084,7 @@ export default function NewCustomerOrderPage() {
               productArticle: product.article ?? undefined,
               productUom: product.uom,
               quantity: Number(quantity) > 0 ? quantity : '1',
-              priceMinor: resolveDefaultSalePriceOrZero(product.salePrices, defaultId),
+              priceMinor: resolveDefaultSalePriceOrZero(product.salePrices, defaultId, rates),
               discount: '0',
               vat: product.vat != null ? String(product.vat) : '12',
               vatEnabled: true,

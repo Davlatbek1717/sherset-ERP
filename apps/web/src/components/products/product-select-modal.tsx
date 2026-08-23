@@ -32,7 +32,11 @@ import { useColumnVisibility } from '@/hooks/use-column-visibility';
 import { useColumnWidths } from '@/hooks/use-column-widths';
 import { api } from '@/lib/api-client';
 import { imageRawUrl } from '@/lib/image-url';
-import { resolveDefaultSalePriceOrZero } from '@/lib/sale-price';
+import {
+  type CurrencyRates,
+  resolveDefaultSalePriceOrZero,
+  useCurrencyRates,
+} from '@/lib/sale-price';
 import {
   Button,
   CatalogPickerField,
@@ -221,8 +225,23 @@ function fmtQty(minor: string): string {
   return n.toLocaleString('ru-RU', { maximumFractionDigits: 3 });
 }
 
-function defaultPriceMinor(p: ProductSelectRow): string {
-  return resolveDefaultSalePriceOrZero(p.salePrices);
+/**
+ * Sukut («Розничная») qavat narxi, minor-satr.
+ *
+ * Ikkala argument ham MAJBURIY va komponentdan uzatiladi (bu modul darajasidagi
+ * yordamchi — bu yerda hook chaqirilmaydi):
+ *   • `defaultPriceTypeId` — usiz resolver `salePrices[0]` ga tushadi, u esa
+ *     yozilish tartibi (narx-turi pozitsiyasi emas) — «Оптовая» birinchi turgan
+ *     tovar shu ustunda optom narxda ko'rinardi;
+ *   • `rates` — narx `currencyCode` bilan saqlangan bo'lsa joriy kurs bilan
+ *     bazaga o'giriladi; kurslarsiz bunday narx `'0'` bo'lib qolardi.
+ */
+function defaultPriceMinor(
+  p: ProductSelectRow,
+  defaultPriceTypeId: string | null,
+  rates: CurrencyRates,
+): string {
+  return resolveDefaultSalePriceOrZero(p.salePrices, defaultPriceTypeId, rates);
 }
 
 function priceMinorFor(p: ProductSelectRow, pt: PriceTypeRow): string {
@@ -247,6 +266,11 @@ export function ProductSelectModal({
   disabledIds,
   headerAction,
 }: ProductSelectModalProps) {
+  // Valyuta kurslari — narx yozuvi `currencyCode` bilan saqlangan bo'lsa
+  // resolver uni JORIY kurs bilan bazaga o'giradi; kurslarsiz valyutali narx
+  // `'0'` bo'lib ustunda ko'rinmay qolardi. Hook komponentning ENG boshida —
+  // hech qanday shart/erta return'dan keyin turmasligi shart.
+  const rates = useCurrencyRates();
   const [search, setSearch] = useState('');
   // Folder sidebar collapse (owner 2026-07-20): open on desktop, CLOSED on
   // phones (there it overlays the grid when opened).
@@ -441,6 +465,11 @@ export function ProductSelectModal({
   );
   const usePriceTypeCols = priceTypes.length > 0;
   const hasDefaultType = priceTypes.some((pt) => pt.isDefault);
+  // Sukut («Розничная») qavatning HAQIQIY id'si — `defaultPriceMinor` shu bilan
+  // chaqiriladi. Modal narx turlarini allaqachon o'zi olib turibdi, shuning
+  // uchun bu yerda yangi so'rov ochilmaydi; qoida `usePriceTypeIds` bilan bir
+  // xil: `isDefault` → bo'lmasa ro'yxatning birinchisi.
+  const defaultPriceTypeId = priceTypes.find((pt) => pt.isDefault)?.id ?? priceTypes[0]?.id ?? null;
   // Default-visible = the account's default price type (or the first one when
   // none is flagged default); the ⚙ lets the user reveal the rest. This stays
   // sane even when an account has many price types.
@@ -592,12 +621,15 @@ export function ProductSelectModal({
       {
         key: 'retailPrice',
         header: labels.colRetailPrice ?? '',
-        cell: (p) => formatMoney(defaultPriceMinor(p), currency),
+        cell: (p) => formatMoney(defaultPriceMinor(p, defaultPriceTypeId, rates), currency),
         align: 'right',
         width: '130px',
       },
     ],
-    [labels, kindLabelMap, currency],
+    // `defaultPriceTypeId` + `rates` — ikkalasi ham ASINXRON keladi (narx-turi
+    // va valyuta so'rovlari); deps'siz memo ularsiz hisoblangan ustunni
+    // muzlatib qo'yardi.
+    [labels, kindLabelMap, currency, defaultPriceTypeId, rates],
   );
 
   const toggleSort = (col: SortCol) => {
@@ -1441,7 +1473,10 @@ export function ProductSelectModal({
                               {formatMoney(p.minPrice ?? '0', currency)}
                             </td>
                             <td className="px-3 py-1.5 text-right tabular-nums">
-                              {formatMoney(defaultPriceMinor(p), currency)}
+                              {formatMoney(
+                                defaultPriceMinor(p, defaultPriceTypeId, rates),
+                                currency,
+                              )}
                             </td>
                           </tr>
                         ) : (
@@ -1515,7 +1550,10 @@ export function ProductSelectModal({
                               )
                             ) : (
                               <td className="px-3 py-1.5 text-right tabular-nums">
-                                {formatMoney(defaultPriceMinor(p), currency)}
+                                {formatMoney(
+                                  defaultPriceMinor(p, defaultPriceTypeId, rates),
+                                  currency,
+                                )}
                               </td>
                             )}
                           </tr>

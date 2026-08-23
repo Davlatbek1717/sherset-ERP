@@ -24,25 +24,37 @@ import { describe, expect, it } from 'vitest';
  *   2. skanerning o'zi sun'iy buzg'unchini tutadi (vakuum emas).
  */
 
-const APP_DIR = join(__dirname, '..', 'app');
-const CALL = /resolveDefaultSalePrice(?:OrZero)?\(/g;
+// Sahifalar VA komponentlar — narxni ikkala joy ham o'qiydi (chek-yorlig'i
+// chop etish, tovar tanlash oynasi), shuning uchun qo'riq ikkalasini skanerlaydi.
+const SCAN_DIRS = [join(__dirname, '..', 'app'), join(__dirname, '..', 'components')];
+const CALL = /resolve(?:DefaultSalePrice(?:OrZero)?|WholesaleSalePrice)\(/g;
 
-/** Call sites whose argument list has NO top-level comma → tier not pinned. */
-function findUnpinnedCalls(src: string): number[] {
+/**
+ * Call sites with fewer than `min` top-level arguments.
+ *
+ * 2-argument form → narx qavati qadalmagan (eski nuqson).
+ * 3-argument form → valyuta kurslari ham uzatilgan: usiz valyutali narx
+ * `null`/`'0'` bo'lib ko'rinmay qoladi (xavfsiz, lekin NOTO'G'RI ko'rsatish).
+ */
+function findCallsWithFewerArgs(src: string, min: number): number[] {
   const offenders: number[] = [];
   for (const m of src.matchAll(CALL)) {
     let depth = 1;
-    let hasTopLevelComma = false;
+    let topLevelCommas = 0;
     for (let i = m.index + m[0].length; i < src.length && depth > 0; i++) {
       const ch = src[i];
       if (ch === '(') depth++;
       else if (ch === ')') depth--;
-      else if (ch === ',' && depth === 1) hasTopLevelComma = true;
+      else if (ch === '[' || ch === '{') depth++;
+      else if (ch === ']' || ch === '}') depth--;
+      else if (ch === ',' && depth === 1) topLevelCommas++;
     }
-    if (!hasTopLevelComma) offenders.push(m.index);
+    if (topLevelCommas + 1 < min) offenders.push(m.index);
   }
   return offenders;
 }
+
+const findUnpinnedCalls = (src: string) => findCallsWithFewerArgs(src, 2);
 
 function walk(dir: string): string[] {
   const out: string[] = [];
@@ -57,9 +69,30 @@ function walk(dir: string): string[] {
 describe('sotuv narxi qavati — chaqiruvda narx-turi id majburiy', () => {
   it("hech bir sahifa `resolveDefaultSalePrice*` ni id'siz chaqirmaydi", () => {
     const offenders: string[] = [];
-    for (const file of walk(APP_DIR)) {
+    for (const file of SCAN_DIRS.flatMap(walk)) {
       const src = readFileSync(file, 'utf8');
       const hits = findUnpinnedCalls(src);
+      if (hits.length > 0) {
+        const rel = file.replace(/\\/g, '/').replace(/^.*\/src\//, 'src/');
+        offenders.push(`${rel} (${hits.length})`);
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  /**
+   * 🔴 2026-08-23, egasining qarori «kurs bilan o'qilsin»: narx yozuvi
+   * `currencyCode` bilan saqlanishi mumkin va o'quvchi uni JORIY kurs bilan
+   * bazaga o'girishi shart. Kurs jadvali uzatilmagan chaqiruvda valyutali narx
+   * `null` bo'ladi (bu — ataylab: xom sonni ko'rsatish «10 dollar = 10 so'm»
+   * xatosini qaytaradi), ya'ni narx ekranda YO'QOLADI. Shuning uchun har
+   * chaqiruvda uchinchi argument — `useCurrencyRates()` natijasi — bo'lishi kerak.
+   */
+  it('har chaqiruv valyuta kurslarini ham uzatadi', () => {
+    const offenders: string[] = [];
+    for (const file of SCAN_DIRS.flatMap(walk)) {
+      const src = readFileSync(file, 'utf8');
+      const hits = findCallsWithFewerArgs(src, 3);
       if (hits.length > 0) {
         const rel = file.replace(/\\/g, '/').replace(/^.*\/src\//, 'src/');
         offenders.push(`${rel} (${hits.length})`);
