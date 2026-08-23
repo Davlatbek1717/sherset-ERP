@@ -276,6 +276,9 @@ export default function NewSupplyPage() {
     | { kind: 'product'; rowUid: string }
     | { kind: 'country'; rowUid: string }
   >(null);
+  // «Добавить из справочника» — the full catalog modal (it used to append an
+  // EMPTY row; user 2026-07-14 bug report, fixed on internal-orders/new first).
+  const [catalogAddOpen, setCatalogAddOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // «Курс валюты документа» — rate from the account currency-справочник (Настройки
@@ -369,25 +372,35 @@ export default function NewSupplyPage() {
     };
   }, [organizationId, currency]);
 
-  const addPosition = () => {
+  /** Append ONE catalog product as a new position — shared by the inline
+   *  typeahead pick and by the «Добавить из справочника» modal, so both land a
+   *  filled row (the button used to append an EMPTY row; same bug-class as the
+   *  internal-orders/new fix from the user's 2026-07-14 report). */
+  const appendPositionFromCatalog = (
+    item: { id: string; primary: unknown; raw?: unknown },
+    entry?: { quantity: string; priceMinor: string },
+  ) => {
+    const raw = item.raw as ProductItem | undefined;
+    const newId = uid();
     setPositions((ps) => [
       ...ps,
       {
-        id: uid(),
-        assortmentId: null,
-        productLabel: '',
-        productUom: null,
-        quantity: '1',
-        priceMinor: '0',
+        id: newId,
+        assortmentId: item.id,
+        productLabel: String(item.primary),
+        productUom: raw?.uom ?? null,
+        quantity: entry?.quantity ?? '1',
+        priceMinor: entry?.priceMinor ?? purchaseLinePriceMinor(raw),
         discount: '0',
-        vat: '12',
+        vat: raw?.vat != null ? String(raw.vat) : '12',
         vatEnabled: true,
-        gtdNumber: '',
-        gtdSumMinor: '',
-        countryId: null,
-        countryLabel: '',
+        stock: raw?.stock?.onHand != null ? String(raw.stock.onHand) : undefined,
+        salePrices: raw?.salePrices ?? null,
       },
     ]);
+    // owner 2026-07-18: returning the id hands focus to the new
+    // row's «Кол-во» (modal → table entry chain).
+    return newId;
   };
 
   // «Импорт ▾» — the user picks a CSV/TSV (Excel «Сохранить как CSV» or a plain
@@ -1281,30 +1294,10 @@ export default function NewSupplyPage() {
                   // batch's `costMinor`; seeding it from the retail tier overwrote
                   // the product's cost with its own sale price.
                   clearQueryOnPick
-                  onPick={(item, entry) => {
-                    const raw = item.raw as ProductItem | undefined;
-                    const newId = uid();
-                    setPositions((ps) => [
-                      ...ps,
-                      {
-                        id: newId,
-                        assortmentId: item.id,
-                        productLabel: item.primary,
-                        productUom: raw?.uom ?? null,
-                        quantity: entry?.quantity ?? '1',
-                        priceMinor: entry?.priceMinor ?? purchaseLinePriceMinor(raw),
-                        discount: '0',
-                        vat: raw?.vat != null ? String(raw.vat) : '12',
-                        vatEnabled: true,
-                        stock: raw?.stock?.onHand != null ? String(raw.stock.onHand) : undefined,
-                        salePrices: raw?.salePrices ?? null,
-                      },
-                    ]);
-                    // owner 2026-07-18: returning the id hands focus to the new
-                    // row's «Кол-во» (modal → table entry chain).
-                    return newId;
-                  }}
-                  onAddFromCatalog={addPosition}
+                  onPick={appendPositionFromCatalog}
+                  // «Добавить из справочника» — opens the full catalog modal
+                  // (was: appended an empty row; user 2026-07-14 bug report).
+                  onAddFromCatalog={() => setCatalogAddOpen(true)}
                   onCheckCompleteness={() => {
                     if (!storeId) {
                       setError(t('select_store_first'));
@@ -1842,6 +1835,18 @@ export default function NewSupplyPage() {
             priceMinor: raw?.buyPrice ?? '0',
             vat: raw?.vat != null ? String(raw.vat) : '12',
           });
+        }}
+      />
+      {/* «Добавить из справочника» — every pick appends a FILLED position row
+          (mirrors supplies/[id]); no qty/price modal, the row takes the page's
+          own buy-price default. */}
+      <CatalogPicker
+        open={catalogAddOpen}
+        onClose={() => setCatalogAddOpen(false)}
+        title={tDetailForm('add_from_catalog')}
+        fetcher={productFetcher}
+        onSelect={(item) => {
+          appendPositionFromCatalog(item);
         }}
       />
       <CatalogPicker

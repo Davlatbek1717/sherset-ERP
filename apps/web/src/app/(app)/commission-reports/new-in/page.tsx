@@ -236,6 +236,10 @@ export default function NewCommissionReportInPage() {
     | 'salesChannel'
     | { kind: 'product'; grid: 'realized' | 'returned'; rowUid: string }
   >(null);
+  // «Добавить из справочника» — the catalog «Выбор товара» modal (was: appended
+  // an EMPTY row; audit 2026-08-23). The value is WHICH grid asked for it —
+  // this editor has two («Реализовано» + «Возврат на склад»).
+  const [catalogAddGrid, setCatalogAddGrid] = useState<null | 'realized' | 'returned'>(null);
   const [error, setError] = useState<string | null>(null);
   // moysklad marks a required-but-empty «Контрагент» RED on a failed save.
   const [agentInvalid, setAgentInvalid] = useState(false);
@@ -280,18 +284,39 @@ export default function NewCommissionReportInPage() {
   const makeSetter =
     (grid: 'realized' | 'returned') => (updater: (ps: NewPositionRow[]) => NewPositionRow[]) =>
       grid === 'realized' ? setPositions(updater) : setReturnPositions(updater);
-  const emptyRow = (): NewPositionRow => ({
-    id: uid(),
-    assortmentId: null,
-    productLabel: '',
-    productUom: null,
-    quantity: '1',
-    priceMinor: '0',
-    discount: '0',
-    vat: '12',
-    vatEnabled: true,
-    commissionMinor: '0',
-  });
+  /** Append ONE catalog product as a line of `grid`. Shared by the inline
+   *  typeahead/pick-modal (`onPick`, which supplies `entry`) and the «Добавить
+   *  из справочника» catalog modal (no `entry` — the row falls back to the
+   *  product's own sale/buy price). Returns the new row id: the pick-modal →
+   *  «Кол-во» focus chain depends on it (owner 2026-07-18). */
+  const appendPositionFromCatalog = (
+    grid: 'realized' | 'returned',
+    item: { id: string; primary: string; raw?: unknown },
+    entry?: { quantity: string; priceMinor: string; permanent?: boolean },
+  ): string => {
+    const raw = item.raw as ProductItem | undefined;
+    const newId = uid();
+    makeSetter(grid)((ps) => [
+      ...ps,
+      {
+        id: newId,
+        assortmentId: item.id,
+        productLabel: item.primary,
+        productUom: raw?.uom ?? null,
+        quantity: entry?.quantity ?? '1',
+        priceMinor: entry?.priceMinor ?? raw?.salePriceMinor ?? raw?.buyPriceMinor ?? '0',
+        salePriceMinor: raw?.salePriceMinor ?? null,
+        buyPriceMinor: raw?.buyPriceMinor ?? null,
+        discount: '0',
+        vat: raw?.vat != null ? String(raw.vat) : '12',
+        vatEnabled: true,
+        commissionMinor: '0',
+      },
+    ]);
+    // owner 2026-07-18: returning the id hands focus to the new
+    // row's «Кол-во» (modal → table entry chain).
+    return newId;
+  };
   const applyReprice = (type: 'sale' | 'buy') => {
     const grid = repriceTarget;
     if (!grid) return;
@@ -588,31 +613,10 @@ export default function NewCommissionReportInPage() {
                 cancel: tPos('pick_modal_cancel'),
               },
             }}
-            onPick={(item, entry) => {
-              const raw = item.raw as ProductItem | undefined;
-              const newId = uid();
-              set((ps) => [
-                ...ps,
-                {
-                  id: newId,
-                  assortmentId: item.id,
-                  productLabel: item.primary,
-                  productUom: raw?.uom ?? null,
-                  quantity: entry?.quantity ?? '1',
-                  priceMinor: entry?.priceMinor ?? raw?.salePriceMinor ?? raw?.buyPriceMinor ?? '0',
-                  salePriceMinor: raw?.salePriceMinor ?? null,
-                  buyPriceMinor: raw?.buyPriceMinor ?? null,
-                  discount: '0',
-                  vat: raw?.vat != null ? String(raw.vat) : '12',
-                  vatEnabled: true,
-                  commissionMinor: '0',
-                },
-              ]);
-              // owner 2026-07-18: returning the id hands focus to the new
-              // row's «Кол-во» (modal → table entry chain).
-              return newId;
-            }}
-            onAddFromCatalog={() => set((ps) => [...ps, emptyRow()])}
+            onPick={(item, entry) => appendPositionFromCatalog(grid, item, entry)}
+            // «Добавить из справочника» — open the catalog picker on THIS grid
+            // (was: appended an empty row; audit 2026-08-23).
+            onAddFromCatalog={() => setCatalogAddGrid(grid)}
           />
         }
       />
@@ -1204,6 +1208,23 @@ export default function NewCommissionReportInPage() {
                 : p,
             ),
           );
+        }}
+      />
+      {/* «Добавить из справочника» — pick a product and append it to the grid
+          that opened the picker (no qty/price modal on this path — the row
+          takes the product's own sale/buy price). */}
+      <CatalogPicker
+        open={catalogAddGrid !== null}
+        onClose={() => setCatalogAddGrid(null)}
+        title={tDetailForm('add_from_catalog')}
+        fetcher={productFetcher}
+        onSelect={(item) => {
+          if (catalogAddGrid === null) return;
+          appendPositionFromCatalog(catalogAddGrid, {
+            id: item.id,
+            primary: String(item.primary),
+            raw: (item as PickerItem & { raw?: ProductItem }).raw,
+          });
         }}
       />
       {currency !== 'UZS' && (

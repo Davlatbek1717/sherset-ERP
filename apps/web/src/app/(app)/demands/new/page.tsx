@@ -345,6 +345,9 @@ export default function NewDemandPage() {
     | 'carrier'
     | { kind: 'product'; rowUid: string }
   >(null);
+  // «Добавить из справочника» — the full catalog modal (it used to append an
+  // EMPTY row; user 2026-07-14 bug report, fixed on internal-orders/new first).
+  const [catalogAddOpen, setCatalogAddOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // «Курс валюты документа» — rate from the account currency-справочник (Настройки
@@ -430,21 +433,37 @@ export default function NewDemandPage() {
     return m;
   }, [stockData]);
 
-  const addPosition = () => {
+  /** Append ONE catalog product as a new position — shared by the inline
+   *  typeahead pick and by the «Добавить из справочника» modal, so both land a
+   *  filled row (the button used to append an EMPTY row; same bug-class as the
+   *  internal-orders/new fix from the user's 2026-07-14 report). */
+  const appendPositionFromCatalog = (
+    item: { id: string; primary: unknown; raw?: unknown },
+    entry?: { quantity: string; priceMinor: string },
+  ) => {
+    const raw = item.raw as ProductItem | undefined;
+    const defaultPrice = resolveDefaultSalePriceOrZero(raw?.salePrices, defaultId);
+    const newId = uid();
     setPositions((ps) => [
       ...ps,
       {
-        id: uid(),
-        assortmentId: null,
-        productLabel: '',
-        productUom: null,
-        quantity: '1',
-        priceMinor: '0',
+        id: newId,
+        assortmentId: item.id,
+        productLabel: String(item.primary),
+        productUom: raw?.uom ?? null,
+        quantity: entry?.quantity ?? '1',
+        priceMinor: entry?.priceMinor ?? defaultPrice,
         discount: '0',
-        vat: '12',
+        vat: raw?.vat != null ? String(raw.vat) : '12',
         vatEnabled: true,
+        salePrices: raw?.salePrices ?? null,
+        weightG: raw?.weightG ?? undefined,
+        volumeML: raw?.volumeML ?? undefined,
       },
     ]);
+    // owner 2026-07-18: returning the id hands focus to the new
+    // row's «Кол-во» (modal → table entry chain).
+    return newId;
   };
   const updatePosition = (id: string, patch: Partial<NewPositionRow>) => {
     setPositions((ps) => ps.map((p) => (p.id === id ? { ...p, ...patch } : p)));
@@ -1012,32 +1031,10 @@ export default function NewDemandPage() {
                 // (moysklad's Отгрузка add-line has none). Price defaults to the
                 // product's sale price; the search box clears.
                 clearQueryOnPick
-                onPick={(item, entry) => {
-                  const raw = item.raw as ProductItem | undefined;
-                  const defaultPrice = resolveDefaultSalePriceOrZero(raw?.salePrices, defaultId);
-                  const newId = uid();
-                  setPositions((ps) => [
-                    ...ps,
-                    {
-                      id: newId,
-                      assortmentId: item.id,
-                      productLabel: item.primary,
-                      productUom: raw?.uom ?? null,
-                      quantity: entry?.quantity ?? '1',
-                      priceMinor: entry?.priceMinor ?? defaultPrice,
-                      discount: '0',
-                      vat: raw?.vat != null ? String(raw.vat) : '12',
-                      vatEnabled: true,
-                      salePrices: raw?.salePrices ?? null,
-                      weightG: raw?.weightG ?? undefined,
-                      volumeML: raw?.volumeML ?? undefined,
-                    },
-                  ]);
-                  // owner 2026-07-18: returning the id hands focus to the new
-                  // row's «Кол-во» (modal → table entry chain).
-                  return newId;
-                }}
-                onAddFromCatalog={addPosition}
+                onPick={appendPositionFromCatalog}
+                // «Добавить из справочника» — opens the full catalog modal
+                // (was: appended an empty row; user 2026-07-14 bug report).
+                onAddFromCatalog={() => setCatalogAddOpen(true)}
                 onCheckCompleteness={() => {
                   if (!storeId) {
                     setError(t('select_store_first'));
@@ -1617,6 +1614,18 @@ export default function NewDemandPage() {
         onSelect={(item) => {
           setBankAccountId(item.id);
           setBankAccountLabel(String(item.primary));
+        }}
+      />
+      {/* «Добавить из справочника» — every pick appends a FILLED position row
+          (mirrors demands/[id]); no qty/price modal, the row takes the page's
+          own default-sale-price. */}
+      <CatalogPicker
+        open={catalogAddOpen}
+        onClose={() => setCatalogAddOpen(false)}
+        title={tDetailForm('add_from_catalog')}
+        fetcher={productFetcher}
+        onSelect={(item) => {
+          appendPositionFromCatalog(item);
         }}
       />
       <CatalogPicker

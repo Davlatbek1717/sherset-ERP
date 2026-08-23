@@ -254,13 +254,27 @@ export function PositionInlineAdd({
   // query so those re-fires don't reopen the dropdown until the text changes.
   const pickedQueryRef = React.useRef<string | null>(null);
 
+  // Which query the CURRENT `suggestions` belong to. Enter must never act on a
+  // list that belongs to older text: a scanner types the whole code and fires
+  // Enter inside the 200ms debounce, so the previous query's single hit was
+  // getting added instead (POS fixed this on 2026-08-16; this is the shared
+  // document-side twin of that fix).
+  const [settledQuery, setSettledQuery] = React.useState<string | null>(null);
+  /** Latest typed text — lets an in-flight response detect it is stale. */
+  const latestQueryRef = React.useRef(query);
+  /** Enter pressed before its results landed; applied when THAT query settles. */
+  const pendingEnterRef = React.useRef<string | null>(null);
+
   // Debounced typeahead. 200ms keeps the input feeling instant on local
   // searches (counterparty list) but doesn't hammer the API for every
   // keystroke when the source is a remote products catalog.
   React.useEffect(() => {
+    latestQueryRef.current = query;
     if (!onSearch) return;
     if (query.trim().length < 1) {
       setSuggestions([]);
+      setSettledQuery(null);
+      pendingEnterRef.current = null;
       setOpen(false);
       return;
     }
@@ -275,17 +289,35 @@ export function PositionInlineAdd({
       return;
     }
     const handle = setTimeout(async () => {
+      const q = query;
       try {
-        const res = await onSearch(query);
+        const res = await onSearch(q);
+        // A response that lost the race to newer text must not repopulate the
+        // list — otherwise Enter could act on it a moment later.
+        if (latestQueryRef.current !== q) return;
         const items = Array.isArray(res) ? res : res.items;
         setSuggestions(items);
         setTotal(Array.isArray(res) ? items.length : res.total);
         setActiveIdx(-1);
+        setSettledQuery(q);
         // Rich product mode keeps the panel open even with 0 hits so the
         // «Создать новый товар «<query>»» footer is always reachable.
         setOpen(items.length > 0 || richProduct);
+        // An Enter that arrived before these results is spent HERE — the
+        // keystroke is not lost, it simply waits for its own query. It is
+        // consumed on ANY settle (mirrors POS): a park left over from text the
+        // user has since edited must not fire later if they type it again.
+        const parked = pendingEnterRef.current;
+        if (parked !== null) {
+          pendingEnterRef.current = null;
+          const only = items.length === 1 ? items[0] : undefined;
+          if (parked === q && only) pick(only);
+        }
       } catch {
+        if (latestQueryRef.current !== q) return;
+        pendingEnterRef.current = null;
         setSuggestions([]);
+        setSettledQuery(q);
         setTotal(0);
         setOpen(false);
       }
@@ -381,12 +413,26 @@ export function PositionInlineAdd({
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     const displayed = richProduct ? richDisplayed : plainDisplayed;
     if (e.key === 'Enter') {
-      // Pick the highlighted row; with no highlight fall back to a single hit.
+      // An explicitly highlighted row is always what the user meant.
       const chosen = open && activeIdx >= 0 ? displayed[activeIdx] : undefined;
-      const target = chosen ?? (suggestions.length === 1 ? suggestions[0] : undefined);
-      if (target) {
+      if (chosen) {
         e.preventDefault();
-        pick(target);
+        pick(chosen);
+        return;
+      }
+      // No highlight → fall back to a single hit, but ONLY when the list belongs
+      // to the text as it stands now. While a search is still in flight (scanner
+      // typing + instant Enter) the keystroke is parked and applied when that
+      // query's own results land — see the debounce effect.
+      if (settledQuery !== query) {
+        e.preventDefault();
+        pendingEnterRef.current = query;
+        return;
+      }
+      const only = suggestions.length === 1 ? suggestions[0] : undefined;
+      if (only) {
+        e.preventDefault();
+        pick(only);
       }
     } else if (e.key === 'Escape') {
       setOpen(false);

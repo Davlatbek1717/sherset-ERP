@@ -293,6 +293,10 @@ export default function NewPurchaseReturnPage() {
         rowUid: string;
       }
   >(null);
+  // «Добавить из справочника» — the product catalog modal that APPENDS a
+  // position (it used to append an EMPTY row; audit 2026-08-23, the same
+  // bug-class the user reported on internal-orders/new 2026-07-14).
+  const [catalogAddOpen, setCatalogAddOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // moysklad marks a required-but-empty «Контрагент» RED on a failed «Сохранить»
   // (owner rule 2026-07-11): red field border + short «Поле должно быть заполнено»
@@ -429,22 +433,38 @@ export default function NewPurchaseReturnPage() {
     };
   }, [organizationId, currency]);
 
-  const addPosition = () => {
+  /** Append ONE catalog hit as a position. Shared by the inline typeahead
+   *  (which passes the qty/price modal's `entry`) and «Добавить из
+   *  справочника» (no `entry` — the line falls back to the product's own buy
+   *  price). Returns the new row id so the inline bar can hand focus to its
+   *  «Кол-во» cell (owner 2026-07-18 modal → table entry chain). */
+  const appendPositionFromCatalog = (
+    item: PickerItem & { raw?: unknown },
+    entry?: { quantity: string; priceMinor: string; permanent?: boolean },
+  ): string => {
+    const raw = item.raw as ProductItem | undefined;
+    const newId = uid();
     setPositions((ps) => [
       ...ps,
       {
-        id: uid(),
-        assortmentId: null,
-        productLabel: '',
-        productUom: null,
+        id: newId,
+        assortmentId: item.id,
+        productLabel: String(item.primary),
+        productCode: raw?.code ?? undefined,
+        productUom: raw?.uom ?? null,
         supplyPositionId: null,
-        quantity: '1',
-        priceMinor: '0',
+        quantity: entry?.quantity ?? '1',
+        priceMinor: entry?.priceMinor ?? raw?.buyPrice ?? '0',
         discount: '0',
-        vat: '12',
+        vat: raw?.vat != null ? String(raw.vat) : '12',
         vatEnabled: true,
+        // «Остаток» — read-only stock cluster at the store.
+        stock: raw?.stock?.onHand,
+        available: raw?.stock?.available,
+        folderPath: raw?.productFolder?.pathName ?? undefined,
       },
     ]);
+    return newId;
   };
   const updatePosition = (id: string, patch: Partial<NewPositionRow>) => {
     setPositions((ps) => ps.map((p) => (p.id === id ? { ...p, ...patch } : p)));
@@ -1090,34 +1110,10 @@ export default function NewPurchaseReturnPage() {
                     cancel: tPos('pick_modal_cancel'),
                   },
                 }}
-                onPick={(item, entry) => {
-                  const raw = item.raw as ProductItem | undefined;
-                  const newId = uid();
-                  setPositions((ps) => [
-                    ...ps,
-                    {
-                      id: newId,
-                      assortmentId: item.id,
-                      productLabel: item.primary,
-                      productCode: raw?.code ?? undefined,
-                      productUom: raw?.uom ?? null,
-                      supplyPositionId: null,
-                      quantity: entry?.quantity ?? '1',
-                      priceMinor: entry?.priceMinor ?? raw?.buyPrice ?? '0',
-                      discount: '0',
-                      vat: raw?.vat != null ? String(raw.vat) : '12',
-                      vatEnabled: true,
-                      // «Остаток» — read-only stock cluster at the store.
-                      stock: raw?.stock?.onHand,
-                      available: raw?.stock?.available,
-                      folderPath: raw?.productFolder?.pathName ?? undefined,
-                    },
-                  ]);
-                  // owner 2026-07-18: returning the id hands focus to the new
-                  // row's «Кол-во» (modal → table entry chain).
-                  return newId;
-                }}
-                onAddFromCatalog={addPosition}
+                onPick={appendPositionFromCatalog}
+                // «Добавить из справочника» — the full catalog modal (was:
+                // appended an EMPTY row; audit 2026-08-23).
+                onAddFromCatalog={() => setCatalogAddOpen(true)}
                 onCheckCompleteness={() => {
                   if (!storeId) {
                     setError(t('select_store_first'));
@@ -1448,6 +1444,18 @@ export default function NewPurchaseReturnPage() {
             available: raw?.stock?.available,
             folderPath: raw?.productFolder?.pathName ?? undefined,
           });
+        }}
+      />
+      {/* «Добавить из справочника» — pick a product from the catalog and append
+          it as a NEW position (no qty/price modal here: the line takes the
+          product's own buy price, editable in the grid). */}
+      <CatalogPicker
+        open={catalogAddOpen}
+        onClose={() => setCatalogAddOpen(false)}
+        title={tDetailForm('add_from_catalog')}
+        fetcher={productFetcher}
+        onSelect={(item) => {
+          appendPositionFromCatalog(item);
         }}
       />
       {currency !== 'UZS' && (

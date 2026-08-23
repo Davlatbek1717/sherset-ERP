@@ -251,6 +251,10 @@ export default function NewInvoiceOutPage() {
     | 'orgAccount'
     | { kind: 'product'; rowUid: string }
   >(null);
+  // «Добавить из справочника» — the product catalog modal that APPENDS a
+  // position (it used to append an EMPTY row; audit 2026-08-23, the same
+  // bug-class the user reported on internal-orders/new 2026-07-14).
+  const [catalogAddOpen, setCatalogAddOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // «Курс валюты документа» — the rate is the account's currency-справочник rate
@@ -385,21 +389,47 @@ export default function NewInvoiceOutPage() {
   // Also arms the router-level UnsavedNavGuard (browser back / nav away).
   useUnsavedGuard(isDirty);
 
-  const addPosition = () => {
+  /** Append ONE catalog hit as a position. Shared by the inline typeahead
+   *  (which passes the qty/price modal's `entry`) and «Добавить из
+   *  справочника» (no `entry` — the line falls back to the product's default
+   *  sale price). Returns the new row id so the inline bar can hand focus to
+   *  its «Кол-во» cell (owner 2026-07-18 modal → table entry chain). */
+  const appendPositionFromCatalog = (
+    item: PickerItem & { raw?: unknown },
+    entry?: { quantity: string; priceMinor: string; permanent?: boolean },
+  ): string => {
+    if (entry?.permanent) {
+      // «Doimiy narx» — persist to the product card (owner 2026-07-17).
+      api
+        .post(`/products/${item.id}/sale-price`, { priceMinor: entry.priceMinor })
+        .then(() => toast.success(tPos('pick_modal_price_saved')))
+        .catch(() => toast.error(tPos('pick_modal_price_save_failed')));
+    }
+    const raw = item.raw as ProductItem | undefined;
+    const newId = uid();
     setPositions((ps) => [
       ...ps,
       {
-        id: uid(),
-        assortmentId: null,
-        productLabel: '',
-        productUom: null,
-        quantity: '1',
-        priceMinor: '0',
+        id: newId,
+        assortmentId: item.id,
+        productLabel: String(item.primary),
+        productCode: raw?.code ?? undefined,
+        productUom: raw?.uom ?? null,
+        quantity: entry?.quantity ?? '1',
+        priceMinor:
+          entry?.priceMinor ?? resolveDefaultSalePriceOrZero(raw?.salePrices, defaultPriceTypeId),
         discount: '0',
-        vat: '12',
+        vat: raw?.vat != null ? String(raw.vat) : '12',
         vatEnabled: true,
+        available: raw?.stock?.available,
+        stock: raw?.stock?.onHand,
+        reserve: raw?.stock?.reserved,
+        waiting: raw?.stock?.inTransit,
+        salePrices: raw?.salePrices ?? null,
+        folderPath: raw?.productFolder?.pathName ?? undefined,
       },
     ]);
+    return newId;
   };
   const updatePosition = (id: string, patch: Partial<NewPositionRow>) => {
     setPositions((ps) => ps.map((p) => (p.id === id ? { ...p, ...patch } : p)));
@@ -1083,44 +1113,10 @@ export default function NewInvoiceOutPage() {
                     cancel: tPos('pick_modal_cancel'),
                   },
                 }}
-                onPick={(item, entry) => {
-                  if (entry?.permanent) {
-                    // «Doimiy narx» — persist to the product card (owner 2026-07-17).
-                    api
-                      .post(`/products/${item.id}/sale-price`, { priceMinor: entry.priceMinor })
-                      .then(() => toast.success(tPos('pick_modal_price_saved')))
-                      .catch(() => toast.error(tPos('pick_modal_price_save_failed')));
-                  }
-                  const raw = item.raw as ProductItem | undefined;
-                  const newId = uid();
-                  setPositions((ps) => [
-                    ...ps,
-                    {
-                      id: newId,
-                      assortmentId: item.id,
-                      productLabel: item.primary,
-                      productCode: raw?.code ?? undefined,
-                      productUom: raw?.uom ?? null,
-                      quantity: entry?.quantity ?? '1',
-                      priceMinor:
-                        entry?.priceMinor ??
-                        resolveDefaultSalePriceOrZero(raw?.salePrices, defaultPriceTypeId),
-                      discount: '0',
-                      vat: raw?.vat != null ? String(raw.vat) : '12',
-                      vatEnabled: true,
-                      available: raw?.stock?.available,
-                      stock: raw?.stock?.onHand,
-                      reserve: raw?.stock?.reserved,
-                      waiting: raw?.stock?.inTransit,
-                      salePrices: raw?.salePrices ?? null,
-                      folderPath: raw?.productFolder?.pathName ?? undefined,
-                    },
-                  ]);
-                  // owner 2026-07-18: returning the id hands focus to the new
-                  // row's «Кол-во» (modal → table entry chain).
-                  return newId;
-                }}
-                onAddFromCatalog={addPosition}
+                onPick={appendPositionFromCatalog}
+                // «Добавить из справочника» — the full catalog modal (was:
+                // appended an EMPTY row; audit 2026-08-23).
+                onAddFromCatalog={() => setCatalogAddOpen(true)}
                 onCheckCompleteness={() => {
                   if (positions.length === 0) {
                     setError(t('add_position_first'));
@@ -1461,6 +1457,18 @@ export default function NewInvoiceOutPage() {
             salePrices: raw?.salePrices ?? null,
             folderPath: raw?.productFolder?.pathName ?? undefined,
           });
+        }}
+      />
+      {/* «Добавить из справочника» — pick a product from the catalog and append
+          it as a NEW position (no qty/price modal here: the line takes the
+          product's default sale price, editable in the grid). */}
+      <CatalogPicker
+        open={catalogAddOpen}
+        onClose={() => setCatalogAddOpen(false)}
+        title={tDetailForm('add_from_catalog')}
+        fetcher={productFetcher}
+        onSelect={(item) => {
+          appendPositionFromCatalog(item);
         }}
       />
     </>

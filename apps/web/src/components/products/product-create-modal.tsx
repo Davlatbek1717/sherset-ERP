@@ -21,9 +21,11 @@ import { ProductFormLeftCards } from '@/components/products/product-form-left-ca
 import { ProductPriceEditor } from '@/components/products/product-price-editor';
 import { useProductForm } from '@/components/products/use-product-form';
 import { useApiMutation } from '@/hooks/use-api-mutation';
+import { usePermissions } from '@/hooks/use-permissions';
 import { api } from '@/lib/api-client';
 import { useAuth } from '@/lib/auth-store';
-import { Button, Input, Modal } from '@moysklad/ui';
+import { uploadStagedImages } from '@/lib/staged-image-upload';
+import { Alert, Button, Input, Modal, useToast } from '@moysklad/ui';
 import { useTranslations } from 'next-intl';
 import { useEffect, useRef } from 'react';
 
@@ -43,22 +45,39 @@ export function ProductCreateModal({
   const pf = useProductForm();
   const { t, form } = pf;
   const tCommon = useTranslations('common');
+  const { toast } = useToast();
   const { user } = useAuth();
+
+  // Same gate as /products/new: without `product.create` the server rejects BOTH
+  // calls this form makes, and the doomed `allocate-code` 403 used to vanish into
+  // an empty `.catch()` — «Код» stayed blank, the user filled the whole card, and
+  // only «Сохранить» revealed it. The page was fixed on 2026-08-22 (d7937657);
+  // this modal is the SECOND entry point and was left behind, even though it is
+  // the one B2B flows open («Создать новый товар "…"» from supplies/demands).
+  // Fail-open while the matrix loads; the real lock is the server's
+  // @RequirePermission({ entity: 'product', action: 'create' }).
+  const { can } = usePermissions();
+  const allowedToCreate = can('product', 'create');
 
   // One-time init (mirror /products/new): a barcode row, a fresh sequential «Код»,
   // and the typed query as the name.
   const initedRef = useRef(false);
   // biome-ignore lint/correctness/useExhaustiveDependencies: one-time mount init; pf.addBarcode/form.setValue are stable.
   useEffect(() => {
-    if (initedRef.current) return;
+    if (initedRef.current || !allowedToCreate) return;
     initedRef.current = true;
     pf.addBarcode();
     if (initialName) form.setValue('name', initialName);
     api
       .post<{ code: string }>('/products/allocate-code', {})
       .then((r) => form.setValue('code', r.code))
+      // Non-permission failures (network) stay silent on purpose — the server
+      // allocates the code itself when the field is submitted empty, so a blank
+      // «Код» is recoverable. The 403 case is handled by the gate above.
       .catch(() => {});
-  }, []);
+    // `allowedToCreate` flips false→true when the permission matrix resolves;
+    // without it in deps the init would never run on a cold session.
+  }, [allowedToCreate]);
 
   // «Сотрудник» (owner) = current user, once auth resolves.
   const ownerSetRef = useRef(false);
@@ -77,19 +96,11 @@ export function ProductCreateModal({
         ...pf.buildPayload('create'),
         packs: pf.baseTasnifPack(v.uom || 'шт'),
       });
-      // Staged images — best-effort (the product already exists; a failed image
-      // must not fail the create). Mirrors /products/new.
-      for (const img of pf.stagedImages) {
-        try {
-          await api.post(`/products/${created.id}/images`, {
-            filename: img.name,
-            mime: img.mime,
-            dataBase64: img.dataUrl,
-          });
-        } catch {
-          // best-effort
-        }
-      }
+      // Staged images — best-effort but REPORTED (mirror /products/new): they
+      // need `attachment.create`, a different permission box, and the modal
+      // closes right after, so a silent drop was invisible twice over.
+      const { failed } = await uploadStagedImages(created.id, pf.stagedImages);
+      if (failed > 0) toast.warning(t('images_upload_failed', { count: failed }));
       return created;
     },
     onSuccess: (created) => {
@@ -113,47 +124,55 @@ export function ProductCreateModal({
         if (!o) onClose();
       }}
       title={t('modal_title_create')}
-      widthClass="w-[1160px] max-w-[96vw]"
+      widthClass={allowedToCreate ? 'w-[1160px] max-w-[96vw]' : 'w-[520px] max-w-[92vw]'}
     >
-      <form onSubmit={handleSave} data-test-id="product-create-modal-form">
-        <div className="mb-3">
-          <label htmlFor="pcm-name" className="mb-1 block text-[var(--ms-text-muted)] text-xs">
-            <span className="text-[var(--ms-text-destructive)]">*</span> {t('name_label')}
-          </label>
-          <Input
-            id="pcm-name"
-            data-test-id="field-name"
-            invalid={!!form.formState.errors.name}
-            className="h-9 w-full font-semibold text-[15px]"
-            {...form.register('name')}
-          />
-          {form.formState.errors.name && (
-            <p className="mt-1 text-[var(--ms-text-destructive)] text-xs">
-              {form.formState.errors.name.message}
-            </p>
-          )}
+      {!allowedToCreate ? (
+        <div className="px-4 py-4" data-test-id="product-create-modal-forbidden">
+          <Alert tone="destructive" title={t('no_permission_title')}>
+            {t('no_permission_desc')}
+          </Alert>
         </div>
+      ) : (
+        <form onSubmit={handleSave} data-test-id="product-create-modal-form">
+          <div className="mb-3">
+            <label htmlFor="pcm-name" className="mb-1 block text-[var(--ms-text-muted)] text-xs">
+              <span className="text-[var(--ms-text-destructive)]">*</span> {t('name_label')}
+            </label>
+            <Input
+              id="pcm-name"
+              data-test-id="field-name"
+              invalid={!!form.formState.errors.name}
+              className="h-9 w-full font-semibold text-[15px]"
+              {...form.register('name')}
+            />
+            {form.formState.errors.name && (
+              <p className="mt-1 text-[var(--ms-text-destructive)] text-xs">
+                {form.formState.errors.name.message}
+              </p>
+            )}
+          </div>
 
-        <div className="max-h-[68vh] overflow-y-auto pr-1">
-          <ProductFormShell
-            left={<ProductFormLeftCards pf={pf} />}
-            right={<ProductPriceEditor pf={pf} />}
-          />
-        </div>
+          <div className="max-h-[68vh] overflow-y-auto pr-1">
+            <ProductFormShell
+              left={<ProductFormLeftCards pf={pf} />}
+              right={<ProductPriceEditor pf={pf} />}
+            />
+          </div>
 
-        <div className="mt-3 flex justify-end gap-2 border-[var(--ms-border-default)] border-t pt-3">
-          <Button type="button" variant="secondary" onClick={onClose}>
-            {tCommon('cancel')}
-          </Button>
-          <Button
-            type="submit"
-            disabled={createMut.isPending}
-            data-test-id="product-create-modal-save"
-          >
-            {tCommon('save')}
-          </Button>
-        </div>
-      </form>
+          <div className="mt-3 flex justify-end gap-2 border-[var(--ms-border-default)] border-t pt-3">
+            <Button type="button" variant="secondary" onClick={onClose}>
+              {tCommon('cancel')}
+            </Button>
+            <Button
+              type="submit"
+              disabled={createMut.isPending}
+              data-test-id="product-create-modal-save"
+            >
+              {tCommon('save')}
+            </Button>
+          </div>
+        </form>
+      )}
     </Modal>
   );
 }

@@ -201,4 +201,46 @@ describe('ProductService «Доступ» owner + cross-tenant FK guard (create 
     ).resolves.toMatchObject({ ownerId: owner });
     expect(repo.employeeExists).toHaveBeenCalledWith('acc', owner);
   });
+
+  /**
+   * 🔴 2026-08-23 auditi: band «Код» kiritilganda foydalanuvchi
+   * `Duplicate value on unique field: account_id, code` degan INGLIZCHA,
+   * ustun nomlarini oqizadigan matnni ko'rardi — `/products/new` banneri
+   * server xabarini xomligicha chiqaradi. Bu — 2026-08-22 prod hodisasida
+   * ko'ringan aynan o'sha matn. Servis P2002 ni global filtrdan OLDIN tutgani
+   * uchun filtrning o'zbekcha xabari hech qachon ishlamagan.
+   */
+  describe('band «Код» xatosi — inglizcha texnik matn EMAS', () => {
+    const p2002 = (target: string[]) =>
+      Object.assign(new Error('Unique constraint failed'), { code: 'P2002', meta: { target } });
+
+    it("«Код» to'qnashuvi qaysi maydon ekanini o'zbekcha aytadi", async () => {
+      const { service, repo } = makeService();
+      (repo.create as ReturnType<typeof vi.fn>).mockRejectedValue(p2002(['account_id', 'code']));
+      await expect(service.create('acc', 'user', { name: 'X', code: '05107' })).rejects.toThrow(
+        /Код/,
+      );
+      await expect(service.create('acc', 'user', { name: 'X', code: '05107' })).rejects.not.toThrow(
+        /Duplicate value|unique field|account_id/,
+      );
+    });
+
+    it("«Внешний код» to'qnashuvi o'z maydonini aytadi", async () => {
+      const { service, repo } = makeService();
+      (repo.create as ReturnType<typeof vi.fn>).mockRejectedValue(
+        p2002(['account_id', 'external_code']),
+      );
+      await expect(
+        service.create('acc', 'user', { name: 'X', externalCode: 'e-1' }),
+      ).rejects.toThrow(/Внешний код/);
+    });
+
+    it("boshqa unique maydonda umumiy o'zbekcha xabar", async () => {
+      const { service, repo } = makeService();
+      (repo.create as ReturnType<typeof vi.fn>).mockRejectedValue(p2002(['account_id', 'name']));
+      await expect(service.create('acc', 'user', { name: 'X' })).rejects.toThrow(
+        /allaqachon mavjud/,
+      );
+    });
+  });
 });
