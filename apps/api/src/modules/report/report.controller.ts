@@ -127,6 +127,17 @@ export class ReportController {
     return this.stockBalance.stockBalanceReport(user.accountId, query);
   }
 
+  /** F1 — tovar kartasi «Qoldiqlar» tabi: ombor ostida yacheykalar kesimi
+   * (prefiks bo'yicha guruhlangan) + «biriktirilmagan» qoldiq. */
+  @Get('stock-balance/cells')
+  @RequirePermission({ entity: 'report', action: 'view' })
+  async stockBalanceCells(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: Record<string, unknown>,
+  ) {
+    return this.stockBalance.productCells(user.accountId, query);
+  }
+
   /** Склад → Обороты — stock turnover (opening → income → outcome → closing). */
   @Get('turnover')
   @RequirePermission({ entity: 'report', action: 'view' })

@@ -80,6 +80,7 @@ exports[`MK29 — shablon matritsasi snapshot (10/10) > accountant matritsasi 1`
   "trackingcode": "view:ALL print:ALL",
   "uom": "view:ALL print:ALL",
   "variant": "view:ALL print:ALL",
+  "warehousenumbering": "view:ALL print:ALL",
   "workorder": "view:ALL print:ALL",
 }
 `;
@@ -180,6 +181,7 @@ exports[`MK29 — shablon matritsasi snapshot (10/10) > admin matritsasi 1`] = `
   "trackingcode": "view:ALL create:ALL update:ALL delete:ALL approve:ALL print:ALL",
   "uom": "view:ALL create:ALL update:ALL delete:ALL approve:ALL print:ALL",
   "variant": "view:ALL create:ALL update:ALL delete:ALL approve:ALL print:ALL",
+  "warehousenumbering": "view:ALL create:ALL update:ALL delete:ALL approve:ALL print:ALL",
   "workorder": "view:ALL create:ALL update:ALL delete:ALL approve:ALL print:ALL",
 }
 `;
@@ -309,6 +311,7 @@ exports[`MK29 — shablon matritsasi snapshot (10/10) > owner matritsasi 1`] = `
   "trackingcode": "view:ALL create:ALL update:ALL delete:ALL approve:ALL print:ALL",
   "uom": "view:ALL create:ALL update:ALL delete:ALL approve:ALL print:ALL",
   "variant": "view:ALL create:ALL update:ALL delete:ALL approve:ALL print:ALL",
+  "warehousenumbering": "view:ALL create:ALL update:ALL delete:ALL approve:ALL print:ALL",
   "workorder": "view:ALL create:ALL update:ALL delete:ALL approve:ALL print:ALL",
 }
 `;
@@ -388,6 +391,7 @@ exports[`MK29 — shablon matritsasi snapshot (10/10) > sales_manager matritsasi
   "trackingcode": "view:ALL print:ALL",
   "uom": "view:ALL print:ALL",
   "variant": "view:ALL print:ALL",
+  "warehousenumbering": "view:ALL print:ALL",
   "workorder": "view:ALL print:ALL",
 }
 `;
@@ -504,6 +508,7 @@ exports[`MK29 — shablon matritsasi snapshot (10/10) > supplier matritsasi 1`] 
   "trackingcode": "view:ALL print:ALL",
   "uom": "view:ALL print:ALL",
   "variant": "view:ALL create:ALL update:ALL print:ALL",
+  "warehousenumbering": "view:ALL print:ALL",
   "workorder": "view:ALL print:ALL",
 }
 `;
@@ -575,6 +580,7 @@ exports[`MK29 — shablon matritsasi snapshot (10/10) > warehouse_manager matrit
   "trackingcode": "view:ALL print:ALL",
   "uom": "view:ALL print:ALL",
   "variant": "view:ALL update:ALL print:ALL",
+  "warehousenumbering": "view:ALL create:ALL print:ALL",
   "workorder": "view:ALL print:ALL",
 }
 `;

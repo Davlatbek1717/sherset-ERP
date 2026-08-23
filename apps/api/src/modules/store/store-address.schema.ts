@@ -139,3 +139,25 @@ export const BulkCreateCellsSchema = z.object({
   dryRun: z.boolean().default(false),
 });
 export type BulkCreateCellsInput = z.infer<typeof BulkCreateCellsSchema>;
+
+/**
+ * F3 (reja 2026-08-23) — «Yangi ombor raqamlashtirish»: ombor raqami + har
+ * stelaj uchun qavat/o'rin sonlari. Semantik chegaralar (1–99, jami ≤ 5000)
+ * BulkCreateCells'dagi bilan bir xil sababdan Zod'da EMAS —
+ * `expandWarehouseNumbering` aniqroq, stelaj raqamli xabar beradi.
+ */
+export const WarehouseNumberingSchema = z.object({
+  warehouseNo: z.string().trim().min(1).max(2),
+  stelajlar: z
+    .array(
+      z.object({
+        qavatlar: z.coerce.number().int(),
+        orinlar: z.coerce.number().int(),
+      }),
+    )
+    .min(1)
+    .max(99),
+  /** true ⇒ hech narsa yozilmaydi, faqat sanoq qaytadi. */
+  dryRun: z.boolean().default(false),
+});
+export type WarehouseNumberingInput = z.infer<typeof WarehouseNumberingSchema>;

@@ -209,3 +209,52 @@ describe('BulkCreateCellsSchema', () => {
     expect(spec.variables).toHaveLength(2);
   });
 });
+
+describe('WarehouseNumberingSchema', () => {
+  const ok = { warehouseNo: '03', stelajlar: [{ qavatlar: 4, orinlar: 10 }] };
+
+  it("to'g'ri retseptni qabul qiladi, dryRun default false", async () => {
+    const { WarehouseNumberingSchema } = await import('./store-address.schema.js');
+    const r = WarehouseNumberingSchema.safeParse(ok);
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data.dryRun).toBe(false);
+  });
+
+  it("son ko'rinishidagi satrlar coerce qilinadi (input maydonidan keladi)", async () => {
+    const { WarehouseNumberingSchema } = await import('./store-address.schema.js');
+    const r = WarehouseNumberingSchema.safeParse({
+      warehouseNo: ' 03 ',
+      stelajlar: [{ qavatlar: '4', orinlar: '10' }],
+    });
+    expect(r.success).toBe(true);
+    if (r.success) {
+      expect(r.data.warehouseNo).toBe('03');
+      expect(r.data.stelajlar[0]).toEqual({ qavatlar: 4, orinlar: 10 });
+    }
+  });
+
+  it("bo'sh stelajlar / 99 tadan ko'p stelaj / uzun ombor raqami rad etiladi", async () => {
+    const { WarehouseNumberingSchema } = await import('./store-address.schema.js');
+    expect(WarehouseNumberingSchema.safeParse({ ...ok, stelajlar: [] }).success).toBe(false);
+    expect(
+      WarehouseNumberingSchema.safeParse({
+        ...ok,
+        stelajlar: Array.from({ length: 100 }, () => ({ qavatlar: 1, orinlar: 1 })),
+      }).success,
+    ).toBe(false);
+    expect(WarehouseNumberingSchema.safeParse({ ...ok, warehouseNo: '123' }).success).toBe(false);
+  });
+
+  it("qavatlar=0 Zod'dan O'TADI — semantik xato expandWarehouseNumbering'da", async () => {
+    // BulkCreateCells bilan bir xil taqsimot: Zod shakl, util semantika —
+    // util xatosi stelaj RAQAMINI aytadi, Zod esa umumiy xabar berardi.
+    const { WarehouseNumberingSchema } = await import('./store-address.schema.js');
+    const { expandWarehouseNumbering } = await import('./cell-range.util.js');
+    const r = WarehouseNumberingSchema.safeParse({
+      warehouseNo: '03',
+      stelajlar: [{ qavatlar: 0, orinlar: 1 }],
+    });
+    expect(r.success).toBe(true);
+    if (r.success) expect(() => expandWarehouseNumbering(r.data)).toThrow(/1-stelaj/);
+  });
+});

@@ -164,6 +164,10 @@ export const ACCESS_SECTIONS: AccessSection[] = [
       // Bu qator bo'lmasa admin o'sha ruxsatni hech qaysi ekrandan bera/ola
       // olmasdi — faqat shablon yoki skript orqali (review 2026-08-10 I4).
       dict('storecell', card('access_entity_storecell')),
+      // F3 (2026-08-23): «Yangi ombor raqamlashtirish» — katta omborchiga
+      // `store.update`siz beriladigan alohida ruxsat. Qator bo'lmasa admin uni
+      // hech qaysi ekrandan bera olmasdi (storecell'dagi I4 saboqlari).
+      dict('warehousenumbering', card('access_entity_warehousenumbering')),
     ],
   },
   {

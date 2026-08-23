@@ -199,3 +199,88 @@ export function expandCellRange(spec: CellRangeSpec): ExpandedCell[] {
 
   return out;
 }
+
+// ───────────────────────────────────────────────────────────────────────────
+// Yangi omborni raqamlashtirish (F3, reja 2026-08-23)
+// ───────────────────────────────────────────────────────────────────────────
+
+/** Bitta stelaj retsepti: nechta qavat va har qavatda nechta o'rin. */
+export interface WarehouseStelajSpec {
+  qavatlar: number;
+  orinlar: number;
+}
+
+export interface WarehouseNumberingSpec {
+  /** Ombor raqami, 1–2 xonali («3» ham qabul qilinadi → «03»). */
+  warehouseNo: string;
+  /** Stelajlar tartib bilan: 1-element = stelaj 01, 2-element = stelaj 02 … */
+  stelajlar: WarehouseStelajSpec[];
+}
+
+/**
+ * Kod segmentlari 2 xonali (`NN-SS-QQ-OO`), shuning uchun har o'lcham 99 dan
+ * oshmaydi — kattaroq qiymat kod semantikasini buzardi (uch xonali segment).
+ */
+const MAX_SEGMENT = 99;
+
+/**
+ * Ombor retseptini `NN-SS-QQ-OO` yacheykalarga yoyadi; zona = stelaj, nomi
+ * `NN-SS` (masalan «03-01»).
+ *
+ * Zona nomi ATAYLAB `SS` emas: yacheykalar hozircha yagona umumiy Store ichida
+ * yaratiladi (F5 split'igacha) va yalang'och «01» u yerdagi eski, chalkash
+ * zonalarga yopishib ketardi. F4/F5 zonalarni baribir kodning 2-segmentidan
+ * qayta chiqaradi, shuning uchun bu nom vaqtinchalik va zararsiz.
+ *
+ * Yoyish `expandCellRange` orqali — nomlash (pad, tartib) mavjud diapazon
+ * generatori bilan AYNAN bir xil bo'lishi kafolatlanadi.
+ */
+export function expandWarehouseNumbering(spec: WarehouseNumberingSpec): ExpandedCell[] {
+  const rawNo = spec.warehouseNo.trim();
+  if (!/^\d{1,2}$/.test(rawNo)) {
+    throw new CellRangeError("Ombor raqami 1–2 xonali son bo'lishi kerak (masalan 03)");
+  }
+  const no = Number(rawNo);
+  if (no < 1) throw new CellRangeError('Ombor raqami 01 dan boshlanadi');
+
+  if (spec.stelajlar.length === 0) throw new CellRangeError('Kamida bitta stelaj kerak');
+  if (spec.stelajlar.length > MAX_SEGMENT) {
+    throw new CellRangeError(`Stelajlar soni ${MAX_SEGMENT} dan oshmaydi (kod 2 xonali)`);
+  }
+
+  // AVVAL arifmetik sanaymiz (massivsiz) — expandCellRange'dagi bilan bir xil
+  // sabab: chegaradan oshgan retsept xotira yemasdan rad etilsin.
+  let total = 0;
+  for (const [i, s] of spec.stelajlar.entries()) {
+    const label = `${i + 1}-stelaj`;
+    if (!Number.isInteger(s.qavatlar) || s.qavatlar < 1 || s.qavatlar > MAX_SEGMENT) {
+      throw new CellRangeError(`${label}: qavatlar soni 1–${MAX_SEGMENT} oralig'ida bo'lsin`);
+    }
+    if (!Number.isInteger(s.orinlar) || s.orinlar < 1 || s.orinlar > MAX_SEGMENT) {
+      throw new CellRangeError(`${label}: o'rinlar soni 1–${MAX_SEGMENT} oralig'ida bo'lsin`);
+    }
+    total += s.qavatlar * s.orinlar;
+  }
+  if (total > CELL_RANGE_MAX) {
+    throw new CellRangeError(`${total} ta yacheyka chiqadi, chegara ${CELL_RANGE_MAX}`);
+  }
+
+  const nn = String(no).padStart(2, '0');
+  const out: ExpandedCell[] = [];
+  for (const [i, s] of spec.stelajlar.entries()) {
+    const ss = String(i + 1).padStart(2, '0');
+    const zoneName = `${nn}-${ss}`;
+    const cells = expandCellRange({
+      template: '{ombor}-{stelaj}-{qavat}-{orin}',
+      variables: [
+        { key: 'ombor', kind: 'number', from: no, to: no, pad: 2 },
+        { key: 'stelaj', kind: 'number', from: i + 1, to: i + 1, pad: 2 },
+        { key: 'qavat', kind: 'number', from: 1, to: s.qavatlar, pad: 2 },
+        { key: 'orin', kind: 'number', from: 1, to: s.orinlar, pad: 2 },
+      ],
+      zoneFrom: null,
+    });
+    for (const c of cells) out.push({ name: c.name, zoneName });
+  }
+  return out;
+}

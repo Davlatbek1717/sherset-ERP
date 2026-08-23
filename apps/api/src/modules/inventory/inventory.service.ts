@@ -47,18 +47,25 @@ import {
  * that `cancel()` recomputes from the persisted snapshot.
  *
  * Contract (unchanged semantics, exact arithmetic):
- *   unitCostMinor  — the store's weighted average (costBalanceMinor ÷ expected)
+ *   unitCostMinor  — the store's weighted average (costBalanceMinor ÷ basis)
  *                    when there IS a basis, else the product's buyPrice, else 0.
  *   varianceCostMinor — null when there is no basis at all (so applyDeltas
  *                    leaves costBalanceMinor untouched rather than writing 0 —
  *                    the retail-cost-freeze NULL contract).
  *   lineSumMinor   — actualQty × unitCost, the doc's «Сумма» contribution.
+ *
+ * basisQty (optional) — the qty the cost basis divides over. Store-level rows
+ * omit it (basis = expectedQty, unchanged semantics). A CELL row's expectedQty
+ * is the cell's StockByCell qty, but costBalanceMinor is STORE-level — dividing
+ * by the cell qty would inflate the per-unit cost, so the caller passes the
+ * store's Stock.qty here instead.
  */
 export function computeVarianceLine(input: {
   expectedQty: string;
   actualQty: string;
   costBalanceMinor: bigint;
   buyPriceMinor: bigint;
+  basisQty?: string;
 }): {
   varianceQty: string;
   unitCostMinor: bigint;
@@ -66,9 +73,10 @@ export function computeVarianceLine(input: {
   lineSumMinor: bigint;
 } {
   const varianceQty = subtractDecimals(input.actualQty, input.expectedQty);
-  const hasBasis = compareDecimals(input.expectedQty, '0') > 0 && input.costBalanceMinor > 0n;
+  const basisQty = input.basisQty ?? input.expectedQty;
+  const hasBasis = compareDecimals(basisQty, '0') > 0 && input.costBalanceMinor > 0n;
   const unitCostMinor = hasBasis
-    ? computePerUnitCost(input.costBalanceMinor, input.expectedQty)
+    ? computePerUnitCost(input.costBalanceMinor, basisQty)
     : input.buyPriceMinor;
   return {
     varianceQty,
@@ -430,6 +438,11 @@ export class InventoryService {
   async create(accountId: string, userId: string, raw: unknown) {
     const parsed = this.parseCreate(raw);
     await this.ensureRefs(accountId, parsed.organizationId, parsed.storeId);
+    await this.stock.assertCellsInStore(
+      accountId,
+      parsed.storeId,
+      parsed.positions.map((p) => p.cellId),
+    );
 
     const name = await this.nextName(accountId);
     const attributes = await this.attrs.validateAndNormalize(
@@ -463,6 +476,8 @@ export class InventoryService {
               expectedQty: '0',
               actualQty: p.actualQty,
               varianceQty: '0',
+              cellId: p.cellId ?? null,
+              cell: p.cell ?? null,
             })),
           },
         },
@@ -502,6 +517,12 @@ export class InventoryService {
     }
 
     if (parsed.positions !== undefined) {
+      // Cell rows must point at cells of the doc's (possibly re-picked) store.
+      await this.stock.assertCellsInStore(
+        accountId,
+        parsed.storeId ?? existing.storeId,
+        parsed.positions.map((p) => p.cellId),
+      );
       // The destructive deleteMany is deferred into the $transaction below so a
       // version conflict (409) rolls back the delete instead of leaving the
       // count-lines destroyed (Class A — data corruption guard).
@@ -515,6 +536,8 @@ export class InventoryService {
           expectedQty: '0',
           actualQty: p.actualQty,
           varianceQty: '0',
+          cellId: p.cellId ?? null,
+          cell: p.cell ?? null,
         })),
       };
     }
@@ -629,6 +652,8 @@ export class InventoryService {
             actualQty: 0,
             varianceQty: p.expectedQty.negated(),
             costMinor: p.costMinor,
+            cellId: p.cellId,
+            cell: p.cell,
           })),
         },
       },
@@ -683,7 +708,26 @@ export class InventoryService {
             },
             select: { qty: true, costBalanceMinor: true },
           });
-          const expectedQty = stockRow?.qty?.toString() ?? '0';
+          const storeQty = stockRow?.qty?.toString() ?? '0';
+          // CELL row: the counter recounted ONE cell, so expected is that cell's
+          // StockByCell qty (the store total still holds the un-celled remainder).
+          // Store-level row keeps the pre-cell behaviour byte-for-byte.
+          let expectedQty = storeQty;
+          if (p.cellId) {
+            const cellRow = await tx.stockByCell.findUnique({
+              where: {
+                accountId_storeId_cellId_assortmentKind_assortmentId: {
+                  accountId,
+                  storeId: existing.storeId,
+                  cellId: p.cellId,
+                  assortmentKind: p.assortmentKind,
+                  assortmentId: p.assortmentId,
+                },
+              },
+              select: { qty: true },
+            });
+            expectedQty = cellRow?.qty?.toString() ?? '0';
+          }
           const actualQty = String(p.actualQty);
 
           // Per-unit cost snapshot («Цена» column + doc «Итого»/sumMinor):
@@ -709,6 +753,9 @@ export class InventoryService {
             actualQty,
             costBalanceMinor: stockRow?.costBalanceMinor ?? 0n,
             buyPriceMinor: buyPriceById.get(p.assortmentId) ?? 0n,
+            // Cell row: the store-level cost basis divides over the STORE qty,
+            // not the single cell's expected (see computeVarianceLine docblock).
+            basisQty: p.cellId ? storeQty : undefined,
           });
           sumMinor += lineSumMinor;
           const varianceSign = compareDecimals(varianceStr, '0');
@@ -723,13 +770,17 @@ export class InventoryService {
             },
           });
 
-          // Only emit a delta if there's variance
+          // Only emit a delta if there's variance. A cell row carries cellId so
+          // applyDeltas mirrors the store delta on that exact StockByCell row
+          // (surplus increments it, shortage decrements it) instead of the
+          // auto-deduct/home-cell inference used for store-level rows.
           if (varianceSign > 0) {
             surplusCount++;
             deltas.push({
               storeId: existing.storeId,
               assortmentKind: p.assortmentKind,
               assortmentId: p.assortmentId,
+              cellId: p.cellId ?? null,
               qtyDelta: varianceStr,
               costDeltaMinor: varianceCostMinor,
               docType: 'inventory_surplus',
@@ -743,6 +794,7 @@ export class InventoryService {
               storeId: existing.storeId,
               assortmentKind: p.assortmentKind,
               assortmentId: p.assortmentId,
+              cellId: p.cellId ?? null,
               qtyDelta: varianceStr, // already negative
               costDeltaMinor: varianceCostMinor, // negative — mirrors qty outflow
               docType: 'inventory_shortage',
@@ -826,6 +878,8 @@ export class InventoryService {
             storeId: existing.storeId,
             assortmentKind: p.assortmentKind,
             assortmentId: p.assortmentId,
+            // Cell row reverses on the SAME cell it adjusted at post time.
+            cellId: p.cellId ?? null,
             qtyDelta: subtractDecimals('0', varianceQty), // reverse sign, exact
             costDeltaMinor: reverseVarianceCost(varianceQty, unitCost),
             docType: 'inventory_cancel',

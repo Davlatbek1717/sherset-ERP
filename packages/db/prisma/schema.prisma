@@ -1081,6 +1081,7 @@ model StoreCell {
   purchaseReturnPositions PurchaseReturnPosition[] @relation("PurchaseReturnPositionCell")
   salesReturnPositions    SalesReturnPosition[]    @relation("SalesReturnPositionCell")
   demandPositions         DemandPosition[]         @relation("DemandPositionCell")
+  inventoryPositions      InventoryPosition[]      @relation("InventoryPositionCell")
   stockByCell             StockByCell[]
   // Multi-bin: products bound to THIS cell (many-to-many with Product, see
   // ProductCellLink).
@@ -7417,11 +7418,22 @@ model InventoryPosition {
   // Cost per unit used for variance valuation (from current Stock cost basis)
   costMinor BigInt? @map("cost_minor")
 
-  inventory Inventory @relation(fields: [inventoryId], references: [id], onDelete: Cascade)
-  product   Product?  @relation("ProductInventoryPositions", fields: [productId], references: [id], onDelete: Restrict)
+  // moysklad «Ячейка» — per-cell recount row (address storage). `cellId` = counted
+  // StoreCell (validated via assertCellsInStore); `cell` = denormalized «Зона /
+  // Ячейка» label (display survives cell deletion — FK is SetNull). A cell row's
+  // expectedQty is snapshot from StockByCell (not Stock) at post time, and its
+  // variance delta carries cellId so applyDeltas aligns Stock AND StockByCell.
+  // cellId = null keeps the pre-cell store-level behaviour byte-for-byte.
+  cellId String? @map("cell_id") @db.Uuid
+  cell   String? @db.VarChar(255)
+
+  inventory Inventory  @relation(fields: [inventoryId], references: [id], onDelete: Cascade)
+  product   Product?   @relation("ProductInventoryPositions", fields: [productId], references: [id], onDelete: Restrict)
+  cellRef   StoreCell? @relation("InventoryPositionCell", fields: [cellId], references: [id], onDelete: SetNull)
 
   @@index([inventoryId, position])
   @@index([accountId, assortmentKind, assortmentId])
+  @@index([cellId])
   @@map("inventory_positions")
 }
 

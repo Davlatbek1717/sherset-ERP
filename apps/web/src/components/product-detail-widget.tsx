@@ -118,6 +118,21 @@ interface StockRow {
   available: string;
 }
 
+/** F1 (2026-08-23): yacheykalar kesimi — GET /reports/stock-balance/cells.
+ *  Prefiks (`01-02-03-04` → `01`) fizik omborni belgilaydi (split'gacha). */
+interface CellBreakdownStore {
+  storeId: string;
+  storeName: string | null;
+  totalQty: string;
+  assignedQty: string;
+  unassignedQty: string;
+  groups: Array<{
+    prefix: string | null;
+    qty: string;
+    cells: Array<{ cellId: string; name: string; qty: string }>;
+  }>;
+}
+
 interface MovementRow {
   docId: string;
   docType: 'supply' | 'demand';
@@ -467,6 +482,20 @@ export function ProductDetailWidget({
       toast.error(tCommon('save_failed'));
     }
   };
+
+  // F1: har ombor ostida yacheykalar kesimi (prefiks bo'yicha guruhlab) +
+  // «yacheykalarga biriktirilmagan» qoldiq. Ma'lumot ko'chirilmagan bosqichda
+  // fizik omborni yacheyka kodi prefiksi belgilaydi.
+  const cellBreakdownQuery = useQuery<{ stores: CellBreakdownStore[] }>({
+    queryKey: ['product-stock-cells', productId],
+    queryFn: () =>
+      api.get<{ stores: CellBreakdownStore[] }>(
+        `/reports/stock-balance/cells?assortmentKind=product&assortmentId=${productId}`,
+      ),
+  });
+  const cellBreakdownByStore = new Map(
+    (cellBreakdownQuery.data?.stores ?? []).map((s) => [s.storeId, s]),
+  );
 
   const stockQuery = useQuery<{ items: StockRow[] }>({
     queryKey: ['product-stock', productId],
@@ -1286,6 +1315,64 @@ export function ProductDetailWidget({
                         <td className="px-2 py-1.5 text-right tabular-nums">{s.inTransitQty}</td>
                         <td className="px-2 py-1.5 text-right tabular-nums">{s.available}</td>
                       </tr>
+                      {/* F1: yacheykalar kesimi — prefiks («Ombor NN») guruh sarlavhasi,
+                        ostida yacheyka qatorlari, so'ngida «biriktirilmagan» qoldiq.
+                        Yacheykasi yo'q tovar uchun hech narsa qo'shilmaydi (hammasi
+                        biriktirilmagan — ombor qatori buni allaqachon aytadi). */}
+                      {s.storeId &&
+                        (() => {
+                          const bd = cellBreakdownByStore.get(s.storeId);
+                          if (!bd || bd.groups.length === 0) return null;
+                          return (
+                            <>
+                              {bd.groups.map((g) => (
+                                <Fragment key={`${s.storeId}-wh-${g.prefix ?? 'none'}`}>
+                                  <tr
+                                    className="border-[var(--ms-border-default)] border-b bg-[var(--ms-bg-muted)]"
+                                    data-test-id="stock-cell-group-row"
+                                  >
+                                    <td className="py-1.5 pr-2 pl-6 font-medium text-xs">
+                                      {g.prefix !== null
+                                        ? t('stock_cells_warehouse', { prefix: g.prefix })
+                                        : t('stock_cells_no_prefix')}
+                                    </td>
+                                    <td className="px-2 py-1.5 text-right text-xs tabular-nums">
+                                      {g.qty}
+                                    </td>
+                                    <td colSpan={3} />
+                                  </tr>
+                                  {g.cells.map((c) => (
+                                    <tr
+                                      key={c.cellId}
+                                      className="border-[var(--ms-border-default)] border-b"
+                                      data-test-id="stock-cell-row"
+                                    >
+                                      <td className="py-1 pr-2 pl-10 text-[var(--ms-text-muted)] text-xs tabular-nums">
+                                        {c.name}
+                                      </td>
+                                      <td className="px-2 py-1 text-right text-[var(--ms-text-muted)] text-xs tabular-nums">
+                                        {c.qty}
+                                      </td>
+                                      <td colSpan={3} />
+                                    </tr>
+                                  ))}
+                                </Fragment>
+                              ))}
+                              <tr
+                                className="border-[var(--ms-border-default)] border-b bg-[var(--ms-bg-muted)]"
+                                data-test-id="stock-unassigned-row"
+                              >
+                                <td className="py-1.5 pr-2 pl-6 font-medium text-xs">
+                                  {t('stock_cells_unassigned')}
+                                </td>
+                                <td className="px-2 py-1.5 text-right text-xs tabular-nums">
+                                  {bd.unassignedQty}
+                                </td>
+                                <td colSpan={3} />
+                              </tr>
+                            </>
+                          );
+                        })()}
                       {/* «Показать по модификациям»: each modification's stock in this
                         store, indented under the store row (modification name → variant). */}
                       {stockByVariants &&

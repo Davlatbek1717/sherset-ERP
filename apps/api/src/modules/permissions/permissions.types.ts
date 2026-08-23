@@ -38,6 +38,9 @@ export type PermissionEntity =
   | 'branch'
   | 'store'
   | 'storecell'
+  // F3 (2026-08-23) — «Yangi ombor raqamlashtirish» vositasi. Alohida slug,
+  // chunki bu amal katta omborchiga `store.update`siz ochilishi kerak
+  | 'warehousenumbering'
   | 'cashdesk'
   | 'bankaccount'
   | 'employee'
@@ -170,6 +173,7 @@ export const PERMISSION_ENTITIES: readonly PermissionEntity[] = [
   'branch',
   'store',
   'storecell',
+  'warehousenumbering',
   'cashdesk',
   'bankaccount',
   'employee',
