@@ -6,7 +6,7 @@ import { useBulkDocumentActions } from '@/hooks/use-bulk-actions';
 import { useColumnVisibility } from '@/hooks/use-column-visibility';
 import { useColumnWidths } from '@/hooks/use-column-widths';
 import { api } from '@/lib/api-client';
-import { resolveDefaultSalePrice } from '@/lib/sale-price';
+import { resolveDefaultSalePrice, usePriceTypeIds } from '@/lib/sale-price';
 import {
   Badge,
   CatalogPicker,
@@ -46,8 +46,11 @@ interface VariantListResponse {
   total: number;
 }
 
-function getDefaultSalePrice(v: Variant): string | null {
-  return resolveDefaultSalePrice(v.salePrices);
+// The tier id is REQUIRED: without it the resolver falls back to salePrices[0],
+// whose order is the write order — «Оптовая» can sit first and be shown as the
+// retail price (2026-08-23 audit).
+function getDefaultSalePrice(v: Variant, defaultPriceTypeId: string | null): string | null {
+  return resolveDefaultSalePrice(v.salePrices, defaultPriceTypeId);
 }
 
 const LIMIT = 25;
@@ -57,6 +60,7 @@ export default function VariantsPage() {
   const tCommon = useTranslations('common');
   const tFields = useTranslations('fields');
   const tFilters = useTranslations('filters');
+  const { defaultId } = usePriceTypeIds();
 
   const [searchInput, setSearchInput] = useState('');
   const search = useDebounce(searchInput, 300);
@@ -213,7 +217,7 @@ export default function VariantsPage() {
       align: 'right',
       width: '160px',
       cell: (v) => {
-        const price = getDefaultSalePrice(v);
+        const price = getDefaultSalePrice(v, defaultId);
         return (
           <span className="font-medium tabular-nums">
             {price ? (
@@ -225,7 +229,7 @@ export default function VariantsPage() {
         );
       },
       cellText: (v) => {
-        const p = getDefaultSalePrice(v);
+        const p = getDefaultSalePrice(v, defaultId);
         return p ? formatMoney(p, 'UZS', { displayAs: 'none' }) : '';
       },
     },

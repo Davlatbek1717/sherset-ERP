@@ -2163,7 +2163,7 @@ export default function CustomerOrderDetailPage() {
                             primary: p.name,
                             code: p.code ?? undefined,
                             available: p.stock?.available != null ? Number(p.stock.available) : 0,
-                            priceMinor: resolveDefaultSalePriceOrZero(p.salePrices),
+                            priceMinor: resolveDefaultSalePriceOrZero(p.salePrices, defaultId),
                             uomLabel: p.uom ?? undefined,
                             raw: p,
                           })),
@@ -2198,7 +2198,10 @@ export default function CustomerOrderDetailPage() {
                             .catch(() => toast.error(tPos('pick_modal_price_save_failed')));
                         }
                         const raw = item.raw as ProductItem | undefined;
-                        const defaultPrice = resolveDefaultSalePriceOrZero(raw?.salePrices);
+                        const defaultPrice = resolveDefaultSalePriceOrZero(
+                          raw?.salePrices,
+                          defaultId,
+                        );
                         const newId = uid();
                         setForm((s) =>
                           s
@@ -2417,7 +2420,7 @@ export default function CustomerOrderDetailPage() {
             productArticle: raw?.article ?? undefined,
             productUom: raw?.uom ?? null,
             quantity: '1',
-            priceMinor: resolveDefaultSalePriceOrZero(raw?.salePrices),
+            priceMinor: resolveDefaultSalePriceOrZero(raw?.salePrices, defaultId),
             discount: '0',
             vat: raw?.vat != null ? String(raw.vat) : '12',
             vatEnabled: form.vatEnabled,
@@ -2450,7 +2453,7 @@ export default function CustomerOrderDetailPage() {
             productCode: raw?.code ?? undefined,
             productArticle: raw?.article ?? undefined,
             productUom: raw?.uom ?? null,
-            priceMinor: resolveDefaultSalePriceOrZero(raw?.salePrices),
+            priceMinor: resolveDefaultSalePriceOrZero(raw?.salePrices, defaultId),
             vat: raw?.vat != null ? String(raw.vat) : '12',
             stock: raw?.stock?.onHand,
             reserve: '0',

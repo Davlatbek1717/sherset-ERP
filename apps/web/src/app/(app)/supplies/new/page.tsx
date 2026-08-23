@@ -42,6 +42,7 @@ import { useAuth } from '@/lib/auth-store';
 import { computeLineTotalSafe } from '@/lib/doc-totals';
 import { parsePositionImport } from '@/lib/parse-position-import';
 import { distributeAgreementDelta } from '@/lib/position-agreement';
+import { purchaseLinePriceMinor } from '@/lib/purchase-line-price';
 import {
   Button,
   CatalogPicker,
@@ -552,15 +553,6 @@ export default function NewSupplyPage() {
       }),
     );
   }, []);
-  // «Sotilish narxi» (retail) price-type id — a picked product defaults its price
-  // to its retail sale price on the receipt (owner 2026-07-27), not the buy price.
-  // Matched by name; falls back to the first configured price type.
-  const retailPriceTypeId = useMemo(() => {
-    const items = priceTypesData?.items ?? [];
-    return (
-      items.find((t) => /sotil|розничн|retail|продаж/i.test(t.name))?.id ?? items[0]?.id ?? null
-    );
-  }, [priceTypesData]);
   // «Сохранить цены» — push each line's price back onto its product; on a receipt
   // the line price is the BUY price → Product.buyPrice (mirror supplies/[id]).
   const saveProductPrices = useCallback(async () => {
@@ -1283,8 +1275,11 @@ export default function NewSupplyPage() {
                   createProductLabel={(q) => tPos('createProductNamed', { query: q })}
                   onCreateProduct={(q) => setCreateProductName(q)}
                   // Owner 2026-07-27: product picks add DIRECTLY — no qty/price modal
-                  // (moysklad's Приёмка add-line has none). Price defaults to the
-                  // retail sale price (retailPriceTypeId); the search box clears.
+                  // (moysklad's Приёмка add-line has none); the search box clears.
+                  // Price defaults to the BUY price (owner 2026-08-23) — it is what
+                  // «Сохранить цены» writes back and what the post turns into the
+                  // batch's `costMinor`; seeding it from the retail tier overwrote
+                  // the product's cost with its own sale price.
                   clearQueryOnPick
                   onPick={(item, entry) => {
                     const raw = item.raw as ProductItem | undefined;
@@ -1297,15 +1292,7 @@ export default function NewSupplyPage() {
                         productLabel: item.primary,
                         productUom: raw?.uom ?? null,
                         quantity: entry?.quantity ?? '1',
-                        priceMinor:
-                          entry?.priceMinor ??
-                          (retailPriceTypeId
-                            ? raw?.salePrices?.find((s) => s.priceTypeId === retailPriceTypeId)
-                                ?.value
-                            : undefined) ??
-                          raw?.salePrices?.[0]?.value ??
-                          raw?.buyPrice ??
-                          '0',
+                        priceMinor: entry?.priceMinor ?? purchaseLinePriceMinor(raw),
                         discount: '0',
                         vat: raw?.vat != null ? String(raw.vat) : '12',
                         vatEnabled: true,
@@ -1915,9 +1902,6 @@ export default function NewSupplyPage() {
                 vat?: number | null;
                 salePrices?: Array<{ priceTypeId: string; value: string }> | null;
               }>(`/products/${created.id}`);
-              const retail = retailPriceTypeId
-                ? res.salePrices?.find((s) => s.priceTypeId === retailPriceTypeId)?.value
-                : undefined;
               setPositions((ps) => [
                 ...ps,
                 {
@@ -1926,7 +1910,7 @@ export default function NewSupplyPage() {
                   productLabel: res.name,
                   productUom: res.uom ?? null,
                   quantity: '1',
-                  priceMinor: retail ?? res.salePrices?.[0]?.value ?? res.buyPrice ?? '0',
+                  priceMinor: purchaseLinePriceMinor(res),
                   discount: '0',
                   vat: res.vat != null ? String(res.vat) : '12',
                   vatEnabled: true,

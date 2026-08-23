@@ -48,7 +48,7 @@ import { api } from '@/lib/api-client';
 import { useAuth } from '@/lib/auth-store';
 import { computeLineTotalSafe } from '@/lib/doc-totals';
 import { distributeAgreementDelta } from '@/lib/position-agreement';
-import { resolveDefaultSalePriceOrZero } from '@/lib/sale-price';
+import { resolveDefaultSalePriceOrZero, usePriceTypeIds } from '@/lib/sale-price';
 import {
   Button,
   CatalogPicker,
@@ -127,6 +127,7 @@ export default function NewSalesReturnPage() {
   const router = useRouter();
   const { user } = useAuth();
   const searchParams = useSearchParams();
+  const { defaultId } = usePriceTypeIds();
   const t = useTranslations('pages.sales_returns');
   const totalsLabels = useTotalsLabels();
   const tFields = useTranslations('fields');
@@ -1221,7 +1222,7 @@ export default function NewSalesReturnPage() {
                       primary: p.name,
                       code: p.code ?? undefined,
                       available: p.stock?.available != null ? Number(p.stock.available) : 0,
-                      priceMinor: resolveDefaultSalePriceOrZero(p.salePrices),
+                      priceMinor: resolveDefaultSalePriceOrZero(p.salePrices, defaultId),
                       uomLabel: p.uom ?? undefined,
                       raw: p,
                     })),
@@ -1254,7 +1255,7 @@ export default function NewSalesReturnPage() {
                       .catch(() => toast.error(tPos('pick_modal_price_save_failed')));
                   }
                   const raw = item.raw as ProductItem | undefined;
-                  const defaultPrice = resolveDefaultSalePriceOrZero(raw?.salePrices);
+                  const defaultPrice = resolveDefaultSalePriceOrZero(raw?.salePrices, defaultId);
                   const newId = uid();
                   setPositions((ps) => [
                     ...ps,
@@ -1297,7 +1298,10 @@ export default function NewSalesReturnPage() {
                     ...ps,
                     ...rows.map(({ item, quantity }) => {
                       const raw = item.raw as ProductItem | undefined;
-                      const defaultPrice = resolveDefaultSalePriceOrZero(raw?.salePrices);
+                      const defaultPrice = resolveDefaultSalePriceOrZero(
+                        raw?.salePrices,
+                        defaultId,
+                      );
                       return {
                         id: uid(),
                         assortmentId: item.id,
@@ -1677,7 +1681,7 @@ export default function NewSalesReturnPage() {
         onSelect={(item) => {
           if (typeof openPicker !== 'object' || openPicker === null) return;
           const raw = (item as PickerItem & { raw?: ProductItem }).raw;
-          const defaultPrice = resolveDefaultSalePriceOrZero(raw?.salePrices);
+          const defaultPrice = resolveDefaultSalePriceOrZero(raw?.salePrices, defaultId);
           updatePosition(openPicker.rowUid, {
             assortmentId: item.id,
             productLabel: String(item.primary),

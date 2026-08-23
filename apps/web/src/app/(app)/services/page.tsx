@@ -9,7 +9,7 @@ import { useColumnVisibility } from '@/hooks/use-column-visibility';
 import { useColumnWidths } from '@/hooks/use-column-widths';
 import { api } from '@/lib/api-client';
 import { archivedTone } from '@/lib/archived-tone';
-import { resolveDefaultSalePrice } from '@/lib/sale-price';
+import { resolveDefaultSalePrice, usePriceTypeIds } from '@/lib/sale-price';
 import {
   Badge,
   CatalogPicker,
@@ -44,8 +44,11 @@ interface ServiceListResponse {
   total: number;
 }
 
-function getDefaultSalePrice(s: Service): string | null {
-  return resolveDefaultSalePrice(s.salePrices);
+// The tier id is REQUIRED: without it the resolver falls back to salePrices[0],
+// whose order is the write order — «Оптовая» can sit first and be shown as the
+// retail price (2026-08-23 audit).
+function getDefaultSalePrice(s: Service, defaultPriceTypeId: string | null): string | null {
+  return resolveDefaultSalePrice(s.salePrices, defaultPriceTypeId);
 }
 
 const LIMIT = 25;
@@ -55,6 +58,7 @@ export default function ServicesPage() {
   const tCommon = useTranslations('common');
   const tFields = useTranslations('fields');
   const tFilters = useTranslations('filters');
+  const { defaultId } = usePriceTypeIds();
 
   const [searchInput, setSearchInput] = useState('');
   const search = useDebounce(searchInput, 300);
@@ -176,7 +180,7 @@ export default function ServicesPage() {
       align: 'right',
       width: '160px',
       cell: (s) => {
-        const price = getDefaultSalePrice(s);
+        const price = getDefaultSalePrice(s, defaultId);
         return (
           <span className="font-medium tabular-nums">
             {price ? (
@@ -188,7 +192,7 @@ export default function ServicesPage() {
         );
       },
       cellText: (s) => {
-        const price = getDefaultSalePrice(s);
+        const price = getDefaultSalePrice(s, defaultId);
         return price ? formatMoney(price, 'UZS', { displayAs: 'none' }) : '';
       },
     },

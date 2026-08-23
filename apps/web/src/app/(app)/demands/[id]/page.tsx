@@ -1853,7 +1853,7 @@ export default function DemandDetailPage() {
                             primary: p.name,
                             code: p.code ?? undefined,
                             available: p.stock?.available != null ? Number(p.stock.available) : 0,
-                            priceMinor: resolveDefaultSalePriceOrZero(p.salePrices),
+                            priceMinor: resolveDefaultSalePriceOrZero(p.salePrices, defaultId),
                             uomLabel: p.uom ?? undefined,
                             raw: p,
                           })),
@@ -1869,7 +1869,10 @@ export default function DemandDetailPage() {
                       clearQueryOnPick
                       onPick={(item, entry) => {
                         const raw = item.raw as ProductItem | undefined;
-                        const defaultPrice = resolveDefaultSalePriceOrZero(raw?.salePrices);
+                        const defaultPrice = resolveDefaultSalePriceOrZero(
+                          raw?.salePrices,
+                          defaultId,
+                        );
                         const newId = uid();
                         setForm((s) =>
                           s
@@ -2288,7 +2291,7 @@ export default function DemandDetailPage() {
         fetcher={productFetcher}
         onSelect={(item) => {
           const raw = (item as { raw?: ProductItem }).raw;
-          const defaultPrice = resolveDefaultSalePriceOrZero(raw?.salePrices);
+          const defaultPrice = resolveDefaultSalePriceOrZero(raw?.salePrices, defaultId);
           if (productRowId) {
             // Swap the product on the clicked row.
             updatePosition(productRowId, {
@@ -2387,7 +2390,7 @@ export default function DemandDetailPage() {
                           productLabel: res.name,
                           productUom: res.uom ?? null,
                           quantity: '1',
-                          priceMinor: resolveDefaultSalePriceOrZero(res.salePrices),
+                          priceMinor: resolveDefaultSalePriceOrZero(res.salePrices, defaultId),
                           discount: '0',
                           vat: res.vat != null ? String(res.vat) : '12',
                           vatEnabled: s.vatEnabled,

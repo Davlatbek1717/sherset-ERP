@@ -48,6 +48,20 @@ export interface ProductPickModalProps {
   onCloseAutoFocus?: (e: Event) => void;
 }
 
+/** Minor string → the editable major string the «Цена» field opens with.
+ *  A whole sum drops its zero fraction («4500000» → «45000», not «45000.00»)
+ *  so the common so'm case stays clean; a real tiyin fraction is preserved.
+ *  Missing price → empty (NEVER a placeholder amount — see the field below).
+ *  Pure + exported for tests. */
+export function pickPriceToMajor(minor: string | undefined, currency: string): string {
+  if (minor == null || minor === '') return '';
+  const major = Money.fromMinor(
+    BigInt(minor),
+    currency as Parameters<typeof Money.fromMajor>[1],
+  ).toMajor();
+  return major.replace(/[.,]0+$/, '');
+}
+
 /** Sale-price major string → minor string, using the document currency's
  *  minor-unit rules. Pure + exported for tests. Empty → "0". */
 export function pickPriceToMinor(major: string, currency: string): string {
@@ -95,9 +109,14 @@ export function ProductPickModal({
   permanentPriceOption = true,
   onCloseAutoFocus,
 }: ProductPickModalProps) {
-  // moysklad parity + task: qty and sale-price both default to "1" on open.
+  // Qty defaults to "1"; the price defaults to the product's OWN price — the
+  // same number shown read-only above (owner 2026-08-23). It used to default to
+  // "1", so «товар → Enter → Enter» saved a 1-so'm line on all 21 pickModal
+  // pages; on a receipt that number becomes the batch's `costMinor`.
   const [qty, setQty] = React.useState('1');
-  const [priceMajor, setPriceMajor] = React.useState('1');
+  const [priceMajor, setPriceMajor] = React.useState(() =>
+    pickPriceToMajor(originalPriceMinor, currency),
+  );
   // Price scope (owner 2026-07-17): two mutually-exclusive checkboxes. null =
   // neither ticked = «faqat shu savdoda» (this sale only) — the fast default,
   // no mandatory choice. 'permanent' also writes the product card's sale price.
@@ -113,14 +132,17 @@ export function ProductPickModal({
   React.useEffect(() => {
     if (!open) return;
     setQty('1');
-    setPriceMajor('1');
+    setPriceMajor(pickPriceToMajor(originalPriceMinor, currency));
     setScope(null);
     const id = requestAnimationFrame(() => {
       qtyRef.current?.focus();
       qtyRef.current?.select();
     });
     return () => cancelAnimationFrame(id);
-  }, [open]);
+    // `originalPriceMinor` is a dep so picking a DIFFERENT product without the
+    // dialog closing in between re-seeds the price instead of keeping the
+    // previous product's amount.
+  }, [open, originalPriceMinor, currency]);
 
   const selectHandlers = {
     onMouseDown: () => {

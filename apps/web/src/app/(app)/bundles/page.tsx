@@ -9,7 +9,7 @@ import { useColumnVisibility } from '@/hooks/use-column-visibility';
 import { useColumnWidths } from '@/hooks/use-column-widths';
 import { api } from '@/lib/api-client';
 import { archivedTone } from '@/lib/archived-tone';
-import { resolveDefaultSalePrice } from '@/lib/sale-price';
+import { resolveDefaultSalePrice, usePriceTypeIds } from '@/lib/sale-price';
 import {
   Badge,
   CatalogPicker,
@@ -44,8 +44,11 @@ interface BundleListResponse {
   total: number;
 }
 
-function getDefaultSalePrice(b: Bundle): string | null {
-  return resolveDefaultSalePrice(b.salePrices);
+// The tier id is REQUIRED: without it the resolver falls back to salePrices[0],
+// whose order is the write order — «Оптовая» can sit first and be shown as the
+// retail price (2026-08-23 audit).
+function getDefaultSalePrice(b: Bundle, defaultPriceTypeId: string | null): string | null {
+  return resolveDefaultSalePrice(b.salePrices, defaultPriceTypeId);
 }
 
 const LIMIT = 25;
@@ -55,6 +58,7 @@ export default function BundlesPage() {
   const tCommon = useTranslations('common');
   const tFields = useTranslations('fields');
   const tFilters = useTranslations('filters');
+  const { defaultId } = usePriceTypeIds();
 
   const [searchInput, setSearchInput] = useState('');
   const search = useDebounce(searchInput, 300);
@@ -176,7 +180,7 @@ export default function BundlesPage() {
       align: 'right',
       width: '160px',
       cell: (b) => {
-        const price = getDefaultSalePrice(b);
+        const price = getDefaultSalePrice(b, defaultId);
         return (
           <span className="font-medium tabular-nums">
             {price ? (
@@ -188,7 +192,7 @@ export default function BundlesPage() {
         );
       },
       cellText: (b) => {
-        const price = getDefaultSalePrice(b);
+        const price = getDefaultSalePrice(b, defaultId);
         return price ? formatMoney(price, 'UZS', { displayAs: 'none' }) : '';
       },
     },
