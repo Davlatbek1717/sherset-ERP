@@ -338,6 +338,65 @@ Faqat F8 vazifalari, testlar, deploy, jonli tekshiruv, hisobot — va TO'XTA.
 > test natijalari (raqamlar), deploy holati (jonli tekshiruv dalili), ochiq qolganlar,
 > keyingi fazaga eslatmalar.
 
+### F3 — Yangi omborni raqamlashtirish vositasi · 2026-08-23 · `8eb0128c`
+
+**Nima qilindi:**
+- **API:** `POST /admin/stores/:id/warehouse-numbering` (store.controller) →
+  `StoreAddressService.numberWarehouse`. Kirish: `{warehouseNo, stelajlar:
+  [{qavatlar, orinlar}…], dryRun}`. Yoyish — `expandWarehouseNumbering`
+  (cell-range.util): mavjud `expandCellRange` ustida, har o'lcham 1–99, jami
+  ≤ 5000 (arifmetik, massiv qurilishidan OLDIN), xatolar stelaj raqami bilan
+  o'zbekcha. **Zona = stelaj, nomi `NN-SS`** (masalan «03-01») — yalang'och
+  «SS» ATAYLAB emas: yacheykalar hozircha yagona umumiy Store ichida
+  yaratiladi va «01» u yerdagi eski chalkash zonalarga yopishib ketardi;
+  F4/F5 zonalarni baribir kodning 2-segmentidan qayta chiqaradi.
+- **Refaktor:** `bulkCreateCells` yozish qismi `createMissingCells` private
+  metodiga ajratildi — diapazon-generator va raqamlashtirish BITTA yozish
+  yo'lidan yuradi (dryRun aynan real hisob, idempotentlik, haqiqiy `created`).
+- **Ruxsat — yangi entity `warehousenumbering`** (katta omborchi `store.update`siz
+  raqamlashtira olsin): permissions.types (union + PERMISSION_ENTITIES) +
+  permissions.service seedSystemRoles + packages/db/prisma/seed.ts +
+  scripts/topup-role-permissions.ts NEW_ENTITIES + **TOPUP_ENTITIES** +
+  roles.controller KNOWN_ENTITIES/kategoriya + rol shablonlari:
+  ombor menejeri (`warehouse_manager`) view+create ALL, omborchi
+  (`storekeeper`) ATAYLAB NO. Snapshotlar yangilandi (6).
+- **Web:** `warehouse-numbering-modal.tsx` — ombor raqami, stelajlar soni,
+  har stelaj qatori (qavatlar × o'rinlar, yangi qator oxirgisining nusxasi,
+  «1-stelajni hammasiga qo'llash»), 400ms debounce dryRun oldindan ko'rish
+  (jami/yangi/mavjud/zonalar/sample), server xato matni shundoq. Tugma —
+  ombor kartasi address-storage bo'limida, `can('warehousenumbering','create')`
+  bilan. Yaratilgach etiketka oynasi ombor diapazoni (`[{NN,NN},null,null,null]`)
+  bilan ochiladi. access-sections «Sklad» bo'limiga qator; i18n ru+uz
+  (numbering_* 11 kalit + access_entity_warehousenumbering).
+- Yo'l-yo'lakay: F2 sessiyasidan staged qolgan progress.json va untracked
+  G-reja fayli commit qilindi (`5f95166d`).
+
+**Testlar:** yangi — util 9, behaviour (fake Prisma: dryRun yozmaydi, zona
+bog'lanadi, idempotent, kengayish) 5, permission-lock 5, schema 4, web modal 6.
+TO'LIQ to'plamlar: api 611 fayl / 8523 passed; web 307 fayl / 4165 passed
+(26 skipped), i18n gate'lar yashil. Typecheck api (8G) ✅ web ✅ db ✅.
+
+**Deploy holati: KUTILMOQDA (VPS paroli so'raldi).** Navbatda F1 (`54eb1da3`) +
+F2 (`b323d5ce`) + F3 (`8eb0128c`) birga ketadi. Retsept: ff-merge → build:web →
+`pm2 restart sherset-v2-web` va **api ham** (F1/F3 api'ga tekkan) → so'ng
+**MAJBURIY:** apps/api'da `npx tsx src/scripts/topup-role-permissions.ts`
+(jonli rollarga `warehousenumbering` qatorlari; scriptdan keyin api restart —
+perm cache) → jonli tekshiruv: admin bilan ombor kartasida «Yangi ombor
+raqamlashtirish» → dryRun preview → kichik sinov (masalan 09-ombor, 1 stelaj
+1×1) → yacheyka/zona paydo bo'ldi → xohlasa o'chirish (qoldiqsiz yacheyka
+o'chadi). Migratsiya YO'Q (sxema o'zgarmagan).
+
+**Ochiq qolganlar / keyingi fazaga:**
+- Deploy + jonli tekshiruv parol berilgach (yuqoridagi retsept). Topup
+  yugurtirilib tasdiqlangach `TOPUP_ENTITIES`dan `warehousenumbering`ni olib
+  tashlash kerak (template-topup.ts qoidasi) — kichik follow-up commit
+  (warehouse-numbering-permission.test.ts dagi TOPUP asserti ham birga).
+- F5 split'ida: F3 yaratgan `NN-SS` zonalari o'z Store'iga ko'chirilganda
+  «SS»ga qayta nomlash mumkin (maqsad-arxitektura 3-bo'lim) — F4 skripti
+  zonani kodning 2-segmentidan chiqargani uchun bu avtomatik hal bo'ladi.
+- Etiketka chop etish oqimi diapazon bilan ochiladi — 5000 gacha yacheykada
+  sinash jonlida bir marta qilinsin (F5 dan oldin shart emas).
+
 ### F2 — Inventarizatsiyada «+ Yacheyka qo'shish» · 2026-08-23 · `b323d5ce`
 
 **Nima qilindi:**
