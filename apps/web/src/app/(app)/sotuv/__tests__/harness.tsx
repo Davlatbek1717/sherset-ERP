@@ -120,6 +120,10 @@ export function SESSION(over: Partial<CurrentSession> = {}): CurrentSession {
     organization: { id: '77777777-7777-4777-8777-777777777777', name: 'Sherset MChJ' },
     salesCount: 3,
     salesSumMinor: '150000',
+    // Qaytarish maydonlari ham SERVERDAN keladi (prodda o'lchandi:
+    // `returnsCount`/`returnsSumMinor` javobda bor). Sukut = qaytarishsiz smena.
+    returnsCount: 0,
+    returnsSumMinor: '0',
     openingCashMinor: '0',
     // P4 — «unutilgan smena» maydonlari SERVERDAN keladi (yosh + chegara +
     // bayroq). Fixture ularni o'zi to'qib chiqarmasin: shakl

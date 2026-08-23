@@ -238,6 +238,36 @@ export function SmenaMode({
             {formatMoney(BigInt(session.salesSumMinor))}
           </span>
         </div>
+        {/* 🔴 QAYTARISHLAR (2026-08-17, egasi: «chekni qaytardim, summa
+            qaytmayapti»). Server bu ikkisini ALLAQACHON yuborardi (prodda
+            o'lchandi: returnsCount 1, returnsSumMinor '7300000') — ekran
+            ularni ishlatmagani uchun kassir qaytarishdan keyin smena jamida
+            HECH QANDAY o'zgarish ko'rmasdi va «pul qaytmadi» deb o'ylardi.
+            Qator faqat qaytarish BO'LGANDA chiqadi: bo'sh smenada nol qator
+            ko'z chalg'itadi. */}
+        {session.returnsCount > 0 && (
+          <div className="flex justify-between" data-test-id="smena-returns-row">
+            <span className="text-[var(--ms-text-muted)]">{t('returns')}</span>
+            <span className="font-medium text-[var(--ms-destructive-500)] tabular-nums">
+              {t('returns_count', { n: session.returnsCount })} · −
+              {formatMoney(BigInt(session.returnsSumMinor))}
+            </span>
+          </div>
+        )}
+        {/* SOF tushum — kassir «kunlik savdom qancha?» degan savolga shu
+            qatordan javob oladi. Ayirish EKRANDA, chunki server ikkala jamni
+            alohida yuboradi (bitta «net» maydoni yo'q). */}
+        {session.returnsCount > 0 && (
+          <div
+            className="flex justify-between border-[var(--ms-border)] border-t pt-1"
+            data-test-id="smena-net-row"
+          >
+            <span className="text-[var(--ms-text-muted)]">{t('net_sales')}</span>
+            <span className="font-bold tabular-nums">
+              {formatMoney(BigInt(session.salesSumMinor) - BigInt(session.returnsSumMinor))}
+            </span>
+          </div>
+        )}
         {/* Qabul qilingan NAQD qarz to'lovi — «Sotuvlar» dan alohida qator:
             u sotuv EMAS, lekin puli AYNI shu yashiqda yotadi. Yuklanmagan
             bo'lsa (`null`) qator umuman chizilmaydi — 0 deb ko'rsatish
