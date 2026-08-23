@@ -331,6 +331,45 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-08-23a (TOVAR QO'SHISH — audit + tuzatishlar, ✅ DEPLOYED) —**
+> Egasi: «tovar qo'shish bilan bog'liq barcha xatoliklarni top» → «hammasini bitta bitta
+> to'g'irla» → «DEPLOY QIL».
+> **AUDIT:** 3 parallel read-only auditor (web-create · api-create · hujjat-pozitsiya), har
+> og'ir da'vo kod bilan qayta tasdiqlangan. To'liq ro'yxat + QOLGAN ishlar:
+> `docs/audits/tovar-qoshish-audit-2026-08-23.md`.
+> **TUZATILDI** (7 commit, har biri avval RED ko'rilgan test bilan):
+> *pul xavfi* — tanlov oynasi narxni «1» (= 1 so'm) qo'yardi va sahifalardagi
+> `?? raw?.buyPrice` zaxirasi o'lik kod edi (21 sahifa); qabulda qator CHAKANA narx bilan
+> to'lib, «Сохранить цены» uni tan narxga yozardi; valyutali narx hech qayerda kursga
+> o'girilmasdi («10 dollar» = 10 so'm) — egasi qarori bo'yicha endi KURS BILAN o'qiladi,
+> formula `@moysklad/money` ga ko'chirildi (web+api bir xil arifmetika).
+> *jim yo'qotish* — skaner Enter'i eskirgan taklifni qo'shardi (POS'da tuzatilgan, umumiy
+> komponentda qolgan); «Добавить из справочника» 11 sahifada bo'sh qator qo'shardi
+> (foydalanuvchi 2026-07-14 da shikoyat qilgan, tuzatish 1 sahifada qolgan edi); rasmlar
+> `attachment.create` yo'qligida indamay yo'qolardi; yaratilgan tovar hujjatga tushmay
+> dublikatga olib kelardi (ildizi — ortiqcha ikkinchi GET, olib tashlandi); vergulli «1,5»
+> miqdor jimgina 0 bo'lardi.
+> *yaratish oqimi* — modalda ruxsat qo'riqchisi (22.08 tuzatishi faqat sahifani qamragan),
+> band kod xatosi endi o'zbekcha va maydonni aytadi, skaner Enter'i yarim to'ldirilgan
+> tovarni saqlamaydi, ro'yxat keshi yangilanadi, buzuq narx 500 emas 400, kechikkan «Код»
+> javobi terilganini bosmaydi, `sync-from-moysklad` hisoblagichni suradi.
+> **DEPLOY 2026-08-23 → `8cec65ad`, jonli tasdiqlandi** (sayt 200 · `/api/v1/health` ok ·
+> yangi kod BUILD ichida: `images_upload_failed` `products/new` chunk'ida · uptime o'smoqda,
+> restart soni o'zgarmadi ⇒ sikl yo'q).
+> ⚠️ **DEPLOY PAYTIDA TOPILDI:** box'ning `climart-adoption` branchida remote'da YO'Q 5 commit
+> turgan edi (ombor-restrukturizatsiya F3–F5) va ularning migratsiyasi
+> (`20260822120000_inventory_position_cell`) prod bazasiga 22.08 da qo'llangan. `deploy-smart.sh`
+> `git reset --hard` qilgani uchun oddiy deploy ularni YO'Q QILARDI va `migrate deploy` ni drift
+> bilan yiqitardi. Yechim: box'da `vps-ombor-split-backup-20260823` zaxira branchi → ssh orqali
+> repoga olindi → BIRLASHTIRILDI (yagona konflikt — generatsiya qilinadigan `docs/progress.json`).
+> Birlashgan daraxt gate'i: typecheck 0 · web 4220 (318 fayl) · api 8561 (614 fayl).
+> **Sabog'i:** box'da qolgan commit — YAGONA nusxa; deploydan oldin `git log origin/<branch>..HEAD`
+> ni BOX'da ham tekshir.
+> **QOLGAN:** audit hujjatining «Qolgan ishlar» bo'limi — 2 tasi test-muhiti tufayli (modal
+> formasini test ichida submit qildirib bo'lmadi), 1 tasi egasining qaroriga bog'liq
+> (✏ «Курс валюты» dialogi hech qayerga yozmaydi), qolganlari server-tomon qattiqlashtirish
+> va latent (qator qoldig'i ombor kesimisiz — prod hozir bitta omborli).
+
 > **🕒 2026-08-21a (KASSA — har bir chekka IZOH) —**
 > Egasi: «kassada har bir chekga izoh ham qo'shish funksiyasini qilish kerak».
 > Tasdiqlangan qamrov: izoh SAVATDA ham (chek yopilishidan oldin), YOPILGAN chekda ham;

@@ -11,6 +11,8 @@ import {
   type UpsertCountInput,
   UpsertCountSchema,
 } from './count.schema.js';
+import { loadSalePriceRates } from './currency-rates.util.js';
+import { type SalePricesJson, pickSalePriceMinor } from './sale-price.util.js';
 import { VarianceConfigService } from './variance-config.service.js';
 import { computeVarianceStatus } from './variance-status.util.js';
 
@@ -112,7 +114,9 @@ export interface SnapshotRow {
   countedAt: string;
 }
 
-type SalePricesJson = Array<{ priceTypeId?: string; value?: string }> | null;
+// Shakl `sale-price.util` da — u yerda `currencyCode` ham bor. Bu yerda
+// mahalliy nusxa turgan edi va u valyutani BILMASDI, ya'ni narx tanlash bir
+// modulda ikki xil shartnomaga ega bo'lib qolgandi (2026-08-23 auditi).
 
 /**
  * Stock qty (Decimal(20,6)) → the `number` this module's wire contract uses,
@@ -305,7 +309,7 @@ export class CountService {
     });
     const ids = products.map((p) => p.id);
 
-    const [stocks, counts, defaultType] = await Promise.all([
+    const [stocks, counts, defaultType, rates] = await Promise.all([
       this.prisma.client.stock.findMany({
         where: { accountId, storeId, assortmentKind: 'product', assortmentId: { in: ids } },
         select: { assortmentId: true, qty: true },
@@ -317,6 +321,8 @@ export class CountService {
         where: { accountId, isDefault: true },
         select: { id: true },
       }),
+      // Narx valyutada saqlangan bo'lsa uni bazaga o'girish uchun (2026-08-23).
+      loadSalePriceRates(this.prisma.client, accountId),
     ]);
     const stockByProduct = new Map(stocks.map((s) => [s.assortmentId, decimalQty(s.qty)]));
     const countByProduct = new Map(counts.map((c) => [c.productId, c]));
@@ -328,7 +334,11 @@ export class CountService {
         name: p.name,
         code: p.code,
         expectedQty: stockByProduct.get(p.id) ?? 0,
-        salePriceMinor: this.pickSalePrice(p.salePrices, defaultType?.id).toString(),
+        salePriceMinor: pickSalePriceMinor(
+          p.salePrices as SalePricesJson,
+          defaultType?.id,
+          rates,
+        ).toString(),
         kamQty: c ? Number(c.kamQty) : 0,
         kopQty: c ? Number(c.kopQty) : 0,
         status: c ? (c.status as 'green' | 'yellow' | 'red') : null,
@@ -744,20 +754,14 @@ export class CountService {
       where: { id: productId, accountId },
       select: { salePrices: true },
     });
-    const defaultType = await this.prisma.client.priceType.findFirst({
-      where: { accountId, isDefault: true },
-      select: { id: true },
-    });
-    return this.pickSalePrice(product?.salePrices, defaultType?.id);
-  }
-
-  /** Pick the default price-type's value from a salePrices JSON; first as fallback. */
-  private pickSalePrice(salePrices: unknown, defaultTypeId?: string): bigint {
-    const prices = (salePrices as SalePricesJson) ?? [];
-    const chosen =
-      (defaultTypeId ? prices.find((p) => p.priceTypeId === defaultTypeId) : undefined) ??
-      prices[0];
-    return BigInt(chosen?.value ?? '0');
+    const [defaultType, rates] = await Promise.all([
+      this.prisma.client.priceType.findFirst({
+        where: { accountId, isDefault: true },
+        select: { id: true },
+      }),
+      loadSalePriceRates(this.prisma.client, accountId),
+    ]);
+    return pickSalePriceMinor(product?.salePrices as SalePricesJson, defaultType?.id, rates);
   }
 
   /** Resolve a store: the given id (must belong to the account) or the first active store. */

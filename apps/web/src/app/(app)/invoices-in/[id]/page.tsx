@@ -45,6 +45,7 @@ import { api } from '@/lib/api-client';
 import { docTotals } from '@/lib/doc-totals';
 import { isOptimisticConflict } from '@/lib/optimistic-lock';
 import { distributeAgreementDelta } from '@/lib/position-agreement';
+import { resolveSalePriceByType, useCurrencyRates } from '@/lib/sale-price';
 import {
   Alert,
   CatalogPicker,
@@ -294,6 +295,9 @@ export default function InvoiceInDetailPage() {
   const docEditorLabels = useDocumentEditorLabels();
   const router = useRouter();
   const qc = useQueryClient();
+  // Narx qavati valyutada saqlangan bo'lishi mumkin — «Расценить» uni JORIY
+  // kurs bilan bazaga o'giradi (2026-08-23; usiz «10 dollar» 10 so'm bo'lardi).
+  const rates = useCurrencyRates();
   const t = useTranslations('pages.invoices_in');
   const tCommon = useTranslations('common');
   const tFields = useTranslations('fields');
@@ -396,19 +400,25 @@ export default function InvoiceInDetailPage() {
       };
     });
   }, []);
-  const repricePositions = useCallback((priceTypeId: string) => {
-    setForm((s) =>
-      s
-        ? {
-            ...s,
-            positions: s.positions.map((p) => {
-              const sp = p.salePrices?.find((x) => x.priceTypeId === priceTypeId);
-              return sp ? { ...p, priceMinor: sp.value } : p;
-            }),
-          }
-        : s,
-    );
-  }, []);
+  const repricePositions = useCallback(
+    (priceTypeId: string) => {
+      setForm((s) =>
+        s
+          ? {
+              ...s,
+              positions: s.positions.map((p) => {
+                // «Расценить» — qavat valyutada bo'lsa JORIY kurs bilan bazaga o'giriladi;
+                // kursi noma'lum bo'lsa qator narxi TEGILMAYDI (xom son yozishdan ko'ra
+                // eskisi qolgani xavfsizroq — 2026-08-23 auditi).
+                const next = resolveSalePriceByType(p.salePrices, priceTypeId, rates);
+                return next != null ? { ...p, priceMinor: next } : p;
+              }),
+            }
+          : s,
+      );
+    },
+    [rates],
+  );
   // «Сохранить цены» — supplier invoice line price is the BUY price → save to buyPrice.
   const saveProductPrices = useCallback(async () => {
     const positions = form?.positions ?? [];
@@ -421,6 +431,9 @@ export default function InvoiceInDetailPage() {
         await api.patch(`/products/${p.assortmentId}`, {
           version: prod.version,
           buyPrice: p.priceMinor,
+          // Qiymat BAZA valyutasida — eski valyuta belgisi qolib ketmasin
+          // (aks holda keyin u xorijiy deb o'qilardi). 2026-08-23.
+          buyPriceCurrency: null,
         });
       } catch {
         // skip products that can't be updated; others proceed

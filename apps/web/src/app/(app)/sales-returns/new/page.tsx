@@ -48,7 +48,7 @@ import { api } from '@/lib/api-client';
 import { useAuth } from '@/lib/auth-store';
 import { computeLineTotalSafe } from '@/lib/doc-totals';
 import { distributeAgreementDelta } from '@/lib/position-agreement';
-import { resolveDefaultSalePriceOrZero } from '@/lib/sale-price';
+import { resolveDefaultSalePriceOrZero, useCurrencyRates, usePriceTypeIds } from '@/lib/sale-price';
 import {
   Button,
   CatalogPicker,
@@ -127,6 +127,10 @@ export default function NewSalesReturnPage() {
   const router = useRouter();
   const { user } = useAuth();
   const searchParams = useSearchParams();
+  const { defaultId } = usePriceTypeIds();
+  // Valyuta kurslari — valyutali salePrices'ni baza valyutasiga o'girish uchun
+  // (kurssiz bunday narx '0' bo'lib ko'rinmay qoladi).
+  const rates = useCurrencyRates();
   const t = useTranslations('pages.sales_returns');
   const totalsLabels = useTotalsLabels();
   const tFields = useTranslations('fields');
@@ -302,6 +306,10 @@ export default function NewSalesReturnPage() {
     | { kind: 'product'; rowUid: string }
     | { kind: 'country'; rowUid: string }
   >(null);
+  // «Добавить из справочника» — the catalog «Выбор товара» modal (was: appended
+  // an EMPTY row; audit 2026-08-23 — the sibling sales-returns/[id] editor and
+  // internal-orders/new already open the picker).
+  const [catalogAddOpen, setCatalogAddOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // moysklad marks a required-but-empty «Контрагент» RED on a failed «Сохранить»
   // (short «Поле должно быть заполнено» under the field, same text in the toolbar
@@ -450,25 +458,48 @@ export default function NewSalesReturnPage() {
     };
   }, [organizationId, currency]);
 
-  const addPosition = () => {
+  /** Append ONE catalog product as a return line. Shared by the inline
+   *  typeahead/pick-modal (`onPick`, which supplies `entry`) and the
+   *  «Добавить из справочника» catalog modal (no `entry` — the row falls back
+   *  to the product's own default sale price). Returns the new row id: the
+   *  pick-modal → «Кол-во» focus chain depends on it (owner 2026-07-18). */
+  const appendPositionFromCatalog = (
+    item: { id: string; primary: string; raw?: unknown },
+    entry?: { quantity: string; priceMinor: string; permanent?: boolean },
+  ): string => {
+    if (entry?.permanent) {
+      // «Doimiy narx» — persist to the product card (owner 2026-07-17).
+      api
+        .post(`/products/${item.id}/sale-price`, { priceMinor: entry.priceMinor })
+        .then(() => toast.success(tPos('pick_modal_price_saved')))
+        .catch(() => toast.error(tPos('pick_modal_price_save_failed')));
+    }
+    const raw = item.raw as ProductItem | undefined;
+    const defaultPrice = resolveDefaultSalePriceOrZero(raw?.salePrices, defaultId, rates);
+    const newId = uid();
     setPositions((ps) => [
       ...ps,
       {
-        id: uid(),
-        assortmentId: null,
-        productLabel: '',
-        productUom: null,
+        id: newId,
+        assortmentId: item.id,
+        productLabel: item.primary,
+        productCode: raw?.code ?? undefined,
+        productUom: raw?.uom ?? null,
         demandPositionId: null,
-        quantity: '1',
-        priceMinor: '0',
+        quantity: entry?.quantity ?? '1',
+        priceMinor: entry?.priceMinor ?? defaultPrice,
         discount: '0',
-        vat: '12',
+        vat: raw?.vat != null ? String(raw.vat) : '12',
         vatEnabled: true,
-        gtdSumMinor: '',
-        countryId: null,
-        countryLabel: '',
+        // «Остаток» — read-only stock cluster at the store.
+        stock: raw?.stock?.onHand,
+        available: raw?.stock?.available,
+        folderPath: raw?.productFolder?.pathName ?? undefined,
       },
     ]);
+    // owner 2026-07-18: returning the id hands focus to the new
+    // row's «Кол-во» (modal → table entry chain).
+    return newId;
   };
   const updatePosition = (rowId: string, patch: Partial<NewPositionRow>) => {
     setPositions((ps) => ps.map((p) => (p.id === rowId ? { ...p, ...patch } : p)));
@@ -1221,7 +1252,7 @@ export default function NewSalesReturnPage() {
                       primary: p.name,
                       code: p.code ?? undefined,
                       available: p.stock?.available != null ? Number(p.stock.available) : 0,
-                      priceMinor: resolveDefaultSalePriceOrZero(p.salePrices),
+                      priceMinor: resolveDefaultSalePriceOrZero(p.salePrices, defaultId, rates),
                       uomLabel: p.uom ?? undefined,
                       raw: p,
                     })),
@@ -1245,42 +1276,10 @@ export default function NewSalesReturnPage() {
                     cancel: tPos('pick_modal_cancel'),
                   },
                 }}
-                onPick={(item, entry) => {
-                  if (entry?.permanent) {
-                    // «Doimiy narx» — persist to the product card (owner 2026-07-17).
-                    api
-                      .post(`/products/${item.id}/sale-price`, { priceMinor: entry.priceMinor })
-                      .then(() => toast.success(tPos('pick_modal_price_saved')))
-                      .catch(() => toast.error(tPos('pick_modal_price_save_failed')));
-                  }
-                  const raw = item.raw as ProductItem | undefined;
-                  const defaultPrice = resolveDefaultSalePriceOrZero(raw?.salePrices);
-                  const newId = uid();
-                  setPositions((ps) => [
-                    ...ps,
-                    {
-                      id: newId,
-                      assortmentId: item.id,
-                      productLabel: item.primary,
-                      productCode: raw?.code ?? undefined,
-                      productUom: raw?.uom ?? null,
-                      demandPositionId: null,
-                      quantity: entry?.quantity ?? '1',
-                      priceMinor: entry?.priceMinor ?? defaultPrice,
-                      discount: '0',
-                      vat: raw?.vat != null ? String(raw.vat) : '12',
-                      vatEnabled: true,
-                      // «Остаток» — read-only stock cluster at the store.
-                      stock: raw?.stock?.onHand,
-                      available: raw?.stock?.available,
-                      folderPath: raw?.productFolder?.pathName ?? undefined,
-                    },
-                  ]);
-                  // owner 2026-07-18: returning the id hands focus to the new
-                  // row's «Кол-во» (modal → table entry chain).
-                  return newId;
-                }}
-                onAddFromCatalog={addPosition}
+                onPick={appendPositionFromCatalog}
+                // «Добавить из справочника» — open the catalog picker (was:
+                // appended an empty row; audit 2026-08-23).
+                onAddFromCatalog={() => setCatalogAddOpen(true)}
                 onCheckCompleteness={() => {
                   if (!storeId) {
                     setError(t('select_store_first'));
@@ -1297,7 +1296,11 @@ export default function NewSalesReturnPage() {
                     ...ps,
                     ...rows.map(({ item, quantity }) => {
                       const raw = item.raw as ProductItem | undefined;
-                      const defaultPrice = resolveDefaultSalePriceOrZero(raw?.salePrices);
+                      const defaultPrice = resolveDefaultSalePriceOrZero(
+                        raw?.salePrices,
+                        defaultId,
+                        rates,
+                      );
                       return {
                         id: uid(),
                         assortmentId: item.id,
@@ -1677,7 +1680,7 @@ export default function NewSalesReturnPage() {
         onSelect={(item) => {
           if (typeof openPicker !== 'object' || openPicker === null) return;
           const raw = (item as PickerItem & { raw?: ProductItem }).raw;
-          const defaultPrice = resolveDefaultSalePriceOrZero(raw?.salePrices);
+          const defaultPrice = resolveDefaultSalePriceOrZero(raw?.salePrices, defaultId, rates);
           updatePosition(openPicker.rowUid, {
             assortmentId: item.id,
             productLabel: String(item.primary),
@@ -1688,6 +1691,22 @@ export default function NewSalesReturnPage() {
             stock: raw?.stock?.onHand,
             available: raw?.stock?.available,
             folderPath: raw?.productFolder?.pathName ?? undefined,
+          });
+        }}
+      />
+      {/* «Добавить из справочника» — pick a product and append it as a new line
+          (mirror sales-returns/[id]; no qty/price modal on this path — the row
+          takes the product's own default sale price). */}
+      <CatalogPicker
+        open={catalogAddOpen}
+        onClose={() => setCatalogAddOpen(false)}
+        title={tDetailForm('add_from_catalog')}
+        fetcher={productFetcher}
+        onSelect={(item) => {
+          appendPositionFromCatalog({
+            id: item.id,
+            primary: String(item.primary),
+            raw: (item as PickerItem & { raw?: ProductItem }).raw,
           });
         }}
       />

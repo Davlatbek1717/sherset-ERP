@@ -293,3 +293,49 @@ describe('SetSalePriceSchema (pick-modal «Doimiy narx»)', () => {
     expect(SetSalePriceSchema.safeParse({ priceMinor: '9'.repeat(15) }).success).toBe(true);
   });
 });
+
+/**
+ * Pul maydonlari — buzuq kirish 400 beradi, 500 EMAS; manfiy narx qabul
+ * qilinmaydi.
+ *
+ * 🔴 Bug-class (2026-08-23 auditi): `bigIntString` transformi ichida
+ * `BigInt(String(v))` chaqirilardi va u `"1.5"` / `"12 000"` / `"abc"` da
+ * `SyntaxError` TASHLARDI. Zod transform ichidagi bunday istisnoni ZodError
+ * bo'lib o'ramaydi, ikkala global filtr esa faqat `ZodError` va Prisma
+ * xatosini tutadi — natijada mijoz 400 o'rniga xom **500** olardi
+ * («Internal server error», Sentry shovqini bilan). Web forma `^\d*$` bilan
+ * to'sadi, ya'ni bu yo'l import-skript / curl / boshqa mijozlar uchun ochiq edi.
+ *
+ * Ikkinchi nuqson: `buyPrice`/`minPrice`/`salePrices[].value` da manfiy son
+ * cheklanmagandi (`weightG`/`volumeML` da `nonnegative()` bor edi). Manfiy tan
+ * narx narx polini (`min(tan, karta)`) o'chiradi.
+ */
+describe('pul maydonlari — 400 (500 emas) va manfiy raqamsiz', () => {
+  const base = { name: 'X' };
+
+  it('kasrli/probelli/harfli narx ZodError beradi, TASHLAMAYDI', () => {
+    for (const bad of ['1.5', '12 000', 'abc', '1e6', '-']) {
+      const res = CreateProductSchema.safeParse({ ...base, buyPrice: bad });
+      expect(res.success).toBe(false);
+    }
+    // number ko'rinishidagi kasr ham xuddi shunday
+    expect(CreateProductSchema.safeParse({ ...base, buyPrice: 1.5 }).success).toBe(false);
+  });
+
+  it('manfiy tan narx / minimal narx rad etiladi', () => {
+    expect(CreateProductSchema.safeParse({ ...base, buyPrice: '-500000' }).success).toBe(false);
+    expect(CreateProductSchema.safeParse({ ...base, minPrice: '-1' }).success).toBe(false);
+  });
+
+  it('manfiy sotuv narxi rad etiladi', () => {
+    const bad = { ...base, salePrices: [{ priceTypeId: 'pt-1', value: '-100' }] };
+    expect(CreateProductSchema.safeParse(bad).success).toBe(false);
+  });
+
+  it("to'g'ri qiymatlar avvalgidek ishlaydi (butun son, 0, bigint, number)", () => {
+    expect(CreateProductSchema.parse({ ...base, buyPrice: '4500000' }).buyPrice).toBe(4500000n);
+    expect(CreateProductSchema.parse({ ...base, buyPrice: '0' }).buyPrice).toBe(0n);
+    expect(CreateProductSchema.parse({ ...base, buyPrice: 4500000 }).buyPrice).toBe(4500000n);
+    expect(CreateProductSchema.parse({ ...base, buyPrice: 4500000n }).buyPrice).toBe(4500000n);
+  });
+});

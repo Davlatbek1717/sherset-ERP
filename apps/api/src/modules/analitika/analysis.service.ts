@@ -2,6 +2,7 @@ import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { computeLineCost, formatDecimalScaled, parseDecimalScaled } from '../shared/decimal.js';
 import { AnalysisFilterSchema, CounterpartyListFilterSchema } from './analysis.schema.js';
+import { loadSalePriceRates } from './currency-rates.util.js';
 import { type SalePricesJson, pickSalePriceMinor } from './sale-price.util.js';
 
 /**
@@ -269,6 +270,11 @@ export class AnalysisService {
       ],
     );
 
+    // Narx valyutada saqlangan bo'lishi mumkin — hisobotdagi son baza
+    // valyutasida bo'lishi uchun kurslar kerak (2026-08-23 auditi: bu maydon
+    // ilgari umuman o'qilmasdi, «10 доллар» 10 so'm bo'lib chiqardi).
+    const saleRates = await loadSalePriceRates(this.prisma.client, accountId);
+
     // Per-product aggregates — quantities in exact 1e6-scaled micro-units and
     // money in BigInt tiyin (Faza Q17 / Faza 34 DEFER-4). Both used to run
     // through `number`: `cur.qty += Number(r.quantity)` drifts across thousands
@@ -312,7 +318,11 @@ export class AnalysisService {
     const qtyOut = (micro: bigint) => Number(formatDecimalScaled(micro));
 
     const productsDto: AnalysisProduct[] = products.map((p) => {
-      const sellPriceMinor = pickSalePriceMinor(p.salePrices as SalePricesJson, defaultType?.id);
+      const sellPriceMinor = pickSalePriceMinor(
+        p.salePrices as SalePricesJson,
+        defaultType?.id,
+        saleRates,
+      );
       const sellPrice = Number(sellPriceMinor);
       const buyPrice = Number(p.buyPrice ?? 0n);
       const pur = purchasedByProduct.get(p.id) ?? { qtyMicro: 0n, cost: 0n };

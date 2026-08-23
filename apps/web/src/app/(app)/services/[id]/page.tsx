@@ -17,7 +17,7 @@ import { useDetailNavigation } from '@/hooks/use-detail-navigation';
 import { api } from '@/lib/api-client';
 import { archivedTone } from '@/lib/archived-tone';
 import { isOptimisticConflict } from '@/lib/optimistic-lock';
-import { resolveDefaultSalePrice, usePriceTypeIds } from '@/lib/sale-price';
+import { resolveDefaultSalePrice, useCurrencyRates, usePriceTypeIds } from '@/lib/sale-price';
 import { zodResolver } from '@hookform/resolvers/zod';
 import {
   Alert,
@@ -98,6 +98,9 @@ export default function ServiceDetailPage() {
   });
 
   const { defaultId } = usePriceTypeIds();
+  // Valyuta kurslari — valyutali salePrices'ni baza valyutasiga o'girish uchun.
+  // Erta `return`'dan OLDIN (usePriceTypeIds yonida) turishi SHART.
+  const rates = useCurrencyRates();
 
   const schema = useMemo(() => makeServiceFormSchema(tProduct), [tProduct]);
   const form = useForm<ServiceFormValues>({
@@ -108,9 +111,13 @@ export default function ServiceDetailPage() {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [folderLabel, setFolderLabel] = useState<string | null>(null);
 
+  // `rates` ham dep: kurslar `data`dan kech kelishi mumkin va kelganda
+  // valyutali narx qayta hisoblanishi kerak. `useCurrencyRates` memolangan,
+  // ya'ni identifikator faqat javob o'zgarganda almashadi (`defaultId` bilan
+  // bir xil rol).
   useEffect(() => {
     if (!data) return;
-    const defaultValue = resolveDefaultSalePrice(data.salePrices, defaultId);
+    const defaultValue = resolveDefaultSalePrice(data.salePrices, defaultId, rates);
     form.reset({
       name: data.name,
       code: data.code ?? '',
@@ -126,7 +133,7 @@ export default function ServiceDetailPage() {
         ? data.productFolder.pathName
         : (data.productFolder?.name ?? null),
     );
-  }, [data, form, defaultId]);
+  }, [data, form, defaultId, rates]);
 
   const folderFetcher = async (search: string): Promise<PickerItem[]> => {
     const res = await api.get<{ items: FolderTreeItem[] }>(

@@ -47,7 +47,12 @@ import { computeLineTotalSafe } from '@/lib/doc-totals';
 import { imageRawUrl } from '@/lib/image-url';
 import { distributeAgreementDelta } from '@/lib/position-agreement';
 import { buildPrintMenu } from '@/lib/print-menu';
-import { resolveDefaultSalePriceOrZero, usePriceTypeIds } from '@/lib/sale-price';
+import {
+  resolveDefaultSalePriceOrZero,
+  resolveSalePriceByType,
+  useCurrencyRates,
+  usePriceTypeIds,
+} from '@/lib/sale-price';
 import {
   Button,
   CatalogPicker,
@@ -459,6 +464,9 @@ export default function CustomerOrderDetailPage() {
   const detailNav = useDetailNavigation('customer-orders', id, { server: true });
   const { toast } = useToast();
   const { defaultId } = usePriceTypeIds();
+  // Valyuta kurslari — valyutali salePrices'ni baza valyutasiga o'girish uchun.
+  // Hujjat yuklanmaguncha bo'ladigan erta `return`'dan OLDIN turishi SHART.
+  const rates = useCurrencyRates();
   // Price types for the «Цена ▾» → «Расценить» (re-price by type) menu.
   const { data: priceTypesData } = useQuery<{ items: Array<{ id: string; name: string }> }>({
     queryKey: ['price-types'],
@@ -732,19 +740,25 @@ export default function CustomerOrderDetailPage() {
   // «Расценить» — re-price every row by the chosen price-type (from each
   // product's carried salePrices). Loaded rows have no salePrices until the
   // product is re-picked, so they keep their current price.
-  const repricePositions = useCallback((priceTypeId: string) => {
-    setForm((s) =>
-      s
-        ? {
-            ...s,
-            positions: s.positions.map((p) => {
-              const sp = p.salePrices?.find((x) => x.priceTypeId === priceTypeId);
-              return sp ? { ...p, priceMinor: sp.value } : p;
-            }),
-          }
-        : s,
-    );
-  }, []);
+  const repricePositions = useCallback(
+    (priceTypeId: string) => {
+      setForm((s) =>
+        s
+          ? {
+              ...s,
+              positions: s.positions.map((p) => {
+                // «Расценить» — qavat valyutada bo'lsa JORIY kurs bilan bazaga o'giriladi;
+                // kursi noma'lum bo'lsa qator narxi TEGILMAYDI (xom son yozishdan ko'ra
+                // eskisi qolgani xavfsizroq — 2026-08-23 auditi).
+                const next = resolveSalePriceByType(p.salePrices, priceTypeId, rates);
+                return next != null ? { ...p, priceMinor: next } : p;
+              }),
+            }
+          : s,
+      );
+    },
+    [rates],
+  );
   // «Сохранить цены» — push each row's price back onto its product.
   const saveProductPrices = useCallback(async () => {
     const positions = form?.positions ?? [];
@@ -764,7 +778,11 @@ export default function CustomerOrderDetailPage() {
         const idx = matchIdx < 0 && existing.length > 0 ? 0 : matchIdx;
         const salePrices =
           idx >= 0
-            ? existing.map((x, i) => (i === idx ? { ...x, value: p.priceMinor } : x))
+            ? existing.map((x, i) =>
+                i === idx
+                  ? { ...x, value: p.priceMinor, currencyCode: rates.base ?? undefined }
+                  : x,
+              )
             : [{ priceTypeId: defaultId ?? 'default', value: p.priceMinor }];
         await api.patch(`/products/${p.assortmentId}`, { version: prod.version, salePrices });
       } catch {
@@ -2163,7 +2181,11 @@ export default function CustomerOrderDetailPage() {
                             primary: p.name,
                             code: p.code ?? undefined,
                             available: p.stock?.available != null ? Number(p.stock.available) : 0,
-                            priceMinor: resolveDefaultSalePriceOrZero(p.salePrices),
+                            priceMinor: resolveDefaultSalePriceOrZero(
+                              p.salePrices,
+                              defaultId,
+                              rates,
+                            ),
                             uomLabel: p.uom ?? undefined,
                             raw: p,
                           })),
@@ -2198,7 +2220,11 @@ export default function CustomerOrderDetailPage() {
                             .catch(() => toast.error(tPos('pick_modal_price_save_failed')));
                         }
                         const raw = item.raw as ProductItem | undefined;
-                        const defaultPrice = resolveDefaultSalePriceOrZero(raw?.salePrices);
+                        const defaultPrice = resolveDefaultSalePriceOrZero(
+                          raw?.salePrices,
+                          defaultId,
+                          rates,
+                        );
                         const newId = uid();
                         setForm((s) =>
                           s
@@ -2417,7 +2443,7 @@ export default function CustomerOrderDetailPage() {
             productArticle: raw?.article ?? undefined,
             productUom: raw?.uom ?? null,
             quantity: '1',
-            priceMinor: resolveDefaultSalePriceOrZero(raw?.salePrices),
+            priceMinor: resolveDefaultSalePriceOrZero(raw?.salePrices, defaultId, rates),
             discount: '0',
             vat: raw?.vat != null ? String(raw.vat) : '12',
             vatEnabled: form.vatEnabled,
@@ -2450,7 +2476,7 @@ export default function CustomerOrderDetailPage() {
             productCode: raw?.code ?? undefined,
             productArticle: raw?.article ?? undefined,
             productUom: raw?.uom ?? null,
-            priceMinor: resolveDefaultSalePriceOrZero(raw?.salePrices),
+            priceMinor: resolveDefaultSalePriceOrZero(raw?.salePrices, defaultId, rates),
             vat: raw?.vat != null ? String(raw.vat) : '12',
             stock: raw?.stock?.onHand,
             reserve: '0',

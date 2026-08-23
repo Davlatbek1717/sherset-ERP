@@ -2776,7 +2776,8 @@
       "vat_label": "НДС",
       "vat_none_label": "без НДС",
       "volume_label": "Объем",
-      "weight_label": "Вес"
+      "weight_label": "Вес",
+      "images_upload_failed": "Товар создан, но {count} фото не загрузилось — нужно право «Файлы → Создание». Добавьте фото повторно на карточке товара."
     },
     "contact_persons": {
       "counterparty": "Контрагент",

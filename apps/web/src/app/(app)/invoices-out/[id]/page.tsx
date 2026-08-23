@@ -56,7 +56,12 @@ import { api } from '@/lib/api-client';
 import { docTotals } from '@/lib/doc-totals';
 import { isOptimisticConflict } from '@/lib/optimistic-lock';
 import { distributeAgreementDelta, sumAgreementGross } from '@/lib/position-agreement';
-import { resolveDefaultSalePriceOrZero, usePriceTypeIds } from '@/lib/sale-price';
+import {
+  resolveDefaultSalePriceOrZero,
+  resolveSalePriceByType,
+  useCurrencyRates,
+  usePriceTypeIds,
+} from '@/lib/sale-price';
 import {
   Alert,
   CatalogPicker,
@@ -322,6 +327,9 @@ export default function InvoiceOutDetailPage() {
   });
 
   const { priceTypes, defaultId: defaultPriceTypeId } = usePriceTypeIds();
+  // Valyuta kurslari — valyutali salePrices'ni baza valyutasiga o'girish uchun.
+  // Hujjat yuklanmaguncha bo'ladigan erta `return`'dan (826/832) OLDIN turishi SHART.
+  const rates = useCurrencyRates();
 
   // moysklad «Статус» — the account's custom invoice-out statuses (State rows,
   // entityType="invoiceout"); drives the header pill options. Mirror supply/[id].
@@ -471,19 +479,25 @@ export default function InvoiceOutDetailPage() {
       return { ...s, positions: next };
     });
   }, []);
-  const repricePositions = useCallback((priceTypeId: string) => {
-    setForm((s) =>
-      s
-        ? {
-            ...s,
-            positions: s.positions.map((p) => {
-              const sp = p.salePrices?.find((x) => x.priceTypeId === priceTypeId);
-              return sp ? { ...p, priceMinor: sp.value } : p;
-            }),
-          }
-        : s,
-    );
-  }, []);
+  const repricePositions = useCallback(
+    (priceTypeId: string) => {
+      setForm((s) =>
+        s
+          ? {
+              ...s,
+              positions: s.positions.map((p) => {
+                // «Расценить» — qavat valyutada bo'lsa JORIY kurs bilan bazaga o'giriladi;
+                // kursi noma'lum bo'lsa qator narxi TEGILMAYDI (xom son yozishdan ko'ra
+                // eskisi qolgani xavfsizroq — 2026-08-23 auditi).
+                const next = resolveSalePriceByType(p.salePrices, priceTypeId, rates);
+                return next != null ? { ...p, priceMinor: next } : p;
+              }),
+            }
+          : s,
+      );
+    },
+    [rates],
+  );
   // «Сохранить цены» — sales invoice line price is the SALE price → save to the
   // product's salePrices under the DEFAULT price type (preserving other tiers).
   const saveProductPrices = useCallback(async () => {
@@ -501,7 +515,9 @@ export default function InvoiceOutDetailPage() {
         const existing = prod.salePrices ?? [];
         const merged = existing.some((sp) => sp.priceTypeId === defaultPriceTypeId)
           ? existing.map((sp) =>
-              sp.priceTypeId === defaultPriceTypeId ? { ...sp, value: p.priceMinor } : sp,
+              sp.priceTypeId === defaultPriceTypeId
+                ? { ...sp, value: p.priceMinor, currencyCode: rates.base ?? undefined }
+                : sp,
             )
           : [...existing, { priceTypeId: defaultPriceTypeId, value: p.priceMinor }];
         await api.patch(`/products/${p.assortmentId}`, {
@@ -983,7 +999,7 @@ export default function InvoiceOutDetailPage() {
       productLabel: String(item.primary),
       productCode: raw?.code ?? undefined,
       productUom: raw?.uom ?? null,
-      priceMinor: resolveDefaultSalePriceOrZero(raw?.salePrices, defaultPriceTypeId),
+      priceMinor: resolveDefaultSalePriceOrZero(raw?.salePrices, defaultPriceTypeId, rates),
       vat: raw?.vat != null ? String(raw.vat) : '12',
       available: raw?.stock?.available,
       stock: raw?.stock?.onHand,
@@ -1574,6 +1590,7 @@ export default function InvoiceOutDetailPage() {
                                 priceMinor: resolveDefaultSalePriceOrZero(
                                   p.salePrices,
                                   defaultPriceTypeId,
+                                  rates,
                                 ),
                                 uomLabel: p.uom ?? undefined,
                                 raw: p,
@@ -1628,6 +1645,7 @@ export default function InvoiceOutDetailPage() {
                                           resolveDefaultSalePriceOrZero(
                                             raw?.salePrices,
                                             defaultPriceTypeId,
+                                            rates,
                                           ),
                                         discount: '0',
                                         vat: raw?.vat != null ? String(raw.vat) : '12',
@@ -1666,6 +1684,7 @@ export default function InvoiceOutDetailPage() {
                                           priceMinor: resolveDefaultSalePriceOrZero(
                                             raw?.salePrices,
                                             defaultPriceTypeId,
+                                            rates,
                                           ),
                                           discount: '0',
                                           vat: raw?.vat != null ? String(raw.vat) : '12',
@@ -1825,7 +1844,7 @@ export default function InvoiceOutDetailPage() {
             productCode: raw?.code ?? undefined,
             productUom: raw?.uom ?? null,
             quantity: '1',
-            priceMinor: resolveDefaultSalePriceOrZero(raw?.salePrices, defaultPriceTypeId),
+            priceMinor: resolveDefaultSalePriceOrZero(raw?.salePrices, defaultPriceTypeId, rates),
             discount: '0',
             vat: raw?.vat != null ? String(raw.vat) : '12',
             vatEnabled: form.vatEnabled,

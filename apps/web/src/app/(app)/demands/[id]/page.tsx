@@ -60,7 +60,12 @@ import { computeLineTotalSafe, docMeasureTotals } from '@/lib/doc-totals';
 import { imageRawUrl } from '@/lib/image-url';
 import { distributeAgreementDelta } from '@/lib/position-agreement';
 import { buildPrintMenu } from '@/lib/print-menu';
-import { resolveDefaultSalePriceOrZero, usePriceTypeIds } from '@/lib/sale-price';
+import {
+  resolveDefaultSalePriceOrZero,
+  resolveSalePriceByType,
+  useCurrencyRates,
+  usePriceTypeIds,
+} from '@/lib/sale-price';
 import {
   Alert,
   CatalogPicker,
@@ -428,6 +433,9 @@ export default function DemandDetailPage() {
   const detailNav = useDetailNavigation('demands', id, { server: true });
   const { toast } = useToast();
   const { defaultId } = usePriceTypeIds();
+  // Valyuta kurslari — valyutali salePrices'ni baza valyutasiga o'girish uchun.
+  // Hujjat yuklanmaguncha bo'ladigan erta `return`'dan OLDIN turishi SHART.
+  const rates = useCurrencyRates();
 
   const { data: priceTypesData } = useQuery<{ items: Array<{ id: string; name: string }> }>({
     queryKey: ['price-types'],
@@ -638,19 +646,25 @@ export default function DemandDetailPage() {
       return { ...s, positions: next };
     });
   }, []);
-  const repricePositions = useCallback((priceTypeId: string) => {
-    setForm((s) =>
-      s
-        ? {
-            ...s,
-            positions: s.positions.map((p) => {
-              const sp = p.salePrices?.find((x) => x.priceTypeId === priceTypeId);
-              return sp ? { ...p, priceMinor: sp.value } : p;
-            }),
-          }
-        : s,
-    );
-  }, []);
+  const repricePositions = useCallback(
+    (priceTypeId: string) => {
+      setForm((s) =>
+        s
+          ? {
+              ...s,
+              positions: s.positions.map((p) => {
+                // «Расценить» — qavat valyutada bo'lsa JORIY kurs bilan bazaga o'giriladi;
+                // kursi noma'lum bo'lsa qator narxi TEGILMAYDI (xom son yozishdan ko'ra
+                // eskisi qolgani xavfsizroq — 2026-08-23 auditi).
+                const next = resolveSalePriceByType(p.salePrices, priceTypeId, rates);
+                return next != null ? { ...p, priceMinor: next } : p;
+              }),
+            }
+          : s,
+      );
+    },
+    [rates],
+  );
   const saveProductPrices = useCallback(async () => {
     const positions = form?.positions ?? [];
     const seen = new Set<string>();
@@ -669,7 +683,11 @@ export default function DemandDetailPage() {
         const idx = matchIdx < 0 && existing.length > 0 ? 0 : matchIdx;
         const salePrices =
           idx >= 0
-            ? existing.map((x, i) => (i === idx ? { ...x, value: p.priceMinor } : x))
+            ? existing.map((x, i) =>
+                i === idx
+                  ? { ...x, value: p.priceMinor, currencyCode: rates.base ?? undefined }
+                  : x,
+              )
             : [{ priceTypeId: defaultId ?? 'default', value: p.priceMinor }];
         await api.patch(`/products/${p.assortmentId}`, { version: prod.version, salePrices });
       } catch {
@@ -1853,7 +1871,11 @@ export default function DemandDetailPage() {
                             primary: p.name,
                             code: p.code ?? undefined,
                             available: p.stock?.available != null ? Number(p.stock.available) : 0,
-                            priceMinor: resolveDefaultSalePriceOrZero(p.salePrices),
+                            priceMinor: resolveDefaultSalePriceOrZero(
+                              p.salePrices,
+                              defaultId,
+                              rates,
+                            ),
                             uomLabel: p.uom ?? undefined,
                             raw: p,
                           })),
@@ -1869,7 +1891,11 @@ export default function DemandDetailPage() {
                       clearQueryOnPick
                       onPick={(item, entry) => {
                         const raw = item.raw as ProductItem | undefined;
-                        const defaultPrice = resolveDefaultSalePriceOrZero(raw?.salePrices);
+                        const defaultPrice = resolveDefaultSalePriceOrZero(
+                          raw?.salePrices,
+                          defaultId,
+                          rates,
+                        );
                         const newId = uid();
                         setForm((s) =>
                           s
@@ -2288,7 +2314,7 @@ export default function DemandDetailPage() {
         fetcher={productFetcher}
         onSelect={(item) => {
           const raw = (item as { raw?: ProductItem }).raw;
-          const defaultPrice = resolveDefaultSalePriceOrZero(raw?.salePrices);
+          const defaultPrice = resolveDefaultSalePriceOrZero(raw?.salePrices, defaultId, rates);
           if (productRowId) {
             // Swap the product on the clicked row.
             updatePosition(productRowId, {
@@ -2367,39 +2393,36 @@ export default function DemandDetailPage() {
           open
           initialName={createProductName}
           onClose={() => setCreateProductName(null)}
-          onCreated={async (created) => {
-            try {
-              const res = await api.get<{
-                name: string;
-                uom: string | null;
-                vat?: number | null;
-                salePrices?: Array<{ priceTypeId: string; value: string }> | null;
-              }>(`/products/${created.id}`);
-              setForm((s) =>
-                s
-                  ? {
-                      ...s,
-                      positions: [
-                        ...s.positions,
-                        {
-                          id: uid(),
-                          assortmentId: created.id,
-                          productLabel: res.name,
-                          productUom: res.uom ?? null,
-                          quantity: '1',
-                          priceMinor: resolveDefaultSalePriceOrZero(res.salePrices),
-                          discount: '0',
-                          vat: res.vat != null ? String(res.vat) : '12',
-                          vatEnabled: s.vatEnabled,
-                          salePrices: res.salePrices ?? null,
-                        },
-                      ],
-                    }
-                  : s,
-              );
-            } catch {
-              // product created but couldn't fetch to append — non-fatal
-            }
+          // The modal hands over the whole created product, so the row is built
+          // right here — no second request that could fail silently and leave
+          // the user re-creating the product (2026-08-23 audit).
+          onCreated={(created) => {
+            setForm((s) =>
+              s
+                ? {
+                    ...s,
+                    positions: [
+                      ...s.positions,
+                      {
+                        id: uid(),
+                        assortmentId: created.id,
+                        productLabel: created.name,
+                        productUom: created.uom ?? null,
+                        quantity: '1',
+                        priceMinor: resolveDefaultSalePriceOrZero(
+                          created.salePrices,
+                          defaultId,
+                          rates,
+                        ),
+                        discount: '0',
+                        vat: created.vat != null ? String(created.vat) : '12',
+                        vatEnabled: s.vatEnabled,
+                        salePrices: created.salePrices ?? null,
+                      },
+                    ],
+                  }
+                : s,
+            );
           }}
         />
       )}

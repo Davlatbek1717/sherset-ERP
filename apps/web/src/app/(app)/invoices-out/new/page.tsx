@@ -35,7 +35,12 @@ import { defaultDocStore, useUserDefaults } from '@/hooks/use-user-defaults';
 import { api } from '@/lib/api-client';
 import { computeLineTotalSafe } from '@/lib/doc-totals';
 import { distributeAgreementDelta } from '@/lib/position-agreement';
-import { resolveDefaultSalePriceOrZero, usePriceTypeIds } from '@/lib/sale-price';
+import {
+  resolveDefaultSalePriceOrZero,
+  resolveSalePriceByType,
+  useCurrencyRates,
+  usePriceTypeIds,
+} from '@/lib/sale-price';
 import {
   Button,
   CatalogPicker,
@@ -161,6 +166,8 @@ export default function NewInvoiceOutPage() {
     queryFn: () => api.get('/stores'),
   });
   const { priceTypes, defaultId: defaultPriceTypeId } = usePriceTypeIds();
+  // Valyuta kurslari — valyutali salePrices'ni baza valyutasiga o'girish uchun.
+  const rates = useCurrencyRates();
 
   // Header state
   const [docNumber, setDocNumber] = useState('');
@@ -251,6 +258,10 @@ export default function NewInvoiceOutPage() {
     | 'orgAccount'
     | { kind: 'product'; rowUid: string }
   >(null);
+  // «Добавить из справочника» — the product catalog modal that APPENDS a
+  // position (it used to append an EMPTY row; audit 2026-08-23, the same
+  // bug-class the user reported on internal-orders/new 2026-07-14).
+  const [catalogAddOpen, setCatalogAddOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // «Курс валюты документа» — the rate is the account's currency-справочник rate
@@ -385,21 +396,48 @@ export default function NewInvoiceOutPage() {
   // Also arms the router-level UnsavedNavGuard (browser back / nav away).
   useUnsavedGuard(isDirty);
 
-  const addPosition = () => {
+  /** Append ONE catalog hit as a position. Shared by the inline typeahead
+   *  (which passes the qty/price modal's `entry`) and «Добавить из
+   *  справочника» (no `entry` — the line falls back to the product's default
+   *  sale price). Returns the new row id so the inline bar can hand focus to
+   *  its «Кол-во» cell (owner 2026-07-18 modal → table entry chain). */
+  const appendPositionFromCatalog = (
+    item: PickerItem & { raw?: unknown },
+    entry?: { quantity: string; priceMinor: string; permanent?: boolean },
+  ): string => {
+    if (entry?.permanent) {
+      // «Doimiy narx» — persist to the product card (owner 2026-07-17).
+      api
+        .post(`/products/${item.id}/sale-price`, { priceMinor: entry.priceMinor })
+        .then(() => toast.success(tPos('pick_modal_price_saved')))
+        .catch(() => toast.error(tPos('pick_modal_price_save_failed')));
+    }
+    const raw = item.raw as ProductItem | undefined;
+    const newId = uid();
     setPositions((ps) => [
       ...ps,
       {
-        id: uid(),
-        assortmentId: null,
-        productLabel: '',
-        productUom: null,
-        quantity: '1',
-        priceMinor: '0',
+        id: newId,
+        assortmentId: item.id,
+        productLabel: String(item.primary),
+        productCode: raw?.code ?? undefined,
+        productUom: raw?.uom ?? null,
+        quantity: entry?.quantity ?? '1',
+        priceMinor:
+          entry?.priceMinor ??
+          resolveDefaultSalePriceOrZero(raw?.salePrices, defaultPriceTypeId, rates),
         discount: '0',
-        vat: '12',
+        vat: raw?.vat != null ? String(raw.vat) : '12',
         vatEnabled: true,
+        available: raw?.stock?.available,
+        stock: raw?.stock?.onHand,
+        reserve: raw?.stock?.reserved,
+        waiting: raw?.stock?.inTransit,
+        salePrices: raw?.salePrices ?? null,
+        folderPath: raw?.productFolder?.pathName ?? undefined,
       },
     ]);
+    return newId;
   };
   const updatePosition = (id: string, patch: Partial<NewPositionRow>) => {
     setPositions((ps) => ps.map((p) => (p.id === id ? { ...p, ...patch } : p)));
@@ -409,14 +447,20 @@ export default function NewInvoiceOutPage() {
   };
 
   // «Цена ▾» → «Расценить» (re-price every row from a price type's carried value).
-  const repricePositions = useCallback((priceTypeId: string) => {
-    setPositions((ps) =>
-      ps.map((p) => {
-        const sp = p.salePrices?.find((x) => x.priceTypeId === priceTypeId);
-        return sp ? { ...p, priceMinor: sp.value } : p;
-      }),
-    );
-  }, []);
+  const repricePositions = useCallback(
+    (priceTypeId: string) => {
+      setPositions((ps) =>
+        ps.map((p) => {
+          // «Расценить» — qavat valyutada bo'lsa JORIY kurs bilan bazaga o'giriladi;
+          // kursi noma'lum bo'lsa qator narxi TEGILMAYDI (xom son yozishdan ko'ra
+          // eskisi qolgani xavfsizroq — 2026-08-23 auditi).
+          const next = resolveSalePriceByType(p.salePrices, priceTypeId, rates);
+          return next != null ? { ...p, priceMinor: next } : p;
+        }),
+      );
+    },
+    [rates],
+  );
   // «Цена ▾» → «Сохранить цены» — on a SALES doc the line price is the SALE price,
   // so save to the product's salePrices under the DEFAULT price type (preserving the
   // other tiers + their currency). Fetch for the lock version, PATCH.
@@ -434,7 +478,9 @@ export default function NewInvoiceOutPage() {
         const existing = prod.salePrices ?? [];
         const merged = existing.some((sp) => sp.priceTypeId === defaultPriceTypeId)
           ? existing.map((sp) =>
-              sp.priceTypeId === defaultPriceTypeId ? { ...sp, value: p.priceMinor } : sp,
+              sp.priceTypeId === defaultPriceTypeId
+                ? { ...sp, value: p.priceMinor, currencyCode: rates.base ?? undefined }
+                : sp,
             )
           : [...existing, { priceTypeId: defaultPriceTypeId, value: p.priceMinor }];
         await api.patch(`/products/${p.assortmentId}`, {
@@ -1059,7 +1105,11 @@ export default function NewInvoiceOutPage() {
                       primary: p.name,
                       code: p.code ?? undefined,
                       available: p.stock?.available != null ? Number(p.stock.available) : 0,
-                      priceMinor: resolveDefaultSalePriceOrZero(p.salePrices, defaultPriceTypeId),
+                      priceMinor: resolveDefaultSalePriceOrZero(
+                        p.salePrices,
+                        defaultPriceTypeId,
+                        rates,
+                      ),
                       uomLabel: p.uom ?? undefined,
                       raw: p,
                     })),
@@ -1083,44 +1133,10 @@ export default function NewInvoiceOutPage() {
                     cancel: tPos('pick_modal_cancel'),
                   },
                 }}
-                onPick={(item, entry) => {
-                  if (entry?.permanent) {
-                    // «Doimiy narx» — persist to the product card (owner 2026-07-17).
-                    api
-                      .post(`/products/${item.id}/sale-price`, { priceMinor: entry.priceMinor })
-                      .then(() => toast.success(tPos('pick_modal_price_saved')))
-                      .catch(() => toast.error(tPos('pick_modal_price_save_failed')));
-                  }
-                  const raw = item.raw as ProductItem | undefined;
-                  const newId = uid();
-                  setPositions((ps) => [
-                    ...ps,
-                    {
-                      id: newId,
-                      assortmentId: item.id,
-                      productLabel: item.primary,
-                      productCode: raw?.code ?? undefined,
-                      productUom: raw?.uom ?? null,
-                      quantity: entry?.quantity ?? '1',
-                      priceMinor:
-                        entry?.priceMinor ??
-                        resolveDefaultSalePriceOrZero(raw?.salePrices, defaultPriceTypeId),
-                      discount: '0',
-                      vat: raw?.vat != null ? String(raw.vat) : '12',
-                      vatEnabled: true,
-                      available: raw?.stock?.available,
-                      stock: raw?.stock?.onHand,
-                      reserve: raw?.stock?.reserved,
-                      waiting: raw?.stock?.inTransit,
-                      salePrices: raw?.salePrices ?? null,
-                      folderPath: raw?.productFolder?.pathName ?? undefined,
-                    },
-                  ]);
-                  // owner 2026-07-18: returning the id hands focus to the new
-                  // row's «Кол-во» (modal → table entry chain).
-                  return newId;
-                }}
-                onAddFromCatalog={addPosition}
+                onPick={appendPositionFromCatalog}
+                // «Добавить из справочника» — the full catalog modal (was:
+                // appended an EMPTY row; audit 2026-08-23).
+                onAddFromCatalog={() => setCatalogAddOpen(true)}
                 onCheckCompleteness={() => {
                   if (positions.length === 0) {
                     setError(t('add_position_first'));
@@ -1143,6 +1159,7 @@ export default function NewInvoiceOutPage() {
                         priceMinor: resolveDefaultSalePriceOrZero(
                           raw?.salePrices,
                           defaultPriceTypeId,
+                          rates,
                         ),
                         discount: '0',
                         vat: raw?.vat != null ? String(raw.vat) : '12',
@@ -1452,7 +1469,7 @@ export default function NewInvoiceOutPage() {
             productLabel: String(item.primary),
             productCode: raw?.code ?? undefined,
             productUom: raw?.uom ?? null,
-            priceMinor: resolveDefaultSalePriceOrZero(raw?.salePrices, defaultPriceTypeId),
+            priceMinor: resolveDefaultSalePriceOrZero(raw?.salePrices, defaultPriceTypeId, rates),
             vat: raw?.vat != null ? String(raw.vat) : '12',
             available: raw?.stock?.available,
             stock: raw?.stock?.onHand,
@@ -1461,6 +1478,18 @@ export default function NewInvoiceOutPage() {
             salePrices: raw?.salePrices ?? null,
             folderPath: raw?.productFolder?.pathName ?? undefined,
           });
+        }}
+      />
+      {/* «Добавить из справочника» — pick a product from the catalog and append
+          it as a NEW position (no qty/price modal here: the line takes the
+          product's default sale price, editable in the grid). */}
+      <CatalogPicker
+        open={catalogAddOpen}
+        onClose={() => setCatalogAddOpen(false)}
+        title={tDetailForm('add_from_catalog')}
+        fetcher={productFetcher}
+        onSelect={(item) => {
+          appendPositionFromCatalog(item);
         }}
       />
     </>

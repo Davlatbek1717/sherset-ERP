@@ -54,6 +54,17 @@ export interface UseApiMutationOptions<TData, TError, TVariables, TContext>
    * can present a reload dialog instead.
    */
   onConflict?: (err: TError) => void;
+  /**
+   * Extra query keys to invalidate on success, alongside `['audit-logs']`.
+   *
+   * Needed because queries default to `staleTime: 30_000` with
+   * `refetchOnWindowFocus: false`: after a create, going back to the list
+   * within half a minute served the CACHED page, so the freshly created row
+   * was missing from a `createdAt desc` list and the save looked lost
+   * (2026-08-23 audit). Prefix keys work — `['products']` covers every
+   * filter/page variant of the products list.
+   */
+  invalidateKeys?: ReadonlyArray<readonly unknown[]>;
 }
 
 export function useApiMutation<
@@ -65,7 +76,16 @@ export function useApiMutation<
   const { toast } = useToast();
   const tCommon = useTranslations('common');
   const qc = useQueryClient();
-  const { successMessage, errorMessage, silent, onConflict, onSuccess, onError, ...rest } = options;
+  const {
+    successMessage,
+    errorMessage,
+    silent,
+    onConflict,
+    invalidateKeys,
+    onSuccess,
+    onError,
+    ...rest
+  } = options;
 
   return useMutation<TData, TError, TVariables, TContext>({
     ...rest,
@@ -78,6 +98,10 @@ export function useApiMutation<
       // Invalidating a non-mounted audit query is a cheap no-op (e.g. on list
       // pages), so this is safe for all useApiMutation call sites.
       qc.invalidateQueries({ queryKey: ['audit-logs'] });
+      // Caller-declared lists that this write makes stale (see `invalidateKeys`).
+      for (const key of invalidateKeys ?? []) {
+        qc.invalidateQueries({ queryKey: key });
+      }
       if (!silent && successMessage) {
         toast.success(successMessage);
       }

@@ -2776,7 +2776,8 @@
       "vat_label": "QQS",
       "vat_none_label": "QQS yo'q",
       "volume_label": "Hajm",
-      "weight_label": "Vazn"
+      "weight_label": "Vazn",
+      "images_upload_failed": "Tovar yaratildi, lekin {count} ta rasm yuklanmadi — «Fayllar → Yaratish» ruxsati kerak. Rasmlarni tovar kartasida qayta qo'shing."
     },
     "contact_persons": {
       "counterparty": "Kontragent",

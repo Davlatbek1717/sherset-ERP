@@ -234,6 +234,10 @@ export default function NewCommissionReportOutPage() {
     | 'salesChannel'
     | { kind: 'product'; rowUid: string }
   >(null);
+  // «Добавить из справочника» — the catalog «Выбор товара» modal (was: appended
+  // an EMPTY row; audit 2026-08-23 — internal-orders/new + sales-returns/[id]
+  // already open a picker here).
+  const [catalogAddOpen, setCatalogAddOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const { data: currenciesData } = useQuery<{
@@ -272,22 +276,37 @@ export default function NewCommissionReportOutPage() {
     }
   }, [orgsData, userDefaults.data, userDefaults.isLoading, organizationId, projectId]);
 
-  const addPosition = () => {
+  /** Append ONE catalog product as a report line. Shared by the inline
+   *  typeahead/pick-modal (`onPick`, which supplies `entry`) and the «Добавить
+   *  из справочника» catalog modal (no `entry` — the row falls back to the
+   *  product's own sale/buy price). Returns the new row id: the pick-modal →
+   *  «Кол-во» focus chain depends on it (owner 2026-07-18). */
+  const appendPositionFromCatalog = (
+    item: { id: string; primary: string; raw?: unknown },
+    entry?: { quantity: string; priceMinor: string; permanent?: boolean },
+  ): string => {
+    const raw = item.raw as ProductItem | undefined;
+    const newId = uid();
     setPositions((ps) => [
       ...ps,
       {
-        id: uid(),
-        assortmentId: null,
-        productLabel: '',
-        productUom: null,
-        quantity: '1',
-        priceMinor: '0',
+        id: newId,
+        assortmentId: item.id,
+        productLabel: item.primary,
+        productUom: raw?.uom ?? null,
+        quantity: entry?.quantity ?? '1',
+        priceMinor: entry?.priceMinor ?? raw?.salePriceMinor ?? raw?.buyPriceMinor ?? '0',
+        salePriceMinor: raw?.salePriceMinor ?? null,
+        buyPriceMinor: raw?.buyPriceMinor ?? null,
         discount: '0',
-        vat: '12',
+        vat: raw?.vat != null ? String(raw.vat) : '12',
         vatEnabled: true,
         commissionMinor: '0',
       },
     ]);
+    // owner 2026-07-18: returning the id hands focus to the new
+    // row's «Кол-во» (modal → table entry chain).
+    return newId;
   };
   const updatePosition = (id: string, patch: Partial<NewPositionRow>) => {
     setPositions((ps) => ps.map((p) => (p.id === id ? { ...p, ...patch } : p)));
@@ -615,32 +634,10 @@ export default function NewCommissionReportOutPage() {
                     cancel: tPos('pick_modal_cancel'),
                   },
                 }}
-                onPick={(item, entry) => {
-                  const raw = item.raw as ProductItem | undefined;
-                  const newId = uid();
-                  setPositions((ps) => [
-                    ...ps,
-                    {
-                      id: newId,
-                      assortmentId: item.id,
-                      productLabel: item.primary,
-                      productUom: raw?.uom ?? null,
-                      quantity: entry?.quantity ?? '1',
-                      priceMinor:
-                        entry?.priceMinor ?? raw?.salePriceMinor ?? raw?.buyPriceMinor ?? '0',
-                      salePriceMinor: raw?.salePriceMinor ?? null,
-                      buyPriceMinor: raw?.buyPriceMinor ?? null,
-                      discount: '0',
-                      vat: raw?.vat != null ? String(raw.vat) : '12',
-                      vatEnabled: true,
-                      commissionMinor: '0',
-                    },
-                  ]);
-                  // owner 2026-07-18: returning the id hands focus to the new
-                  // row's «Кол-во» (modal → table entry chain).
-                  return newId;
-                }}
-                onAddFromCatalog={addPosition}
+                onPick={appendPositionFromCatalog}
+                // «Добавить из справочника» — open the catalog picker (was:
+                // appended an empty row; audit 2026-08-23).
+                onAddFromCatalog={() => setCatalogAddOpen(true)}
               />
             }
           />
@@ -1088,6 +1085,22 @@ export default function NewCommissionReportOutPage() {
             salePriceMinor: raw?.salePriceMinor ?? null,
             buyPriceMinor: raw?.buyPriceMinor ?? null,
             vat: raw?.vat != null ? String(raw.vat) : '12',
+          });
+        }}
+      />
+      {/* «Добавить из справочника» — pick a product and append it as a new line
+          (no qty/price modal on this path — the row takes the product's own
+          sale/buy price). */}
+      <CatalogPicker
+        open={catalogAddOpen}
+        onClose={() => setCatalogAddOpen(false)}
+        title={tDetailForm('add_from_catalog')}
+        fetcher={productFetcher}
+        onSelect={(item) => {
+          appendPositionFromCatalog({
+            id: item.id,
+            primary: String(item.primary),
+            raw: (item as PickerItem & { raw?: ProductItem }).raw,
           });
         }}
       />

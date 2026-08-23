@@ -67,6 +67,7 @@ import {
   resolveDefaultSalePrice,
   resolveDefaultSalePriceOrZero,
   resolveWholesaleSalePrice,
+  useCurrencyRates,
   usePriceTypeIds,
 } from '@/lib/sale-price';
 // P4 — smena yoshini matnga aylantirish (chegara mantiqi SERVERDA).
@@ -359,6 +360,13 @@ function SalesScreen({
   // post() — the retail tier for the starting price, the «Оптовая цена» tier
   // for the negotiated floor.
   const { defaultId: defaultPriceTypeId, wholesaleId: wholesalePriceTypeId } = usePriceTypeIds();
+  // Valyuta kurslari — narx yozuvi `currencyCode` bilan saqlangan bo'lsa
+  // resolver uni JORIY kurs bilan bazaga o'giradi. Kurslarsiz bunday narx
+  // `null`/`'0'` bo'lib ekrandan YO'QOLADI (ataylab: xom sonni ko'rsatish
+  // «10 dollar = 10 so'm» xatosini qaytaradi). Hook komponent boshida —
+  // erta return'lar oldida (hook-tartibi buzilishi React #310 bilan prodni
+  // yiqitgan).
+  const rates = useCurrencyRates();
 
   const printZReport = usePrintZReport();
 
@@ -744,10 +752,14 @@ function SalesScreen({
       salePrices: ProductRow['salePrices'],
     ): Pick<CartLine, 'costMinor' | 'wholesaleMinor' | 'basePriceMinor'> => ({
       costMinor: toMinorOrNull(buyPrice),
-      wholesaleMinor: toMinorOrNull(resolveWholesaleSalePrice(salePrices, wholesalePriceTypeId)),
-      basePriceMinor: toMinorOrNull(resolveDefaultSalePrice(salePrices, defaultPriceTypeId)),
+      wholesaleMinor: toMinorOrNull(
+        resolveWholesaleSalePrice(salePrices, wholesalePriceTypeId, rates),
+      ),
+      basePriceMinor: toMinorOrNull(resolveDefaultSalePrice(salePrices, defaultPriceTypeId, rates)),
     }),
-    [defaultPriceTypeId, wholesalePriceTypeId],
+    // `rates` — kurslar asinxron keladi; usiz muzlatilgan callback valyutali
+    // narxni butun smena davomida «yo'q» deb o'qirdi.
+    [defaultPriceTypeId, wholesalePriceTypeId, rates],
   );
 
   // F3 — skaner-javob flash'i: qo'shilgan qator 600ms yashil yonadi. `seq`
@@ -769,7 +781,9 @@ function SalesScreen({
             l.productId === product.id ? { ...l, quantity: addQtyDecimal(l.quantity, 1) } : l,
           );
         }
-        const minor = BigInt(resolveDefaultSalePriceOrZero(product.salePrices, defaultPriceTypeId));
+        const minor = BigInt(
+          resolveDefaultSalePriceOrZero(product.salePrices, defaultPriceTypeId, rates),
+        );
         return [
           ...prev,
           {
@@ -798,7 +812,7 @@ function SalesScreen({
       scanFeedback.ok();
       setCartFlash((f) => ({ productId: product.id, seq: (f?.seq ?? 0) + 1 }));
     },
-    [cardPrices, defaultPriceTypeId],
+    [cardPrices, defaultPriceTypeId, rates],
   );
 
   // ── Qidiruv «tinchidi»mi + Enter/skaner oqimi (2026-08-16) ────────────────

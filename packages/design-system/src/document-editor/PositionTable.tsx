@@ -925,7 +925,14 @@ function NumberInput({
       type="text"
       inputMode="decimal"
       value={value}
-      onChange={(e) => onChange(e.target.value)}
+      // The decimal separator in ru/uz is a COMMA and this table renders its
+      // numbers with commas, so «1,5» is what people type — but it used to be
+      // stored verbatim: `computePositionTotal` threw on `BigInt("1,5")` and
+      // caught it as 0, so the line total silently vanished from «Итого» and
+      // the save was then rejected by the server regex (2026-08-23 audit). Map
+      // it to the canonical dot on the way in; a half-typed «1,» becomes «1.»
+      // so the user can keep typing the fraction.
+      onChange={(e) => onChange(e.target.value.replace(',', '.'))}
       onKeyDown={
         onEnterKey
           ? (e) => {

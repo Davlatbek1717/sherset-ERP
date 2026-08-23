@@ -42,6 +42,9 @@ import { useAuth } from '@/lib/auth-store';
 import { computeLineTotalSafe } from '@/lib/doc-totals';
 import { parsePositionImport } from '@/lib/parse-position-import';
 import { distributeAgreementDelta } from '@/lib/position-agreement';
+import { type PickedProduct, replaceRowProductPatch } from '@/lib/product-row-fields';
+import { purchaseLinePriceMinor } from '@/lib/purchase-line-price';
+import { resolveSalePriceByType, useCurrencyRates } from '@/lib/sale-price';
 import {
   Button,
   CatalogPicker,
@@ -138,6 +141,9 @@ const SHOW_NEW_EVENTS_TAB = false;
 export default function NewSupplyPage() {
   const router = useRouter();
   const { user } = useAuth();
+  // Narx qavati valyutada saqlangan bo'lishi mumkin — «Расценить» uni JORIY
+  // kurs bilan bazaga o'giradi (2026-08-23; usiz «10 dollar» 10 so'm bo'lardi).
+  const rates = useCurrencyRates();
   const t = useTranslations('pages.supplies');
   const totalsLabels = useTotalsLabels();
   const { toast } = useToast();
@@ -275,6 +281,9 @@ export default function NewSupplyPage() {
     | { kind: 'product'; rowUid: string }
     | { kind: 'country'; rowUid: string }
   >(null);
+  // «Добавить из справочника» — the full catalog modal (it used to append an
+  // EMPTY row; user 2026-07-14 bug report, fixed on internal-orders/new first).
+  const [catalogAddOpen, setCatalogAddOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // «Курс валюты документа» — rate from the account currency-справочник (Настройки
@@ -368,25 +377,35 @@ export default function NewSupplyPage() {
     };
   }, [organizationId, currency]);
 
-  const addPosition = () => {
+  /** Append ONE catalog product as a new position — shared by the inline
+   *  typeahead pick and by the «Добавить из справочника» modal, so both land a
+   *  filled row (the button used to append an EMPTY row; same bug-class as the
+   *  internal-orders/new fix from the user's 2026-07-14 report). */
+  const appendPositionFromCatalog = (
+    item: { id: string; primary: unknown; raw?: unknown },
+    entry?: { quantity: string; priceMinor: string },
+  ) => {
+    const raw = item.raw as ProductItem | undefined;
+    const newId = uid();
     setPositions((ps) => [
       ...ps,
       {
-        id: uid(),
-        assortmentId: null,
-        productLabel: '',
-        productUom: null,
-        quantity: '1',
-        priceMinor: '0',
+        id: newId,
+        assortmentId: item.id,
+        productLabel: String(item.primary),
+        productUom: raw?.uom ?? null,
+        quantity: entry?.quantity ?? '1',
+        priceMinor: entry?.priceMinor ?? purchaseLinePriceMinor(raw),
         discount: '0',
-        vat: '12',
+        vat: raw?.vat != null ? String(raw.vat) : '12',
         vatEnabled: true,
-        gtdNumber: '',
-        gtdSumMinor: '',
-        countryId: null,
-        countryLabel: '',
+        stock: raw?.stock?.onHand != null ? String(raw.stock.onHand) : undefined,
+        salePrices: raw?.salePrices ?? null,
       },
     ]);
+    // owner 2026-07-18: returning the id hands focus to the new
+    // row's «Кол-во» (modal → table entry chain).
+    return newId;
   };
 
   // «Импорт ▾» — the user picks a CSV/TSV (Excel «Сохранить как CSV» or a plain
@@ -544,23 +563,20 @@ export default function NewSupplyPage() {
   // «Расценить» — re-price every row by the chosen price-type (from each product's
   // carried salePrices; rows picked before this session's mapping keep their price —
   // same limitation as supplies/[id]).
-  const repricePositions = useCallback((priceTypeId: string) => {
-    setPositions((ps) =>
-      ps.map((p) => {
-        const sp = p.salePrices?.find((x) => x.priceTypeId === priceTypeId);
-        return sp ? { ...p, priceMinor: sp.value } : p;
-      }),
-    );
-  }, []);
-  // «Sotilish narxi» (retail) price-type id — a picked product defaults its price
-  // to its retail sale price on the receipt (owner 2026-07-27), not the buy price.
-  // Matched by name; falls back to the first configured price type.
-  const retailPriceTypeId = useMemo(() => {
-    const items = priceTypesData?.items ?? [];
-    return (
-      items.find((t) => /sotil|розничн|retail|продаж/i.test(t.name))?.id ?? items[0]?.id ?? null
-    );
-  }, [priceTypesData]);
+  const repricePositions = useCallback(
+    (priceTypeId: string) => {
+      setPositions((ps) =>
+        ps.map((p) => {
+          // «Расценить» — qavat valyutada bo'lsa JORIY kurs bilan bazaga o'giriladi;
+          // kursi noma'lum bo'lsa qator narxi TEGILMAYDI (xom son yozishdan ko'ra
+          // eskisi qolgani xavfsizroq — 2026-08-23 auditi).
+          const next = resolveSalePriceByType(p.salePrices, priceTypeId, rates);
+          return next != null ? { ...p, priceMinor: next } : p;
+        }),
+      );
+    },
+    [rates],
+  );
   // «Сохранить цены» — push each line's price back onto its product; on a receipt
   // the line price is the BUY price → Product.buyPrice (mirror supplies/[id]).
   const saveProductPrices = useCallback(async () => {
@@ -573,6 +589,9 @@ export default function NewSupplyPage() {
         await api.patch(`/products/${p.assortmentId}`, {
           version: prod.version,
           buyPrice: p.priceMinor,
+          // Qiymat BAZA valyutasida — eski valyuta belgisi qolib ketmasin
+          // (aks holda keyin u xorijiy deb o'qilardi). 2026-08-23.
+          buyPriceCurrency: null,
         });
       } catch {
         // skip products that can't be updated (e.g. concurrent edit); others proceed
@@ -1283,41 +1302,16 @@ export default function NewSupplyPage() {
                   createProductLabel={(q) => tPos('createProductNamed', { query: q })}
                   onCreateProduct={(q) => setCreateProductName(q)}
                   // Owner 2026-07-27: product picks add DIRECTLY — no qty/price modal
-                  // (moysklad's Приёмка add-line has none). Price defaults to the
-                  // retail sale price (retailPriceTypeId); the search box clears.
+                  // (moysklad's Приёмка add-line has none); the search box clears.
+                  // Price defaults to the BUY price (owner 2026-08-23) — it is what
+                  // «Сохранить цены» writes back and what the post turns into the
+                  // batch's `costMinor`; seeding it from the retail tier overwrote
+                  // the product's cost with its own sale price.
                   clearQueryOnPick
-                  onPick={(item, entry) => {
-                    const raw = item.raw as ProductItem | undefined;
-                    const newId = uid();
-                    setPositions((ps) => [
-                      ...ps,
-                      {
-                        id: newId,
-                        assortmentId: item.id,
-                        productLabel: item.primary,
-                        productUom: raw?.uom ?? null,
-                        quantity: entry?.quantity ?? '1',
-                        priceMinor:
-                          entry?.priceMinor ??
-                          (retailPriceTypeId
-                            ? raw?.salePrices?.find((s) => s.priceTypeId === retailPriceTypeId)
-                                ?.value
-                            : undefined) ??
-                          raw?.salePrices?.[0]?.value ??
-                          raw?.buyPrice ??
-                          '0',
-                        discount: '0',
-                        vat: raw?.vat != null ? String(raw.vat) : '12',
-                        vatEnabled: true,
-                        stock: raw?.stock?.onHand != null ? String(raw.stock.onHand) : undefined,
-                        salePrices: raw?.salePrices ?? null,
-                      },
-                    ]);
-                    // owner 2026-07-18: returning the id hands focus to the new
-                    // row's «Кол-во» (modal → table entry chain).
-                    return newId;
-                  }}
-                  onAddFromCatalog={addPosition}
+                  onPick={appendPositionFromCatalog}
+                  // «Добавить из справочника» — opens the full catalog modal
+                  // (was: appended an empty row; user 2026-07-14 bug report).
+                  onAddFromCatalog={() => setCatalogAddOpen(true)}
                   onCheckCompleteness={() => {
                     if (!storeId) {
                       setError(t('select_store_first'));
@@ -1848,13 +1842,25 @@ export default function NewSupplyPage() {
         onSelect={(item) => {
           if (typeof openPicker !== 'object' || openPicker === null) return;
           const raw = (item as PickerItem & { raw?: ProductItem }).raw;
+          // Tovardan keladigan HAMMA maydon yagona yordamchidan: ilgari bu yerda
+          // atigi 5 tasi yangilanardi va eski tovarning qoldig'i, narx qavatlari
+          // hamda YACHEYKASI qatorda qolib ketardi (2026-08-23 auditi).
           updatePosition(openPicker.rowUid, {
-            assortmentId: item.id,
-            productLabel: String(item.primary),
-            productUom: raw?.uom ?? null,
-            priceMinor: raw?.buyPrice ?? '0',
-            vat: raw?.vat != null ? String(raw.vat) : '12',
+            ...replaceRowProductPatch(item as PickedProduct),
+            priceMinor: purchaseLinePriceMinor(raw),
           });
+        }}
+      />
+      {/* «Добавить из справочника» — every pick appends a FILLED position row
+          (mirrors supplies/[id]); no qty/price modal, the row takes the page's
+          own buy-price default. */}
+      <CatalogPicker
+        open={catalogAddOpen}
+        onClose={() => setCatalogAddOpen(false)}
+        title={tDetailForm('add_from_catalog')}
+        fetcher={productFetcher}
+        onSelect={(item) => {
+          appendPositionFromCatalog(item);
         }}
       />
       <CatalogPicker
@@ -1906,36 +1912,25 @@ export default function NewSupplyPage() {
           open
           initialName={createProductName}
           onClose={() => setCreateProductName(null)}
-          onCreated={async (created) => {
-            try {
-              const res = await api.get<{
-                name: string;
-                uom: string | null;
-                buyPrice: string | null;
-                vat?: number | null;
-                salePrices?: Array<{ priceTypeId: string; value: string }> | null;
-              }>(`/products/${created.id}`);
-              const retail = retailPriceTypeId
-                ? res.salePrices?.find((s) => s.priceTypeId === retailPriceTypeId)?.value
-                : undefined;
-              setPositions((ps) => [
-                ...ps,
-                {
-                  id: uid(),
-                  assortmentId: created.id,
-                  productLabel: res.name,
-                  productUom: res.uom ?? null,
-                  quantity: '1',
-                  priceMinor: retail ?? res.salePrices?.[0]?.value ?? res.buyPrice ?? '0',
-                  discount: '0',
-                  vat: res.vat != null ? String(res.vat) : '12',
-                  vatEnabled: true,
-                  salePrices: res.salePrices ?? null,
-                },
-              ]);
-            } catch {
-              // product created but couldn't fetch to append — non-fatal
-            }
+          // The modal hands over the whole created product, so the row is built
+          // right here — no second request that could fail silently and leave
+          // the user re-creating the product (2026-08-23 audit).
+          onCreated={(created) => {
+            setPositions((ps) => [
+              ...ps,
+              {
+                id: uid(),
+                assortmentId: created.id,
+                productLabel: created.name,
+                productUom: created.uom ?? null,
+                quantity: '1',
+                priceMinor: purchaseLinePriceMinor(created),
+                discount: '0',
+                vat: created.vat != null ? String(created.vat) : '12',
+                vatEnabled: true,
+                salePrices: created.salePrices ?? null,
+              },
+            ]);
           }}
         />
       )}

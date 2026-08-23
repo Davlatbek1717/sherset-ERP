@@ -23,7 +23,17 @@ import { useApiMutation } from '@/hooks/use-api-mutation';
 import { usePermissions } from '@/hooks/use-permissions';
 import { api } from '@/lib/api-client';
 import { useAuth } from '@/lib/auth-store';
-import { Alert, Button, Input, Tabs, TabsContent, TabsList, TabsTrigger } from '@moysklad/ui';
+import { uploadStagedImages } from '@/lib/staged-image-upload';
+import {
+  Alert,
+  Button,
+  Input,
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+  useToast,
+} from '@moysklad/ui';
 import { useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
@@ -31,6 +41,7 @@ import { useEffect, useRef, useState } from 'react';
 export default function NewProductPage() {
   const pf = useProductForm();
   const { t, form } = pf;
+  const { toast } = useToast();
   // Right-column tab labels reuse the detail widget's grounded tab set.
   const tw = useTranslations('product_detail_widget');
   const router = useRouter();
@@ -64,7 +75,11 @@ export default function NewProductPage() {
     pf.addBarcode();
     api
       .post<{ code: string }>('/products/allocate-code', {})
-      .then((r) => form.setValue('code', r.code))
+      // Faqat maydon hamon BO'SH bo'lsa yoziladi — kechikkan javob
+      // foydalanuvchi kiritgan kodni bosib ketmasin (2026-08-23 auditi).
+      .then((r) => {
+        if (!form.getValues('code')) form.setValue('code', r.code);
+      })
       .catch(() => {});
   }, [allowedToCreate]);
   // «Сотрудник» (owner) = current user, set once the auth user resolves.
@@ -78,6 +93,10 @@ export default function NewProductPage() {
   }, [user]);
 
   const createMut = useApiMutation({
+    // The catalog list caches for 30s and never refetches on focus, so without
+    // this the just-created product was missing when the user went back to
+    // /products (2026-08-23 audit).
+    invalidateKeys: [['products']],
     mutationFn: async () => {
       const v = form.getValues();
       const payload = {
@@ -86,19 +105,13 @@ export default function NewProductPage() {
         packs: pf.baseTasnifPack(v.uom || 'шт'),
       };
       const created = await api.post<{ id: string }>('/products', payload);
-      // Upload staged images (best-effort — the product already exists, so a
-      // failed image must not fail the create). Mirrors ImageGallery's contract.
-      for (const img of pf.stagedImages) {
-        try {
-          await api.post(`/products/${created.id}/images`, {
-            filename: img.name,
-            mime: img.mime,
-            dataBase64: img.dataUrl,
-          });
-        } catch {
-          // best-effort; the product was created regardless
-        }
-      }
+      // Staged images are best-effort — the product already exists, so a failed
+      // image must not fail the create — but the failure is REPORTED: uploads
+      // need `attachment.create`, a different permission box from the one that
+      // let the user get this far, and the old empty `catch {}` dropped every
+      // picture without a word (2026-08-23 audit).
+      const { failed } = await uploadStagedImages(created.id, pf.stagedImages);
+      if (failed > 0) toast.warning(t('images_upload_failed', { count: failed }));
       return created;
     },
     onSuccess: (created) => {

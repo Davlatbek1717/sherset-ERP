@@ -29,6 +29,12 @@ function makePrisma(overrides: Record<string, unknown> = {}) {
     priceType: {
       findFirst: vi.fn().mockResolvedValue(null),
     },
+    // Valyuta kurslari — narx `currencyCode` bilan saqlangan bo'lsa bazaga
+    // o'girish uchun o'qiladi (2026-08-23). Bu yerda valyuta yo'q, ya'ni
+    // narxlar allaqachon bazada.
+    currency: {
+      findMany: vi.fn().mockResolvedValue([]),
+    },
     employee: {
       findMany: vi.fn().mockResolvedValue([{ id: COUNTER, name: 'Ali', fullName: 'Aliyev Ali' }]),
     },

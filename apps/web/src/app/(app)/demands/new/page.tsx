@@ -28,7 +28,7 @@ import { api } from '@/lib/api-client';
 import { useAuth } from '@/lib/auth-store';
 import { computeLineTotalSafe, docMeasureTotals } from '@/lib/doc-totals';
 import { distributeAgreementDelta } from '@/lib/position-agreement';
-import { resolveDefaultSalePriceOrZero } from '@/lib/sale-price';
+import { resolveDefaultSalePriceOrZero, useCurrencyRates, usePriceTypeIds } from '@/lib/sale-price';
 import {
   Button,
   CatalogPicker,
@@ -112,6 +112,9 @@ const POSITION_COLUMNS: PositionTableColumnConfig[] = [
 export default function NewDemandPage() {
   const router = useRouter();
   const { user } = useAuth();
+  const { defaultId } = usePriceTypeIds();
+  // Valyuta kurslari — valyutali salePrices'ni baza valyutasiga o'girish uchun.
+  const rates = useCurrencyRates();
   const t = useTranslations('pages.demands');
   const totalsLabels = useTotalsLabels();
   const tFields = useTranslations('fields');
@@ -344,6 +347,9 @@ export default function NewDemandPage() {
     | 'carrier'
     | { kind: 'product'; rowUid: string }
   >(null);
+  // «Добавить из справочника» — the full catalog modal (it used to append an
+  // EMPTY row; user 2026-07-14 bug report, fixed on internal-orders/new first).
+  const [catalogAddOpen, setCatalogAddOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // «Курс валюты документа» — rate from the account currency-справочник (Настройки
@@ -429,21 +435,37 @@ export default function NewDemandPage() {
     return m;
   }, [stockData]);
 
-  const addPosition = () => {
+  /** Append ONE catalog product as a new position — shared by the inline
+   *  typeahead pick and by the «Добавить из справочника» modal, so both land a
+   *  filled row (the button used to append an EMPTY row; same bug-class as the
+   *  internal-orders/new fix from the user's 2026-07-14 report). */
+  const appendPositionFromCatalog = (
+    item: { id: string; primary: unknown; raw?: unknown },
+    entry?: { quantity: string; priceMinor: string },
+  ) => {
+    const raw = item.raw as ProductItem | undefined;
+    const defaultPrice = resolveDefaultSalePriceOrZero(raw?.salePrices, defaultId, rates);
+    const newId = uid();
     setPositions((ps) => [
       ...ps,
       {
-        id: uid(),
-        assortmentId: null,
-        productLabel: '',
-        productUom: null,
-        quantity: '1',
-        priceMinor: '0',
+        id: newId,
+        assortmentId: item.id,
+        productLabel: String(item.primary),
+        productUom: raw?.uom ?? null,
+        quantity: entry?.quantity ?? '1',
+        priceMinor: entry?.priceMinor ?? defaultPrice,
         discount: '0',
-        vat: '12',
+        vat: raw?.vat != null ? String(raw.vat) : '12',
         vatEnabled: true,
+        salePrices: raw?.salePrices ?? null,
+        weightG: raw?.weightG ?? undefined,
+        volumeML: raw?.volumeML ?? undefined,
       },
     ]);
+    // owner 2026-07-18: returning the id hands focus to the new
+    // row's «Кол-во» (modal → table entry chain).
+    return newId;
   };
   const updatePosition = (id: string, patch: Partial<NewPositionRow>) => {
     setPositions((ps) => ps.map((p) => (p.id === id ? { ...p, ...patch } : p)));
@@ -991,19 +1013,27 @@ export default function NewDemandPage() {
             footerToolbar={
               <PositionInlineAdd
                 onSearch={async (q) => {
-                  const r = await api.get<{ items: ProductItem[] }>(
+                  const r = await api.get<{ items: ProductItem[]; total?: number }>(
                     `/products?search=${encodeURIComponent(q)}&limit=20`,
                   );
-                  return r.items.map((p) => ({
-                    id: p.id,
-                    primary: p.name,
-                    secondary: p.code ?? undefined,
-                    // Band 1 pick modal: «Остаток» line needs the stock figure.
-                    available: p.stock?.available != null ? Number(p.stock.available) : 0,
-                    priceMinor: resolveDefaultSalePriceOrZero(p.salePrices),
-                    uomLabel: p.uom ?? undefined,
-                    raw: p,
-                  }));
+                  return {
+                    items: r.items.map((p) => ({
+                      id: p.id,
+                      primary: p.name,
+                      secondary: p.code ?? undefined,
+                      // Band 1 pick modal: «Остаток» line needs the stock figure.
+                      available: p.stock?.available != null ? Number(p.stock.available) : 0,
+                      priceMinor: resolveDefaultSalePriceOrZero(p.salePrices, defaultId, rates),
+                      uomLabel: p.uom ?? undefined,
+                      raw: p,
+                    })),
+                    // `total` SHART: yalang'och massiv qaytarilsa komponent
+                    // `total = items.length` deb oladi va «Ещё N товаров»
+                    // hech qachon chiqmaydi — server 20 tasini beradi, ekran
+                    // 10 tasini ko'rsatadi, qolgani borligini foydalanuvchi
+                    // BILMAY qoladi (2026-08-23 auditi).
+                    total: r.total ?? r.items.length,
+                  };
                 }}
                 createProductLabel={(q) => tPos('createProductNamed', { query: q })}
                 onCreateProduct={(q) => setCreateProductName(q)}
@@ -1011,32 +1041,10 @@ export default function NewDemandPage() {
                 // (moysklad's Отгрузка add-line has none). Price defaults to the
                 // product's sale price; the search box clears.
                 clearQueryOnPick
-                onPick={(item, entry) => {
-                  const raw = item.raw as ProductItem | undefined;
-                  const defaultPrice = resolveDefaultSalePriceOrZero(raw?.salePrices);
-                  const newId = uid();
-                  setPositions((ps) => [
-                    ...ps,
-                    {
-                      id: newId,
-                      assortmentId: item.id,
-                      productLabel: item.primary,
-                      productUom: raw?.uom ?? null,
-                      quantity: entry?.quantity ?? '1',
-                      priceMinor: entry?.priceMinor ?? defaultPrice,
-                      discount: '0',
-                      vat: raw?.vat != null ? String(raw.vat) : '12',
-                      vatEnabled: true,
-                      salePrices: raw?.salePrices ?? null,
-                      weightG: raw?.weightG ?? undefined,
-                      volumeML: raw?.volumeML ?? undefined,
-                    },
-                  ]);
-                  // owner 2026-07-18: returning the id hands focus to the new
-                  // row's «Кол-во» (modal → table entry chain).
-                  return newId;
-                }}
-                onAddFromCatalog={addPosition}
+                onPick={appendPositionFromCatalog}
+                // «Добавить из справочника» — opens the full catalog modal
+                // (was: appended an empty row; user 2026-07-14 bug report).
+                onAddFromCatalog={() => setCatalogAddOpen(true)}
                 onCheckCompleteness={() => {
                   if (!storeId) {
                     setError(t('select_store_first'));
@@ -1053,7 +1061,11 @@ export default function NewDemandPage() {
                     ...ps,
                     ...rows.map(({ item, quantity }) => {
                       const raw = item.raw as ProductItem | undefined;
-                      const defaultPrice = resolveDefaultSalePriceOrZero(raw?.salePrices);
+                      const defaultPrice = resolveDefaultSalePriceOrZero(
+                        raw?.salePrices,
+                        defaultId,
+                        rates,
+                      );
                       return {
                         id: uid(),
                         assortmentId: item.id,
@@ -1615,6 +1627,18 @@ export default function NewDemandPage() {
           setBankAccountLabel(String(item.primary));
         }}
       />
+      {/* «Добавить из справочника» — every pick appends a FILLED position row
+          (mirrors demands/[id]); no qty/price modal, the row takes the page's
+          own default-sale-price. */}
+      <CatalogPicker
+        open={catalogAddOpen}
+        onClose={() => setCatalogAddOpen(false)}
+        title={tDetailForm('add_from_catalog')}
+        fetcher={productFetcher}
+        onSelect={(item) => {
+          appendPositionFromCatalog(item);
+        }}
+      />
       <CatalogPicker
         open={
           typeof openPicker === 'object' && openPicker !== null && openPicker.kind === 'product'
@@ -1625,7 +1649,7 @@ export default function NewDemandPage() {
         onSelect={(item) => {
           if (typeof openPicker !== 'object' || openPicker === null) return;
           const raw = (item as PickerItem & { raw?: ProductItem }).raw;
-          const defaultPrice = resolveDefaultSalePriceOrZero(raw?.salePrices);
+          const defaultPrice = resolveDefaultSalePriceOrZero(raw?.salePrices, defaultId, rates);
           updatePosition(openPicker.rowUid, {
             assortmentId: item.id,
             productLabel: String(item.primary),
@@ -1658,33 +1682,25 @@ export default function NewDemandPage() {
           open
           initialName={createProductName}
           onClose={() => setCreateProductName(null)}
-          onCreated={async (created) => {
-            try {
-              const res = await api.get<{
-                name: string;
-                uom: string | null;
-                buyPrice: string | null;
-                vat?: number | null;
-                salePrices?: Array<{ priceTypeId: string; value: string }> | null;
-              }>(`/products/${created.id}`);
-              setPositions((ps) => [
-                ...ps,
-                {
-                  id: uid(),
-                  assortmentId: created.id,
-                  productLabel: res.name,
-                  productUom: res.uom ?? null,
-                  quantity: '1',
-                  priceMinor: resolveDefaultSalePriceOrZero(res.salePrices),
-                  discount: '0',
-                  vat: res.vat != null ? String(res.vat) : '12',
-                  vatEnabled: true,
-                  salePrices: res.salePrices ?? null,
-                },
-              ]);
-            } catch {
-              // product created but couldn't fetch to append — non-fatal
-            }
+          // The modal hands over the whole created product, so the row is built
+          // right here — no second request that could fail silently and leave
+          // the user re-creating the product (2026-08-23 audit).
+          onCreated={(created) => {
+            setPositions((ps) => [
+              ...ps,
+              {
+                id: uid(),
+                assortmentId: created.id,
+                productLabel: created.name,
+                productUom: created.uom ?? null,
+                quantity: '1',
+                priceMinor: resolveDefaultSalePriceOrZero(created.salePrices, defaultId, rates),
+                discount: '0',
+                vat: created.vat != null ? String(created.vat) : '12',
+                vatEnabled: true,
+                salePrices: created.salePrices ?? null,
+              },
+            ]);
           }}
         />
       )}

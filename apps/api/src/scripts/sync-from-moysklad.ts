@@ -332,6 +332,46 @@ const productSync: SyncEntity = {
         console.error('  product fail:', (err as Error).message);
       }
     }
+    // «Код» hisoblagichini joriy max'ga surish — MAJBURIY yakuniy qadam.
+    //
+    // 🔴 Bu skript tovarlarni MoySklad'ning O'Z kodlari bilan to'g'ridan
+    // yozadi va hisoblagichga tegmaydi. Hisoblagich esa faqat bir marta
+    // (lazy) seed bo'ladi va keyin +1 yuradi — ya'ni ommaviy yozuvdan keyin
+    // u orqada qolib, har «yangi tovar» urinishi band kodga tushardi. Prodda
+    // aynan shu 2026-08-22 da olti kunlik «tovar qo'shib bo'lmayapti» ga olib
+    // keldi (hisoblagich 4953, eng katta kod 05106). `allocateAssortmentCode`
+    // dagi probe endi buni O'ZI ham tuzatadi, lekin bu yerdagi surish o'sha
+    // sekin, urinish-yiqilish yo'liga umuman tushmaslik uchun —
+    // `ops-import-products.ts` dagi `resyncProductSequence` bilan bir xil.
+    try {
+      const [products, variants] = await Promise.all([
+        prisma.product.findMany({
+          where: { accountId, code: { not: null } },
+          select: { code: true },
+        }),
+        prisma.variant.findMany({
+          where: { accountId, code: { not: null } },
+          select: { code: true },
+        }),
+      ]);
+      let max = 0;
+      for (const r of [...products, ...variants]) {
+        const n = Number.parseInt(r.code ?? '', 10);
+        if (Number.isFinite(n) && n > max) max = n;
+      }
+      // `value: { lt: max }` — hisoblagichni hech qachon ORQAGA tortmaydi.
+      const { count } = await prisma.documentSequence.updateMany({
+        where: { accountId, key: 'product', value: { lt: max } },
+        data: { value: max },
+      });
+      console.log(
+        count > 0
+          ? `  «Код» hisoblagichi ${max} ga surildi (keyingi kod ${max + 1})`
+          : `  «Код» hisoblagichi allaqachon max (${max}) dan past emas`,
+      );
+    } catch (err) {
+      console.error('  sequence resync fail:', (err as Error).message);
+    }
     return stats;
   },
 };

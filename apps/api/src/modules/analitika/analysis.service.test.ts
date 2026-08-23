@@ -82,6 +82,11 @@ function makePrisma(over: Record<string, unknown> = {}) {
       // Account default price type — analyze() resolves it to read salePrices by id.
       findFirst: vi.fn().mockResolvedValue({ id: 'pt-default' }),
     },
+    // Valyuta kurslari — narx `currencyCode` bilan saqlangan bo'lsa bazaga
+    // o'girish uchun o'qiladi (2026-08-23). Bu yerda valyuta yo'q.
+    currency: {
+      findMany: vi.fn().mockResolvedValue([]),
+    },
     ...over,
   };
   return { client } as never;

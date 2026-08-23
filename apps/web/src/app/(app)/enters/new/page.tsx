@@ -33,6 +33,7 @@ import { api } from '@/lib/api-client';
 import { useAuth } from '@/lib/auth-store';
 import { imageRawUrl } from '@/lib/image-url';
 import { distributeAgreementDelta } from '@/lib/position-agreement';
+import { resolveSalePriceByType, useCurrencyRates } from '@/lib/sale-price';
 import { scaleMinorByQty } from '@moysklad/money';
 import {
   Button,
@@ -140,6 +141,9 @@ const DEFAULT_COL_VISIBLE: Record<string, boolean> = Object.fromEntries(
 export default function NewEnterPage() {
   const router = useRouter();
   const { user } = useAuth();
+  // Narx qavati valyutada saqlangan bo'lishi mumkin — «Расценить» uni JORIY
+  // kurs bilan bazaga o'giradi (2026-08-23; usiz «10 dollar» 10 so'm bo'lardi).
+  const rates = useCurrencyRates();
   const t = useTranslations('pages.enters');
   const tErrors = useTranslations('errors');
   const tFields = useTranslations('fields');
@@ -281,6 +285,9 @@ export default function NewEnterPage() {
     | { kind: 'product'; rowUid: string }
     | { kind: 'country'; rowUid: string }
   >(null);
+  // «Добавить из справочника» — the full catalog modal (it used to append an
+  // EMPTY row; user 2026-07-14 bug report, fixed on internal-orders/new first).
+  const [catalogAddOpen, setCatalogAddOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Pre-fill from the user's «Значения по умолчанию» once the reference lists +
@@ -334,21 +341,42 @@ export default function NewEnterPage() {
     [positions],
   );
 
-  const addPosition = () => {
+  /** Append ONE catalog product as a new position — shared by the inline
+   *  typeahead pick and by the «Добавить из справочника» modal, so both land a
+   *  filled row (the button used to append an EMPTY row; same bug-class as the
+   *  internal-orders/new fix from the user's 2026-07-14 report). */
+  const appendPositionFromCatalog = (
+    item: { id: string; primary: unknown; raw?: unknown },
+    entry?: { quantity: string; priceMinor: string },
+  ) => {
+    const raw = item.raw as ProductItem | undefined;
+    const newId = uid();
     setPositions((ps) => [
       ...ps,
       {
-        id: uid(),
-        assortmentId: null,
-        productLabel: '',
-        productUom: null,
-        quantity: '1',
-        priceMinor: '0',
+        id: newId,
+        assortmentId: item.id,
+        productLabel: String(item.primary),
+        productCode: raw?.code ?? undefined,
+        productUom: raw?.uom ?? null,
+        quantity: entry?.quantity ?? '1',
+        priceMinor: entry?.priceMinor ?? raw?.buyPrice ?? '0',
         discount: '0',
         vat: '0',
         vatEnabled: false,
+        // read-only stock cluster at the store (moysklad «Остаток»/«Доступно»).
+        stock: raw?.stock?.onHand,
+        available: raw?.stock?.available,
+        salePrices: raw?.salePrices ?? null,
+        folderPath: raw?.productFolder?.pathName ?? undefined,
+        weight: raw?.weightG != null ? String(raw.weightG) : undefined,
+        volume: raw?.volumeML != null ? String(raw.volumeML) : undefined,
+        imageUrl: raw?.mainImageId ? imageRawUrl(raw.mainImageId) : undefined,
       },
     ]);
+    // owner 2026-07-18: returning the id hands focus to the new
+    // row's «Кол-во» (modal → table entry chain).
+    return newId;
   };
   const updatePosition = (id: string, patch: Partial<NewPositionRow>) => {
     setPositions((ps) => ps.map((p) => (p.id === id ? { ...p, ...patch } : p)));
@@ -372,14 +400,20 @@ export default function NewEnterPage() {
 
   // «Цена ▾» → «Расценить» — re-price every row from the chosen price type (the
   // product's carried salePrices). moysklad lets you reprice enter lines from a type.
-  const repricePositions = useCallback((priceTypeId: string) => {
-    setPositions((ps) =>
-      ps.map((p) => {
-        const sp = p.salePrices?.find((x) => x.priceTypeId === priceTypeId);
-        return sp ? { ...p, priceMinor: sp.value } : p;
-      }),
-    );
-  }, []);
+  const repricePositions = useCallback(
+    (priceTypeId: string) => {
+      setPositions((ps) =>
+        ps.map((p) => {
+          // «Расценить» — qavat valyutada bo'lsa JORIY kurs bilan bazaga o'giriladi;
+          // kursi noma'lum bo'lsa qator narxi TEGILMAYDI (xom son yozishdan ko'ra
+          // eskisi qolgani xavfsizroq — 2026-08-23 auditi).
+          const next = resolveSalePriceByType(p.salePrices, priceTypeId, rates);
+          return next != null ? { ...p, priceMinor: next } : p;
+        }),
+      );
+    },
+    [rates],
+  );
   // «Цена ▾» → «Сохранить цены» — push each line's price back onto its product. On
   // an enter the line price IS the buy/cost basis, so save to Product.buyPrice.
   const saveProductPrices = useCallback(async () => {
@@ -392,6 +426,9 @@ export default function NewEnterPage() {
         await api.patch(`/products/${p.assortmentId}`, {
           version: prod.version,
           buyPrice: p.priceMinor,
+          // Qiymat BAZA valyutasida — eski valyuta belgisi qolib ketmasin
+          // (aks holda keyin u xorijiy deb o'qilardi). 2026-08-23.
+          buyPriceCurrency: null,
         });
       } catch {
         // skip products that can't be updated (e.g. concurrent edit); others proceed
@@ -920,37 +957,10 @@ export default function NewEnterPage() {
                     cancel: tPos('pick_modal_cancel'),
                   },
                 }}
-                onPick={(item, entry) => {
-                  const raw = item.raw as ProductItem | undefined;
-                  const newId = uid();
-                  setPositions((ps) => [
-                    ...ps,
-                    {
-                      id: newId,
-                      assortmentId: item.id,
-                      productLabel: item.primary,
-                      productCode: raw?.code ?? undefined,
-                      productUom: raw?.uom ?? null,
-                      quantity: entry?.quantity ?? '1',
-                      priceMinor: entry?.priceMinor ?? raw?.buyPrice ?? '0',
-                      discount: '0',
-                      vat: '0',
-                      vatEnabled: false,
-                      // read-only stock cluster at the store (moysklad «Остаток»/«Доступно»).
-                      stock: raw?.stock?.onHand,
-                      available: raw?.stock?.available,
-                      salePrices: raw?.salePrices ?? null,
-                      folderPath: raw?.productFolder?.pathName ?? undefined,
-                      weight: raw?.weightG != null ? String(raw.weightG) : undefined,
-                      volume: raw?.volumeML != null ? String(raw.volumeML) : undefined,
-                      imageUrl: raw?.mainImageId ? imageRawUrl(raw.mainImageId) : undefined,
-                    },
-                  ]);
-                  // owner 2026-07-18: returning the id hands focus to the new
-                  // row's «Кол-во» (modal → table entry chain).
-                  return newId;
-                }}
-                onAddFromCatalog={addPosition}
+                onPick={appendPositionFromCatalog}
+                // «Добавить из справочника» — opens the full catalog modal
+                // (was: appended an empty row; user 2026-07-14 bug report).
+                onAddFromCatalog={() => setCatalogAddOpen(true)}
               />
             }
           />
@@ -1263,6 +1273,17 @@ export default function NewEnterPage() {
         onSelect={(item) => {
           setProjectId(item.id);
           setProjectLabel(String(item.primary));
+        }}
+      />
+      {/* «Добавить из справочника» — every pick appends a FILLED position row;
+          no qty/price modal, the row takes the page's own buy-price default. */}
+      <CatalogPicker
+        open={catalogAddOpen}
+        onClose={() => setCatalogAddOpen(false)}
+        title={tDetailForm('add_from_catalog')}
+        fetcher={productFetcher}
+        onSelect={(item) => {
+          appendPositionFromCatalog(item);
         }}
       />
       <CatalogPicker

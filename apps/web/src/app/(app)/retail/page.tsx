@@ -5,7 +5,12 @@ import { api } from '@/lib/api-client';
 import { useAuth } from '@/lib/auth-store';
 import { RETAIL_SESSION_STATE_TONE, documentStateTone } from '@/lib/document-state-tone';
 import { discountedCartTotalMinor, discountedLineTotalMinor } from '@/lib/pos/cart-math';
-import { resolveDefaultSalePrice, resolveDefaultSalePriceOrZero } from '@/lib/sale-price';
+import {
+  resolveDefaultSalePrice,
+  resolveDefaultSalePriceOrZero,
+  useCurrencyRates,
+  usePriceTypeIds,
+} from '@/lib/sale-price';
 import { normalizeScanInput } from '@/lib/scan';
 import type {
   CashDeskRef as CashDesk,
@@ -178,6 +183,14 @@ function PosUI({
   onSessionClosed,
 }: { session: CurrentSession; onSessionClosed: () => void }) {
   const t = useTranslations('pages.retail');
+  // Tier id for the sale-price resolver — without it it falls back to
+  // salePrices[0] (write order), so «Оптовая» can be charged as retail.
+  const { defaultId } = usePriceTypeIds();
+  // Valyuta kurslari — narx yozuvi `currencyCode` bilan saqlangan bo'lsa
+  // resolver uni JORIY kurs bilan bazaga o'giradi. Kurslarsiz bunday narx
+  // `null`/`'0'` bo'ladi (ataylab: xom son «10 dollar = 10 so'm» yolg'oni).
+  // Hook shu yerda — HAR QANDAY erta return'dan oldin (hook-tartibi qulfi).
+  const rates = useCurrencyRates();
   // Drawer labels are GROUNDED in the cashier-session detail page (the sibling
   // drawer): drawer_in «Внесение», drawer_out «Выплата», drawer_comment
   // «Комментарий». Reuse them so both drawers stay in lockstep.
@@ -224,27 +237,35 @@ function PosUI({
   // server 104).
   const cartTotal = discountedCartTotalMinor(cart);
 
-  const addToCart = useCallback((product: ProductRow) => {
-    setCart((prev) => {
-      const existing = prev.find((l) => l.productId === product.id);
-      if (existing) {
-        return prev.map((l) =>
-          l.productId === product.id ? { ...l, quantity: l.quantity + 1 } : l,
-        );
-      }
-      return [
-        ...prev,
-        {
-          productId: product.id,
-          productName: product.name,
-          quantity: 1,
-          priceMinor: BigInt(resolveDefaultSalePriceOrZero(product.salePrices)),
-          discount: 0,
-        },
-      ];
-    });
-    setProductSearch('');
-  }, []);
+  const addToCart = useCallback(
+    (product: ProductRow) => {
+      setCart((prev) => {
+        const existing = prev.find((l) => l.productId === product.id);
+        if (existing) {
+          return prev.map((l) =>
+            l.productId === product.id ? { ...l, quantity: l.quantity + 1 } : l,
+          );
+        }
+        return [
+          ...prev,
+          {
+            productId: product.id,
+            productName: product.name,
+            quantity: 1,
+            priceMinor: BigInt(resolveDefaultSalePriceOrZero(product.salePrices, defaultId, rates)),
+            discount: 0,
+          },
+        ];
+      });
+      setProductSearch('');
+      // `defaultId` MUST be a dep: the price-type list resolves asynchronously, so
+      // a callback frozen with `defaultId === null` would keep resolving the tier
+      // by the salePrices[0] fallback for the rest of the shift.
+      // `rates` — xuddi shu sabab: kurslar ham asinxron keladi, muzlagan
+      // callback valyutali narxni butun smena davomida `'0'` deb o'qirdi.
+    },
+    [defaultId, rates],
+  );
 
   const updateQty = useCallback((productId: string, delta: number) => {
     setCart((prev) => {
@@ -490,9 +511,11 @@ function PosUI({
                     <div className="font-medium text-sm">{p.name}</div>
                     {p.code && <div className="text-[var(--ms-text-muted)] text-xs">{p.code}</div>}
                   </div>
-                  {resolveDefaultSalePrice(p.salePrices) != null && (
+                  {resolveDefaultSalePrice(p.salePrices, defaultId, rates) != null && (
                     <div className="ml-auto font-semibold text-sm tabular-nums">
-                      {formatMoney(BigInt(resolveDefaultSalePrice(p.salePrices) ?? '0'))}
+                      {formatMoney(
+                        BigInt(resolveDefaultSalePrice(p.salePrices, defaultId, rates) ?? '0'),
+                      )}
                     </div>
                   )}
                 </button>

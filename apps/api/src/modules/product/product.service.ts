@@ -9,6 +9,7 @@ import {
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { resolveCreatorGroupId } from '../shared/group-stamp.js';
 import { mapVersionedUpdateError } from '../shared/optimistic-lock.js';
+import { DUPLICATE_VALUE_MESSAGE } from '../shared/prisma-exception.filter.js';
 import { formatCellCode, parseCellCode } from './cell-code.util.js';
 import { allocateAssortmentCode } from './product-code.util.js';
 import {
@@ -22,6 +23,29 @@ import {
   ProductFilterSchema,
   UpdateProductSchema,
 } from './product.schema.js';
+
+/**
+ * P2002 → foydalanuvchi o'qiy oladigan xabar.
+ *
+ * Ilgari bu yerdan `Duplicate value on unique field: account_id, code` chiqardi
+ * va `/products/new` banneri uni XOMLIGICHA ko'rsatardi — 2026-08-22 prod
+ * hodisasida xodimlar ko'rgan aynan o'sha matn. Servis P2002 ni global
+ * filtrdan OLDIN tutgani uchun filtrning o'zbekcha xabari ishlamasdi.
+ *
+ * Yaratish formasida foydalanuvchi boshqara oladigan ikkita unique maydon bor —
+ * «Код» va «Внешний код» — shuning uchun xabar QAYSI maydon ekanini aytadi;
+ * qolgan hamma holat uchun filtrning umumiy xabari.
+ */
+export function duplicateProductFieldMessage(target: string[] | undefined): string {
+  const cols = (target ?? []).map((c) => c.toLowerCase());
+  if (cols.includes('external_code') || cols.includes('externalcode')) {
+    return '«Внешний код» band — bu tashqi kod boshqa tovarda ishlatilgan.';
+  }
+  if (cols.includes('code')) {
+    return "«Код» band — bu kod boshqa tovarda ishlatilgan. Boshqa kod kiriting yoki maydonni bo'sh qoldiring (kod avtomatik beriladi).";
+  }
+  return DUPLICATE_VALUE_MESSAGE;
+}
 
 @Injectable()
 export class ProductService {
@@ -465,8 +489,7 @@ export class ProductService {
   private handlePrismaError(e: unknown): never {
     const err = e as { code?: string; meta?: { target?: string[] } };
     if (err.code === 'P2002') {
-      const target = err.meta?.target?.join(', ') ?? 'field';
-      throw new ConflictException(`Duplicate value on unique field: ${target}`);
+      throw new ConflictException(duplicateProductFieldMessage(err.meta?.target));
     }
     throw e as Error;
   }

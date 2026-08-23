@@ -36,3 +36,14 @@ export {
   type LineProfitInput,
   type PriceBand,
 } from './profit.js';
+// Valyuta o'girish — «кратность» va teskari (indirect) kursni ham hisobga
+// oladigan ANIQ formula. Ilgari faqat apps/api ichida turardi; endi web ham
+// tovar narxini valyutadan bazaga o'giradi (2026-08-23), shuning uchun
+// ikkala tomon AYNAN bir xil arifmetikani ishlatsin — apps/api dagi eski
+// yo'l shu yerga re-export bo'lib qoldi.
+export {
+  convertMinor,
+  divRoundHalfAway,
+  toBaseMinor,
+  type CurrencyRate,
+} from './currency-convert.js';
