@@ -62,6 +62,7 @@ function makeHarness(positions: OriginalPosition[]) {
   const client = {
     documentSequence: mockDocumentSequence(),
     employee: { findUnique: vi.fn(async () => null) },
+    store: { findMany: vi.fn(async () => []) },
     bonusOperation: { findFirst: vi.fn(async () => null) },
     // F6 (2026-08-13) — refund() qaytaruvchi kassirning JORIY ochiq smenasini
     // topadi; bu jihozda u ASL chek smenasining o'zi (bir-smena stsenariysi),

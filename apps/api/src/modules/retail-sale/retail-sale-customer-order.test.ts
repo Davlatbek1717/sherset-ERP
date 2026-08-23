@@ -65,6 +65,7 @@ function createClient(order: unknown) {
   const client = {
     documentSequence: mockDocumentSequence(),
     employee: { findUnique: vi.fn(async () => null) },
+    store: { findMany: vi.fn(async () => []) },
     cashierSession: {
       findFirst: vi.fn(async () => ({
         id: SESSION_ID,
@@ -182,6 +183,7 @@ function postClient(opts: {
   const client = {
     documentSequence: mockDocumentSequence(),
     employee: { findUnique: vi.fn(async () => null) },
+    store: { findMany: vi.fn(async () => []) },
     product: { findMany: vi.fn(async () => []) },
     priceType: { findMany: vi.fn(async () => []) },
     retailSale: {

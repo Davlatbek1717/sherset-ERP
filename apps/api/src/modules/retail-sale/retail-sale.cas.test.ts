@@ -84,6 +84,7 @@ describe('RetailSaleService.post — CAS state guard', () => {
     const client = {
       documentSequence: mockDocumentSequence(),
       employee: { findUnique: vi.fn(async () => null) },
+      store: { findMany: vi.fn(async () => []) },
       retailSale: {
         findFirst: vi.fn().mockResolvedValue({
           id: SALE_ID,
@@ -142,6 +143,7 @@ describe('RetailSaleService.post — CAS state guard', () => {
     const client = {
       documentSequence: mockDocumentSequence(),
       employee: { findUnique: vi.fn(async () => null) },
+      store: { findMany: vi.fn(async () => []) },
       retailSale: {
         findFirst: vi.fn().mockResolvedValue({
           id: SALE_ID,
@@ -210,6 +212,7 @@ describe('RetailSaleService.post — CAS state guard', () => {
     const client = {
       documentSequence: mockDocumentSequence(),
       employee: { findUnique: vi.fn(async () => null) },
+      store: { findMany: vi.fn(async () => []) },
       retailSale: {
         findFirst: vi.fn().mockResolvedValue({
           id: SALE_ID,
@@ -266,6 +269,7 @@ describe('RetailSaleService.post — CAS state guard', () => {
     const client = {
       documentSequence: mockDocumentSequence(),
       employee: { findUnique: vi.fn(async () => null) },
+      store: { findMany: vi.fn(async () => []) },
       product: { findMany: vi.fn().mockResolvedValue([]) },
       priceType: { findMany: vi.fn().mockResolvedValue([]) },
       retailSale: {
@@ -343,6 +347,7 @@ function makeCancelCasClient(casCount: number) {
   return {
     documentSequence: mockDocumentSequence(),
     employee: { findUnique: vi.fn(async () => null) },
+    store: { findMany: vi.fn(async () => []) },
     retailSale,
     cashierAuditEvent,
     $transaction: vi
@@ -401,6 +406,7 @@ describe('RetailSaleService.refund — CAS state guard', () => {
     const client = {
       documentSequence: mockDocumentSequence(),
       employee: { findUnique: vi.fn(async () => null) },
+      store: { findMany: vi.fn(async () => []) },
       // F6 (2026-08-13) — refund() tranzaksiyadan oldin qaytaruvchi kassirning
       // JORIY ochiq smenasini topadi; CAS-guard undan KEYIN, tx ichida.
       cashierSession: {

@@ -76,6 +76,7 @@ function makeHarness(opts: { saleAgentId?: string | null } = {}) {
   const client = {
     documentSequence: mockDocumentSequence(),
     employee: { findUnique: vi.fn(async () => null) },
+    store: { findMany: vi.fn(async () => []) },
     product: { findMany: vi.fn(async () => []) },
     priceType: { findMany: vi.fn(async () => []) },
     bonusOperation: { findFirst: vi.fn(async () => null) },

@@ -186,3 +186,25 @@ describe('BulkUpdateSchema', () => {
     expect(BulkUpdateSchema.safeParse({ ids: [UUID], set: {} }).success).toBe(false);
   });
 });
+
+// F6 — kassa stok-kaskadi prioriteti (`posPriority`, attributes JSON'iga boradi).
+describe('posPriority (F6 — kassa kaskadi)', () => {
+  it('musbat butun son qabul qilinadi; yubormaslik ham mumkin', () => {
+    const r = CreateStoreSchema.safeParse({ name: 'Ombor 07', posPriority: 1 });
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data.posPriority).toBe(1);
+    expect(CreateStoreSchema.safeParse({ name: 'X' }).success).toBe(true);
+  });
+
+  it('null — kaskaddan chiqarish (0 ga AYLANMAYDI: coerce ataylab yo‘q)', () => {
+    const r = UpdateStoreSchema.safeParse({ version: 1, posPriority: null });
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data.posPriority).toBeNull();
+  });
+
+  it('0, manfiy, kasr va satr rad etiladi', () => {
+    for (const bad of [0, -1, 1.5, '1']) {
+      expect(CreateStoreSchema.safeParse({ name: 'X', posPriority: bad }).success).toBe(false);
+    }
+  });
+});

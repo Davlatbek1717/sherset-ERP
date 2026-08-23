@@ -5919,6 +5919,8 @@
       "polka_input_shelf": "Polka kodi",
       "polka_inputs_required": "Barcha 3 maydon majburiy",
       "polka_prefix_invalid": "Kod NN-NN-NN ko'rinishida bo'lsin (masalan 04-03-01)",
+      "pos_priority": "Kassa prioriteti (POS)",
+      "pos_priority_hint": "Kassada sotuvda tovar ayirish tartibi: 1 — birinchi (Ombor 07). Bo'sh — ombor kaskadda qatnashmaydi.",
       "postal_code": "Indeks",
       "primary_owner": "Asosiy",
       "region": "Viloyat",

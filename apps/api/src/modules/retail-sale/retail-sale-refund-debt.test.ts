@@ -91,6 +91,7 @@ function makeHarness(opts: {
   const client = {
     documentSequence: mockDocumentSequence(),
     employee: { findUnique: vi.fn(async () => null) },
+    store: { findMany: vi.fn(async () => []) },
     // F6 (2026-08-13) — refund() qaytaruvchi kassirning JORIY ochiq smenasini
     // topadi; bu jihozda u ASL chek smenasining o'zi (bir-smena stsenariysi),
     // shuning uchun qarz/pul assertlari o'zgarmaydi.

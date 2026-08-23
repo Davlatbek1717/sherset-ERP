@@ -56,6 +56,12 @@ export const CreateStoreSchema = z.object({
   // the attributes JSON under a reserved key (no schema migration on this box);
   // the service lifts it back to a top-level field on reads.
   cellInventory: z.coerce.boolean().optional(),
+  // F6 — kassa STOK-KASKADI prioriteti: kichik raqam birinchi ayiriladi
+  // («Ombor 07» = 1). NULL = ombor kaskadda qatnashmaydi. `cellInventory`
+  // bilan bir naqsh: attributes JSON'ida (`__posPriority`) saqlanadi,
+  // servis o'qishda top-level maydonga ko'taradi. ATAYLAB coerce EMAS —
+  // z.coerce null'ni 0 ga aylantirib «kaskaddan chiqarish»ni buzardi.
+  posPriority: z.number().int().min(1).max(999).nullish(),
   zones: z.array(z.string().min(1).max(100)).max(50).default([]),
   slots: z.array(z.string().min(1).max(100)).max(100).default([]),
   attributes: z.record(z.string(), z.unknown()).optional(),

@@ -3,6 +3,7 @@ import { Prisma } from '@moysklad/db';
 import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { AttributeMetadataService } from '../attribute-metadata/attribute-metadata.service.js';
+import { readPosPriority } from '../retail-sale/retail-stock-cascade.js';
 import { mapVersionedUpdateError } from '../shared/optimistic-lock.js';
 import {
   type BulkMoveInput,
@@ -25,6 +26,11 @@ const MAX_DEPTH = 8;
 // merges the flag back in after validation and lifts it on every read.
 const CELL_INVENTORY_KEY = '__cellInventory';
 
+// F6 — kassa stok-kaskadi prioriteti, xuddi shu naqsh (migratsiya yo'q):
+// attributes JSON'ida saqlanadi, o'qishda `posPriority` bo'lib ko'tariladi.
+// O'qish semantikasi — retail-stock-cascade.readPosPriority (yagona manba).
+const POS_PRIORITY_KEY = '__posPriority';
+
 /** moysklad autogenerates a random externalCode for every new store. */
 function generateExternalCode(): string {
   // 22 url-safe chars — same shape as moysklad's generated codes.
@@ -41,11 +47,12 @@ type StoreRow =
   | Prisma.StoreGetPayload<{ include: typeof OWNER_INCLUDE }>
   | Prisma.StoreGetPayload<Record<string, never>>;
 
-/** Lift the reserved attributes key to a top-level `cellInventory` boolean. */
+/** Lift the reserved attributes keys to top-level `cellInventory`/`posPriority`. */
 function serializeStore<T extends StoreRow>(row: T) {
   const attrs = (row.attributes ?? {}) as Record<string, unknown>;
-  const { [CELL_INVENTORY_KEY]: cellInventory, ...rest } = attrs;
-  return { ...row, attributes: rest, cellInventory: cellInventory === true };
+  const posPriority = readPosPriority(attrs);
+  const { [CELL_INVENTORY_KEY]: cellInventory, [POS_PRIORITY_KEY]: _pp, ...rest } = attrs;
+  return { ...row, attributes: rest, cellInventory: cellInventory === true, posPriority };
 }
 
 /**
@@ -148,6 +155,9 @@ export class StoreService {
     if (parsed.cellInventory !== undefined) {
       validatedAttrs[CELL_INVENTORY_KEY] = parsed.cellInventory;
     }
+    if (parsed.posPriority != null) {
+      validatedAttrs[POS_PRIORITY_KEY] = parsed.posPriority;
+    }
 
     const row = await this.prisma.client.store.create({
       data: {
@@ -211,9 +221,13 @@ export class StoreService {
           ? Prisma.JsonNull
           : (parsed.addressFull as Prisma.InputJsonValue);
     }
-    if (parsed.attributes !== undefined || parsed.cellInventory !== undefined) {
+    if (
+      parsed.attributes !== undefined ||
+      parsed.cellInventory !== undefined ||
+      parsed.posPriority !== undefined
+    ) {
       // Re-validate custom attrs when sent; otherwise start from the stored bag
-      // (minus the lifted flag) so a cellInventory-only PATCH can't wipe attrs.
+      // (minus the lifted flags) so a cellInventory-only PATCH can't wipe attrs.
       const base =
         parsed.attributes !== undefined
           ? await this.attrs.validateAndNormalize(accountId, 'Store', parsed.attributes)
@@ -221,6 +235,13 @@ export class StoreService {
       const cellInventory =
         parsed.cellInventory !== undefined ? parsed.cellInventory : existing.cellInventory;
       if (cellInventory !== undefined) base[CELL_INVENTORY_KEY] = cellInventory;
+      // F6: `null` YUBORILSA kalit O'CHADI (ombor kaskaddan chiqadi);
+      // yuborilmasa mavjud qiymat saqlanadi (lift qilingan maydondan qaytariladi
+      // — `existing.attributes` da kalit yo'q, serializeStore uni ko'targan).
+      const posPriority =
+        parsed.posPriority !== undefined ? parsed.posPriority : existing.posPriority;
+      if (posPriority != null) base[POS_PRIORITY_KEY] = posPriority;
+      else delete base[POS_PRIORITY_KEY];
       data.attributes = base as Prisma.InputJsonValue;
     }
     if (parsed.allowNegativeStock !== undefined)

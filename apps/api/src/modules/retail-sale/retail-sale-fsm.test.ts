@@ -129,6 +129,7 @@ function makePostClient(state: string) {
   const client = {
     documentSequence: mockDocumentSequence(),
     employee: { findUnique: vi.fn(async () => null) },
+    store: { findMany: vi.fn(async () => []) },
     loyaltyProgram: { findFirst: vi.fn(async () => null) },
     retailSale: {
       findFirst: vi.fn().mockResolvedValue({
@@ -227,6 +228,7 @@ function makeCancelClient(state: string) {
     restockTask,
     retailSale,
     cashierAuditEvent,
+    store: { findMany: vi.fn(async () => []) },
     $transaction: vi
       .fn()
       .mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) =>

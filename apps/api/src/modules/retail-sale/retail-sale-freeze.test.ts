@@ -89,6 +89,7 @@ function makeHarness(opts: {
   const client = {
     documentSequence: mockDocumentSequence(),
     employee: { findUnique: vi.fn(async () => null) },
+    store: { findMany: vi.fn(async () => []) },
     product: { findMany: productFindMany },
     // Narx turlari `position` bo'yicha o'qiladi: birinchi non-default = optom
     // chegara (audit uchun). `defaultPriceTypeId: null` = hisobda narx turi yo'q.

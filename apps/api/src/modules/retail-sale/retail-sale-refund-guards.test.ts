@@ -97,6 +97,7 @@ function makeHarness(
   const client = {
     documentSequence: mockDocumentSequence(),
     employee: { findUnique: vi.fn(async () => null) },
+    store: { findMany: vi.fn(async () => []) },
     bonusOperation: { findFirst: vi.fn(async () => null) },
     cashierAuditEvent: { findFirst: vi.fn(async () => null) },
     // F6 — refund() qaytaruvchi kassirning JORIY ochiq smenasini shu yerdan

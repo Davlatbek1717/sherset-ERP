@@ -76,6 +76,8 @@ interface StoreDetail {
   shared: boolean;
   allowNegativeStock: boolean;
   cellInventory: boolean;
+  /** F6 — kassa stok-kaskadi prioriteti (1 = birinchi; null = qatnashmaydi). */
+  posPriority: number | null;
   archived: boolean;
   updatedAt: string;
 }
@@ -168,6 +170,8 @@ export function StoreCard({
   const [parentId, setParentId] = useState<string | null>(null);
   const [parentLabel, setParentLabel] = useState('');
   const [cellInventory, setCellInventory] = useState(true);
+  // F6 — «Kassa prioriteti (POS)»: matn holida (bo'sh = kaskadda emas).
+  const [posPriority, setPosPriority] = useState('');
   // «Владелец» cluster (owner employee / department / Общий доступ) — moysklad
   // shows it top-right and edits it via the owner popover.
   const [ownerAccess, setOwnerAccess] = useState<OwnerAccessValue>({
@@ -237,6 +241,7 @@ export function StoreCard({
     setParentId(data.parentId);
     setParentLabel(data.parent?.name ?? '');
     setCellInventory(data.cellInventory);
+    setPosPriority(data.posPriority == null ? '' : String(data.posPriority));
     setOwnerAccess({
       ownerId: data.owner?.id ?? null,
       ownerLabel: data.owner?.name ?? '',
@@ -253,6 +258,9 @@ export function StoreCard({
     const cleanAddr = Object.fromEntries(
       Object.entries(addr).filter(([, v]) => v != null && v !== ''),
     );
+    // F6: bo'sh/noto'g'ri kiritma → null (ombor kaskaddan chiqadi) —
+    // server null'da `__posPriority` kalitini o'chiradi.
+    const posPriorityNum = Number.parseInt(posPriority, 10);
     return {
       name,
       code: code || null,
@@ -265,6 +273,7 @@ export function StoreCard({
       groupId: ownerAccess.groupId,
       shared: ownerAccess.shared,
       cellInventory,
+      posPriority: Number.isInteger(posPriorityNum) && posPriorityNum > 0 ? posPriorityNum : null,
     };
   };
 
@@ -586,6 +595,19 @@ export function StoreCard({
               onChange={(e) => setCode(e.target.value)}
               data-test-id="field-code"
             />
+          </div>
+
+          <div>
+            <span className={FIELD_LABEL}>{t('pos_priority')}</span>
+            <Input
+              type="number"
+              min={1}
+              max={999}
+              value={posPriority}
+              onChange={(e) => setPosPriority(e.target.value)}
+              data-test-id="field-pos-priority"
+            />
+            <p className="mt-1 text-[11px] text-[var(--ms-text-muted)]">{t('pos_priority_hint')}</p>
           </div>
 
           <div>

@@ -94,6 +94,7 @@ function makeHarness(opts: Opts = {}) {
   const client = {
     documentSequence: mockDocumentSequence(),
     employee: { findUnique: vi.fn(async () => null) },
+    store: { findMany: vi.fn(async () => []) },
     product: { findMany: vi.fn(async () => []) },
     priceType: { findMany: vi.fn(async () => []) },
     // post() endi to'lov oynasidan kelgan agentId'ni tenant ichida tekshiradi

@@ -26,7 +26,12 @@ import { type MoneyDelta, MoneyService } from '../money/money.service.js';
 import { NotificationService } from '../notification/notification.service.js';
 // Faza 18a (QAROR-A weighted-average, STK-02): the POS stock outflow is priced
 // from the per-store locked balance with the same helpers Loss uses.
-import { compareDecimals, computePerUnitCost } from '../shared/decimal.js';
+import {
+  compareDecimals,
+  computePerUnitCost,
+  formatDecimalScaled,
+  parseDecimalScaled,
+} from '../shared/decimal.js';
 import { resolveCreatorGroupId } from '../shared/group-stamp.js';
 // Optimistic-lock (lost-update guard) for the draft field-edit update() path.
 import { mapVersionedUpdateError } from '../shared/optimistic-lock.js';
@@ -77,6 +82,14 @@ import {
   UpdateSaleCommentSchema,
   ZReportQuerySchema,
 } from './retail-sale.schema.js';
+// F6 (ombor restrukturizatsiyasi) — kassa kaskad dvigateli (sof modul):
+// stok ombori endi smena omborida emas, `Store.attributes.__posPriority`
+// bo'yicha tanlanadi (Q1: «Ombor 07» birinchi). Pul oqimi smena/kassada qoladi.
+import {
+  type CascadeStore,
+  allocateAcrossStores,
+  orderCascadeStores,
+} from './retail-stock-cascade.js';
 // Kassa TZ §6 — aralash to'lov qoidalari (sof, testlangan).
 import {
   TENDER,
@@ -811,14 +824,25 @@ export class RetailSaleService {
     const change = pay.changeMinor;
     const legacy = legacyTotals(pay.lines);
 
-    // Stock cascade: rows with a productId trigger an outflow against
-    // session.storeId. Service-only positions (productId === null) are
-    // intentionally skipped — services don't carry stock.
+    // Stock cascade: rows with a productId trigger an outflow. Service-only
+    // positions (productId === null) are intentionally skipped — services
+    // don't carry stock.
     const stockPositions = sale.positions.filter(
       (p): p is typeof p & { productId: string } => p.productId !== null,
     );
-    const storeId = sale.session.storeId;
-    const allowNegative = sale.session.store.allowNegativeStock;
+    const sessionStoreId = sale.session.storeId;
+    // F6 (Q1) — STOK ombori endi KASKADDAN: prioriteti eng kichik ombor
+    // («Ombor 07» = 1). Kaskad sozlanmagan bo'lsa smena ombori — eski xulq.
+    // PUL oqimi (kassa yashigi, smena agregatlari) smenanikida QOLADI; faqat
+    // tovar qaysi ombordan ayirilishi o'zgaradi. Tranzaksiyadan TASHQARIDA
+    // o'qiladi (loadFrozenPrices bilan bir sabab): ombor sozlamasi chekning
+    // consistency-to'plamiga kirmaydi va tx qisqa qolsin.
+    const cascade = await this.resolveStockCascade(accountId);
+    const stockStore = cascade[0] ?? null;
+    const storeId = stockStore?.id ?? sessionStoreId;
+    const allowNegative = stockStore
+      ? stockStore.allowNegativeStock
+      : sale.session.store.allowNegativeStock;
 
     // Kassa TZ §5.3 — read the price snapshot BEFORE the transaction opens. The
     // product cards are not part of the sale's consistency set (nobody may edit
@@ -953,11 +977,12 @@ export class RetailSaleService {
           where: { id: sale.customerOrderId, accountId },
           select: { sumMinor: true, payedSumMinor: true, storeId: true },
         });
-        if (order.storeId !== storeId) {
+        if (order.storeId !== sessionStoreId) {
           // `create()` da ham tekshirilgan; bu — hujjat yaratilgandan keyin
-          // zakaz do'koni ko'chirilgan holat uchun.
+          // zakaz do'koni ko'chirilgan holat uchun. F6: taqqos SMENA ombori
+          // bilan (zakaz rezervi o'sha yerda) — stok-kaskad ombori bilan emas.
           throw new BadRequestException(
-            `Zakaz boshqa do'konga tegishli (zakaz: ${order.storeId}, smena: ${storeId})`,
+            `Zakaz boshqa do'konga tegishli (zakaz: ${order.storeId}, smena: ${sessionStoreId})`,
           );
         }
         // Rezerv FAQAT zakaz TO'LIQ yopilganda yutiladi. Qisman to'lovda hold
@@ -1008,6 +1033,28 @@ export class RetailSaleService {
           id: p.productId,
         }));
         let balances = await this.stock.lockBalances(tx, accountId, storeId, assortments);
+
+        // F6: rezervlar BOSHQA omborda yotgan bo'lishi mumkin — zakaz holdi
+        // smena omborida, chekning picking holdi esa yozilgan paytdagi kaskad
+        // omborida. `releaseReservationByDoc` shartnomasi (qulf SHU tx da)
+        // buzilmasin: kaskad yoqilganda hold turishi mumkin bo'lgan boshqa
+        // omborlar ham qulflanadi (deterministik sort — parallel postlar
+        // deadlock qilmasin). Kaskadsiz o'rnatmada bu blok umuman yurmaydi —
+        // eski yo'l bitta ham ortiqcha so'rov qilmaydi.
+        if (cascade.length > 0) {
+          const extraStoreIds = new Set<string>();
+          if (releaseOrderReserve && sale.customerOrderId) extraStoreIds.add(sessionStoreId);
+          const holdRows = await tx.stockReservation.findMany({
+            where: { accountId, docType: 'retailsale', docId: id },
+            select: { storeId: true },
+            distinct: ['storeId'],
+          });
+          for (const h of holdRows) extraStoreIds.add(h.storeId);
+          extraStoreIds.delete(storeId);
+          for (const sid of [...extraStoreIds].sort()) {
+            await this.stock.lockBalances(tx, accountId, sid, assortments);
+          }
+        }
 
         // F8 — ZAKAZ REZERVI CHEKKA YUTILADI (`release_consume`).
         //
@@ -1076,7 +1123,14 @@ export class RetailSaleService {
           balances = await this.stock.lockBalances(tx, accountId, storeId, assortments);
         }
 
-        this.stock.assertAvailable(
+        // F6: yetmasa — xato ichida G4 uchun kaskad-reja (qaysi ombordan
+        // qancha ko'chirish mumkin). 07 dan tashqari ombordan AVTOMATIK
+        // ayirish yo'q (Q1 aniqlashtiruvi).
+        await this.assertAvailableCascade(
+          tx,
+          accountId,
+          cascade,
+          storeId,
           allowNegative,
           stockPositions.map((p) => ({
             assortmentKind: 'product',
@@ -1292,6 +1346,10 @@ export class RetailSaleService {
       throw new BadRequestException(transitionRejection(sale.state, 'cancel'));
     }
 
+    // F6: hold yozilgan paytdagi kaskad omborini bilish uchun (quyida qulf
+    // hold HAQIQATAN turgan omborlarga olinadi).
+    const cascade = await this.resolveStockCascade(accountId);
+
     // Atomic state guard: pre-posted holatlardan → 'cancelled'. Without this, a
     // cancel that races with a post() would silently overwrite 'posted' to
     // 'cancelled' while the cashDesk inflow and session aggregates remain —
@@ -1324,13 +1382,23 @@ export class RetailSaleService {
         (p): p is typeof p & { productId: string } => p.productId !== null,
       );
       if (cancelStock.length > 0) {
-        // `releaseReservationByDoc` shartnomasi — qulf SHU tx da.
-        await this.stock.lockBalances(
-          tx,
-          accountId,
-          sale.session.storeId,
-          cancelStock.map((p) => ({ kind: 'product' as const, id: p.productId })),
-        );
+        const products = cancelStock.map((p) => ({ kind: 'product' as const, id: p.productId }));
+        // `releaseReservationByDoc` shartnomasi — qulf SHU tx da. F6: hold
+        // yozilgan paytdagi KASKAD omborida turadi (smena omborida emas) —
+        // qulf hold HAQIQATAN turgan omborlarga olinadi (deterministik sort).
+        // Kaskadsiz o'rnatmada eski yo'l (smena ombori) baytma-bayt saqlangan.
+        if (cascade.length > 0) {
+          const holdRows = await tx.stockReservation.findMany({
+            where: { accountId, docType: 'retailsale', docId: id },
+            select: { storeId: true },
+            distinct: ['storeId'],
+          });
+          for (const sid of [...new Set(holdRows.map((h) => h.storeId))].sort()) {
+            await this.stock.lockBalances(tx, accountId, sid, products);
+          }
+        } else {
+          await this.stock.lockBalances(tx, accountId, sale.session.storeId, products);
+        }
         await this.stock.releaseReservationByDoc(
           tx,
           accountId,
@@ -1713,6 +1781,13 @@ export class RetailSaleService {
     if (!currentSession) {
       throw new ConflictException("Ochiq smena yo'q — qaytarish uchun avval smena oching.");
     }
+
+    // F6: qaytgan tovar STOK-KASKAD omboriga kiradi — sotuv qaysi ombordan
+    // ayirsa (Q1: «Ombor 07»), qaytish ham o'sha yerga (mijoz tovarni
+    // jismonan do'konga olib keladi). Kaskad sozlanmagan bo'lsa — joriy
+    // smena ombori (eski xulq).
+    const refundCascade = await this.resolveStockCascade(accountId);
+    const refundStoreId = refundCascade[0]?.id ?? currentSession.storeId;
 
     // SALES-05: what earlier refunds of this receipt already took. Before this,
     // the first partial refund flipped the receipt to 'refunded' and the other
@@ -2105,11 +2180,12 @@ export class RetailSaleService {
         const deltas: StockDelta[] = persistedPositions
           .filter((p): p is typeof p & { productId: string } => p.productId !== null)
           .map((p) => ({
-            // F6: tovar JORIY smena do'koniga qaytadi — kassir jismonan shu
-            // yerda turibdi. Asl do'konga yozish, do'konlar farq qilganda,
-            // tovar yetib bormagan omborda soxta qoldiq yaratardi. (Bitta
-            // do'konli o'rnatmada ikkalasi aynan bir xil.)
-            storeId: currentSession.storeId,
+            // F6 (2026-08-13): tovar JORIY smenaning do'koniga qaytadi —
+            // kassir jismonan shu yerda. F6 (restrukturizatsiya, 2026-08-23):
+            // kaskad yoqilganda esa STOK-KASKAD omboriga (sotuv ayirgan
+            // ombor) — aks holda sotuv 07 dan ayirilib, qaytish boshqa
+            // omborga tushar va 07 qoldig'i asta-sekin kamayib borardi.
+            storeId: refundStoreId,
             assortmentKind: 'product',
             assortmentId: p.productId,
             qtyDelta: String(p.quantity), // positive — inflow back to stock
@@ -2298,6 +2374,93 @@ export class RetailSaleService {
   private computePositions = computePositions;
 
   /**
+   * F6 — kassaning STOK kaskadi (Q1). Prioriteti (`attributes.__posPriority`)
+   * qo'yilgan omborlar, kichik raqam birinchi ("Ombor 07" = 1 bo'ladi).
+   * BO'SH ro'yxat = kaskad sozlanmagan — kassa eski yo'l bilan (smena ombori)
+   * ishlaydi, ya'ni sozlamasiz o'rnatmalarda xulq BAYT-BABAYT o'zgarmaydi.
+   * Do'kon soni kichik (7–10) — to'liq o'qib JS'da saralash arzon.
+   */
+  private async resolveStockCascade(accountId: string): Promise<CascadeStore[]> {
+    const stores = await this.prisma.client.store.findMany({
+      where: { accountId, archived: false },
+      select: { id: true, name: true, allowNegativeStock: true, attributes: true },
+    });
+    return orderCascadeStores(stores);
+  }
+
+  /**
+   * F6 — yetarlilik tekshiruvi, kaskad konteksti bilan. Birinchi ombor (07)
+   * yetmasa, XATO ICHIDA qolgan kaskad omborlaridan taqsimot-reja qaytadi:
+   * «yetishmagan N dona qaysi ombor(lar)dan olinishi mumkin». Bu — G4
+   * darvozasining ulanish nuqtasi (bosh omborchi tasdig'i → avto-Move 07 ga);
+   * 07 dan tashqari ombordan AVTOMATIK ayirish YO'Q (Q1 aniqlashtiruvi).
+   * Kaskad sozlanmagan bo'lsa xulq assertAvailable bilan aynan bir xil.
+   */
+  private async assertAvailableCascade(
+    tx: Prisma.TransactionClient,
+    accountId: string,
+    cascade: CascadeStore[],
+    stockStoreId: string,
+    allowNegative: boolean,
+    requests: Array<{ assortmentKind: string; assortmentId: string; requested: string }>,
+    balances: Map<string, { qty: string; reservedQty: string }>,
+  ): Promise<void> {
+    try {
+      this.stock.assertAvailable(allowNegative, requests, balances);
+    } catch (e) {
+      const others = cascade.filter((s) => s.id !== stockStoreId);
+      if (!(e instanceof BadRequestException) || others.length === 0) throw e;
+      const resp = e.getResponse() as {
+        error?: string;
+        details?: { shortages?: Array<{ assortmentId: string; shortage: string }> };
+      };
+      const shortages = resp?.error === 'InsufficientStock' ? resp.details?.shortages : undefined;
+      if (!shortages || shortages.length === 0) throw e;
+
+      // Qolgan kaskad omborlarida «доступно» (qty − rezerv) — REJA uchun
+      // o'qish, qulfsiz: bu yo'l baribir 400 bilan tugaydi, hech nima yozilmaydi.
+      const rows = await tx.stock.findMany({
+        where: {
+          accountId,
+          storeId: { in: others.map((o) => o.id) },
+          assortmentKind: 'product',
+          assortmentId: { in: shortages.map((s) => s.assortmentId) },
+        },
+        select: { storeId: true, assortmentId: true, qty: true, reservedQty: true },
+      });
+      const availableByStore = new Map<string, Map<string, string>>();
+      for (const r of rows) {
+        const perStore = availableByStore.get(r.storeId) ?? new Map<string, string>();
+        const avail =
+          parseDecimalScaled(r.qty.toString()) - parseDecimalScaled(r.reservedQty.toString());
+        perStore.set(r.assortmentId, formatDecimalScaled(avail));
+        availableByStore.set(r.storeId, perStore);
+      }
+      const plan = allocateAcrossStores(
+        shortages.map((s) => ({ assortmentId: s.assortmentId, requested: s.shortage })),
+        availableByStore,
+        others.map((o) => o.id),
+      );
+      const nameById = new Map(cascade.map((s) => [s.id, s.name]));
+      const primaryName = nameById.get(stockStoreId) ?? '';
+      throw new BadRequestException({
+        error: 'InsufficientStock',
+        message: `«${primaryName}» omborida yetarli miqdor yo'q. Yetishmagan qism boshqa ombordan FAQAT bosh omborchi tasdig'i bilan (07 ga ko'chirilgach) sotiladi.`,
+        details: {
+          shortages: resp.details?.shortages,
+          // G4 darvozasi uchun tayyor reja: qaysi ombordan qancha ko'chirish kerak.
+          cascadePlan: plan.allocations.map((a) => ({
+            ...a,
+            storeName: nameById.get(a.storeId) ?? null,
+          })),
+          // Butun kaskadda ham topilmagan qism (haqiqiy defitsit).
+          stillMissing: plan.shortfalls,
+        },
+      });
+    }
+  }
+
+  /**
    * Kassa TZ §5.3 + §9 — read each product's three prices off the card:
    * cost and the retail tier (frozen onto the line by `post()`), plus the
    * wholesale floor (not frozen — it only decides whether an audit event is
@@ -2478,8 +2641,17 @@ export class RetailSaleService {
       throw new BadRequestException(transitionRejection(sale.state, 'send-to-picking'));
     }
 
-    const storeId = sale.session.storeId;
-    const allowNegative = sale.session.store.allowNegativeStock;
+    // F6: rezerv do'koni ham STOK-KASKAD ombori — `post()` ayirishni qaysi
+    // ombordan qilsa, hold ham O'SHA yerda turishi kerak (aks holda rezerv
+    // bir omborda, yechim boshqasida — hech qachon bo'shamaydigan hold,
+    // aynan shu metod tarixidagi xatoning yangi shakli). Kaskad sozlanmagan
+    // bo'lsa — smena ombori (eski xulq, izoh quyida saqlangan).
+    const cascade = await this.resolveStockCascade(accountId);
+    const stockStore = cascade[0] ?? null;
+    const storeId = stockStore?.id ?? sale.session.storeId;
+    const allowNegative = stockStore
+      ? stockStore.allowNegativeStock
+      : sale.session.store.allowNegativeStock;
     const stockPositions = sale.positions.filter(
       (p): p is typeof p & { productId: string } => p.productId !== null,
     );
@@ -2506,7 +2678,12 @@ export class RetailSaleService {
       // `assertAvailable` «доступно = qoldiq − rezerv» ni hisoblaydi, ya'ni
       // boshqa kassaning ochiq cheki ham hisobga olinadi.
       if (stockPositions.length > 0) {
-        this.stock.assertAvailable(
+        // F6: xato savat bosilgan lahzada, kaskad-reja (G4 darvozasi) bilan.
+        await this.assertAvailableCascade(
+          tx,
+          accountId,
+          cascade,
+          storeId,
           allowNegative,
           stockPositions.map((p) => ({
             assortmentKind: 'product',

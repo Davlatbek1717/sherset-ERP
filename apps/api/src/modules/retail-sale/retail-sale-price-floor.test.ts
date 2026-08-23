@@ -83,6 +83,7 @@ function makeHarness(opts: Opts) {
   const client = {
     documentSequence: mockDocumentSequence(),
     employee: { findUnique: vi.fn(async () => null) },
+    store: { findMany: vi.fn(async () => []) },
     product: {
       findMany: vi.fn(async () => [
         {

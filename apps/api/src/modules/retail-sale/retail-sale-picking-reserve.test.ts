@@ -91,6 +91,7 @@ function makePickingClient(opts: { state?: string; positions?: Array<[string, nu
       findUniqueOrThrow: vi.fn().mockResolvedValue({ id: SALE_ID, state: 'picking' }),
     },
     skladKeeper: { findMany: vi.fn().mockResolvedValue([]) },
+    store: { findMany: vi.fn(async () => []) },
     $transaction: vi
       .fn()
       .mockImplementation(async (fn: (t: typeof tx) => Promise<unknown>) => fn(tx)),
@@ -195,6 +196,7 @@ function makeCancelClient(state: string) {
   };
   const client = {
     restockTask: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
+    store: { findMany: vi.fn(async () => []) },
     retailSale: {
       findFirst: vi.fn().mockResolvedValue({
         id: SALE_ID,
@@ -282,6 +284,7 @@ function makePostClient(state: string) {
   };
   const client = {
     employee: { findUnique: vi.fn(async () => null) },
+    store: { findMany: vi.fn(async () => []) },
     loyaltyProgram: { findFirst: vi.fn(async () => null) },
     product: { findMany: vi.fn(async () => []) },
     // Narx snapshot'i (kassa TZ §5.3) — bu fayl uni tekshirmaydi, lekin
