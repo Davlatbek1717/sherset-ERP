@@ -35,7 +35,7 @@ import {
 import { resolveCreatorGroupId } from '../shared/group-stamp.js';
 // Optimistic-lock (lost-update guard) for the draft field-edit update() path.
 import { mapVersionedUpdateError } from '../shared/optimistic-lock.js';
-import { type StockDelta, StockService } from '../stock/stock.service.js';
+import { type StockBalance, type StockDelta, StockService } from '../stock/stock.service.js';
 import {
   CASHIER_EVENT,
   type CashierAuditEventInput,
@@ -2403,7 +2403,7 @@ export class RetailSaleService {
     stockStoreId: string,
     allowNegative: boolean,
     requests: Array<{ assortmentKind: string; assortmentId: string; requested: string }>,
-    balances: Map<string, { qty: string; reservedQty: string }>,
+    balances: Map<string, StockBalance>,
   ): Promise<void> {
     try {
       this.stock.assertAvailable(allowNegative, requests, balances);
