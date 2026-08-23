@@ -1,6 +1,6 @@
 # Ombor restrukturizatsiyasi — 7+ fizik ombor, yacheyka-birinchi hisob
 
-> **Yaratilgan:** 2026-08-23 · **Buyurtmachi:** Ozodbek (egasi) · **Holat:** F1–F5 TUGADI (jonli split bajarildi 2026-08-23), navbat: F6
+> **Yaratilgan:** 2026-08-23 · **Buyurtmachi:** Ozodbek (egasi) · **Holat:** F1–F6 TUGADI (kaskad dvigateli jonlida 2026-08-24), navbat: F7
 > **Ijro tartibi:** har faza ALOHIDA sessiyada. Agent shu faylni o'qiydi, O'Z fazasini bajaradi, testlardan o'tkazadi, pastdagi «Hisobotlar»ga yozadi va TO'XTAYDI.
 
 ---
@@ -337,6 +337,68 @@ Faqat F8 vazifalari, testlar, deploy, jonli tekshiruv, hisobot — va TO'XTA.
 > Shablon: **Faza · sana · commit(lar)** — nima qilindi (fayl ro'yxati bilan qisqa),
 > test natijalari (raqamlar), deploy holati (jonli tekshiruv dalili), ochiq qolganlar,
 > keyingi fazaga eslatmalar.
+
+### F6 — Kassa: kaskadli ayirish + to'lov paytida ayirish · 2026-08-24 · `3ec48ae2` + `9c99bb29` + merge `0f4bda63`
+
+**1-vazifa, tadqiqot (chakana sotuv qoldiqni qachon ayiradi):** ayirish
+ALLAQACHON to'lov momentida — `post()` to'lovni tekshiradi (naqd+karta+
+terminal+qarz ≥ jami, aks holda 400) va AYNI tranzaksiyada stok kaskadini
+yozadi. `draft/picking/ready` ayirmaydi; `send-to-picking` → StockReservation
+`reserve` (H5), `cancel` → `release_cancel`, `post` → `release_consume`.
+Ya'ni «to'lovsiz chek qoldiqni kamaytirmaydi (faqat rezerv)» qabul mezoni
+F6'dan OLDIN ham bajarilgan — bu bandda kod o'zgartirilmadi. **Qarz sotuv:**
+chek qarz bilan yopilganda ham post'da ayiriladi (tovar mijoz bilan ketadi) —
+**egasi tasdiqladi (2026-08-24): hozirgidek qoladi** (rejadagi «bitta savol»).
+
+**Kaskad dvigateli (yangi `retail-stock-cascade.ts`, sof modul):**
+- Prioritet — `Store.attributes.__posPriority` (musbat butun; 1 = birinchi;
+  null = kaskadda EMAS). Migratsiya YO'Q — `__yacheyka`/attributes naqshi.
+- `orderCascadeStores` (prioritet ↑, teng bo'lsa nom), `allocateAcrossStores`
+  (micro-BigInt, pozitsiya bir nechta omborga bo'linadi, yetmagani shortfall).
+  Testlar: 12 (sof) + 6 (wiring).
+- **Wiring (`retail-sale.service`):** post/sendToPicking stok ombori =
+  kaskadning BIRINCHI ombori; kaskad sozlanmagan akkauntda — smena ombori
+  (xulq baytma-bayt eski). Yetmasa `assertAvailableCascade` 400 ichida
+  `details.cascadePlan` (qolgan kaskad omborlaridan qaysi biridan qancha
+  olish mumkin) + «bosh omborchi tasdig'i kerak» xabari — **bu G4
+  darvozasining ulanish nuqtasi; 07 dan tashqari ombordan AVTOMATIK ayirish
+  YO'Q (Q1 aniqlashtiruvi).** post() rezerv qatorlari qaysi omborlarda bo'lsa
+  o'shalarni ham qulflab bo'shatadi; cancel ham rezerv qatorlari ombori
+  bo'yicha; refund kirimi kaskad omboriga. Yacheyka-kesim: mavjud
+  katta-birinchi avto-ayirish ombor ichida o'zgarishsiz ishlayveradi.
+- **Store API/UI:** `store.schema` `posPriority` (int ≥1 | null), service
+  o'qishda lift / yozishda attributes'ga; ombor kartasida «Kassa prioriteti
+  (POS)» maydoni; i18n ru+uz.
+
+**Testlar:** yangi 20+ (dvigatel 12, wiring 6, store schema, web store-card 2);
+TO'LIQ: api 614 fayl / 8564 passed; web 309 fayl / 4169 passed (birinchi
+yugurishdagi 4-6 xato parallel-yuklama flake'i — alohida/toza yugurishda 0);
+turbo typecheck 10/10; i18n gate'lar yashil.
+
+**Deploy (2026-08-24):** VPS'da yana chetki holat: HEAD `8cec65ad` — boshqa
+ish oqimi (tovar-tuzatishlar, climart-adoption) F5 `6a9caa8d` ni O'ZIga merge
+qilib deploy qilgan (bu safar reset EMAS — tarix saqlangan). Yechim:
+`origin/climart-adoption` lokalga merge (`0f4bda63`, konflikt faqat
+docs/progress.json — ours) → push mirfayz → VPS ff-merge `0f4bda63` →
+`build:web` RC=0 → pm2 restart web+api → sahifalar `/`, `/login`, `/stores`,
+`/sotuv`, `/reports/stock-balance`, `/inventories` hammasi 200, api toza
+ko'tarildi (error yo'q).
+
+**Jonli sozlama:** `Taqsimlanmagan`.attributes.__posPriority = 1 (UPDATE 1,
+tekshirildi: boshqa omborlarda pp yo'q). Kaskad birinchi ombori == smena
+ombori ⇒ jonli xulq HOZIRCHA aynan avvalgidek (xavfsiz yoqish) — lekin endi
+yangi kaskad-yo'l orqali. **Ombor 07 raqamlashtirilib (F3 vositasi) unga
+posPriority=1 berilsa (Taqsimlanmaganni 2 ga surish/olib tashlash bilan) POS
+07 dan ayiradi** — ombor kartasidagi maydon orqali, kod kerak emas.
+
+**Ochiq qolganlar / keyingi fazalarga:**
+- «07 dan ayirilgani ledger'da» jonli isboti Ombor 07 yaratilgach bir sotuv
+  bilan tekshiriladi (hozir 07 yo'q — bu ish egasi/F7 da).
+- G4 (omborchi-tsd rejasi): so'rov-oqimi `assertAvailableCascade` ning 400
+  javobidagi `cascadePlan` ga ulanadi.
+- Birinchi real sotuvni tekshirish tavsiyasi kuchda (F5 dagi kabi).
+- F3 follow-up (TOPUP_ENTITIES'dan warehousenumbering'ni olib tashlash) hali
+  turibdi.
 
 ### F5 — Jonli split + verifikatsiya · 2026-08-23 · `bd58988f` (+ hisobot commiti)
 
