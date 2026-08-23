@@ -75,7 +75,11 @@ export default function NewProductPage() {
     pf.addBarcode();
     api
       .post<{ code: string }>('/products/allocate-code', {})
-      .then((r) => form.setValue('code', r.code))
+      // Faqat maydon hamon BO'SH bo'lsa yoziladi — kechikkan javob
+      // foydalanuvchi kiritgan kodni bosib ketmasin (2026-08-23 auditi).
+      .then((r) => {
+        if (!form.getValues('code')) form.setValue('code', r.code);
+      })
       .catch(() => {});
   }, [allowedToCreate]);
   // «Сотрудник» (owner) = current user, set once the auth user resolves.

@@ -335,7 +335,11 @@ export default function MoveDetailPage() {
           assortmentKind: 'product',
           // biome-ignore lint/style/noNonNullAssertion: PositionEditor guarantees assortmentId is set before save
           assortmentId: p.assortmentId!,
-          quantity: Number(p.quantity),
+          // SATR sifatida — `Number` orqali o'tkazish kichik/katta kasrlarni
+          // eksponentaga aylantiradi (`5e-7`) va server regexidan o'tmaydi,
+          // vergulli kiritma esa `NaN` bo'lib ketardi. Qolgan hamma hujjat
+          // sahifasi miqdorni satr yuboradi (2026-08-23 auditi).
+          quantity: p.quantity,
         }));
       }
       payload.attributes = form.attributes;

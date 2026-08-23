@@ -1013,19 +1013,27 @@ export default function NewDemandPage() {
             footerToolbar={
               <PositionInlineAdd
                 onSearch={async (q) => {
-                  const r = await api.get<{ items: ProductItem[] }>(
+                  const r = await api.get<{ items: ProductItem[]; total?: number }>(
                     `/products?search=${encodeURIComponent(q)}&limit=20`,
                   );
-                  return r.items.map((p) => ({
-                    id: p.id,
-                    primary: p.name,
-                    secondary: p.code ?? undefined,
-                    // Band 1 pick modal: «Остаток» line needs the stock figure.
-                    available: p.stock?.available != null ? Number(p.stock.available) : 0,
-                    priceMinor: resolveDefaultSalePriceOrZero(p.salePrices, defaultId, rates),
-                    uomLabel: p.uom ?? undefined,
-                    raw: p,
-                  }));
+                  return {
+                    items: r.items.map((p) => ({
+                      id: p.id,
+                      primary: p.name,
+                      secondary: p.code ?? undefined,
+                      // Band 1 pick modal: «Остаток» line needs the stock figure.
+                      available: p.stock?.available != null ? Number(p.stock.available) : 0,
+                      priceMinor: resolveDefaultSalePriceOrZero(p.salePrices, defaultId, rates),
+                      uomLabel: p.uom ?? undefined,
+                      raw: p,
+                    })),
+                    // `total` SHART: yalang'och massiv qaytarilsa komponent
+                    // `total = items.length` deb oladi va «Ещё N товаров»
+                    // hech qachon chiqmaydi — server 20 tasini beradi, ekran
+                    // 10 tasini ko'rsatadi, qolgani borligini foydalanuvchi
+                    // BILMAY qoladi (2026-08-23 auditi).
+                    total: r.total ?? r.items.length,
+                  };
                 }}
                 createProductLabel={(q) => tPos('createProductNamed', { query: q })}
                 onCreateProduct={(q) => setCreateProductName(q)}

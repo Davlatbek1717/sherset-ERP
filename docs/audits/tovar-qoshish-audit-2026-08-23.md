@@ -1,8 +1,18 @@
 # «Tovar qo'shish» audit — 2026-08-23
 
+> **HOLAT (shu sessiyada tuzatildi).** Quyidagi topilmalarning KATTA QISMI
+> tuzatildi — har biri avval RED ko'rilgan test bilan. Tuzatilganlar:
+> A1 · A2 · A3 · A4 · A5 · A6 · A7 · A8 · A9 (kod ustidan yozilishi,
+> «Неснижаемый остаток» rejimi, sync hisoblagichi) · B1 · B2 · B3 · B4 ·
+> B5 (narx qavati, vergulli miqdor, qator almashtirish, «Расценить» kursi,
+> narx qaytarib yozishda valyuta, demands «Ещё N», moves miqdori).
+>
+> **QOLGANI (ataylab, sabab bilan)** — hujjat oxiridagi «Qolgan ishlar» ga qara.
+
 **Qamrov:** ikki oqim — (A) katalogga YANGI TOVAR yaratish, (B) hujjatga TOVAR QATORI qo'shish.
 **Usul:** 3 parallel READ-ONLY auditor (web-create / api-create / hujjat-pozitsiya) + operator tomonidan
-har bir og'ir da'voning kod bilan qayta tasdig'i. **Hech narsa tuzatilmadi** — bu topilmalar ro'yxati.
+har bir og'ir da'voning kod bilan qayta tasdig'i. Quyidagi tavsiflar TOPILGAN paytdagi holatni yozadi
+(«hozir shunday» emas) — nima tuzatilgani yuqoridagi HOLAT bloki va oxirgi «Qolgan ishlar» da.
 **Status yorlig'i:** Phase-1 (strukturaviy + kod-o'qish), **browser-smoke YO'Q**.
 
 Tasdiqlangan gate: api tovar+variant 145/145 · document-number 10/10 · web create-permission-gate 3/3 ·
@@ -176,3 +186,57 @@ Kasrli miqdor sxemada `Decimal(20,6)` gacha to'g'ri (faqat vergul buziladi — B
 Tuzatish (`d7937657`) prodga deploy qilinganmi — bu sessiyada **tekshirib bo'lmadi** (tarmoq yo'q:
 `github.com` hal bo'lmadi). Lokal `origin/climart-adoption` refi eskirgan, shuning uchun
 «push qilinmagan» ro'yxati dalil emas (`stale-remote-ref-fakes-unpushed-work`).
+
+---
+
+## Qolgan ishlar (2026-08-23 sessiyasi oxiri)
+
+Quyidagilar ATAYLAB tuzatilmadi — har birining sababi bor.
+
+### Test-muhiti to'sqinlik qilgani uchun (kod o'zgarishi tayyor emas)
+- **`openTabRef` validatsiya yiqilganda tozalanmaydi** (`products/new/page.tsx`).
+  «+ Модификация» bosilib validatsiya rad etilsa, keyingi oddiy «Сохранить»
+  kutilmaganda modifikatsiya oynasini ochadi. Xulqni tekshirish uchun formani
+  test muhitida SUBMIT qildirish kerak — bu sessiyada uddasidan chiqilmadi
+  (`fireEvent.submit` ham, `act` bilan o'ralgani ham RHF `handleSubmit`
+  callback'iga yetmadi; forma o'zi sog'lom — izolyatsiyada `trigger()` VALID).
+  Testsiz tuzatish esa TDD intizomini buzardi.
+- **`auxDirty` create sahifasida Save/«Закрыть» ogohlantirishiga ulanmagan**
+  (edit sahifasida ulangan). Faqat narx/shtrix-kod/rasm kiritilgan holat
+  ogohlantirishsiz yopiladi. Xuddi shu submit-muammosi.
+
+### Mahsulot qarori kerak
+- **✏ «Курс валюты документа» dialogi** yig'adi-yu hech qayerga yozmaydi va
+  `markAuxDirty()` chaqirib «o'zgardi» deb ko'rsatadi. Dialog docstring'i uni
+  moysklad-parity deb hujjatlagan; nima qilish (saqlash / olib tashlash)
+  egasining qaroriga bog'liq.
+
+### Server tomonida qolganlar
+- **`salePrices[].priceTypeId` akkaunt bo'yicha tekshirilmaydi** — begona
+  akkaunt id'si yoki ixtiyoriy satr JSON'ga yozilaveradi (UI uni ko'rsatmaydi,
+  ya'ni narx «yo'qoladi»). To'g'ri joyi — `assertFksInAccount` yonida.
+- **Audit yozuvi create bilan bitta tranzaksiyada emas** — audit insert yiqilsa
+  tovar mavjud-u izsiz qoladi (ehtimoli past).
+- **`supply.schema` / `enter.schema` regexi `"0"` ni o'tkazadi** (xato matni
+  «positive» deydi); `enters/[id]`, `losses/[id]`, `moves/[id]`,
+  `internal-orders/[id]` da FE qo'riqchisi ham yo'q.
+- **Pozitsiya `assortmentId` si tenant bo'yicha faqat `customer-order` da
+  tekshiriladi.**
+
+### Kutish rejimidagilar (bugun zarar bermaydi)
+- **Qatordagi «Остаток»/«Доступно» ombor kesimisiz** (`product.repository.ts`
+  `storeId` filtrisiz). Prod hozir BITTA omborli
+  (`prod-single-store-ombor2`), shuning uchun latent; ikkinchi ombor
+  ochilishi bilan tiriladi. To'g'ri naqsh mavjud: `demands/new`, `moves/new`
+  `GET /stocks?storeId=…` ishlatadi.
+- **Bir tovarni ikki marta qo'shish qatorni birlashtirmaydi**; dublikat
+  ogohlantirishi 7 sahifada yo'q (POS birlashtiradi).
+- **`PositionTable` da qattiq yozilgan matnlar** (`Удалить (N)`,
+  `Добавить позицию`, o'zbekcha sukut qiymatlar) — i18n kalitlari to'liq
+  sinxron, muammo komponentdagi literal matnlarda.
+- **`moves/new` sukut omborni `defaultDocStore()` orqali olmaydi** (qolgan 14
+  sahifa oladi) — bu yerda xavf teskari: sukut umuman qo'yilmaydi.
+
+### Tasdiqlanmagan
+- Tuzatishlar prodga deploy qilinganmi — bu sessiyada tarmoq yo'q edi
+  (`github.com` hal bo'lmadi), shuning uchun tekshirilmadi.

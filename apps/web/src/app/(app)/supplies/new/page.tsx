@@ -42,6 +42,7 @@ import { useAuth } from '@/lib/auth-store';
 import { computeLineTotalSafe } from '@/lib/doc-totals';
 import { parsePositionImport } from '@/lib/parse-position-import';
 import { distributeAgreementDelta } from '@/lib/position-agreement';
+import { type PickedProduct, replaceRowProductPatch } from '@/lib/product-row-fields';
 import { purchaseLinePriceMinor } from '@/lib/purchase-line-price';
 import { resolveSalePriceByType, useCurrencyRates } from '@/lib/sale-price';
 import {
@@ -1841,12 +1842,12 @@ export default function NewSupplyPage() {
         onSelect={(item) => {
           if (typeof openPicker !== 'object' || openPicker === null) return;
           const raw = (item as PickerItem & { raw?: ProductItem }).raw;
+          // Tovardan keladigan HAMMA maydon yagona yordamchidan: ilgari bu yerda
+          // atigi 5 tasi yangilanardi va eski tovarning qoldig'i, narx qavatlari
+          // hamda YACHEYKASI qatorda qolib ketardi (2026-08-23 auditi).
           updatePosition(openPicker.rowUid, {
-            assortmentId: item.id,
-            productLabel: String(item.primary),
-            productUom: raw?.uom ?? null,
-            priceMinor: raw?.buyPrice ?? '0',
-            vat: raw?.vat != null ? String(raw.vat) : '12',
+            ...replaceRowProductPatch(item as PickedProduct),
+            priceMinor: purchaseLinePriceMinor(raw),
           });
         }}
       />

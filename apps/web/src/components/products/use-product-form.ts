@@ -441,7 +441,12 @@ export function useProductForm() {
       // NON-nullable column (`bigIntString.optional()` — rejects null) → OMIT when
       // empty (both modes), mirroring the proven create/edit forms. (Emptying the
       // field therefore leaves the stored threshold unchanged, not cleared to 0.)
-      minimumBalanceMinor: decimalToMinor(v.minimumBalance),
+      //
+      // Rejim sharti (2026-08-23 auditi): kiritish maydoni FAQAT `sum` rejimida
+      // chiziladi, lekin qiymat rejimdan qat'i nazar yuborilardi — foydalanuvchi
+      // rejimni almashtirib maydonni ko'zdan yo'qotgach ham eski chegara
+      // saqlanardi. Ekranda ko'rinmaydigan qiymat yuborilmaydi.
+      minimumBalanceMinor: minBalanceMode === 'sum' ? decimalToMinor(v.minimumBalance) : undefined,
       mxikCode: v.mxikCode || blank,
       // «Маркировка» → Тип продукции. Marked ⇒ trackingType + GTIN; else clear.
       trackingType: markingType !== 'none' ? MARKING_TO_TRACKING[markingType] : blank,

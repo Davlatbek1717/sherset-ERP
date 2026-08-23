@@ -90,7 +90,12 @@ export function ProductCreateModal({
     if (initialName) form.setValue('name', initialName);
     api
       .post<{ code: string }>('/products/allocate-code', {})
-      .then((r) => form.setValue('code', r.code))
+      // Faqat maydon hamon BO'SH bo'lsa yoziladi: sekin tarmoqda foydalanuvchi
+      // o'z kodini kiritib ulgurishi mumkin va kechikkan javob uni bosib
+      // ketardi — tovar boshqa kod bilan saqlanardi (2026-08-23 auditi).
+      .then((r) => {
+        if (!form.getValues('code')) form.setValue('code', r.code);
+      })
       // Non-permission failures (network) stay silent on purpose — the server
       // allocates the code itself when the field is submitted empty, so a blank
       // «Код» is recoverable. The 403 case is handled by the gate above.

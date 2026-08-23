@@ -1,5 +1,5 @@
 import { renderWithProviders, screen, waitFor } from '@/test-utils';
-import { fireEvent } from '@testing-library/react';
+import { act, fireEvent } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 /**
@@ -173,5 +173,44 @@ describe("yaratilgan tovarni hujjatga qo'shish — ikkinchi so'rov yo'q", () => 
       // ikkinchi so'rov qaytganini bildiradi.
       expect(src).not.toContain('`/products/${created.id}`');
     }
+  });
+});
+
+/**
+ * 🔴 2026-08-23 auditi: «Код» ni oldindan olish javobi SHARTSIZ yozilardi
+ * (`.then((r) => form.setValue('code', r.code))`). Sekin tarmoqda foydalanuvchi
+ * o'z kodini kiritib ulgursa, javob kelgach u ustidan yozilardi va tovar
+ * boshqa kod bilan saqlanardi — foydalanuvchi buni sezmasligi ham mumkin.
+ */
+describe('ProductCreateModal — kechikkan «Код» javobi', () => {
+  it('foydalanuvchi kiritgan kodni ustidan YOZMAYDI', async () => {
+    wirePermissions(true);
+    let resolveCode: (v: { code: string }) => void = () => {};
+    vi.mocked(api.post).mockImplementation((url: string) =>
+      String(url).includes('allocate-code')
+        ? (new Promise((res) => {
+            resolveCode = res as (v: { code: string }) => void;
+          }) as never)
+        : (Promise.resolve({ id: 'p-1' }) as never),
+    );
+    renderModal();
+    const code = () => screen.getByTestId('field-code') as HTMLInputElement;
+    await waitFor(() => expect(code()).toBeInTheDocument());
+
+    // Foydalanuvchi javob kelmasdan o'z kodini kiritdi.
+    fireEvent.change(code(), { target: { value: '09999' } });
+    await act(async () => {
+      resolveCode({ code: '05107' });
+    });
+
+    expect(code().value).toBe('09999');
+  });
+
+  it("maydon bo'sh bo'lsa javob avvalgidek to'ldiradi", async () => {
+    wirePermissions(true);
+    renderModal();
+    await waitFor(() =>
+      expect((screen.getByTestId('field-code') as HTMLInputElement).value).toBe('05107'),
+    );
   });
 });

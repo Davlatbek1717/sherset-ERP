@@ -6,10 +6,41 @@ import { z } from 'zod';
  * (live API verified 2026-04-19).
  */
 
-const bigIntString = z
-  .union([z.string(), z.number()])
-  .transform((v) => BigInt(String(v)))
-  .or(z.bigint());
+/** Manfiy bo'lmagan butun son (minor birlikda) — satr, number yoki bigint. */
+const NON_NEGATIVE_INT = /^\d+$/;
+
+/**
+ * Pul/miqdor maydoni → BigInt.
+ *
+ * 🔴 Ilgari bu `.transform((v) => BigInt(String(v)))` edi va `"1.5"`,
+ * `"12 000"`, `"abc"`, `1e21` kabi kirishlarda `BigInt()` **SyntaxError**
+ * tashlardi. Zod transform ichidagi bunday istisnoni ZodError bo'lib
+ * o'ramaydi, ikkala global filtr esa faqat `ZodError` va Prisma xatosini
+ * tutadi — natijada mijoz 400 o'rniga xom 500 olardi (2026-08-23 auditi;
+ * web forma `^\d*$` bilan to'sgani uchun bu yo'l import-skript/curl uchun
+ * ochiq edi). Endi tekshiruv KONVERTATSIYADAN OLDIN va xato ZodError.
+ *
+ * Manfiy qiymat ham rad etiladi: manfiy tan narx narx polini
+ * (`min(tan narx, karta narxi)`) o'chiradi.
+ */
+const bigIntString = z.union([z.string(), z.number(), z.bigint()]).transform((v, ctx) => {
+  if (typeof v === 'bigint') {
+    if (v < 0n) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Manfiy qiymat mumkin emas' });
+      return z.NEVER;
+    }
+    return v;
+  }
+  const s = typeof v === 'number' ? String(v) : v.trim();
+  if (!NON_NEGATIVE_INT.test(s)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Faqat manfiy bo'lmagan butun son (minor birlikda: tiyin)",
+    });
+    return z.NEVER;
+  }
+  return BigInt(s);
+});
 
 const uuid = z.string().uuid();
 // Comma-separated list of uuids → string[] (moysklad multi-select filter fields,
