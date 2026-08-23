@@ -247,6 +247,13 @@ Faqat F5 vazifalari, verifikatsiya, hisobot — va TO'XTA.
 **Ombor 07** dan, yetmasa qolgan omborlardan kaskad bilan ayirilsin; ayirish
 **pul to'langan paytda** sodir bo'lsin.
 
+> **⚠️ Q1 aniqlashtiruvi (egasi, 2026-08-23, keyingi so'z):** 07 dan tashqari
+> omborlardan ayirish AVTOMATIK EMAS — bosh omborchi tasdig'i orqali (so'rov →
+> yacheyka tanlab tasdiqlash → avto-Move 07 ga → ayirish 07 dan). Tasdiq oqimining
+> o'zi `docs/plans/2026-08-23-omborchi-tsd-mijozlar.md` G4 fazasida quriladi;
+> F6 esa dvigatelni (rezerv, to'lov-moment, 07 dan yacheyka-kesim ayirish) shunday
+> qursinki, 07 dan tashqariga chiqish nuqtasi G4 darvozasiga ulanadigan bo'lsin.
+
 **Vazifalar:**
 1. Tadqiqot (hisobotga yoziladi): hozir chakana sotuv qoldiqni QACHON ayiradi
    (chek yaratilganda / yopilganda / to'lovda) va qanday rezerv mexanizmi bor —
@@ -330,6 +337,50 @@ Faqat F8 vazifalari, testlar, deploy, jonli tekshiruv, hisobot — va TO'XTA.
 > Shablon: **Faza · sana · commit(lar)** — nima qilindi (fayl ro'yxati bilan qisqa),
 > test natijalari (raqamlar), deploy holati (jonli tekshiruv dalili), ochiq qolganlar,
 > keyingi fazaga eslatmalar.
+
+### F2 — Inventarizatsiyada «+ Yacheyka qo'shish» · 2026-08-23 · `b323d5ce`
+
+**Nima qilindi:**
+- `apps/web/src/components/inventories/add-cell-picker.tsx` (yangi) —
+  `InventoryAddCell`: yacheyka-tabda tovar guruhiga «+ Yacheyka» amali.
+  Skaner-do'st kod terish: Enter'da kod AYNAN mos yacheykani oladi
+  (`resolveCellByCode` — trim, katta-kichik farqsiz), topilmasa kod bilan aniq
+  xato («{code} yacheykasi topilmadi»); dublikat (tovar × yacheyka) ham aniq
+  xato. Muqobil: input ostida filtrlangan ro'yxatdan bosib tanlash. Panel
+  skaner uchun ochiq qoladi, fokus kod maydoniga qaytadi. Ma'lumot — mavjud
+  `GET /admin/stores/:id/address-storage` (cell-picker-field bilan bir endpoint).
+- `inventory-positions-panel.tsx` — har tovar guruhining sahifadagi oxirgi
+  qatoridan keyin qo'shish qatori (faqat qoralamada); `addCellCount`:
+  yangi qator cellId'li, actualQty='0', untouched store-qator double-count
+  guard bilan tushiriladi (setCellActual bilan bir xil). «Faqat yacheyka»
+  qoidasi buzilmadi — backend'ga o'zgarish KERAK BO'LMADI (assertCellsInStore
+  + post'da StockByCell yo'q bo'lsa expected=0 allaqachon bor).
+- i18n ru+uz: `pages.inventories.add_cell*` (7 kalit).
+
+**Testlar:** yangi — `add-cell-picker.test.tsx` (6) +
+`inventory-positions-panel.add-cell.test.tsx` (2, jumladan actual>0 store-qator
+saqlanishi). Web vitest TO'LIQ: 306 fayl, 4159 passed / 26 skipped. i18n
+gate'lar (62) yashil. Typecheck web ✅, api ✅ (NODE_OPTIONS 8G). API inventory
+moduli 28 passed (api kodi o'zgarmagan).
+
+**Deploy holati: KUTILMOQDA** — foydalanuvchi «Deploy keyinroq» dedi (parol
+berilmadi). Diqqat: **F1 (`54eb1da3`) ham hali deploy qilinmagan** ko'rinadi
+(F1 sessiyasi hisobot yozmagan; VPS holati tekshirilmagan). Keyingi deploy
+`b323d5ce` ni olib borsa F1+F2 birga ketadi — F1 apps/api'ga tekkani uchun
+**pm2 restart sherset-v2-api HAM kerak** (web bilan birga). Jonli qabul
+mezoni (yangi yacheykaga kiritish → post → StockByCell) deploy'dan keyin
+tekshirilishi shart — xavfsiz naqsh: post → tekshir → cancel (deltalar aynan
+qaytadi, 00112 da isbotlangan).
+
+**Ochiq qolganlar / keyingi fazaga:**
+- F2 jonli tekshiruv deploy bilan birga qoldi (yuqoridagi retsept).
+- F1 hisoboti yo'q edi — bu commitda F1 mazmuni commit-xabaridan ma'lum
+  (`54eb1da3`: groupBy=warehouse hisoboti, /reports/stock-balance/cells,
+  tovar kartasi yacheyka kesimi; testlari o'z sessiyasida yashil deb yozilgan).
+- `docs/plans/2026-08-23-omborchi-tsd-mijozlar.md` hali untracked (G-reja,
+  boshqa ish oqimi) — kim birinchi tegsa commit qilsin.
+- Q1 aniqlashtiruv bloki (F6 ustidagi ⚠️) avvalgi sessiyadan uncommitted
+  qolgan edi — shu hisobot commitiga kiritildi.
 
 ### F0 — Reja tuzildi · 2026-08-23
 Reja shu sessiyada tuzildi. Oldin bajarilgan tayanch ishlar (alohida, reja-oldi):
