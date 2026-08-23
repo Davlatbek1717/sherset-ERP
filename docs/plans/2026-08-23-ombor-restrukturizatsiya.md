@@ -1,6 +1,6 @@
 # Ombor restrukturizatsiyasi — 7+ fizik ombor, yacheyka-birinchi hisob
 
-> **Yaratilgan:** 2026-08-23 · **Buyurtmachi:** Ozodbek (egasi) · **Holat:** F1–F4 kod tayyor (deploy YO'Q), navbat: F1–F3 deploy, so'ng F5
+> **Yaratilgan:** 2026-08-23 · **Buyurtmachi:** Ozodbek (egasi) · **Holat:** F1–F5 TUGADI (jonli split bajarildi 2026-08-23), navbat: F6
 > **Ijro tartibi:** har faza ALOHIDA sessiyada. Agent shu faylni o'qiydi, O'Z fazasini bajaradi, testlardan o'tkazadi, pastdagi «Hisobotlar»ga yozadi va TO'XTAYDI.
 
 ---
@@ -337,6 +337,75 @@ Faqat F8 vazifalari, testlar, deploy, jonli tekshiruv, hisobot — va TO'XTA.
 > Shablon: **Faza · sana · commit(lar)** — nima qilindi (fayl ro'yxati bilan qisqa),
 > test natijalari (raqamlar), deploy holati (jonli tekshiruv dalili), ochiq qolganlar,
 > keyingi fazaga eslatmalar.
+
+### F5 — Jonli split + verifikatsiya · 2026-08-23 · `bd58988f` (+ hisobot commiti)
+
+**⚠️ Kutilmagan hodisa — VPS reset:** F5 boshlanganda VPS `climart-adoption`
+branch'i bugun 12:55 (+02) da Davlatbek tomonidan `f41bf559` (kassa smena-qaytarish
+fix'i, bizning tarixda YO'Q edi) ga **reset qilinib qayta build qilingan** — bu
+2026-08-22/23 dagi yacheyka-inventarizatsiya deploylarini (fe361abf, bebd335d,
+87cb45d0) ishlab turgan koddan chiqarib yuborgan edi (DB migratsiyasi joyida
+qolgan). Yechim: `f41bf559` lokal branch'ga merge qilindi (`bd58988f`, konflikt
+faqat docs/progress.json — ours) — hech ikkala ish oqimi ham yo'qolmadi.
+**Saboq: Davlatbek bilan deploy tartibini kelishish kerak** — u reset ishlatadi,
+navbatdagi reset bizning ishni yana uchirib yuborishi mumkin.
+
+**Zaxira (split'dan OLDIN):** VPS `/root/sherset_v2-pre-split-20260823.dump`
+(6.9M, attachments-data'siz) + `/root/sherset_v2-pre-split-FULL-20260823.dump`
+(1.4G, to'liq); yengil nusxa lokalda ham: `D:\sherset-v2-backups\`.
+
+**Deploy (F1+F2+F3+F4 + kassa-fix birga):** ff-merge → VPS HEAD `bd58988f`;
+`prisma generate`; `build:web` RC=0; `pm2 restart sherset-v2-web` + `-api`;
+`topup-role-permissions.ts` (DATABASE_URL'ni `set -a; . .env` bilan berish kerak
+— aks holda env xatosi): PASS1 4 rol/2304 qator (+warehousenumbering), PASS2
+shablon rollari OK; keyin api yana restart. Sahifalar: `/`, `/login`, `/stores`,
+`/reports/stock-balance`, `/inventories`, `/products` — hammasi 200; yangi build
+markeri (warehouse-numbering chunk) joyida; pm2 error loglar toza.
+Migratsiya kerak bo'lmadi — `20260822120000_inventory_position_cell` DB'da
+allaqachon applied edi (Davlatbek reset'i faqat kodga tekkan).
+
+**Jonli split (15:58 +02):** avval DRY-RUN, keyin `--apply` (VPS'da host
+localhost — --allow-remote kerak bo'lmadi):
+- **Ombor 01** (`7400bf94-c2b0-4d5c-b12d-f971cd10e187`): 119 yacheyka, 1 zona
+  («04»), 0 qator, 0 dona.
+- **Ombor 02** (`01662dbe-ee31-405f-a82f-ff8a82dc8809`): 291 yacheyka, 4 zona
+  («01» 44, «02» 106, «03» 35, «04» 106), 273 qator, **2 949 007 dona**,
+  255 924 725 594 so'm tannarx (F4 lokal isbotidan farq −78 dona — kunlik savdo).
+- «Ombor 2» → **«Taqsimlanmagan»** (id `968f9da2-…` O'ZGARMADI), 4 bo'sh eski
+  zona o'chirildi; unda qolgan qoldiq 49 574 452.387857 dona.
+- Ledger: `warehouse_split` 546 qator, Σqty==0. **V0** (5081 assortiment
+  qty/cost/rezerv o'zgarmadi) OK; **V1–V3** OK; alohida `--verify` ham OK;
+  qayta-reja bo'sh (idempotent). **Σstocks oldin == keyin ==
+  52 523 459.387857** — jami qoldiq o'zgarmagani raqam bilan isbotlangan.
+
+**Kassa uzluksizligi:** kassa omborni `cashier_sessions.store_id` orqali oladi —
+eski id, endi «Taqsimlanmagan» (retail_sales.store_id/pos_devices.store_id null).
+Split 15:58 da; 16:03 da yangi kassir-sessiya muvaffaqiyatli ochilgan (jonli
+dalil), api xatolari yo'q. Split'dan keyin haqiqiy sotuv hali bo'lmagan —
+**birinchi real sotuvni egasi bir tekshirib qo'ysin** (chek → qoldiq
+Taqsimlanmagan'dan kamayadi, F6 gacha shunday bo'lishi to'g'ri).
+
+**F1 prefiks-hisoblar:** split'dan keyin ham matematik TO'G'RI (endi prefiks ==
+haqiqiy Store: yangi omborlarda Σyacheyka==Stock (V3), «Taqsimlanmagan»da
+yacheyka yo'q ⇒ unassigned==uning Stock'i). groupBy=warehouse hisoboti va tovar
+kartasi kesimi haqiqiy Store raqamlari bilan mos — kod o'zgartirilmadi, chunki
+xato YO'Q; soddalashtirish (prefiks-hisobni Store-kesimga almashtirish) F7
+sayqal fazasiga qoldirildi (hisobotlar baribir u yerda qayta ko'riladi).
+
+**Ochiq qolganlar / keyingi fazalarga:**
+- **Draft inventarizatsiya `30c622d8`** (bugungi, 1 qator: yacheyka 02-01-01-06)
+  «Taqsimlanmagan»da qolgan — yacheykasi endi Ombor 02'da, bu hujjat post
+  BO'LMAYDI; Ombor 02'da yangidan ochib sanash kerak (044ac293 esa bo'sh draft —
+  o'chirsa bo'ladi). Egasiga aytildi.
+- UI klik-tekshiruvlar (omborlar ro'yxati, tovar kartasi, hisobot, yangi omborda
+  inventarizatsiya, skaner) — sahifalar 200, ma'lumot DB darajasida to'g'ri;
+  vizual klik-tur egasi/jamoada.
+- F3 follow-up kuchda: topup yugurtirildi — endi `TOPUP_ENTITIES`dan
+  `warehousenumbering`ni olib tashlash kichik commit'i kerak.
+- POS sozlamalariga TEGILMADI (Q1/F4 rejasi) — 07-omborga o'tish F6 da.
+- sudo `use_pty` + paramiko (pty'siz) kombinatsiyasida `sudo -u postgres psql`
+  chiqishi yutiladi — keyingi sessiyalar DB'ga to'g'ridan-to'g'ri app
+  DATABASE_URL bilan ulanishsin (pg_dump sudo bilan ishlayveradi).
 
 ### F4 — Ombor-split migratsiyasi: skript + LOKAL dry-run · 2026-08-23
 
