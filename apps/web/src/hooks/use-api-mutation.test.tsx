@@ -169,6 +169,42 @@ describe('useApiMutation', () => {
     expect(spy).toHaveBeenCalledWith({ queryKey: ['audit-logs'] });
   });
 
+  /**
+   * 🔴 2026-08-23 auditi: yaratish/o'zgartirish mutatsiyalari FAQAT
+   * `['audit-logs']` ni invalidatsiya qilardi. Global `staleTime: 30_000` +
+   * `refetchOnWindowFocus: false` bilan bu shuni bildiradi: yangi tovar
+   * yaratilib /products ga 30 soniya ichida qaytilsa, ro'yxat KESHdan
+   * ko'rsatiladi va `createdAt desc` da birinchi turishi kerak bo'lgan tovar
+   * ko'rinmaydi — foydalanuvchida «saqlanmadi» taassuroti qoladi.
+   */
+  it("invalidateKeys berilgan bo'lsa ularni ham tozalaydi (ro'yxat eskirib qolmasin)", async () => {
+    const qc = new QueryClient();
+    const spy = vi.spyOn(qc, 'invalidateQueries');
+    const mutationFn = vi.fn().mockResolvedValue({});
+    const { result } = renderHookWithProviders(
+      () => useApiMutation({ mutationFn, invalidateKeys: [['products'], ['variants']] }),
+      { queryClient: qc },
+    );
+    await act(async () => {
+      await result.current.mutateAsync(undefined);
+    });
+    expect(spy).toHaveBeenCalledWith({ queryKey: ['products'] });
+    expect(spy).toHaveBeenCalledWith({ queryKey: ['variants'] });
+  });
+
+  it("invalidateKeys berilmasa xulq o'zgarmaydi", async () => {
+    const qc = new QueryClient();
+    const spy = vi.spyOn(qc, 'invalidateQueries');
+    const mutationFn = vi.fn().mockResolvedValue({});
+    const { result } = renderHookWithProviders(() => useApiMutation({ mutationFn }), {
+      queryClient: qc,
+    });
+    await act(async () => {
+      await result.current.mutateAsync(undefined);
+    });
+    expect(spy).toHaveBeenCalledTimes(1);
+  });
+
   // ── Optimistic-lock conflict routing ───────────────────────────────────
   // A 409 OPTIMISTIC_LOCK is a concurrency conflict, not a generic failure: it
   // must reach the caller's onConflict (→ reload dialog) and NOT show the

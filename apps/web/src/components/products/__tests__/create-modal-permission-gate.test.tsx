@@ -1,4 +1,5 @@
 import { renderWithProviders, screen, waitFor } from '@/test-utils';
+import { fireEvent } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 /**
@@ -90,5 +91,87 @@ describe("ProductCreateModal — «product.create» qo'riqi", () => {
         .mock.calls.filter((c) => String(c[0]).includes('allocate-code'));
       expect(allocateCalls).toHaveLength(1);
     });
+  });
+});
+
+/**
+ * 🔴 2026-08-23 auditi: modal `<form>` ichida `type="submit"` tugma bor va ism
+ * `initialName` dan oldindan to'ldirilgan — ya'ni validatsiya o'tadi. Shtrix-kod
+ * qatoriga skaner o'qishi (skaner oxirida Enter yuboradi) formani DARHOL
+ * jo'natardi: narx ham, gruppa ham kiritilmagan tovar yaratilib, hujjatga
+ * 1 dona pozitsiya tushardi. `/products/new` da bunday emas (u yerda formada
+ * submit-tugma yo'q), ya'ni ikki kirish nuqtasi yana bir joyda ajralgan edi.
+ *
+ * Endi bitta qatorli inputdagi Enter formani jo'natmaydi (saqlash faqat tugma
+ * orqali); `<textarea>` va tugmaning o'z Enter'i tegilmaydi.
+ */
+describe('ProductCreateModal — bitta qatorli inputdagi Enter saqlamaydi', () => {
+  it("input ustidagi Enter bekor qilinadi (skaner formani jo'natmaydi)", async () => {
+    wirePermissions(true);
+    renderModal();
+    await waitFor(() => expect(screen.getByTestId('field-name')).toBeInTheDocument());
+
+    // fireEvent `false` qaytarsa — hodisa bekor qilingan (preventDefault).
+    const notCancelled = fireEvent.keyDown(screen.getByTestId('field-name'), {
+      key: 'Enter',
+      bubbles: true,
+    });
+    expect(notCancelled).toBe(false);
+  });
+
+  it('boshqa tugmalar tegilmaydi', async () => {
+    wirePermissions(true);
+    renderModal();
+    await waitFor(() => expect(screen.getByTestId('field-name')).toBeInTheDocument());
+
+    const notCancelled = fireEvent.keyDown(screen.getByTestId('field-name'), {
+      key: 'a',
+      bubbles: true,
+    });
+    expect(notCancelled).toBe(true);
+  });
+});
+
+/**
+ * 🔴 2026-08-23 auditi: modal `onCreated` ga FAQAT `{ id }` uzatardi, shuning
+ * uchun uchala chaqiruvchi (supplies/new, demands/new, demands/[id]) tovarni
+ * darhol `GET /products/:id` bilan qayta o'qirdi — va o'sha GET bo'sh
+ * catch ichida edi. Modal esa `onCreated` ni await qilmay yopilardi. Ya'ni GET
+ * yiqilsa (tarmoq yoki `product.view` cheklovi): tovar YARATILGAN, qator YO'Q,
+ * toast YO'Q, modal yopiq — foydalanuvchi «bo'lmadi» deb qayta uradi va
+ * katalogda haqiqiy dublikat paydo bo'ladi.
+ *
+ * Ildiz yechim: `POST /products` allaqachon TO'LIQ tovarni qaytaradi
+ * (`repo.create` da `select` yo'q), shuning uchun ikkinchi so'rovning hojati
+ * yo'q — modal shu obyektni butunligicha uzatadi, chaqiruvchi qatorni undan
+ * quradi va yiqiladigan qadam umuman qolmaydi.
+ *
+ * Eslatma (halol chegara): «onCreated POST javobini butunligicha uzatadi»
+ * degan qism bu yerda RENDER bilan tekshirilmaydi. Modal formasini test
+ * muhitida submit qildirib bo'lmadi — `fireEvent.submit` ham, `act` bilan
+ * o'ralgani ham RHF `handleSubmit` callback'iga yetmadi (forma o'zi sog'lom:
+ * `useProductForm` ni izolyatsiyada `trigger()` qilganda VALID, xatolar bo'sh).
+ * Shu sababli shartnoma ikki qatlamda qulflangan:
+ *   • quyidagi manba-qo'riq — chaqiruvchilarda ikkinchi so'rov qolmagani;
+ *   • TIP TIZIMI — `onCreated` endi to'liq tovar shaklini talab qiladi va
+ *     sahifalar `created.name` / `created.buyPrice` ni o'qiydi, ya'ni modal
+ *     yana `{ id }` ga qaytsa typecheck yiqiladi.
+ */
+describe("yaratilgan tovarni hujjatga qo'shish — ikkinchi so'rov yo'q", () => {
+  const CALLERS = [
+    'src/app/(app)/supplies/new/page.tsx',
+    'src/app/(app)/demands/new/page.tsx',
+    'src/app/(app)/demands/[id]/page.tsx',
+  ];
+
+  it('hech bir chaqiruvchi onCreated ichida tovarni qayta GET qilmaydi', async () => {
+    const { readFileSync } = await import('node:fs');
+    const { join } = await import('node:path');
+    for (const p of CALLERS) {
+      const src = readFileSync(join(__dirname, '..', '..', '..', '..', p), 'utf8');
+      // Bu URL faqat o'sha qayta-o'qishda ishlatilardi — mavjudligining o'zi
+      // ikkinchi so'rov qaytganini bildiradi.
+      expect(src).not.toContain('`/products/${created.id}`');
+    }
   });
 });

@@ -1898,33 +1898,25 @@ export default function NewSupplyPage() {
           open
           initialName={createProductName}
           onClose={() => setCreateProductName(null)}
-          onCreated={async (created) => {
-            try {
-              const res = await api.get<{
-                name: string;
-                uom: string | null;
-                buyPrice: string | null;
-                vat?: number | null;
-                salePrices?: Array<{ priceTypeId: string; value: string }> | null;
-              }>(`/products/${created.id}`);
-              setPositions((ps) => [
-                ...ps,
-                {
-                  id: uid(),
-                  assortmentId: created.id,
-                  productLabel: res.name,
-                  productUom: res.uom ?? null,
-                  quantity: '1',
-                  priceMinor: purchaseLinePriceMinor(res),
-                  discount: '0',
-                  vat: res.vat != null ? String(res.vat) : '12',
-                  vatEnabled: true,
-                  salePrices: res.salePrices ?? null,
-                },
-              ]);
-            } catch {
-              // product created but couldn't fetch to append — non-fatal
-            }
+          // The modal hands over the whole created product, so the row is built
+          // right here — no second request that could fail silently and leave
+          // the user re-creating the product (2026-08-23 audit).
+          onCreated={(created) => {
+            setPositions((ps) => [
+              ...ps,
+              {
+                id: uid(),
+                assortmentId: created.id,
+                productLabel: created.name,
+                productUom: created.uom ?? null,
+                quantity: '1',
+                priceMinor: purchaseLinePriceMinor(created),
+                discount: '0',
+                vat: created.vat != null ? String(created.vat) : '12',
+                vatEnabled: true,
+                salePrices: created.salePrices ?? null,
+              },
+            ]);
           }}
         />
       )}

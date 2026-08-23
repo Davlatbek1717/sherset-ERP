@@ -89,6 +89,10 @@ export default function NewProductPage() {
   }, [user]);
 
   const createMut = useApiMutation({
+    // The catalog list caches for 30s and never refetches on focus, so without
+    // this the just-created product was missing when the user went back to
+    // /products (2026-08-23 audit).
+    invalidateKeys: [['products']],
     mutationFn: async () => {
       const v = form.getValues();
       const payload = {

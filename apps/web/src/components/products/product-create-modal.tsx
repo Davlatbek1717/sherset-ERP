@@ -29,6 +29,16 @@ import { Alert, Button, Input, Modal, useToast } from '@moysklad/ui';
 import { useTranslations } from 'next-intl';
 import { useEffect, useRef } from 'react';
 
+/** What `POST /products` returns — the row a document position is built from. */
+export interface CreatedProduct {
+  id: string;
+  name: string;
+  uom: string | null;
+  buyPrice: string | null;
+  vat?: number | null;
+  salePrices?: Array<{ priceTypeId: string; value: string }> | null;
+}
+
 export function ProductCreateModal({
   open,
   initialName,
@@ -39,8 +49,18 @@ export function ProductCreateModal({
   /** Pre-fill the name (the text the user had typed in the inline-add search). */
   initialName?: string;
   onClose: () => void;
-  /** Fired with the created product so the caller can append it as a position. */
-  onCreated: (created: { id: string }) => void;
+  /**
+   * Fired with the FULL created product so the caller can append it as a
+   * position straight away.
+   *
+   * It used to hand over only `{ id }`, which forced every caller to re-read the
+   * product with `GET /products/:id` — inside an empty catch, while this modal
+   * closed without awaiting. When that read failed the product existed but no
+   * row appeared and nothing was said, so the user created it a second time
+   * (2026-08-23 audit). `POST /products` already returns the whole row, so the
+   * second request is unnecessary — and with it the failure mode is gone.
+   */
+  onCreated: (created: CreatedProduct) => void;
 }) {
   const pf = useProductForm();
   const { t, form } = pf;
@@ -90,9 +110,12 @@ export function ProductCreateModal({
   }, [user]);
 
   const createMut = useApiMutation({
+    // Mirror /products/new: the catalog list caches for 30s, so a product
+    // created from a document must not be missing from it afterwards.
+    invalidateKeys: [['products']],
     mutationFn: async () => {
       const v = form.getValues();
-      const created = await api.post<{ id: string }>('/products', {
+      const created = await api.post<CreatedProduct>('/products', {
         ...pf.buildPayload('create'),
         packs: pf.baseTasnifPack(v.uom || 'шт'),
       });
@@ -133,7 +156,22 @@ export function ProductCreateModal({
           </Alert>
         </div>
       ) : (
-        <form onSubmit={handleSave} data-test-id="product-create-modal-form">
+        <form
+          onSubmit={handleSave}
+          // A barcode scanner ends its read with Enter. With a submit button in
+          // the form and the name pre-filled from the typed query, that Enter
+          // used to save immediately — creating a product with no price and no
+          // group, and appending it to the document (2026-08-23 audit). Saving
+          // is the button's job; `<textarea>` newlines and a focused button's
+          // own Enter are left alone.
+          onKeyDown={(e) => {
+            if (e.key !== 'Enter' || e.defaultPrevented) return;
+            const tag = (e.target as HTMLElement).tagName;
+            if (tag === 'TEXTAREA' || tag === 'BUTTON') return;
+            e.preventDefault();
+          }}
+          data-test-id="product-create-modal-form"
+        >
           <div className="mb-3">
             <label htmlFor="pcm-name" className="mb-1 block text-[var(--ms-text-muted)] text-xs">
               <span className="text-[var(--ms-text-destructive)]">*</span> {t('name_label')}
