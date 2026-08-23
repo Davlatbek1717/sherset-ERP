@@ -45,6 +45,20 @@ export const CurrentSessionSchema = z.object({
   salesCount: z.number().int(),
   /** `BigInt` column → string on the wire. */
   salesSumMinor: MinorAmount,
+  /**
+   * Smenadagi QAYTARISHLAR (2026-08-17, egasi: «chekni qaytardim, summa
+   * qaytmayapti»).
+   *
+   * 🔴 Server bu ikkisini ALLAQACHON yuborardi (`findCurrentForCashier`
+   * `...session` bilan butun qatorni qaytaradi va javob Zod bilan
+   * kesilmaydi) — prodda o'lchandi: `returnsCount: 1`,
+   * `returnsSumMinor: '7300000'`. Faqat SHARTNOMADA e'lon qilinmagani uchun
+   * ekran ularni ishlatmasdi va kassir qaytarishdan keyin smena jamida hech
+   * qanday o'zgarish ko'rmasdi.
+   */
+  returnsCount: z.number().int(),
+  /** `BigInt` column → string on the wire. */
+  returnsSumMinor: MinorAmount,
   /** `BigInt` column → string on the wire. */
   openingCashMinor: MinorAmount,
 
