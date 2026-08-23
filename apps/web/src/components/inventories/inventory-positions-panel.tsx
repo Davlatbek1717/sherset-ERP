@@ -195,7 +195,9 @@ export function InventoryPositionsPanel({
 
   const canEdit = mode === 'detail' && !readOnly && !!onRowsChange;
 
-  const [tab, setTab] = useState<'store' | 'cell'>('store');
+  // 2026-08-23 (egasi): sanash FAQAT yacheyka kesimida — shuning uchun
+  // standart tab «Yacheyka bo'yicha qoldiqlar».
+  const [tab, setTab] = useState<'store' | 'cell'>('cell');
   const [filterOpen, setFilterOpen] = useState(false);
   const [filterValues, setFilterValues] = useState<GridFilterValues>({});
   const [search, setSearch] = useState('');
@@ -655,15 +657,27 @@ export function InventoryPositionsPanel({
     </DropdownMenu>
   );
 
-  const columns: PositionTableColumnConfig[] = [
-    { key: 'select' },
-    { key: 'name', label: t('filter_name') },
-    { key: 'available', label: calcHeader, width: '150px' },
-    { key: 'quantity', label: t('actual_stock'), width: '170px' },
-    { key: 'shipped', label: t('diff_qty'), width: '110px' },
-    { key: 'reserve', label: t('price_col'), width: '130px' },
-    { key: 'waiting', label: t('surplus_shortage'), width: '160px' },
-  ];
+  // 2026-08-23 (egasi, 00112 hodisasi): sanash FAQAT yacheyka tabida bo'ladi.
+  // Qoralamada ombor-tab endi ma'lumot ro'yxati xolos — «Haqiqiy qoldiq» ustuni
+  // YO'Q, ya'ni bitta tovarni ikkala tabda kiritib qoldiqni ikki marta siljitish
+  // (11000 − 10900 − 10000 = −9900) endi jismonan mumkin emas. O'tkazilgan eski
+  // hujjatlarda ustunlar to'liq qoladi (tarixdagi son/farq o'qilishi uchun).
+  const columns: PositionTableColumnConfig[] = canEdit
+    ? [
+        { key: 'select' },
+        { key: 'name', label: t('filter_name') },
+        { key: 'available', label: calcHeader, width: '150px' },
+        { key: 'reserve', label: t('price_col'), width: '130px' },
+      ]
+    : [
+        { key: 'select' },
+        { key: 'name', label: t('filter_name') },
+        { key: 'available', label: calcHeader, width: '150px' },
+        { key: 'quantity', label: t('actual_stock'), width: '170px' },
+        { key: 'shipped', label: t('diff_qty'), width: '110px' },
+        { key: 'reserve', label: t('price_col'), width: '130px' },
+        { key: 'waiting', label: t('surplus_shortage'), width: '160px' },
+      ];
 
   const filterPanel = (
     <InlineFilterPanel

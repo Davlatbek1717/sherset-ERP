@@ -195,14 +195,20 @@ export default function InventoryDetailPage() {
       if (!data.applicable) {
         payload.organizationId = form.organizationId;
         payload.storeId = form.storeId;
-        payload.positions = form.positions.map((p) => ({
-          assortmentKind: 'product',
-          assortmentId: p.assortmentId,
-          // Trailing '.' can survive mid-typing in the cell grid — normalize.
-          actualQty: (p.actualQty || '0').replace(/\.$/, ''),
-          cellId: p.cellId ?? null,
-          cell: p.cell ?? null,
-        }));
+        // 2026-08-23 (egasi, 00112 hodisasi): hujjatga FAQAT yacheykali qatorlar
+        // yoziladi. Ombor-darajali qatorlar endi faqat mijoz tomonidagi «tovar
+        // ro'yxati» — ular saqlansa va post qilinsa, actual=0 qatori butun ombor
+        // qoldig'ini 0 ga tekislab yuborardi (sanalmagan tovar = yo'qolgan emas!).
+        payload.positions = form.positions
+          .filter((p) => p.cellId)
+          .map((p) => ({
+            assortmentKind: 'product',
+            assortmentId: p.assortmentId,
+            // Trailing '.' can survive mid-typing in the cell grid — normalize.
+            actualQty: (p.actualQty || '0').replace(/\.$/, ''),
+            cellId: p.cellId,
+            cell: p.cell ?? null,
+          }));
       }
       payload.attributes = form.attributes;
       return api.patch(`/inventories/${id}`, payload);
