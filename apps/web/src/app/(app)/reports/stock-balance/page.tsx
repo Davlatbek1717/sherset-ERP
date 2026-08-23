@@ -20,7 +20,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { useState } from 'react';
 
-type GroupBy = 'none' | 'product';
+type GroupBy = 'none' | 'product' | 'warehouse';
 
 interface StockBalanceRow {
   storeId: string | null;
@@ -52,6 +52,17 @@ interface StockBalanceReport {
     totalReserved: string;
     totalInTransit: string;
     totalAvailable: string;
+  };
+  /**
+   * F1 (2026-08-23): `groupBy=warehouse` — yacheyka kodi prefiksi bo'yicha
+   * ombor kesimi. Raqamlar sahifalanmagan to'liq DB agregatlari:
+   * Σrows.qty + unassigned.qty == totalQty (JAMI).
+   */
+  warehouses?: {
+    rows: Array<{ prefix: string | null; skuCount: number; qty: string }>;
+    unassigned: { skuCount: number; qty: string };
+    totalQty: string;
+    totalSku: number;
   };
 }
 
@@ -103,8 +114,30 @@ export default function StockBalanceReportPage() {
     setAppliedFilter({ storeId, search, hideEmpty, groupBy });
   };
 
+  // F1: prefiks qatori uchun ko'rinadigan yorliq («Ombor 01» / «Prefikssiz»).
+  const warehouseLabel = (prefix: string | null) =>
+    prefix !== null ? t('warehouse_row', { prefix }) : t('no_prefix');
+
   const exportCsv = () => {
     if (!data) return;
+    if (appliedFilter.groupBy === 'warehouse' && data.warehouses) {
+      const wh = data.warehouses;
+      const rows = [
+        ...wh.rows.map((r) => ({ label: warehouseLabel(r.prefix), sku: r.skuCount, qty: r.qty })),
+        { label: t('unassigned'), sku: wh.unassigned.skuCount, qty: wh.unassigned.qty },
+        { label: t('grand_total'), sku: wh.totalSku, qty: wh.totalQty },
+      ];
+      const csv = buildCsv<(typeof rows)[number]>(
+        [
+          { header: t('store'), cellText: (r) => r.label },
+          { header: t('sku_count'), cellText: (r) => String(r.sku) },
+          { header: t('qty'), cellText: (r) => fmtQty(r.qty) },
+        ],
+        rows,
+      );
+      downloadCsv(csv, `stock-balance-warehouses-${csvTimestamp()}.csv`);
+      return;
+    }
     const csv = buildCsv<StockBalanceRow>(
       [
         { header: t('store'), cellText: (r) => r.storeName ?? '—' },
@@ -193,6 +226,7 @@ export default function StockBalanceReportPage() {
             >
               <option value="none">{t('groups.none')}</option>
               <option value="product">{t('groups.product')}</option>
+              <option value="warehouse">{t('groups.warehouse')}</option>
             </NativeSelect>
           </div>
           <Button onClick={apply} loading={isLoading} data-test-id="apply-button">
@@ -215,7 +249,32 @@ export default function StockBalanceReportPage() {
         </div>
       </div>
 
-      {data && (
+      {/* F1: ombor-kesim rejimi — plitkalar Ombor 01 / 02 / … / Taqsimlanmagan /
+        JAMI (to'liq DB agregatlari, sahifalanmagan). */}
+      {data?.warehouses && appliedFilter.groupBy === 'warehouse' && (
+        <div className="mt-3 grid grid-cols-2 gap-2 md:grid-cols-5" data-test-id="warehouse-tiles">
+          {[
+            ...data.warehouses.rows.map((r) => ({
+              label: warehouseLabel(r.prefix),
+              value: fmtQty(r.qty),
+            })),
+            { label: t('unassigned'), value: fmtQty(data.warehouses.unassigned.qty) },
+            { label: t('grand_total'), value: fmtQty(data.warehouses.totalQty) },
+          ].map((s) => (
+            <div
+              key={s.label}
+              className="rounded-[var(--ms-radius-default)] border border-[var(--ms-border-default)] bg-[var(--ms-bg-surface)] px-3 py-2"
+            >
+              <div className="text-[var(--ms-text-muted)] text-xs uppercase tracking-wide">
+                {s.label}
+              </div>
+              <div className="font-semibold text-base tabular-nums">{s.value}</div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {data && appliedFilter.groupBy !== 'warehouse' && (
         <div className="mt-3 grid grid-cols-2 gap-2 md:grid-cols-5">
           {[
             { label: t('totals_sku'), value: String(data.summaries.totalSku) },
@@ -251,7 +310,65 @@ export default function StockBalanceReportPage() {
         </div>
       )}
 
-      {data && (
+      {/* F1: ombor-kesim jadvali — Ombor | SKU soni | Qoldiq, oxirida JAMI. */}
+      {data?.warehouses && appliedFilter.groupBy === 'warehouse' && (
+        <StickyHScroll className="mt-4 rounded-[var(--ms-radius-default)] border border-[var(--ms-border-default)] bg-[var(--ms-bg-surface)]">
+          <table className="w-full text-sm">
+            <thead className="bg-[var(--ms-bg-muted)]">
+              <tr>
+                <th className="h-9 px-3 text-left font-medium text-[var(--ms-text-muted)] text-xs uppercase tracking-wide">
+                  {t('store')}
+                </th>
+                <th className="h-9 w-32 px-3 text-right font-medium text-[var(--ms-text-muted)] text-xs uppercase tracking-wide">
+                  {t('sku_count')}
+                </th>
+                <th className="h-9 w-40 px-3 text-right font-medium text-[var(--ms-text-muted)] text-xs uppercase tracking-wide">
+                  {t('qty')}
+                </th>
+              </tr>
+            </thead>
+            <tbody data-test-id="warehouse-rows">
+              {data.warehouses.rows.map((r) => (
+                <tr
+                  key={r.prefix ?? 'no-prefix'}
+                  className="border-[var(--ms-border-default)] border-t"
+                  data-test-id="warehouse-row"
+                >
+                  <td className="px-3 py-2 font-medium">{warehouseLabel(r.prefix)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{r.skuCount}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{fmtQty(r.qty)}</td>
+                </tr>
+              ))}
+              <tr
+                className="border-[var(--ms-border-default)] border-t"
+                data-test-id="warehouse-unassigned-row"
+              >
+                <td className="px-3 py-2 font-medium">{t('unassigned')}</td>
+                <td className="px-3 py-2 text-right tabular-nums">
+                  {data.warehouses.unassigned.skuCount}
+                </td>
+                <td className="px-3 py-2 text-right tabular-nums">
+                  {fmtQty(data.warehouses.unassigned.qty)}
+                </td>
+              </tr>
+              <tr
+                className="border-[var(--ms-border-default)] border-t bg-[var(--ms-bg-muted)]"
+                data-test-id="warehouse-total-row"
+              >
+                <td className="px-3 py-2 font-semibold">{t('grand_total')}</td>
+                <td className="px-3 py-2 text-right font-semibold tabular-nums">
+                  {data.warehouses.totalSku}
+                </td>
+                <td className="px-3 py-2 text-right font-semibold tabular-nums">
+                  {fmtQty(data.warehouses.totalQty)}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </StickyHScroll>
+      )}
+
+      {data && appliedFilter.groupBy !== 'warehouse' && (
         <StickyHScroll className="mt-4 rounded-[var(--ms-radius-default)] border border-[var(--ms-border-default)] bg-[var(--ms-bg-surface)]">
           <table className="w-full text-sm">
             <thead className="bg-[var(--ms-bg-muted)]">

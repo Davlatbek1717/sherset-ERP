@@ -1249,7 +1249,10 @@
     "pack_create_unit": "Yangi o'lchov birligi",
     "pack_unit_name_required": "Nomini kiriting",
     "stock_show_by_variants": "Modifikatsiyalar bo'yicha",
-    "stock_hide_by_variants": "Modifikatsiyalarni yashirish"
+    "stock_hide_by_variants": "Modifikatsiyalarni yashirish",
+    "stock_cells_warehouse": "Ombor {prefix}",
+    "stock_cells_no_prefix": "Prefikssiz yacheykalar",
+    "stock_cells_unassigned": "Yacheykalarga biriktirilmagan"
   },
   "modifications_modal": {
     "title": "Modifikatsiya yaratish",
@@ -3529,19 +3532,25 @@
       "code": "Kod",
       "empty_state": "Qoldiqlar yo'q",
       "export_csv": "CSV eksport",
+      "grand_total": "JAMI",
       "group_by": "Guruhlash",
       "groups": {
         "none": "Ombor × tovar",
-        "product": "Tovar bo'yicha jami"
+        "product": "Tovar bo'yicha jami",
+        "warehouse": "Ombor kesimi (yacheyka prefiksi)"
       },
       "hide_empty": "Bo'sh qoldirilmasin",
       "in_transit": "Kutilmoqda",
+      "no_prefix": "Prefikssiz yacheykalar",
       "product": "Tovar",
       "qty": "Qoldiq",
       "reserved": "Rezervda",
       "search_placeholder": "Tovar nomi yoki kod...",
+      "sku_count": "SKU soni",
       "store": "Ombor",
       "title": "Qoldiqlar hisoboti",
+      "unassigned": "Taqsimlanmagan",
+      "warehouse_row": "Ombor {prefix}",
       "totals_available": "Jami mavjud",
       "totals_in_transit": "Jami kutilmoqda",
       "totals_qty": "Jami qoldiq",

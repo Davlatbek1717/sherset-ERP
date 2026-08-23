@@ -23,8 +23,13 @@ export const StockBalanceFilterSchema = z.object({
   assortmentKind: z.enum(['product', 'variant', 'bundle']).optional(),
   /** Hide rows where qty + reserved + inTransit are all zero. */
   hideEmpty: boolFromString.optional(),
-  /** Group qty by product across all stores (else per-store rows). */
-  groupBy: z.enum(['none', 'product']).default('none'),
+  /**
+   * Group qty by product across all stores (else per-store rows).
+   * `warehouse` (F1, 2026-08-23) — yacheyka kodi PREFIKSI bo'yicha ombor
+   * kesimi: Ombor 01 / Ombor 02 / … / Taqsimlanmagan / JAMI. Ma'lumot
+   * ko'chirilmagan bosqichda fizik omborlarni shu prefiks belgilaydi.
+   */
+  groupBy: z.enum(['none', 'product', 'warehouse']).default('none'),
   limit: z.coerce.number().int().min(1).max(500).default(100),
   /**
    * FAZA 27a (`PERF-10`): sahifa siljishi. Ilgari IKKALA rejimda ham
@@ -36,3 +41,13 @@ export const StockBalanceFilterSchema = z.object({
   offset: z.coerce.number().int().min(0).default(0),
 });
 export type StockBalanceFilterInput = z.infer<typeof StockBalanceFilterSchema>;
+
+/**
+ * F1 — tovar kartasi «Qoldiqlar» tabi uchun yacheykalar kesimi
+ * (`GET /reports/stock-balance/cells`).
+ */
+export const ProductCellsFilterSchema = z.object({
+  assortmentKind: z.enum(['product', 'variant', 'bundle']).default('product'),
+  assortmentId: uuid,
+});
+export type ProductCellsFilterInput = z.infer<typeof ProductCellsFilterSchema>;

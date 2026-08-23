@@ -1249,7 +1249,10 @@
     "pack_create_unit": "Новая единица измерения",
     "pack_unit_name_required": "Введите наименование",
     "stock_show_by_variants": "Показать по модификациям",
-    "stock_hide_by_variants": "Скрыть по модификациям"
+    "stock_hide_by_variants": "Скрыть по модификациям",
+    "stock_cells_warehouse": "Склад {prefix}",
+    "stock_cells_no_prefix": "Ячейки без префикса",
+    "stock_cells_unassigned": "Не привязано к ячейкам"
   },
   "modifications_modal": {
     "title": "Создание модификаций",
@@ -3529,19 +3532,25 @@
       "code": "Код",
       "empty_state": "Нет остатков",
       "export_csv": "Экспорт в CSV",
+      "grand_total": "ИТОГО",
       "group_by": "Группировка",
       "groups": {
         "none": "Склад × товар",
-        "product": "Итого по товару"
+        "product": "Итого по товару",
+        "warehouse": "По складам (префикс ячейки)"
       },
       "hide_empty": "Скрыть нулевые",
       "in_transit": "Ожидание",
+      "no_prefix": "Ячейки без префикса",
       "product": "Товар",
       "qty": "Остаток",
       "reserved": "Резерв",
       "search_placeholder": "Название или код товара...",
+      "sku_count": "Число SKU",
       "store": "Склад",
       "title": "Отчёт по остаткам",
+      "unassigned": "Нераспределено",
+      "warehouse_row": "Склад {prefix}",
       "totals_available": "Всего доступно",
       "totals_in_transit": "Всего ожидание",
       "totals_qty": "Всего остаток",

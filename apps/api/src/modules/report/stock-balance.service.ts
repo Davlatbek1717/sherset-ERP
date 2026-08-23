@@ -6,7 +6,18 @@ import {
   inTransitAssortmentKey,
   inTransitStoreKey,
 } from '../stock/stock-in-transit.service.js';
-import { type StockBalanceFilterInput, StockBalanceFilterSchema } from './stock-balance.schema.js';
+import {
+  type ProductCellsFilterInput,
+  ProductCellsFilterSchema,
+  type StockBalanceFilterInput,
+  StockBalanceFilterSchema,
+} from './stock-balance.schema.js';
+import {
+  type ProductStoreBreakdown,
+  type WarehouseSummary,
+  buildProductCellBreakdown,
+  buildWarehouseSummary,
+} from './warehouse-breakdown.js';
 
 const DECIMAL_ZERO = new Prisma.Decimal(0);
 
@@ -56,6 +67,14 @@ export interface StockBalanceReport {
     totalInTransit: string;
     totalAvailable: string;
   };
+  /**
+   * F1: FAQAT `groupBy=warehouse` rejimida to'ldiriladi — yacheyka-prefiks
+   * kesimi (Ombor 01/02/… + Taqsimlanmagan + JAMI). Raqamlar sahifalanmagan,
+   * filtr ostidagi TO'LIQ DB agregatlari (qabul mezoni shuni talab qiladi).
+   * Bu rejim qty-o'qi bilan ishlaydi: rezerv/kutilmoqda yacheyka darajasida
+   * yuritilmaydi, shuning uchun summaries'da ular 0 bo'lib qoladi.
+   */
+  warehouses?: WarehouseSummary;
 }
 
 @Injectable()
@@ -75,7 +94,188 @@ export class StockBalanceService {
     if (filter.groupBy === 'product') {
       return this.groupedByProduct(accountId, filter);
     }
+    if (filter.groupBy === 'warehouse') {
+      return this.groupedByWarehouse(accountId, filter);
+    }
     return this.flatByStore(accountId, filter);
+  }
+
+  // -------------------------------------------------------------------
+  // F1 — grouped-by-warehouse (yacheyka kodi prefiksi kesimi)
+  // -------------------------------------------------------------------
+
+  /**
+   * Ombor kesimi ma'lumot KO'CHIRILMAGAN bosqichda: fizik omborni yacheyka
+   * kodining birinchi segmenti (`01-…`, `02-…`) belgilaydi. Ikki agregat
+   * so'rov: (1) prefiks bo'yicha Σqty + SKU soni (stock_by_cell ⋈ store_cells),
+   * (2) filtr-keng JAMI va «Taqsimlanmagan» (stocks − yacheyka yig'indisi).
+   * Sahifalash YO'Q — natija har doim kichik (prefikslar soni + 1 qator).
+   */
+  private async groupedByWarehouse(
+    accountId: string,
+    filter: StockBalanceFilterInput,
+  ): Promise<StockBalanceReport> {
+    const search = await this.resolveSearchIds(accountId, filter.search);
+    if (search && search.ids.length === 0) return this.emptyReport(filter);
+
+    const idFilter = filter.productId
+      ? [filter.productId]
+      : search && search.ids.length > 0
+        ? search.ids
+        : null;
+
+    const cellConds: Prisma.Sql[] = [
+      Prisma.sql`s.account_id = ${accountId}::uuid`,
+      Prisma.sql`s.qty <> 0`,
+    ];
+    if (filter.storeId) cellConds.push(Prisma.sql`s.store_id = ${filter.storeId}::uuid`);
+    if (filter.assortmentKind)
+      cellConds.push(Prisma.sql`s.assortment_kind = ${filter.assortmentKind}`);
+    if (idFilter) {
+      cellConds.push(
+        Prisma.sql`s.assortment_id IN (${Prisma.join(idFilter.map((id) => Prisma.sql`${id}::uuid`))})`,
+      );
+    }
+    // Prefiks SQL'da: `01-02-03-04` → `01`; nostandart nom (raqam-defis bilan
+    // boshlanmagan) → NULL guruh — qoldiq yo'qolmaydi, «prefikssiz» ko'rinadi.
+    const prefixRowsRaw = await this.prisma.client.$queryRaw<
+      Array<{ prefix: string | null; sku_count: bigint; qty: string }>
+    >`
+      SELECT CASE WHEN c.name ~ '^[0-9]+-' THEN split_part(c.name, '-', 1) END AS prefix,
+             COUNT(DISTINCT (s.assortment_kind, s.assortment_id))::bigint AS sku_count,
+             COALESCE(SUM(s.qty), 0)::text AS qty
+      FROM stock_by_cell s
+      JOIN store_cells c ON c.id = s.cell_id
+      WHERE ${Prisma.join(cellConds, ' AND ')}
+      GROUP BY 1
+    `;
+
+    const stockConds: Prisma.Sql[] = [Prisma.sql`st.account_id = ${accountId}::uuid`];
+    if (filter.storeId) stockConds.push(Prisma.sql`st.store_id = ${filter.storeId}::uuid`);
+    if (filter.assortmentKind)
+      stockConds.push(Prisma.sql`st.assortment_kind = ${filter.assortmentKind}`);
+    if (idFilter) {
+      stockConds.push(
+        Prisma.sql`st.assortment_id IN (${Prisma.join(idFilter.map((id) => Prisma.sql`${id}::uuid`))})`,
+      );
+    }
+    // JAMI (Σ stocks.qty) va Taqsimlanmagan (Σ(stocks.qty − yacheyka yig'indisi))
+    // BITTA so'rovda — ikkalasi bir filtrga qaraydi, shuning uchun JAMI ==
+    // Σprefiks + Taqsimlanmagan invarianti DB darajasida kafolatlanadi.
+    const aggRows = await this.prisma.client.$queryRaw<
+      Array<{
+        total_qty: string;
+        total_sku: bigint;
+        unassigned_qty: string;
+        unassigned_sku: bigint;
+      }>
+    >`
+      SELECT COALESCE(SUM(st.qty), 0)::text AS total_qty,
+             COUNT(DISTINCT (st.assortment_kind, st.assortment_id))
+               FILTER (WHERE st.qty <> 0)::bigint AS total_sku,
+             COALESCE(SUM(st.qty - COALESCE(a.assigned, 0)), 0)::text AS unassigned_qty,
+             COUNT(DISTINCT (st.assortment_kind, st.assortment_id))
+               FILTER (WHERE st.qty - COALESCE(a.assigned, 0) <> 0)::bigint AS unassigned_sku
+      FROM stocks st
+      LEFT JOIN (
+        SELECT store_id, assortment_kind, assortment_id, SUM(qty) AS assigned
+        FROM stock_by_cell
+        WHERE account_id = ${accountId}::uuid
+        GROUP BY 1, 2, 3
+      ) a ON a.store_id = st.store_id
+         AND a.assortment_kind = st.assortment_kind
+         AND a.assortment_id = st.assortment_id
+      WHERE ${Prisma.join(stockConds, ' AND ')}
+    `;
+    const agg = aggRows[0];
+
+    const warehouses = buildWarehouseSummary(
+      prefixRowsRaw.map((r) => ({
+        prefix: r.prefix,
+        skuCount: Number(r.sku_count),
+        qty: r.qty,
+      })),
+      {
+        totalQty: agg?.total_qty ?? '0',
+        totalSku: Number(agg?.total_sku ?? 0n),
+        unassignedQty: agg?.unassigned_qty ?? '0',
+        unassignedSku: Number(agg?.unassigned_sku ?? 0n),
+      },
+      { hideEmpty: filter.hideEmpty },
+    );
+
+    return {
+      filter,
+      items: [],
+      total: warehouses.rows.length + 1, // + Taqsimlanmagan qatori
+      truncated: search?.capped === true,
+      summaries: {
+        totalSku: warehouses.totalSku,
+        totalQty: warehouses.totalQty,
+        // Yacheyka darajasida rezerv/kutilmoqda yuritilmaydi — bu rejim
+        // qty-o'qi bilan cheklangan (interfeys docblock'ida oshkora).
+        totalReserved: '0',
+        totalInTransit: '0',
+        totalAvailable: warehouses.totalQty,
+      },
+      warehouses,
+    };
+  }
+
+  /**
+   * F1 — tovar kartasi «Qoldiqlar» tabi uchun yacheykalar kesimi: har ombor
+   * ostida prefiks bo'yicha guruhlangan yacheykalar (qaysi yacheykada nechta)
+   * va «yacheykalarga biriktirilmagan» qoldiq (Stock jami − Σ yacheykalar).
+   */
+  async productCells(
+    accountId: string,
+    raw: unknown,
+  ): Promise<{
+    assortmentKind: string;
+    assortmentId: string;
+    stores: ProductStoreBreakdown[];
+  }> {
+    const r = ProductCellsFilterSchema.safeParse(raw);
+    if (!r.success) throw new BadRequestException(r.error.issues.map((i) => i.message).join(', '));
+    const filter: ProductCellsFilterInput = r.data;
+
+    const [stockRows, cellRows] = await Promise.all([
+      this.prisma.client.stock.findMany({
+        where: {
+          accountId,
+          assortmentKind: filter.assortmentKind,
+          assortmentId: filter.assortmentId,
+        },
+        include: { store: { select: { id: true, name: true } } },
+      }),
+      this.prisma.client.stockByCell.findMany({
+        where: {
+          accountId,
+          assortmentKind: filter.assortmentKind,
+          assortmentId: filter.assortmentId,
+          qty: { not: 0 },
+        },
+        include: { cell: { select: { id: true, name: true } } },
+      }),
+    ]);
+
+    return {
+      assortmentKind: filter.assortmentKind,
+      assortmentId: filter.assortmentId,
+      stores: buildProductCellBreakdown(
+        stockRows.map((s) => ({
+          storeId: s.storeId,
+          storeName: s.store?.name ?? null,
+          qty: s.qty.toString(),
+        })),
+        cellRows.map((c) => ({
+          storeId: c.storeId,
+          cellId: c.cellId,
+          cellName: c.cell.name,
+          qty: c.qty.toString(),
+        })),
+      ),
+    };
   }
 
   // -------------------------------------------------------------------
