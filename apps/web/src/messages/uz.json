@@ -5010,6 +5010,13 @@
     "inventories": {
       "actual_qty": "Haqiqiy",
       "actual_stock": "Haqiqiy qoldiq",
+      "add_cell": "+ Yacheyka",
+      "add_cell_cancel": "Bekor qilish",
+      "add_cell_confirm": "Qo'shish",
+      "add_cell_empty": "Yacheyka topilmadi",
+      "add_cell_exists": "«{code}» yacheykasi allaqachon ro'yxatda",
+      "add_cell_not_found": "«{code}» yacheykasi topilmadi",
+      "add_cell_placeholder": "Yacheyka kodi (01-02-03-04)",
       "applicable_help": "Hujjatni o'tkazing — ombor qoldiqlari yangilanadi",
       "assortment_hint": "Hujjatga qo'shish uchun tovar yoki tovarlar papkasini tanlang. Tanlash maydoni bo'sh qolsa, hujjatga butun nomenklatura ma'lumotnomasi qo'shiladi.",
       "calc_stock": "Hisoblangan qoldiq",

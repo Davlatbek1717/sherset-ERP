@@ -61,7 +61,8 @@ import {
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
-import { useCallback, useMemo, useState } from 'react';
+import { Fragment, useCallback, useMemo, useState } from 'react';
+import { type AddCellOption, InventoryAddCell } from './add-cell-picker';
 
 export interface InventoryPanelRow {
   /** Stable client uid (React key). */
@@ -482,6 +483,53 @@ export function InventoryPositionsPanel({
     }
     onRowsChange(next);
   };
+
+  /**
+   * F2 «+ Yacheyka» (reja 2026-08-23-ombor-restrukturizatsiya): tizim bilmagan
+   * yacheykaga sanash — tanlangan (tovar × yacheyka) yangi qator bo'ladi,
+   * expected post'da StockByCell'dan olinadi (yo'q bo'lsa 0). Store-level
+   * untouched qatorni tushirish — setCellActual dagi double-count guard bilan
+   * bir xil.
+   */
+  const addCellCount = useCallback(
+    (assortmentId: string, cell: AddCellOption) => {
+      if (!onRowsChange) return;
+      if (rows.some((r) => r.assortmentId === assortmentId && r.cellId === cell.id)) return;
+      const m = metaMap.get(assortmentId);
+      const src = rows.find((r) => r.assortmentId === assortmentId);
+      const next = [
+        ...rows,
+        {
+          id: uid(),
+          assortmentId,
+          productLabel: src?.productLabel || m?.name || '',
+          productCode: src?.productCode ?? m?.code ?? undefined,
+          productUom: src?.productUom ?? m?.uom ?? null,
+          actualQty: '0',
+          cellId: cell.id,
+          cell: cell.name,
+        },
+      ];
+      const sIdx = next.findIndex(
+        (r) => r.assortmentId === assortmentId && !r.cellId && Number(r.actualQty || '0') === 0,
+      );
+      if (sIdx >= 0) next.splice(sIdx, 1);
+      onRowsChange(next);
+    },
+    [rows, metaMap, onRowsChange],
+  );
+
+  /** Grid'da ko'rinib turgan (tovar × yacheyka) id'lar — dublikatga aniq xato. */
+  const existingCellIdsOf = useCallback(
+    (assortmentId: string): Set<string> => {
+      const s = new Set<string>();
+      for (const c of metaMap.get(assortmentId)?.cells ?? []) s.add(c.cellId);
+      for (const r of cellCountRows)
+        if (r.assortmentId === assortmentId && r.cellId) s.add(r.cellId);
+      return s;
+    },
+    [metaMap, cellCountRows],
+  );
 
   // ---------------------------------------------------------------- actions
   const appendRows = (additions: InventoryPanelRow[]) => {
@@ -1026,8 +1074,13 @@ export function InventoryPositionsPanel({
               </tr>
             </thead>
             <tbody>
-              {pagedCellRows.map((g) => {
+              {pagedCellRows.map((g, i) => {
                 const counted = g.row != null;
+                // F2: tovar guruhining sahifadagi oxirgi qatoridan keyin
+                // «+ Yacheyka» amali (qoralamada, tahrir mumkin bo'lganda).
+                const groupEnd =
+                  i === pagedCellRows.length - 1 ||
+                  pagedCellRows[i + 1]?.assortmentId !== g.assortmentId;
                 const calcNum =
                   readOnly && counted ? Number(g.row?.postedExpectedQty ?? '0') : Number(g.calcQty);
                 const actualNum = counted ? Number(g.row?.actualQty || '0') : null;
@@ -1038,60 +1091,72 @@ export function InventoryPositionsPanel({
                     : (actualNum ?? 0) - calcNum;
                 const editable = canEdit && !!g.cellId;
                 return (
-                  <tr
-                    key={g.key}
-                    className="border-[var(--ms-border-default)] border-b last:border-0"
-                  >
-                    <td className="px-2 py-1.5" />
-                    <td className="px-2 py-1.5">{g.name}</td>
-                    <td className="px-2 py-1.5">{g.cellName}</td>
-                    <td className="px-2 py-1.5 text-right tabular-nums">{fmtQty(calcNum)}</td>
-                    <td className="px-2 py-1.5 text-right">
-                      {editable ? (
-                        <Input
-                          value={g.row?.actualQty ?? ''}
-                          onChange={(e) => {
-                            const v = e.target.value;
-                            // actualQty schema: ^\d+(\.\d{1,6})?$ — reject other
-                            // keystrokes early (trailing '.' normalized on save).
-                            if (v === '' || /^\d*\.?\d{0,6}$/.test(v)) setCellActual(g, v);
-                          }}
-                          inputMode="decimal"
-                          className="ml-auto h-7 w-24 text-right"
-                          data-test-id="inventory-cell-actual"
-                        />
-                      ) : counted ? (
-                        <span className="tabular-nums">{fmtQty(actualNum ?? 0)}</span>
-                      ) : (
-                        <span className="text-[var(--ms-text-muted)]">—</span>
-                      )}
-                    </td>
-                    <td
-                      className={`px-2 py-1.5 text-right tabular-nums ${
-                        diffNum == null ? 'text-[var(--ms-text-muted)]' : ''
-                      }`}
-                    >
-                      {diffNum == null ? '—' : fmtSigned(diffNum)}
-                    </td>
-                    <td className="px-2 py-1.5 text-right tabular-nums">
-                      {g.costMinor != null
-                        ? formatMoney(String(g.costMinor), 'UZS', { displayAs: 'none' })
-                        : '—'}
-                    </td>
-                    <td
-                      className={`px-2 py-1.5 text-right tabular-nums ${
-                        diffNum == null ? 'text-[var(--ms-text-muted)]' : ''
-                      }`}
-                    >
-                      {diffNum == null || g.costMinor == null
-                        ? '—'
-                        : `${diffNum > 0 ? '+' : diffNum < 0 ? '−' : ''}${formatMoney(
-                            String(Math.abs(Math.round(diffNum * g.costMinor))),
-                            'UZS',
-                            { displayAs: 'none' },
-                          )}`}
-                    </td>
-                  </tr>
+                  <Fragment key={g.key}>
+                    <tr className="border-[var(--ms-border-default)] border-b last:border-0">
+                      <td className="px-2 py-1.5" />
+                      <td className="px-2 py-1.5">{g.name}</td>
+                      <td className="px-2 py-1.5">{g.cellName}</td>
+                      <td className="px-2 py-1.5 text-right tabular-nums">{fmtQty(calcNum)}</td>
+                      <td className="px-2 py-1.5 text-right">
+                        {editable ? (
+                          <Input
+                            value={g.row?.actualQty ?? ''}
+                            onChange={(e) => {
+                              const v = e.target.value;
+                              // actualQty schema: ^\d+(\.\d{1,6})?$ — reject other
+                              // keystrokes early (trailing '.' normalized on save).
+                              if (v === '' || /^\d*\.?\d{0,6}$/.test(v)) setCellActual(g, v);
+                            }}
+                            inputMode="decimal"
+                            className="ml-auto h-7 w-24 text-right"
+                            data-test-id="inventory-cell-actual"
+                          />
+                        ) : counted ? (
+                          <span className="tabular-nums">{fmtQty(actualNum ?? 0)}</span>
+                        ) : (
+                          <span className="text-[var(--ms-text-muted)]">—</span>
+                        )}
+                      </td>
+                      <td
+                        className={`px-2 py-1.5 text-right tabular-nums ${
+                          diffNum == null ? 'text-[var(--ms-text-muted)]' : ''
+                        }`}
+                      >
+                        {diffNum == null ? '—' : fmtSigned(diffNum)}
+                      </td>
+                      <td className="px-2 py-1.5 text-right tabular-nums">
+                        {g.costMinor != null
+                          ? formatMoney(String(g.costMinor), 'UZS', { displayAs: 'none' })
+                          : '—'}
+                      </td>
+                      <td
+                        className={`px-2 py-1.5 text-right tabular-nums ${
+                          diffNum == null ? 'text-[var(--ms-text-muted)]' : ''
+                        }`}
+                      >
+                        {diffNum == null || g.costMinor == null
+                          ? '—'
+                          : `${diffNum > 0 ? '+' : diffNum < 0 ? '−' : ''}${formatMoney(
+                              String(Math.abs(Math.round(diffNum * g.costMinor))),
+                              'UZS',
+                              { displayAs: 'none' },
+                            )}`}
+                      </td>
+                    </tr>
+                    {canEdit && groupEnd && (
+                      <tr className="border-[var(--ms-border-default)] border-b last:border-0">
+                        <td className="px-2 py-1.5" />
+                        <td colSpan={7} className="px-2 py-1.5">
+                          <InventoryAddCell
+                            storeId={storeId}
+                            existingCellIds={existingCellIdsOf(g.assortmentId)}
+                            onAdd={(cell) => addCellCount(g.assortmentId, cell)}
+                            testId={`inventory-add-cell-${g.assortmentId}`}
+                          />
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
                 );
               })}
             </tbody>
