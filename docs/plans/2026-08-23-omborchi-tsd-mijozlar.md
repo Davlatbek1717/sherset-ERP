@@ -496,7 +496,7 @@ yacheykada bo'ladi». Ya'ni «07 da yetarli, lekin bitta yacheykasi yolg'iz
 qoplamaydi» degan holat TO'G'RI ma'lumotda umuman yuz bermaydi — 1-holat
 tekshiruvi 07 uchun to'liq yetarli, taqsimot qoidasi O'ZGARMADI.
 
-**Invariant kodga yozildi (`ca7f0d21` dan keyingi tuzatish).** Faqat izoh bilan
+**Invariant kodga yozildi (`0ada8ce5`).** Faqat izoh bilan
 qoldirilmadi: ma'lumot buzilsa (07 da bir tovar ikki yacheykada) taqsimot
 jimgina 2/3-holatga tushib ketardi va hech kim buni bilmasdi — bu IS-5
 («nosozlik signali yo'q») xatosining aynan takrori bo'lardi. Endi:
