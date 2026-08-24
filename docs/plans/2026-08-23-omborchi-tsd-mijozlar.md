@@ -347,9 +347,10 @@ branch HEAD `8b39a083`. **Deploy retsepti (F-reja 2.8 + shu faza):**
 4) Texnik verify: sahifalar 200, pm2 error loglar toza, DB'da ustun/indeks bor;
    funksional zanjir (sinov-vozvrat → POS blok → to'lov → expected-cash −summa →
    ikkinchi to'lov rad) kassir/egasi tomonidan POS'da.
-⚠️ Bu deploy branchdagi F7 (`afd27a47`) va F8 (`83027bc2`) commitlarini ham olib
-boradi — o'sha sessiyalar F-rejaga hisobot YOZMAGAN, deploy oldidan ularning
-holatini aniqlash kerak (F8 exe-build qadamlari bo'lishi mumkin).
+Eslatma: F7 (`afd27a47`) va F8 (`83027bc2`+`62a27024`) F8 sessiyasi tomonidan
+2026-08-24 da ALLAQACHON jonliga chiqarilgan (VPS HEAD kutilishicha `62a27024`) —
+G1 deploy'i faqat `8b39a083..a84431b1` deltasi. F7 hisoboti F-reja faylida
+haligacha YO'Q (o'z sessiyasi yozishi kerak).
 
 **Ochiq qolganlar / keyingi fazalarga:**
 - Valyutali (USD) vozvrat payout'i qurilmagan (ataylab, G1 chegarasi) — ehtiyoj
