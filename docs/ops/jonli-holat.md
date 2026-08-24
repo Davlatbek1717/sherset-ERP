@@ -105,6 +105,22 @@ Chiqish kodi: `0` = mos, `2` = farq bor (`xato` darajali drift).
 
 ---
 
+## 3.1. Kechalik tozalash tartibi (H5 — soxta «mashq» qoldig'i)
+
+Sanash davom etayotgan davrda har kuni, **savdo tugagach**:
+
+    cd packages/db
+    npx tsx scripts/stock-baseline-cleanup.ts --since <bugungi sana>      # DRY-RUN
+    npx tsx scripts/stock-baseline-cleanup.ts --since <sana> --apply --allow-remote
+
+Chiqishdagi **qaytarish buyrug'ini saqlang** (bitta `docId`). Ertasi ertalab,
+savdo boshlanishidan OLDIN: `warehouse-state.ts` + bitta sinov sotuv
+(post → tekshir → cancel). Nosozlikda — `--revert <docId> --apply --allow-remote`.
+
+🔴 **Kunduzi YUGURTIRMANG:** skript ombor jamisini kamaytiradi, ya'ni kassani
+to'xtatib qo'yishi mumkin (qoida 13). Default imzo-oralig'i 9 000–11 000 — faqat
+soxta sonlarni oladi, haqiqiy qoldiqqa tegmaydi. Batafsil: H5 hisoboti.
+
 ## 4. O'zgarishlar jurnali (qoida 14)
 
 | Sana | Nima o'zgardi | Kim / nima bilan | Reyestr yangilandimi |

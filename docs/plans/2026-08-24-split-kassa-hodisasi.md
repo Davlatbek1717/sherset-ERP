@@ -1,6 +1,6 @@
 # Hodisa: ombor-split kassani to'xtatdi — tahlil va tuzatish rejasi
 
-> **Yaratilgan:** 2026-08-24 · **Buyurtmachi:** Ozodbek (egasi) · **Holat:** H0, H1 TUGADI · **H2 QISMAN** (kod+testlar tayyor, JONLI yugurtirish kutilmoqda — qoida 11) · navbat H3 · **✅ S1 JAVOB OLINDI** (6-bo'lim: tasdiqsiz ko'p omborli avto-taqsimot — G4 qayta yozildi)
+> **Yaratilgan:** 2026-08-24 · **Buyurtmachi:** Ozodbek (egasi) · **Holat:** H0, H1 TUGADI · **H2 QISMAN** (kod+testlar tayyor, jonli yugurtirish kutilmoqda) · **H5 QISMAN** (kod+testlar+lokal isbot tayyor, jonli dry-run egasining tasdig'i bilan) · navbat H3 · **✅ S1 JAVOB OLINDI** (6-bo'lim: tasdiqsiz ko'p omborli avto-taqsimot — G4 qayta yozildi)
 > **Ijro tartibi:** F-reja (`2026-08-23-ombor-restrukturizatsiya.md`) va G-reja
 > (`2026-08-23-omborchi-tsd-mijozlar.md`) bilan bir xil: bitta sessiya = bitta faza,
 > hisobot shu faylning oxiriga, so'ng TO'XTA.
@@ -407,7 +407,7 @@ Faqat H4 vazifalari, testlar, deploy, jonli tekshiruv, hisobot — va TO'XTA.
 
 ---
 
-### H5 — Soxta «mashq» qoldig'ini hisobdan chiqarish (egasi bilan kelishilgan)
+### H5 — Soxta «mashq» qoldig'ini hisobdan chiqarish (egasi bilan kelishilgan) ⚠️ QISMAN (hisobot 9-bo'limda)
 
 **Maqsad:** kassirlar mashqi uchun kiritilgan ≈48,65 mln dona soxta qoldiq
 haqiqiy sanalgan songa almashsin — kassa faqat borini ko'rsin.
@@ -548,6 +548,117 @@ qaytarish — H4 dagi `warehouse-split.ts` (kod prefiksi bo'yicha, idempotent).
 *Ochiq:* stelaj o'lchamlari eng kam chegarada — sanash paytida yetmasa
 qo'shiladi (o'sha skript, idempotent). `01-04` (1-qavat o'rin 47–169) va
 `02-04` (1-qavat o'rin 1–93) tarixiy irregular diapazonlar — to'ldirilmadi.
+
+### H5 — Soxta «mashq» qoldig'ini hisobdan chiqarish · ⚠️ QISMAN · 2026-08-24
+
+**Nega shoshilinch bo'lib qoldi (egasining savoli):** egasi 4–5 kun davomida
+yacheykalarni qo'shib, har biriga haqiqiy sonni yozib chiqmoqchi. Kod tekshirildi
+va javob shu: **sotilgan tovar yacheykadan ayriladi, tahminiy qoldiqdan emas.**
+POS sotuvi deltasida `cellId` yo'q (`retail-sale.service.ts:1188`), shuning uchun
+`stock.service.ts:353–380` chiqimni band yacheykalardan **katta-birinchi** o'zi
+ayiradi. Ya'ni H5 siz: har kun sanalgan yacheykalar sotuvlar tufayli kamayadi,
+soxta 48,65 mln esa **tegilmay turaveradi** — sanash ishi teskari tomonga ketadi.
+Shu sabab H5 G4 dan oldinga qo'yildi.
+
+**Ikki tomonlama bog'liqlik javobi (qoida 10 — «bu nima buzishi mumkin?»):**
+Skript ombor jamisini (`Stock.qty`) KAMAYTIRADI — ya'ni printsipial jihatdan
+POS'ni «yetarli emas» holatiga tushira oladi. Bu 06:46 hodisasining aynan shakli.
+Uchta himoya qo'yildi (pastda): imzo-oralig'i, yacheyka/rezerv poli, va
+«faqat savdo tugagach» tartibi. `StockByCell` ga TEGILMAYDI ⇒ sanash ishi
+buzilmaydi; G2/G3/G4 oqimlariga tegishli joyi yo'q.
+
+**Nima qilindi:**
+
+1. **`packages/db/scripts/stock-baseline-cleanup-core.ts`** — sof yadro (SQL yo'q):
+   `buildCleanupPlan` (ortiqcha → o'chiriladigan miqdor + tannarx deltasi + skip
+   sabablari), `buildRevertPlan`, `writeOffCost`.
+2. **`packages/db/scripts/stock-baseline-cleanup.ts`** — CLI: DRY-RUN default,
+   `--apply`, `--allow-remote`, `--since`, `--band-min/--band-max`, `--json`,
+   **`--revert <docId>`** (qoida 12 — teskarisi O'SHA skriptda).
+
+**🔴 Rejaga QO'SHILGAN yechim — IMZO-ORALIG'I (`--band-min`/`--band-max`, default 9 000–11 000).**
+Reja «sanab bo'lingan tovarlarning ortiqchasini o'chir» degan edi. Bu YETARLI EMAS:
+tovar bir necha yacheykada bo'ladi va omborchi ularni 4–5 kunga bo'lib sanaydi.
+Birinchi yacheyka sanalgach ortiqchani to'liq o'chirsak, hali sanalmagan
+yacheykalardagi HAQIQIY tovar ham hisobdan chiqadi ⇒ ombor jamisi tushadi ⇒
+kassir chekni yopolmaydi. **Yechim:** hodisa tahlilida O'LCHANGAN imzo — soxta
+qoldiq 4428 tovarda aynan 9 000–11 000 oralig'ida. Haqiqiy qoldiq bu tor oraliqda
+deyarli uchramaydi, shuning uchun skript faqat SHU oraliqdagi ortiqchani oladi.
+Oraliq `--band-min 0 --band-max 0` bilan ONGLI ravishda o'chiriladi.
+
+**Qo'riqchilar (hammasi test bilan qulflangan):**
+- **`StockByCell` ga TEGILMAYDI** — skript `Stock` qatorini o'zi yozadi
+  (`cellMode:'store-only'` semantikasi), ledger'ga `cellId = null`. Sabab yuqorida:
+  oddiy chiqim yozganda endigina sanalgan yacheyka buzilardi.
+- **Pol = max(yacheykalar yig'indisi, rezerv)** — qoldiq na sanalgan sondan, na
+  rezervdan past tushmaydi; rezerv to'sganda qisman o'chadi (`cappedByReserve`).
+- **Faqat sanalgan tovarlar** (`requireCell`, default) — yacheykasi yo'q tovar
+  eski son bilan sotilaveradi (egasining «bosqichma-bosqich» qarori).
+- **Tannarx** — o'rtacha tortilgan, `move-cost-basis.computeTransferCost` bilan
+  AYNAN bir arifmetika; qoldiqni bo'shatsa butun `costBalanceMinor` ketadi
+  (yaxlitlash tiyini qty=0 qatorda osilib qolmasin).
+- **Ikki marta qaytarish RAD ETILADI.**
+- **Yozish paytida qayta hisob:** har satr o'z `Serializable` tranzaksiyasida
+  balansni QAYTA o'qib rejani shu tovar uchun qayta quradi — dry-run va apply
+  orasida sotuv o'tgan bo'lsa eskirgan raqam yozilmaydi.
+
+**Lokal isbot (uchma-uch, `sherset_v2_dev`):** tovar `Aelifv E21`,
+yacheykada 1000, jamiga soxta 9960 qo'shildi (jami 10 960, tannarx 1 000 000 tiyin):
+
+```
+DRY-RUN : Ombor 02 | Aelifv E21 | 10960 | 1000 | 0 | 9960 | 1000
+APPLY   : qty 10960 -> 1000 · cost 1000000 -> 93640 · yacheykada 1000 (O'ZGARMADI)
+          ledger: stock_baseline_writeoff  -9960 / -906360 · cellId = null
+QAYTA   : no-op (idempotent)
+REVERT  : qty -> 10960 · cost -> 1000000  (sikl NOL yig'indi)
+2x REVERT: RAD ETILDI
+```
+
+Isbotdan keyin dev baza asl holatiga tiklandi va vaqtinchalik skript o'chirildi.
+
+**Testlar:** yangi `apps/api/src/scripts/stock-baseline-cleanup-core.test.ts` —
+**26 test**: asosiy hisob (egasining aynan keysi 10 000/40), sanalgan yacheyka
+kamaymasligi, idempotentlik, Decimal kasrlari; imzo-oralig'i (past/yuqori/inklyuziv
+chegara/o'chirish); sanash mezoni va `--since`; rezerv himoyasi (qisman/to'liq
+to'siq); tannarx (proporsional, bo'shatish, nol); jamlar; qaytarish (teskari,
+jamlash, null tannarx, **sikl nol yig'indi**).
+TO'LIQ: **api 630 fayl / 8804 passed (2 skipped, 0 xato)**; `packages/db`
+typecheck yashil; biome — 0 xato (18 ogohlantirish: skriptlardagi `console.log`,
+`warehouse-split.ts` bilan bir xil klass).
+
+**Deploy holati:** deploy talab qilmaydi (skript qo'lda/CI'da yuriladi).
+**Jonli holat: HALI YUGURTIRILMAGAN** — reja 4-vazifasi: avval DRY-RUN, ro'yxat
+EGASIGA ko'rsatiladi, tasdiqdan keyin `--apply --allow-remote`. Shu sabab faza
+QISMAN (qoida 11).
+
+**Muntazam yuritish tartibi (reja 5-vazifasi):**
+1. **Kunduzi** — omborchi sanaydi. Skript YUGURTIRILMAYDI (ombor jamisini
+   kunduzi pasaytirish kassani to'xtatishi mumkin — qoida 13).
+2. **Savdo tugagach** — `npx tsx scripts/stock-baseline-cleanup.ts --since <bugun>`
+   (DRY-RUN). Ro'yxat: qaysi tovardan qancha o'chadi.
+3. Ro'yxat ko'zdan kechirilgach — o'sha buyruq `--apply --allow-remote` bilan.
+   Chiqishdagi **qaytarish buyrug'ini SAQLANG** (bitta `docId`).
+4. **Ertasi ertalab, savdo boshlanishidan OLDIN** —
+   `npx tsx scripts/warehouse-state.ts` (H2) + bitta sinov sotuv
+   (post → tekshir → cancel). Nosozlik bo'lsa: `--revert <docId> --apply --allow-remote`.
+5. Har yugurish `docs/ops/jonli-holat.md` ning o'zgarishlar jurnaliga yoziladi (qoida 14).
+
+**Ochiq qolganlar / keyingi fazalarga:**
+- **🔴 Jonli DRY-RUN** — H5 ni yopish uchun birinchi qadam. Faqat O'QISH,
+  istalgan payt xavfsiz: `cd /var/www/sherset-v2/packages/db && npx tsx
+  scripts/stock-baseline-cleanup.ts`. Ro'yxat egasiga ko'rsatiladi.
+- **Imzo-oralig'ini jonli raqam bilan tekshirish shart:** 9 000–11 000 hodisa
+  tahlilidagi o'lchovdan olingan. Jonli dry-run boshqa manzara ko'rsatsa oraliq
+  moslanadi (`--band-min/--band-max`).
+- **Mezon (ombor × tovar) kesimida ishlaydi.** Hozir hammasi bitta omborda
+  («Taqsimlanmagan») — muammo yo'q. **H4 (split) dan keyin** tovarning
+  yacheykalari bir omborda, soxta qoldig'i boshqasida qolishi mumkin va u holda
+  skript ishlamaydi. H4 sessiyasi buni tekshirsin.
+- Skript sotuv oqimiga TEGMAYDI: sanalgan yacheykadan ayirish muammosining
+  ILDIZI — POS deltasida `cellId` yo'qligi. Uni **G4/E3** yopadi.
+- Avtomatlashtirishning keyingi bosqichi (agar kerak bo'lsa): inventarizatsiya
+  hujjatida «to'liq sanaldi — ortiqchani o'chir» belgisi, post bilan bir
+  tranzaksiyada. Hozircha kechalik yugurish yetarli va xavfsizroq.
 
 ### H2 — Jonli holat reyestri + warehouse-state.ts · ⚠️ QISMAN · 2026-08-24
 
