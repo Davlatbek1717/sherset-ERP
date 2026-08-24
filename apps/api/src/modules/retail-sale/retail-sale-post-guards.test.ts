@@ -1,6 +1,7 @@
 import { BadRequestException, ConflictException } from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
 import { mockDocumentSequence } from '../../prisma/document-sequence.mock.js';
+import { mockSaleDebtRegistryTx } from '../debt/sale-debt-registry.mock.js';
 import { RetailSaleService } from './retail-sale.service.js';
 
 /**
@@ -92,6 +93,9 @@ function makeHarness(opts: Opts = {}) {
       }),
       findUniqueOrThrow: vi.fn(async () => ({ ...saleRow, sumMinor: 100_000n })),
     },
+    // Q2 — qarzli chek endi UNDIRISH REYESTRIGA ham qator ochadi: balans
+    // qulfi (`$queryRaw`), `debt` va `debtNote` delegatlari shu mock'dan.
+    ...mockSaleDebtRegistryTx().tx,
     retailSalePayment: { createMany: vi.fn(async () => ({ count: 1 })) },
     cashierAuditEvent: { createMany: vi.fn(async () => ({ count: 1 })) },
     counterpartyBalance: { findFirst: vi.fn(async () => ({ balanceMinor: 100_000n })) },

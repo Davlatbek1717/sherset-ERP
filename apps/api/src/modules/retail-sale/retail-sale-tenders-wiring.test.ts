@@ -1,6 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
 import { mockDocumentSequence } from '../../prisma/document-sequence.mock.js';
+import { mockSaleDebtRegistryTx } from '../debt/sale-debt-registry.mock.js';
 import { RetailSaleService } from './retail-sale.service.js';
 
 /**
@@ -50,6 +51,9 @@ function makeHarness(
         .fn()
         .mockResolvedValue({ id: SALE_ID, state: 'posted', agentId: null, sumMinor: total }),
     },
+    // Q2 — qarzli chek endi UNDIRISH REYESTRIGA ham qator ochadi: balans
+    // qulfi (`$queryRaw`), `debt` va `debtNote` delegatlari shu mock'dan.
+    ...mockSaleDebtRegistryTx().tx,
     retailSalePosition: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
     retailSalePayment,
     cashierAuditEvent,

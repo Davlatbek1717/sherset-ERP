@@ -37,6 +37,7 @@ import {
 } from './debt.schema.js';
 import { debtPayable, planAdoption, splitDebtSources } from './pos-customer-debt.js';
 import { type PosHistoryLabel, foldPosHistory } from './pos-debt-history.js';
+import { DEBT_LEDGER_CURRENCY } from './sale-debt-registry.js';
 
 /** FIFO/chek uchun kerakli maydonlar — qulfli va qulfsiz o'qish bir xil shaklda. */
 const DEBT_FIFO_SELECT = {
@@ -49,16 +50,11 @@ const DEBT_FIFO_SELECT = {
   nextContactAt: true,
 } as const;
 
-/**
- * Qarz DAFTARI valyutasi (P1).
- *
- * `DebtPayment.amountMinor` har doim shu valyutada (sxema izohi), FIFO ham
- * valyutaga qaramay so'mda taqsimlaydi. Mijoz dollar bersa `usdCentsToSomTiyin`
- * uni shu valyutaga keltiradi. Adopsiya va balans qulfi ham AYNAN shu valyuta
- * qatoriga tegadi — boshqasini olsak, to'lov mijozning boshqa daftaridan
- * ayrilardi.
- */
-const DEBT_LEDGER_CURRENCY = 'UZS';
+// 🔴 `DEBT_LEDGER_CURRENCY` bu yerda BOSHQA E'LON QILINMAYDI (Q2, 2026-08-25).
+// Ilgari u shu faylda yopiq `const` edi; Q2 ga (chekdan tug'iladigan reyestr
+// qatori) ham AYNAN o'sha valyuta kerak bo'ldi va ikkinchi nusxa yozish ikki
+// haqiqat yaratardi. E'lon `sale-debt-registry.ts` SOF moduliga ko'chirildi
+// (yuqoridagi import) — u yerda nega aynan shu valyuta ekani ham yozilgan.
 
 /** P2 — mijoz kartasidagi tarix oynasi (klient boshqasini so'rashi mumkin). */
 const POS_HISTORY_LIMIT_DEFAULT = 20;

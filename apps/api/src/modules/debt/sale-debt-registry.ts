@@ -48,6 +48,26 @@ export const DEFAULT_SALE_DEBT_TERM_DAYS = 14;
  */
 export const SALE_DEBT_DUE_HOUR_TASHKENT = 9;
 
+/**
+ * Qarz DAFTARI valyutasi — **YAGONA e'lon** (Q2, 2026-08-25).
+ *
+ * Ilgari bu `pos-debt-payment.service.ts` ichida yopiq `const` edi va Q2 ga
+ * ikkinchi nusxa kerak bo'lardi. Ikki nusxa — ikki haqiqat: biri o'zgarsa
+ * ikkinchisi jimgina eskirardi va chekdan tug'ilgan qator to'lov FIFO'si
+ * ko'rmaydigan valyutada ochilib qolardi. Shuning uchun e'lon shu SOF modulga
+ * ko'chirildi, chaqiruvchilar undan import qiladi.
+ *
+ * `DebtPayment.amountMinor` har doim shu valyutada (sxema izohi), FIFO ham
+ * valyutaga qaramay so'mda taqsimlaydi. Adopsiya, balans qulfi va Q2 ning
+ * chek-qatori ham AYNAN shu valyuta qatoriga tegadi.
+ *
+ * ⚠️ Kassa yashig'ining valyutasi (`CashDesk.currency`) bundan FARQ qilishi
+ * mumkin (MK31 — dollar yashiq). Chek qarzi mijoz balansiga YASHIQ valyutasida
+ * yoziladi, reyestr esa shu yerdagi valyutada yuritiladi — ikkalasi bir xil
+ * bo'lmasa Q2 qator OCHMAYDI (§2.3 chegarasi: «USD qarz — alohida ish»).
+ */
+export const DEBT_LEDGER_CURRENCY = 'UZS';
+
 /** `sourceDocType` qiymati — POS chekidan tug'ilgan qator (Q1 migratsiyasi). */
 export const SALE_DEBT_SOURCE_DOC_TYPE = 'retailsale';
 

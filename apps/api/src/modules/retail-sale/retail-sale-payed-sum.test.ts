@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { mockSaleDebtRegistryTx } from '../debt/sale-debt-registry.mock.js';
 import { RetailSaleService } from './retail-sale.service.js';
 
 /**
@@ -55,6 +56,9 @@ function makeClient(opts: { sumMinor: bigint; agentId?: string | null }) {
         sumMinor: opts.sumMinor,
       }),
     },
+    // Q2 — qarzli chek endi UNDIRISH REYESTRIGA ham qator ochadi: balans
+    // qulfi (`$queryRaw`), `debt` va `debtNote` delegatlari shu mock'dan.
+    ...mockSaleDebtRegistryTx().tx,
     retailSalePayment: { createMany: vi.fn().mockResolvedValue({ count: 1 }) },
     cashDesk: { update: vi.fn() },
     cashierSession: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },

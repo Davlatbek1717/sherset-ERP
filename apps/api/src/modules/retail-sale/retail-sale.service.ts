@@ -17,6 +17,15 @@ import { CounterpartyBalanceService } from '../counterparty-balance/counterparty
 // `applyPayment` MAVJUD primitiv (cash-in / invoice-out ham shuni chaqiradi)
 // va o'z ichida `confirmed|awaiting_payment → paid` o'tishini bajaradi.
 import { CustomerOrderService } from '../customer-order/customer-order.service.js';
+// Q2 (2026-08-25) — kassa qarzini UNDIRISH REYESTRIGA ulash. Sof qoidalar Q1'da
+// yozilgan (`docs/plans/2026-08-25-kassa-qarzi-undirish-reyestri.md` §2.2/§3):
+// qator summasi chekning qarz ulushi EMAS, balki chek balansni musbat hududga
+// qanchaga olib kirgani — ya'ni AVANSI bor mijozga qator umuman ochilmaydi.
+import {
+  DEBT_LEDGER_CURRENCY,
+  SALE_DEBT_SOURCE_DOC_TYPE,
+  planSaleDebtRow,
+} from '../debt/sale-debt-registry.js';
 // §109: loyalty accrual/reversal on POS sale/refund. Only loyalty's
 // existing public API is called (computeEarnedPoints + createOperation);
 // the loyalty module itself is NOT edited (DO NOT respected).
@@ -906,6 +915,12 @@ export class RetailSaleService {
     // etib qo'yishi mumkin edi. Shartnoma `retail-sale-price-floor.test.ts`
     // da qulflangan — 0 so'mlik qator ham `posted` ga yetadi.
 
+    // Q2 — chek POST bo'lgan YAGONA on. Ilgari `postedAt: new Date()` flip'ning
+    // ichida tug'ilardi; endi u qarz muddatini ham belgilaydi (`saleDebtDueAt`),
+    // shuning uchun ikkala yozuv AYNAN bir instantdan chiqadi — chek yarim
+    // tunda post bo'lsa muddat kuni ikki xil hisoblanib qolmasin.
+    const postedAt = new Date();
+
     const posted = await this.prisma.client.$transaction(async (tx) => {
       // Atomic state guard: only a postable state ('draft' | 'ready') → 'posted'.
       // Two concurrent posts on the same receipt would otherwise both succeed
@@ -918,7 +933,7 @@ export class RetailSaleService {
         where: { id, accountId, state: { in: [...allowedFrom('post')] } },
         data: {
           state: 'posted',
-          postedAt: new Date(),
+          postedAt,
           // To'lov oynasida tanlangan mijoz CHEKKA YOZILADI — qarzli
           // to'lovda ham (SALES-04: qaytarishda qarz kimniki ekani chekdan
           // o'qiladi), NAQD/KARTA to'lovda ham. Ilgari shart
@@ -1411,12 +1426,59 @@ export class RetailSaleService {
       // yoziladi. Ishora konventsiyasi moysklad «Баланс» bilan bir xil:
       // musbat = mijoz bizga qarzdor (`InvoiceOut.post` bilan bir xil yo'nalish).
       //
-      // Bu yerda ATAYLAB `Debt` reyestriga (QRZ-…) yozmaymiz: reyestr — qo'lda
-      // ochiladigan, hujjatsiz qarzlar uchun, va uning `create` yo'li ham
-      // AYNAN shu balansga `+total` yozadi (2026-08-05). Ikkalasiga birdan
-      // yozilsa, hujjatdan kelgan qarz IKKI MARTA sanalardi (xotira:
-      // `debt-ledger-asymmetry`). Bitta daftar — bitta haqiqat.
+      // 🔴 «Bu yerda ATAYLAB `Debt` reyestriga (QRZ-…) YOZMAYMIZ» — BEKOR
+      // QILINDI (Q2, 2026-08-25; reja:
+      // `docs/plans/2026-08-25-kassa-qarzi-undirish-reyestri.md`).
+      //
+      // ESKI MATN (tarix uchun saqlanadi, aks holda keyingi o'quvchi kodni
+      // izohga qarab «tuzatib» qo'yadi): «reyestr — qo'lda ochiladigan,
+      // hujjatsiz qarzlar uchun, va uning `create` yo'li ham AYNAN shu
+      // balansga `+total` yozadi (2026-08-05). Ikkalasiga birdan yozilsa,
+      // hujjatdan kelgan qarz IKKI MARTA sanalardi (xotira:
+      // `debt-ledger-asymmetry`). Bitta daftar — bitta haqiqat.»
+      //
+      // NEGA O'ZGARDI (egasining shikoyati, 2026-08-25): «kassadan qo'shilgan
+      // qarzdorliklar undirish bo'limida ko'rinmayapti». Undirish ro'yxati
+      // (`manager/collection/debt-collection.service.ts`) FAQAT `Debt`
+      // reyestridan o'qiydi, ya'ni chekdan berilgan qarz qo'ng'iroq jadvaliga,
+      // eslatmaga va menejer navbatiga umuman tushmasdi.
+      //
+      // «IKKI MARTA SANASH» xavfi YO'QOLGANI — P1 (2026-08-11) adopsiya
+      // naqshi bilan: qator `balanceAdopted = true` bilan tug'iladi va
+      // `applyDelta` ni CHAQIRMAYDI. Ya'ni pul-daftar (balans) bu blokda
+      // AYNAN BIR MARTA harakatlanadi (pastdagi yagona `applyDelta`), reyestr
+      // qatori esa o'sha qarzni faqat KO'RINADIGAN qiladi. Simmetriya:
+      // `debt.service.remove()` ham `balanceAdopted` qatoriga `−total`
+      // yozmaydi, `recompute-counterparty-balances.ts` ham uni sanamaydi
+      // (Q1 filtri).
       if (debtAmount > 0n && debtAgentId) {
+        // 🔴 Q2 — BALANS QULFI `applyDelta` DAN OLDIN OLINADI.
+        //
+        // Reyestr qatorining summasi §2.2 KESISHUV QOIDASI bo'yicha
+        // «balansOldin» dan hisoblanadi. Ikki parallel chek bir xil
+        // «balansOldin» ni ko'rsa ikkalasi ham avans qoplaganini o'ylab qator
+        // ochmasdi (yoki ikkalasi ham to'liq ochardi) — ya'ni qarz yana
+        // ko'rinmas bo'lardi. `FOR UPDATE` ularni ketma-ketlashtiradi.
+        //
+        // QULF TARTIBI **BALANS → QARZLAR** — P1 (`pos-debt-payment.service.ts`
+        // `lockBalance`) bilan AYNAN bir xil, aks holda ikki yo'l bir-birini
+        // deadlock qilardi. (Bu blokda `debts` ga faqat INSERT bor, ya'ni
+        // qarz-qatori qulfi olinmaydi; tartib baribir bir xil yo'nalishda.)
+        //
+        // ⚠️ Yashiq valyutasi qarz DAFTARI valyutasidan farq qilsa (MK31 —
+        // dollar yashiq) qulf ham, qator ham olinmaydi: reyestr so'mda
+        // yuritiladi, balans esa yashiq valyutasida yozilmoqda — ikkalasini
+        // aralashtirish yolg'on qarz bo'lardi (§2.3 chegarasi).
+        const debtRegistryCurrencyOk = sale.session.cashDesk.currency === DEBT_LEDGER_CURRENCY;
+        const balanceBeforeMinor = debtRegistryCurrencyOk
+          ? await this.lockCounterpartyBalance(
+              tx,
+              accountId,
+              debtAgentId,
+              sale.session.cashDesk.currency,
+            )
+          : null;
+
         await this.counterpartyBalance.applyDelta(
           tx,
           accountId,
@@ -1452,6 +1514,27 @@ export class RetailSaleService {
             newBalanceMinor: bal?.balanceMinor ?? null,
           }),
         ]);
+
+        // 🔴 Q2 — UNDIRISH REYESTRIGA qator. Balans deltasidan KEYIN va AYNAN
+        // shu tranzaksiyada: chek rollback bo'lsa qator ham qolmaydi.
+        if (debtRegistryCurrencyOk) {
+          await this.writeSaleDebtRegistryRow(tx, accountId, userId, {
+            saleId: id,
+            saleName: sale.name,
+            counterpartyId: debtAgentId,
+            debtAmountMinor: debtAmount,
+            balanceBeforeMinor,
+            postedAt,
+          });
+        } else {
+          // JIMGINA o'tmaydi (§2.3 chegarasi + reja Q2 vazifasi 1): qarz
+          // balansga yozildi, lekin undirish ro'yxatida KO'RINMAYDI.
+          this.logger.warn(
+            `[Q2] ${sale.name}: yashiq valyutasi ${sale.session.cashDesk.currency} ≠ ` +
+              `${DEBT_LEDGER_CURRENCY} — undirish reyestriga qator OCHILMADI. Qarz mijoz ` +
+              'balansiga yozildi va faqat u yerda ko`rinadi (USD qarz — alohida ish).',
+          );
+        }
       }
 
       // Smena agregatlari (salesCount / salesSumMinor) yuqoridagi CLAIM bilan
@@ -2545,6 +2628,181 @@ export class RetailSaleService {
   // Pure compute-positions logic lives in `./compute-positions.ts` so the
   // BigInt-precision invariants are unit-testable without mocking Prisma.
   private computePositions = computePositions;
+
+  /**
+   * Q2 — kontragentning QARZ-valyutasidagi balans qatorini QULFLAB o'qiydi.
+   *
+   * 🔴 `null` = qator YO'Q (**o'lchanmagan**), «0» EMAS. Balans qatori faqat
+   * birinchi `applyDelta` da tug'iladi, ya'ni undan oldingi qarzlari bo'lgan
+   * mijozda qator umuman bo'lmasligi mumkin. Farq §2.2 kesishuv qoidasida
+   * qaror o'zgartiradi (`null` ⇒ to'liq summaga qator + `DebtNote` da qayd).
+   *
+   * NEGA raw SQL: Prisma'da qator-qulfi yo'q, `findFirst` esa snapshot beradi.
+   * Naqsh AYNAN `pos-debt-payment.service.ts#lockBalance` niki — ikki yo'l bir
+   * xil qulfni bir xil tartibda oladi, shuning uchun deadlock qilmaydi.
+   *
+   * Qator yo'q bo'lsa qulf ham yo'q (`FOR UPDATE` hech nimani ushlamaydi) —
+   * bu qabul qilingan chegara: u holda ikki parallel chek ham to'liq qator
+   * ochadi, ya'ni qarz KO'RINADI (xato tomoni ehtiyotkor).
+   */
+  private async lockCounterpartyBalance(
+    tx: Prisma.TransactionClient,
+    accountId: string,
+    counterpartyId: string,
+    currency: string,
+  ): Promise<bigint | null> {
+    const rows = await tx.$queryRaw<Array<{ balance_minor: bigint }>>`
+      SELECT balance_minor
+      FROM counterparty_balances
+      WHERE account_id = ${accountId}::uuid
+        AND counterparty_id = ${counterpartyId}::uuid
+        AND currency = ${currency}
+      FOR UPDATE
+    `;
+    const row = rows[0];
+    return row === undefined ? null : BigInt(row.balance_minor);
+  }
+
+  /**
+   * Q2 — POS chekidan tug'ilgan `Debt` reyestr qatorini yozadi.
+   *
+   * Chaqiruvchi `post()` ning qarz bloki, balans deltasidan KEYIN, AYNAN o'sha
+   * tranzaksiyada. Qoidalarning HAMMASI Q1 ning sof modulida
+   * (`debt/sale-debt-registry.ts`) — bu yerda faqat I/O.
+   *
+   * INVARIANTLAR (reja §3):
+   *  1. `applyDelta` bu yerdan CHAQIRILMAYDI — `balanceAdopted: true` (qarz
+   *     balansda allaqachon bor; qo'shsak ikki karra sanalardi);
+   *  4. `planSaleDebtRow` `null` qaytarsa qator UMUMAN OCHILMAYDI — mijozning
+   *     AVANSI chek qarzini to'liq qopladi, ya'ni qarz TUG'ILMAGAN. Bunday
+   *     mijoz undirish ro'yxatiga tushmaydi va unga eslatma ketmaydi;
+   *  3. IDEMPOTENTLIK — `@@unique(accountId, sourceDocType, sourceDocId)`.
+   *
+   * ⚠️ NEGA `create` EMAS, `createMany({ skipDuplicates })`: unique konflikt
+   * `create` da `P2002` bo'lib chiqadi va uni TUTIB davom etib bo'lmaydi —
+   * Postgres tranzaksiyani ABORT holatiga o'tkazadi, ya'ni chekning qolgan
+   * yozuvlari («zakaz to'lovi», yakuniy `findUniqueOrThrow`) `25P02` bilan
+   * yiqilardi va MUVAFFAQIYATLI chek 500 bo'lardi. `skipDuplicates` esa
+   * `ON CONFLICT DO NOTHING` — xato ham, abort ham yo'q.
+   */
+  private async writeSaleDebtRegistryRow(
+    tx: Prisma.TransactionClient,
+    accountId: string,
+    userId: string,
+    input: {
+      saleId: string;
+      saleName: string;
+      counterpartyId: string;
+      debtAmountMinor: bigint;
+      /** `applyDelta` DAN OLDIN, `FOR UPDATE` bilan o'qilgan. `null` = o'lchanmagan. */
+      balanceBeforeMinor: bigint | null;
+      postedAt: Date;
+    },
+  ): Promise<void> {
+    const plan = planSaleDebtRow(
+      {
+        saleName: input.saleName,
+        debtAmountMinor: input.debtAmountMinor,
+        balanceBeforeMinor: input.balanceBeforeMinor,
+      },
+      input.postedAt,
+    );
+    if (!plan) {
+      // Invariant 4 — AVANS qarz emas. Bu normal xulq, xato emas; lekin jim
+      // ham qolmaydi: «nega bu chek undirish ro'yxatida yo'q?» savoliga javob.
+      this.logger.log(
+        `[Q2] ${input.saleName}: chek qarzi (${input.debtAmountMinor}) mijozning AVANSIDAN ` +
+          'to`liq qoplandi — undirish reyestriga qator OCHILMADI (invariant 4).',
+      );
+      return;
+    }
+
+    // Idempotentlik, 1-qatlam: mavjud qatorni oldindan topsak hujjat raqamini
+    // ham behuda sarflamaymiz (`QRZ-` ketma-ketligida teshik qolmaydi).
+    const existing = await tx.debt.findFirst({
+      where: {
+        accountId,
+        sourceDocType: SALE_DEBT_SOURCE_DOC_TYPE,
+        sourceDocId: input.saleId,
+      },
+      select: { id: true, name: true },
+    });
+    if (existing) {
+      this.logger.warn(
+        `[Q2] ${input.saleName}: reyestr qatori allaqachon bor (${existing.name}) — ` +
+          'ikkinchisi ochilmadi (idempotentlik).',
+      );
+      return;
+    }
+
+    // Raqam `document_sequences` orqali — race-safe (`adoptBalanceDebt` naqshi).
+    const year = input.postedAt.getFullYear();
+    const prefix = `QRZ-${year}-`;
+    const seq = await allocateDocumentNumber(tx, accountId, prefix, async () => {
+      const last = await tx.debt.findFirst({
+        where: { accountId, name: { startsWith: prefix } },
+        orderBy: { name: 'desc' },
+        select: { name: true },
+      });
+      return last ? Number.parseInt(last.name.slice(prefix.length), 10) || 0 : 0;
+    });
+
+    // Idempotentlik, 2-qatlam: `ON CONFLICT DO NOTHING` (yuqoridagi izoh).
+    const created = await tx.debt.createMany({
+      data: [
+        {
+          accountId,
+          counterpartyId: input.counterpartyId,
+          name: `${prefix}${String(seq).padStart(5, '0')}`,
+          totalMinor: plan.totalMinor,
+          paidMinor: 0n,
+          currency: DEBT_LEDGER_CURRENCY,
+          status: 'unpaid',
+          // 🔴 Invariant 1 — balansga QAYTA yozilmaydi.
+          balanceAdopted: plan.balanceAdopted,
+          // 🔴 NULL EMAS — muddatsiz qator undirish ro'yxatida `no_due_date`
+          // chelagida qolib, eslatma cron'i uni umuman ko'rmasdi.
+          nextContactAt: plan.nextContactAt,
+          sourceDocType: SALE_DEBT_SOURCE_DOC_TYPE,
+          sourceDocId: input.saleId,
+          // Chekni post qilgan KASSIR — §3.9 kunlik kassir hisoboti shundan.
+          ownerId: userId,
+          issuedById: userId,
+          comment: plan.comment,
+        },
+      ],
+      skipDuplicates: true,
+    });
+    if (created.count === 0) {
+      this.logger.warn(
+        `[Q2] ${input.saleName}: reyestr qatori poygada allaqachon ochilgan — ikkinchisi yozilmadi.`,
+      );
+      return;
+    }
+
+    // `createMany` id qaytarmaydi — izoh uchun qatorni MANBA bo'yicha o'qiymiz.
+    const debt = await tx.debt.findFirstOrThrow({
+      where: {
+        accountId,
+        sourceDocType: SALE_DEBT_SOURCE_DOC_TYPE,
+        sourceDocId: input.saleId,
+      },
+      select: { id: true },
+    });
+    await tx.debtNote.create({
+      data: {
+        accountId,
+        debtId: debt.id,
+        // AYNAN `plan.noteText` — avans qoplagan qism va «balans o'lchanmagan»
+        // qaydi allaqachon uning ichida (Q1 sof moduli). Bu yerda qayta matn
+        // yozilsa ikki manba ikki xil gapirardi.
+        text: plan.noteText,
+        authorId: userId,
+        authorRole: 'cashier',
+        kind: 'debt_issue',
+      },
+    });
+  }
 
   /**
    * F6 — kassaning STOK kaskadi (Q1). Prioriteti (`attributes.__posPriority`)

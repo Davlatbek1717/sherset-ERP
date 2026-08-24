@@ -14,14 +14,25 @@
  *      AYNAN shu yerga tushadi (`retail-sale.service.ts`, `post()`:
  *      `if (debtAmount > 0n && debtAgentId) counterpartyBalance.applyDelta(+)`);
  *      qaytarish esa shu yerdan ayiradi (`refund()`: `-debtReturn`).
- *      `Debt` reyestrini ATAYLAB yozmaydi — aks holda qarz ikki marta
- *      sanalardi (xotira: `debt-ledger-asymmetry`).
+ *      🔴 «`Debt` reyestrini ATAYLAB yozmaydi» — **BEKOR QILINDI (Q2,
+ *      2026-08-25)**. Endi `post()` reyestrga ham qator ochadi, lekin u
+ *      `balanceAdopted = true` va `applyDelta` CHAQIRMAYDI — ya'ni pul
+ *      daftari HAMON bir marta harakatlanadi, reyestr esa o'sha qarzni
+ *      undirish ro'yxatiga KO'RINADIGAN qiladi. Eski matn tarix uchun:
+ *      «aks holda qarz ikki marta sanalardi (xotira: `debt-ledger-asymmetry`)».
  *   2. `Debt` reyestri (`QRZ-…`) — qo'lda ochiladigan qarzlar. POS «Qarz
  *      to'lovi» FIFO'si FAQAT shu reyestrni yopadi
  *      (`pos-debt-payment.service.ts#lockOpenDebts`).
  *
  * OQIBAT: kassir qarzga sotadi → ertasiga mijoz to'lagani keladi → «Qarz
  * to'lovi» oynasi «ochiq qarz yo'q» deydi. Pulni qabul qilish yo'li yo'q.
+ *
+ * 🔴 Q2 (2026-08-25) — BERISH yo'li ham yopildi. Chekdan tug'ilgan qator endi
+ * reyestrda darhol paydo bo'ladi, ya'ni `unregisteredMinor` yangi cheklar
+ * uchun 0 ga tushadi va adopsiya yo'li faqat BOSHQA manbalar (`InvoiceOut`,
+ * `CashOut`, qo'lda `CounterpartyAdjustment`) va Q2 dan OLDINGI eski cheklar
+ * uchun qoladi. `debtPayable = max(reyestr, balans)` formulasi O'ZGARMAYDI —
+ * ikki son shunchaki tenglashadi, ya'ni kassir ekranidagi raqam ham o'sha.
  *
  * NEGA BU YERDA UCHRASHTIRILMAYDI (F9 qarori — P1 da BEKOR qilindi, quyidagi
  * «ADOPSIYA» bo'limiga qarang): ikkalasini bitta raqamga
