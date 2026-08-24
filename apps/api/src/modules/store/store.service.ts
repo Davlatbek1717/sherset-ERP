@@ -5,6 +5,7 @@ import { PrismaService } from '../../prisma/prisma.service.js';
 import { AttributeMetadataService } from '../attribute-metadata/attribute-metadata.service.js';
 import { readPosPriority } from '../retail-sale/retail-stock-cascade.js';
 import { mapVersionedUpdateError } from '../shared/optimistic-lock.js';
+import { UNASSIGNED_SOURCE_KEY, readUnassignedSource } from '../shared/pool-placement.js';
 import {
   type BulkMoveInput,
   BulkMoveSchema,
@@ -47,12 +48,24 @@ type StoreRow =
   | Prisma.StoreGetPayload<{ include: typeof OWNER_INCLUDE }>
   | Prisma.StoreGetPayload<Record<string, never>>;
 
-/** Lift the reserved attributes keys to top-level `cellInventory`/`posPriority`. */
+/** Lift the reserved attributes keys to top-level `cellInventory`/`posPriority`/`unassignedSource`. */
 function serializeStore<T extends StoreRow>(row: T) {
   const attrs = (row.attributes ?? {}) as Record<string, unknown>;
   const posPriority = readPosPriority(attrs);
-  const { [CELL_INVENTORY_KEY]: cellInventory, [POS_PRIORITY_KEY]: _pp, ...rest } = attrs;
-  return { ...row, attributes: rest, cellInventory: cellInventory === true, posPriority };
+  const unassignedSource = readUnassignedSource(attrs);
+  const {
+    [CELL_INVENTORY_KEY]: cellInventory,
+    [POS_PRIORITY_KEY]: _pp,
+    [UNASSIGNED_SOURCE_KEY]: _us,
+    ...rest
+  } = attrs;
+  return {
+    ...row,
+    attributes: rest,
+    cellInventory: cellInventory === true,
+    posPriority,
+    unassignedSource,
+  };
 }
 
 /**
@@ -158,6 +171,10 @@ export class StoreService {
     if (parsed.posPriority != null) {
       validatedAttrs[POS_PRIORITY_KEY] = parsed.posPriority;
     }
+    // F7: faqat `true` saqlanadi — hovuz qidiruvi `equals: true` bilan ishlaydi.
+    if (parsed.unassignedSource === true) {
+      validatedAttrs[UNASSIGNED_SOURCE_KEY] = true;
+    }
 
     const row = await this.prisma.client.store.create({
       data: {
@@ -224,7 +241,8 @@ export class StoreService {
     if (
       parsed.attributes !== undefined ||
       parsed.cellInventory !== undefined ||
-      parsed.posPriority !== undefined
+      parsed.posPriority !== undefined ||
+      parsed.unassignedSource !== undefined
     ) {
       // Re-validate custom attrs when sent; otherwise start from the stored bag
       // (minus the lifted flags) so a cellInventory-only PATCH can't wipe attrs.
@@ -242,6 +260,12 @@ export class StoreService {
         parsed.posPriority !== undefined ? parsed.posPriority : existing.posPriority;
       if (posPriority != null) base[POS_PRIORITY_KEY] = posPriority;
       else delete base[POS_PRIORITY_KEY];
+      // F7: `false` yuborilsa (yoki saqlangan qiymat false bo'lsa) kalit O'CHADI
+      // — hovuz belgisi faqat aynan `true` holida saqlanadi.
+      const unassignedSource =
+        parsed.unassignedSource !== undefined ? parsed.unassignedSource : existing.unassignedSource;
+      if (unassignedSource === true) base[UNASSIGNED_SOURCE_KEY] = true;
+      else delete base[UNASSIGNED_SOURCE_KEY];
       data.attributes = base as Prisma.InputJsonValue;
     }
     if (parsed.allowNegativeStock !== undefined)

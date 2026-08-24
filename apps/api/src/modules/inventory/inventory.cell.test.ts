@@ -38,6 +38,10 @@ function makeTx(f: FakeStores) {
   const positionUpdates: Array<Record<string, unknown>> = [];
 
   const tx = {
+    // F7 joylashtirish manbalari: hovuz yo'q, qulf bo'sh, Σyacheyka bo'sh —
+    // bu testlar joylashtirish YO'Q holatdagi (eski) xulqni qulflaydi.
+    store: { findMany: vi.fn(async () => []) },
+    $queryRaw: vi.fn(async () => []),
     stock: {
       findFirst: vi.fn(async () => f.stockRow ?? null),
       upsert: vi.fn(async (args: { update: unknown }) => {
@@ -61,6 +65,7 @@ function makeTx(f: FakeStores) {
           return {};
         },
       ),
+      groupBy: vi.fn(async () => []),
       findMany: vi.fn(async () => f.occupiedCells ?? []),
       update: vi.fn(
         async (args: {
@@ -73,7 +78,11 @@ function makeTx(f: FakeStores) {
         },
       ),
     },
-    stockOperation: { createMany: vi.fn(async () => ({ count: 0 })) },
+    stockOperation: {
+      createMany: vi.fn(async () => ({ count: 0 })),
+      // cancel(): F7 placement qatorlari — bu testlarda yo'q.
+      findMany: vi.fn(async () => []),
+    },
     // resolveHomeCells (yacheykasiz KIRIM uchungina) shu ikkitasini o'qiydi.
     product: { findMany: vi.fn(async () => []) },
     storeCell: { findMany: vi.fn(async () => []) },

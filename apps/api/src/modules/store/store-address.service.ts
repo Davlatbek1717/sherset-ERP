@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { Prisma } from '@moysklad/db';
 import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import type { z } from 'zod';
@@ -5,6 +6,10 @@ import { PrismaService } from '../../prisma/prisma.service.js';
 import { EnterService } from '../enter/enter.service.js';
 import { LossService } from '../loss/loss.service.js';
 import { assertCellStockEmpty } from '../shared/cell-stock-guard.js';
+import { formatDecimalScaled, parseDecimalScaled, subtractDecimals } from '../shared/decimal.js';
+import { PlacementSource, allocatePlacement, totalTakenMicro } from '../shared/pool-placement.js';
+import { findPoolStore, sumAssignedByAssortment } from '../stock/pool-store.util.js';
+import { StockService } from '../stock/stock.service.js';
 import {
   CellRangeError,
   type CellRangeSpec,
@@ -47,6 +52,8 @@ export class StoreAddressService {
     // document-derived product stock follows (climart 2026-07-26 feature port).
     @Inject(EnterService) private readonly enters: EnterService,
     @Inject(LossService) private readonly losses: LossService,
+    // F7 — sanashda hovuz/o'z-qoldiqdan joylashtirish (applyDeltas/lockBalances).
+    @Inject(StockService) private readonly stock: StockService,
   ) {}
 
   // -------------------------------------------------------------------
@@ -527,26 +534,43 @@ export class StoreAddressService {
     }
 
     let stockDoc: { type: 'enter' | 'loss'; name: string } | null = null;
+    let placedQty = '0';
     if (willPostDoc && org && userId) {
       const note = `Sanash (yacheyka ${cell.name}) — avto-tenglash`;
       if (delta > 0) {
-        const doc = (await this.enters.create(accountId, userId, {
-          organizationId: org.id,
+        // F7 — sanalgan ORTIQCHA avval joylashtirish manbalaridan ko'chadi:
+        // (1) shu omborning yacheykasiz qoldig'i, (2) `__unassignedSource`
+        // hovuz-ombori (Taqsimlanmagan). Faqat qoplanmagan qism avto-
+        // Оприходование bo'ladi — hovuz belgilanmagan va o'z-qoldiq 0 bo'lsa
+        // xulq eski bilan bir xil (butun delta Enter).
+        placedQty = await this.placeCountedFromSources(
+          accountId,
+          userId,
           storeId,
-          applicable: true,
-          description: note,
-          positions: [
-            {
-              assortmentId,
-              quantity: String(delta),
-              costMinor: product.buyPrice?.toString() ?? '0',
-              // Sanalgan yacheyka — hujjat shu yacheykaga aynan `delta` yozadi.
-              cellId,
-              cell: cell.name,
-            },
-          ],
-        })) as { name?: string };
-        stockDoc = { type: 'enter', name: doc?.name ?? '' };
+          cellId,
+          assortmentId,
+          String(delta),
+        );
+        const enterQty = subtractDecimals(String(delta), placedQty);
+        if (parseDecimalScaled(enterQty) > 0n) {
+          const doc = (await this.enters.create(accountId, userId, {
+            organizationId: org.id,
+            storeId,
+            applicable: true,
+            description: note,
+            positions: [
+              {
+                assortmentId,
+                quantity: enterQty,
+                costMinor: product.buyPrice?.toString() ?? '0',
+                // Sanalgan yacheyka — hujjat shu yacheykaga aynan shu deltani yozadi.
+                cellId,
+                cell: cell.name,
+              },
+            ],
+          })) as { name?: string };
+          stockDoc = { type: 'enter', name: doc?.name ?? '' };
+        }
       } else {
         const doc = (await this.losses.create(accountId, userId, {
           organizationId: org.id,
@@ -567,7 +591,92 @@ export class StoreAddressService {
       previousQty: String(oldQty),
       mode,
       stockDoc,
+      // F7: sanalgan deltaning joylashtirish sifatida ko'chgan qismi (additiv).
+      placedQty,
     };
+  }
+
+  /**
+   * F7 — sanalgan deltani joylashtirish manbalaridan yacheykaga ko'chiradi:
+   * tartib (1) shu omborning o'z yacheykasiz qoldig'i (store jami o'zgarmaydi),
+   * (2) hovuz-ombor (haqiqiy transfer, tannarx bilan). Juft deltalar
+   * `cell_place` docType bilan (place() bilan bir semantika), bitta docId.
+   * Qaytadi: ko'chgan miqdor (Decimal string) — qolganini chaqiruvchi
+   * avto-Оприходование qiladi.
+   */
+  private async placeCountedFromSources(
+    accountId: string,
+    userId: string,
+    storeId: string,
+    cellId: string,
+    assortmentId: string,
+    qtyStr: string,
+  ): Promise<string> {
+    const pool = await findPoolStore(this.prisma.client, accountId, { excludeStoreId: storeId });
+    const docId = randomUUID();
+    let placedMicro = 0n;
+    await this.prisma.client.$transaction(
+      async (tx) => {
+        const storeIds = pool ? [storeId, pool.id] : [storeId];
+        const balByStore = new Map<string, Awaited<ReturnType<StockService['lockBalances']>>>();
+        for (const sid of [...storeIds].sort()) {
+          balByStore.set(
+            sid,
+            await this.stock.lockBalances(tx, accountId, sid, [
+              { kind: 'product', id: assortmentId },
+            ]),
+          );
+        }
+        const sources: PlacementSource[] = [];
+        for (const sid of storeIds) {
+          const bal = balByStore.get(sid)?.get(assortmentId);
+          const assigned = await sumAssignedByAssortment(tx, accountId, sid, [
+            { kind: 'product', id: assortmentId },
+          ]);
+          sources.push(
+            new PlacementSource({
+              storeId: sid,
+              qty: bal?.qty ?? '0',
+              assignedQty: assigned.get(`product|${assortmentId}`) ?? '0',
+              reservedQty: bal?.reservedQty ?? '0',
+              costBalanceMinor: bal?.costBalanceMinor ? BigInt(bal.costBalanceMinor) : 0n,
+              crossStore: sid !== storeId,
+            }),
+          );
+        }
+        const takes = allocatePlacement(sources, parseDecimalScaled(qtyStr));
+        placedMicro = totalTakenMicro(takes);
+        if (takes.length === 0) return;
+        const deltas = takes.flatMap((t) => [
+          {
+            storeId: t.storeId,
+            assortmentKind: 'product',
+            assortmentId,
+            cellId: null,
+            cellMode: 'store-only' as const,
+            qtyDelta: `-${t.qty}`,
+            costDeltaMinor: t.crossStore ? -t.costMinor : null,
+            docType: 'cell_place',
+            docId,
+            reason: 'post' as const,
+          },
+          {
+            storeId,
+            assortmentKind: 'product',
+            assortmentId,
+            cellId,
+            qtyDelta: t.qty,
+            costDeltaMinor: t.crossStore ? t.costMinor : null,
+            docType: 'cell_place',
+            docId,
+            reason: 'post' as const,
+          },
+        ]);
+        await this.stock.applyDeltas(tx, accountId, userId, deltas);
+      },
+      { isolationLevel: 'Serializable', timeout: 20000 },
+    );
+    return formatDecimalScaled(placedMicro);
   }
 
   /**

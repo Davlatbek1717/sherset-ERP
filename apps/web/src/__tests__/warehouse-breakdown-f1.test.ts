@@ -59,18 +59,23 @@ describe('F1 — tovar kartasi «Qoldiqlar» tabida yacheykalar kesimi', () => {
   });
 });
 
-describe('F1 — «Qoldiqlar» hisobotida ombor-kesim (prefiks) rejimi', () => {
+describe('F7 — «Qoldiqlar» hisobotida ombor-kesim (haqiqiy Store) rejimi', () => {
   it('groupBy=warehouse varianti va jadval/plitkalar mavjud', () => {
     expect(reportPage).toContain('option value="warehouse"');
     for (const id of [
       'warehouse-tiles',
       'warehouse-rows',
       'warehouse-row',
-      'warehouse-unassigned-row',
       'warehouse-total-row',
     ]) {
       expect(reportPage).toContain(`data-test-id="${id}"`);
     }
+    // F7: qator haqiqiy Store — nomi serverdan, prefiks-yorliq YO'Q.
+    expect(reportPage).toContain('r.storeName');
+    expect(reportPage).not.toMatch(/warehouse_row|no_prefix/);
+    // Har qatorda yacheykalarda / biriktirilmagan bo'linishi ko'rinadi.
+    expect(reportPage).toContain('r.assignedQty');
+    expect(reportPage).toContain('r.unassignedQty');
   });
 
   it('CSV eksport ombor-kesimni qo`llaydi', () => {
@@ -83,7 +88,7 @@ describe('F1 — «Qoldiqlar» hisobotida ombor-kesim (prefiks) rejimi', () => {
         | (Record<string, unknown> & { groups?: Record<string, string> })
         | undefined;
       expect(ns).toBeTruthy();
-      for (const key of ['grand_total', 'no_prefix', 'sku_count', 'unassigned', 'warehouse_row']) {
+      for (const key of ['grand_total', 'sku_count', 'in_cells', 'unassigned_cells']) {
         expect(ns?.[key], key).toBeTruthy();
       }
       expect(ns?.groups?.warehouse).toBeTruthy();

@@ -1,15 +1,15 @@
 import { Prisma } from '@moysklad/db';
 
 /**
- * F1 (2026-08-23 ombor-restrukturizatsiya rejasi) — yacheyka kodi PREFIKSIDAN
- * hisoblangan «ombor kesimi». Ma'lumot KO'CHIRILMAYDI: tizimda hali bitta
- * Store, lekin yacheyka kodi `NN-SS-QQ-OO` (ombor-stelaj-qavat-o'rin) bo'lgani
- * uchun birinchi segment fizik omborni ishonchli belgilaydi (reja 1-bo'lim:
- * zonalar chalkash, yagona ishonchli manba — yacheyka kodi prefiksi).
+ * «Ombor kesimi» hisobining sof qismi (2026-08-23 ombor-restrukturizatsiya).
  *
- * Bu modul SOF hisob: SQL/Prisma yo'q, shuning uchun invariantlar unit-test
- * bilan qulflanadi. F5 (jonli split) dan keyin prefiks-hisob haqiqiy Store
- * kesimiga o'tadi — o'shanda bu modul soddalashadi/yo'qoladi.
+ * F1'da kesim yacheyka kodi PREFIKSIDAN hisoblanardi (bitta Store davri);
+ * F5 jonli split'idan keyin har fizik ombor alohida Store bo'ldi va F7'da
+ * hisob HAQIQIY Store kesimiga o'tkazildi: qator = Store (jami / yacheykalarda /
+ * biriktirilmagan). Prefiks-yordamchilar (`warehousePrefixOf`, `comparePrefix`)
+ * tovar kartasi yacheyka-guruhlash uchun qoladi.
+ *
+ * Bu modul SOF hisob: SQL/Prisma yo'q, invariantlar unit-test bilan qulflanadi.
  */
 
 const DECIMAL_ZERO = new Prisma.Decimal(0);
@@ -36,58 +36,72 @@ export function comparePrefix(a: string | null, b: string | null): number {
 }
 
 // -------------------------------------------------------------------
-// Hisobot: groupBy=warehouse
+// Hisobot: groupBy=warehouse — F7'dan boshlab HAQIQIY Store kesimi
+// (F5 split'idan keyin prefiks == Store bo'ldi; prefiks-hisob soddalashdi)
 // -------------------------------------------------------------------
 
 export interface WarehouseRow {
-  /** `01`, `02`, … yoki null — prefikssiz (nostandart nomli) yacheykalar. */
-  prefix: string | null;
-  /** Shu prefiksli yacheykalarda qoldig'i bor turli (kind,id) soni. */
+  storeId: string;
+  storeName: string;
+  /** Shu omborda qoldig'i bor turli (kind,id) soni. */
   skuCount: number;
+  /** Ombor jami (Σ stocks.qty). */
   qty: string;
+  /** Yacheykalarga biriktirilgani (Σ stock_by_cell shu omborda). */
+  assignedQty: string;
+  /** qty − assignedQty; yacheyka jami ombordan oshsa manfiy — halol. */
+  unassignedQty: string;
 }
 
 export interface WarehouseSummary {
   rows: WarehouseRow[];
-  /** Hech bir yacheykaga biriktirilmagan qoldiq (Σstocks − Σyacheykalar). */
-  unassigned: { skuCount: number; qty: string };
-  /** JAMI — filtr ostidagi Σ stocks.qty (ombor jami, DB'dagi haqiqiy son). */
+  /** JAMI — filtr ostidagi Σ stocks.qty (DB'dagi haqiqiy son). */
   totalQty: string;
   totalSku: number;
+  /** JAMI yacheykalarda / biriktirilmagan (Σ bo'yicha). */
+  totalAssignedQty: string;
+  totalUnassignedQty: string;
 }
 
 /**
- * SQL agregatlaridan yakuniy ko'rinishni yig'adi.
- * INVARIANT: Σ(rows.qty) + unassigned.qty == totalQty — chunki unassigned
- * SQL'da aynan (Σstocks − Σyacheykalar) deb hisoblanadi; test qulflaydi.
+ * SQL store-agregatlaridan yakuniy ko'rinishni yig'adi.
+ * INVARIANT: Σ(rows.qty) == totalQty — ikkala son BIR filtrli `stocks`
+ * yig'indisi (guruhli/guruhsiz); unassigned har qatorda qty − assigned.
+ * totalSku esa omborlararo DISTINCT — qatorlar yig'indisi EMAS (bir SKU bir
+ * nechta omborda bo'lsa bir marta sanaladi).
  */
 export function buildWarehouseSummary(
-  prefixRows: Array<{ prefix: string | null; skuCount: number; qty: string }>,
-  agg: { totalQty: string; totalSku: number; unassignedQty: string; unassignedSku: number },
+  storeRows: Array<{
+    storeId: string;
+    storeName: string;
+    skuCount: number;
+    qty: string;
+    assignedQty: string;
+  }>,
+  agg: { totalQty: string; totalSku: number; unassignedQty: string },
   opts?: { hideEmpty?: boolean },
 ): WarehouseSummary {
-  // Bir xil prefiks (masalan SQL null + JS-normalizatsiya) birlashtiriladi.
-  const merged = new Map<string | null, { skuCount: number; qty: Prisma.Decimal }>();
-  for (const r of prefixRows) {
-    const key = r.prefix;
-    const cur = merged.get(key) ?? { skuCount: 0, qty: DECIMAL_ZERO };
-    // NB: null-guruh birlashganda skuCount taxminan yig'iladi (bir SKU ikki
-    // nostandart yacheykada bo'lsa ikki hisoblanishi mumkin) — SQL DISTINCT
-    // guruh ichida aniq, guruhlararo emas. Prefiksli guruhlar SQL'dan bir
-    // qatordan keladi, ular aniq.
-    merged.set(key, { skuCount: cur.skuCount + r.skuCount, qty: cur.qty.plus(r.qty) });
-  }
-  let rows: WarehouseRow[] = [...merged.entries()]
-    .map(([prefix, v]) => ({ prefix, skuCount: v.skuCount, qty: v.qty.toString() }))
-    .sort((a, b) => comparePrefix(a.prefix, b.prefix));
+  let rows: WarehouseRow[] = storeRows
+    .map((r) => ({
+      storeId: r.storeId,
+      storeName: r.storeName,
+      skuCount: r.skuCount,
+      qty: r.qty,
+      assignedQty: r.assignedQty,
+      unassignedQty: new Prisma.Decimal(r.qty).minus(r.assignedQty).toString(),
+    }))
+    .sort((a, b) => a.storeName.localeCompare(b.storeName));
   if (opts?.hideEmpty) {
-    rows = rows.filter((r) => !new Prisma.Decimal(r.qty).isZero());
+    rows = rows.filter(
+      (r) => !new Prisma.Decimal(r.qty).isZero() || !new Prisma.Decimal(r.assignedQty).isZero(),
+    );
   }
   return {
     rows,
-    unassigned: { skuCount: agg.unassignedSku, qty: agg.unassignedQty },
     totalQty: agg.totalQty,
     totalSku: agg.totalSku,
+    totalAssignedQty: new Prisma.Decimal(agg.totalQty).minus(agg.unassignedQty).toString(),
+    totalUnassignedQty: agg.unassignedQty,
   };
 }
 

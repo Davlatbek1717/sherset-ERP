@@ -68,10 +68,10 @@ export interface StockBalanceReport {
     totalAvailable: string;
   };
   /**
-   * F1: FAQAT `groupBy=warehouse` rejimida to'ldiriladi — yacheyka-prefiks
-   * kesimi (Ombor 01/02/… + Taqsimlanmagan + JAMI). Raqamlar sahifalanmagan,
-   * filtr ostidagi TO'LIQ DB agregatlari (qabul mezoni shuni talab qiladi).
-   * Bu rejim qty-o'qi bilan ishlaydi: rezerv/kutilmoqda yacheyka darajasida
+   * FAQAT `groupBy=warehouse` rejimida to'ldiriladi. F7'dan boshlab HAQIQIY
+   * Store kesimi: qator = ombor (jami / yacheykalarda / biriktirilmagan) +
+   * JAMI. Raqamlar sahifalanmagan, filtr ostidagi TO'LIQ DB agregatlari.
+   * Bu rejim qty-o'qi bilan ishlaydi: rezerv/kutilmoqda bu kesimda
    * yuritilmaydi, shuning uchun summaries'da ular 0 bo'lib qoladi.
    */
   warehouses?: WarehouseSummary;
@@ -105,11 +105,12 @@ export class StockBalanceService {
   // -------------------------------------------------------------------
 
   /**
-   * Ombor kesimi ma'lumot KO'CHIRILMAGAN bosqichda: fizik omborni yacheyka
-   * kodining birinchi segmenti (`01-…`, `02-…`) belgilaydi. Ikki agregat
-   * so'rov: (1) prefiks bo'yicha Σqty + SKU soni (stock_by_cell ⋈ store_cells),
-   * (2) filtr-keng JAMI va «Taqsimlanmagan» (stocks − yacheyka yig'indisi).
-   * Sahifalash YO'Q — natija har doim kichik (prefikslar soni + 1 qator).
+   * F7 — HAQIQIY Store kesimi (F5 split'idan keyin har fizik ombor alohida
+   * Store; F1 prefiks-hisob soddalashtirildi). Ikki agregat so'rov:
+   * (1) ombor bo'yicha Σqty + SKU soni + Σyacheyka (stocks ⋈ stores ⋈
+   * stock_by_cell agregat), (2) filtr-keng JAMI va biriktirilmagan yig'indi
+   * (invariant: Σqatorlar == JAMI — bir xil filtrli bir jadval).
+   * Sahifalash YO'Q — natija har doim kichik (omborlar soni).
    */
   private async groupedByWarehouse(
     accountId: string,
@@ -124,30 +125,42 @@ export class StockBalanceService {
         ? search.ids
         : null;
 
-    const cellConds: Prisma.Sql[] = [
-      Prisma.sql`s.account_id = ${accountId}::uuid`,
-      Prisma.sql`s.qty <> 0`,
-    ];
-    if (filter.storeId) cellConds.push(Prisma.sql`s.store_id = ${filter.storeId}::uuid`);
+    const storeConds: Prisma.Sql[] = [Prisma.sql`st.account_id = ${accountId}::uuid`];
+    if (filter.storeId) storeConds.push(Prisma.sql`st.store_id = ${filter.storeId}::uuid`);
     if (filter.assortmentKind)
-      cellConds.push(Prisma.sql`s.assortment_kind = ${filter.assortmentKind}`);
+      storeConds.push(Prisma.sql`st.assortment_kind = ${filter.assortmentKind}`);
     if (idFilter) {
-      cellConds.push(
-        Prisma.sql`s.assortment_id IN (${Prisma.join(idFilter.map((id) => Prisma.sql`${id}::uuid`))})`,
+      storeConds.push(
+        Prisma.sql`st.assortment_id IN (${Prisma.join(idFilter.map((id) => Prisma.sql`${id}::uuid`))})`,
       );
     }
-    // Prefiks SQL'da: `01-02-03-04` → `01`; nostandart nom (raqam-defis bilan
-    // boshlanmagan) → NULL guruh — qoldiq yo'qolmaydi, «prefikssiz» ko'rinadi.
-    const prefixRowsRaw = await this.prisma.client.$queryRaw<
-      Array<{ prefix: string | null; sku_count: bigint; qty: string }>
+    const storeRowsRaw = await this.prisma.client.$queryRaw<
+      Array<{
+        store_id: string;
+        store_name: string;
+        sku_count: bigint;
+        qty: string;
+        assigned_qty: string;
+      }>
     >`
-      SELECT CASE WHEN c.name ~ '^[0-9]+-' THEN split_part(c.name, '-', 1) END AS prefix,
-             COUNT(DISTINCT (s.assortment_kind, s.assortment_id))::bigint AS sku_count,
-             COALESCE(SUM(s.qty), 0)::text AS qty
-      FROM stock_by_cell s
-      JOIN store_cells c ON c.id = s.cell_id
-      WHERE ${Prisma.join(cellConds, ' AND ')}
-      GROUP BY 1
+      SELECT st.store_id AS store_id,
+             s2.name AS store_name,
+             COUNT(DISTINCT (st.assortment_kind, st.assortment_id))
+               FILTER (WHERE st.qty <> 0)::bigint AS sku_count,
+             COALESCE(SUM(st.qty), 0)::text AS qty,
+             COALESCE(SUM(COALESCE(a.assigned, 0)), 0)::text AS assigned_qty
+      FROM stocks st
+      JOIN stores s2 ON s2.id = st.store_id
+      LEFT JOIN (
+        SELECT store_id, assortment_kind, assortment_id, SUM(qty) AS assigned
+        FROM stock_by_cell
+        WHERE account_id = ${accountId}::uuid
+        GROUP BY 1, 2, 3
+      ) a ON a.store_id = st.store_id
+         AND a.assortment_kind = st.assortment_kind
+         AND a.assortment_id = st.assortment_id
+      WHERE ${Prisma.join(storeConds, ' AND ')}
+      GROUP BY st.store_id, s2.name
     `;
 
     const stockConds: Prisma.Sql[] = [Prisma.sql`st.account_id = ${accountId}::uuid`];
@@ -190,16 +203,17 @@ export class StockBalanceService {
     const agg = aggRows[0];
 
     const warehouses = buildWarehouseSummary(
-      prefixRowsRaw.map((r) => ({
-        prefix: r.prefix,
+      storeRowsRaw.map((r) => ({
+        storeId: r.store_id,
+        storeName: r.store_name,
         skuCount: Number(r.sku_count),
         qty: r.qty,
+        assignedQty: r.assigned_qty,
       })),
       {
         totalQty: agg?.total_qty ?? '0',
         totalSku: Number(agg?.total_sku ?? 0n),
         unassignedQty: agg?.unassigned_qty ?? '0',
-        unassignedSku: Number(agg?.unassigned_sku ?? 0n),
       },
       { hideEmpty: filter.hideEmpty },
     );
@@ -207,7 +221,7 @@ export class StockBalanceService {
     return {
       filter,
       items: [],
-      total: warehouses.rows.length + 1, // + Taqsimlanmagan qatori
+      total: warehouses.rows.length,
       truncated: search?.capped === true,
       summaries: {
         totalSku: warehouses.totalSku,

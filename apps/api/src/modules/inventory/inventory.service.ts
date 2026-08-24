@@ -14,11 +14,15 @@ import {
   compareDecimals,
   computeLineCost,
   computePerUnitCost,
+  formatDecimalScaled,
+  parseDecimalScaled,
   subtractDecimals,
 } from '../shared/decimal.js';
 import { resolveCreatorGroupId } from '../shared/group-stamp.js';
 import { mapVersionedUpdateError } from '../shared/optimistic-lock.js';
+import { PlacementSource, allocatePlacement, totalTakenMicro } from '../shared/pool-placement.js';
 import { withSerializationRetry } from '../shared/serialization-retry.js';
+import { findPoolStore, sumAssignedByAssortment } from '../stock/pool-store.util.js';
 import { type StockDelta, StockService } from '../stock/stock.service.js';
 import { WebhookFireService } from '../webhook/webhook-fire.service.js';
 import {
@@ -695,7 +699,20 @@ export class InventoryService {
         const deltas: StockDelta[] = [];
         let surplusCount = 0;
         let shortageCount = 0;
+        let placedCount = 0;
         let sumMinor = 0n;
+
+        // F7 — yacheykaga sanalgan ORTIQCHA avval joylashtirish manbalaridan
+        // (o'z omborining yacheykasiz qoldig'i → hovuz-ombor) ko'chiriladi;
+        // faqat qoplanmagani haqiqiy inventory_surplus bo'ladi. Hovuz
+        // belgilanmagan akkauntda manba-ro'yxat bo'sh emas, lekin o'z-ombor
+        // qoldig'i ham 0 bo'lsa xulq ESKI bilan bayt-ba-bayt bir xil.
+        const placementSources = await this.buildPlacementSources(
+          tx,
+          accountId,
+          existing.storeId,
+          existing.positions,
+        );
 
         for (const p of existing.positions) {
           // Snapshot expected qty from current Stock row
@@ -776,18 +793,66 @@ export class InventoryService {
           // auto-deduct/home-cell inference used for store-level rows.
           if (varianceSign > 0) {
             surplusCount++;
-            deltas.push({
-              storeId: existing.storeId,
-              assortmentKind: p.assortmentKind,
-              assortmentId: p.assortmentId,
-              cellId: p.cellId ?? null,
-              qtyDelta: varianceStr,
-              costDeltaMinor: varianceCostMinor,
-              docType: 'inventory_surplus',
-              docId: id,
-              docPositionId: p.id,
-              reason: 'post',
-            });
+            // F7 — yacheykali ortiqcha: avval manbalardan (o'z qoldiq → hovuz)
+            // «inventory_placement» juftliklari bilan ko'chadi. Manba tomoni
+            // yacheykasiz remainder ⇒ cellMode 'store-only' (avto-inferensiya
+            // band yacheykani talamasin); maqsad tomoni sanalgan yacheykaga.
+            // Hovuzdan kelganda tannarx ham ko'chadi (move-cost-basis).
+            let surplusStr = varianceStr;
+            if (p.cellId) {
+              const sources = placementSources.get(`${p.assortmentKind}|${p.assortmentId}`) ?? [];
+              const takes = allocatePlacement(sources, parseDecimalScaled(varianceStr));
+              for (const t of takes) {
+                placedCount++;
+                deltas.push({
+                  storeId: t.storeId,
+                  assortmentKind: p.assortmentKind,
+                  assortmentId: p.assortmentId,
+                  cellId: null,
+                  cellMode: 'store-only',
+                  qtyDelta: `-${t.qty}`,
+                  costDeltaMinor: t.crossStore ? -t.costMinor : null,
+                  docType: 'inventory_placement',
+                  docId: id,
+                  docPositionId: p.id,
+                  reason: 'post',
+                });
+                deltas.push({
+                  storeId: existing.storeId,
+                  assortmentKind: p.assortmentKind,
+                  assortmentId: p.assortmentId,
+                  cellId: p.cellId,
+                  qtyDelta: t.qty,
+                  costDeltaMinor: t.crossStore ? t.costMinor : null,
+                  docType: 'inventory_placement',
+                  docId: id,
+                  docPositionId: p.id,
+                  reason: 'post',
+                });
+              }
+              surplusStr = subtractDecimals(
+                varianceStr,
+                formatDecimalScaled(totalTakenMicro(takes)),
+              );
+            }
+            if (compareDecimals(surplusStr, '0') > 0) {
+              deltas.push({
+                storeId: existing.storeId,
+                assortmentKind: p.assortmentKind,
+                assortmentId: p.assortmentId,
+                cellId: p.cellId ?? null,
+                // Qoplanmagan qism uchun tannarx ham qisqargan miqdorga mos —
+                // to'liq varianceCostMinor emas (u joylashgan qismni ham o'z
+                // ichiga olardi va ombor cost-asosini shishirardi).
+                qtyDelta: surplusStr,
+                costDeltaMinor:
+                  unitCostMinor > 0n ? computeLineCost(surplusStr, unitCostMinor) : null,
+                docType: 'inventory_surplus',
+                docId: id,
+                docPositionId: p.id,
+                reason: 'post',
+              });
+            }
           } else if (varianceSign < 0) {
             shortageCount++;
             deltas.push({
@@ -834,6 +899,8 @@ export class InventoryService {
               from: { before: 'draft', after: 'posted' },
               surplusPositions: surplusCount,
               shortagePositions: shortageCount,
+              // F7: nechta manba-bo'lak joylashtirish sifatida ko'chdi.
+              placementTakes: placedCount,
             } as Prisma.InputJsonValue,
           },
         });
@@ -870,9 +937,62 @@ export class InventoryService {
         // reversal. Passing null (the old bug) left costBalanceMinor decremented
         // by the sale/loss basis but never restored on cancel → drift.
         const deltas: StockDelta[] = [];
+
+        // F7 — post joylashtirish (inventory_placement) juftliklarini yozgan
+        // bo'lsa, ularni LEDGERDAN o'qib aynan teskarilaymiz: hovuz/o'z-qoldiq
+        // tomoni qaytadi, sanalgan yacheyka bo'shaydi, tannarx bit-ba-bit
+        // qaytadi. Snapshot-asosli surplus teskarisi esa joylashgan qismga
+        // QISQARADI — aks holda variance ikki marta (placement + surplus)
+        // qaytarilib qoldiqni buzardi.
+        const placementRows = await tx.stockOperation.findMany({
+          where: { accountId, docId: id, docType: 'inventory_placement', reason: 'post' },
+          select: {
+            storeId: true,
+            assortmentKind: true,
+            assortmentId: true,
+            cellId: true,
+            qtyDelta: true,
+            costDeltaMinor: true,
+            docPositionId: true,
+          },
+        });
+        const placedByPosition = new Map<string, bigint>();
+        for (const r of placementRows) {
+          const micro = parseDecimalScaled(r.qtyDelta.toString());
+          // Musbat tomon — sanalgan yacheykaga kirgan qism (doc ombori).
+          if (micro > 0n && r.docPositionId) {
+            placedByPosition.set(
+              r.docPositionId,
+              (placedByPosition.get(r.docPositionId) ?? 0n) + micro,
+            );
+          }
+          deltas.push({
+            storeId: r.storeId,
+            assortmentKind: r.assortmentKind,
+            assortmentId: r.assortmentId,
+            cellId: r.cellId,
+            // Yacheykasiz (manba) tomonining qaytishi ham store-only: hovuzga
+            // qaytgan tovar uy-yacheyka inferensiyasiga tushmasin.
+            ...(r.cellId ? {} : { cellMode: 'store-only' as const }),
+            qtyDelta: subtractDecimals('0', r.qtyDelta.toString()),
+            costDeltaMinor: r.costDeltaMinor == null ? null : -r.costDeltaMinor,
+            docType: 'inventory_placement',
+            docId: id,
+            docPositionId: r.docPositionId,
+            reason: 'cancel',
+          });
+        }
+
         for (const p of existing.positions) {
           const varianceQty = String(p.varianceQty);
-          if (compareDecimals(varianceQty, '0') === 0) continue;
+          const placedMicro = placedByPosition.get(p.id) ?? 0n;
+          // Joylashgan qism placement-negatsiyada qaytdi; surplus sifatida
+          // faqat qoplanmagan qism yozilgan edi — shuni teskarilaymiz.
+          const reverseQty =
+            placedMicro > 0n
+              ? formatDecimalScaled(parseDecimalScaled(varianceQty) - placedMicro)
+              : varianceQty;
+          if (compareDecimals(reverseQty, '0') === 0) continue;
           const unitCost = p.costMinor ?? 0n;
           deltas.push({
             storeId: existing.storeId,
@@ -880,8 +1000,8 @@ export class InventoryService {
             assortmentId: p.assortmentId,
             // Cell row reverses on the SAME cell it adjusted at post time.
             cellId: p.cellId ?? null,
-            qtyDelta: subtractDecimals('0', varianceQty), // reverse sign, exact
-            costDeltaMinor: reverseVarianceCost(varianceQty, unitCost),
+            qtyDelta: subtractDecimals('0', reverseQty), // reverse sign, exact
+            costDeltaMinor: reverseVarianceCost(reverseQty, unitCost),
             docType: 'inventory_cancel',
             docId: id,
             docPositionId: p.id,
@@ -907,6 +1027,80 @@ export class InventoryService {
       });
       return updated;
     });
+  }
+
+  /**
+   * F7 — yacheykali qatorlar uchun joylashtirish manbalari, tovar kesimida.
+   * Tartib: (1) hujjat omborining O'Z yacheykasiz qoldig'i (Stock − Σyacheyka −
+   * rezerv; masalan Move bilan kelib hali joylashtirilmagan tovar) — store
+   * jami o'zgarmaydi; (2) `__unassignedSource` hovuz-ombori — haqiqiy
+   * omborlararo transfer (tannarx bilan). Ikkala manba ham `lockBalances`
+   * bilan qulflanadi (store id tartibida — deadlock oldini olish), shuning
+   * uchun parallel POS-sotuv/joylashtirish bir tovarni ikki marta ololmaydi.
+   * Hovuz yo'q va o'z-qoldiq 0 bo'lsa take'lar bo'sh ⇒ eski xulq saqlanadi.
+   */
+  private async buildPlacementSources(
+    tx: Prisma.TransactionClient,
+    accountId: string,
+    storeId: string,
+    positions: Array<{ assortmentKind: string; assortmentId: string; cellId: string | null }>,
+  ): Promise<Map<string, PlacementSource[]>> {
+    const out = new Map<string, PlacementSource[]>();
+    const cellPositions = positions.filter((p) => p.cellId);
+    if (cellPositions.length === 0) return out;
+
+    const seen = new Set<string>();
+    const assorts: Array<{ kind: string; id: string }> = [];
+    for (const p of cellPositions) {
+      const key = `${p.assortmentKind}|${p.assortmentId}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      assorts.push({ kind: p.assortmentKind, id: p.assortmentId });
+    }
+
+    const pool = await findPoolStore(tx, accountId, { excludeStoreId: storeId });
+    const storesToLock = [storeId, ...(pool ? [pool.id] : [])].sort();
+    const balByStore = new Map<string, Awaited<ReturnType<StockService['lockBalances']>>>();
+    for (const sid of storesToLock) {
+      balByStore.set(sid, await this.stock.lockBalances(tx, accountId, sid, assorts));
+    }
+    const ownAssigned = await sumAssignedByAssortment(tx, accountId, storeId, assorts);
+    const poolAssigned = pool
+      ? await sumAssignedByAssortment(tx, accountId, pool.id, assorts)
+      : new Map<string, string>();
+
+    for (const a of assorts) {
+      const key = `${a.kind}|${a.id}`;
+      const sources: PlacementSource[] = [];
+      const own = balByStore.get(storeId)?.get(a.id);
+      sources.push(
+        new PlacementSource({
+          storeId,
+          qty: own?.qty ?? '0',
+          assignedQty: ownAssigned.get(key) ?? '0',
+          reservedQty: own?.reservedQty ?? '0',
+          costBalanceMinor: own?.costBalanceMinor ? BigInt(own.costBalanceMinor) : 0n,
+          crossStore: false,
+        }),
+      );
+      if (pool) {
+        const pb = balByStore.get(pool.id)?.get(a.id);
+        if (pb) {
+          sources.push(
+            new PlacementSource({
+              storeId: pool.id,
+              qty: pb.qty,
+              assignedQty: poolAssigned.get(key) ?? '0',
+              reservedQty: pb.reservedQty,
+              costBalanceMinor: pb.costBalanceMinor ? BigInt(pb.costBalanceMinor) : 0n,
+              crossStore: true,
+            }),
+          );
+        }
+      }
+      out.set(key, sources);
+    }
+    return out;
   }
 
   // =====================================================================

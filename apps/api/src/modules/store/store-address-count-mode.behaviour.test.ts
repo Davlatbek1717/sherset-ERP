@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { StockService } from '../stock/stock.service.js';
 import { StoreAddressService } from './store-address.service.js';
 
 /**
@@ -17,10 +18,40 @@ interface Captured {
   losses: Array<{ quantity: string; cellId: string | undefined }>;
 }
 
-function makeService(currentQty: number | null) {
+function makeService(
+  currentQty: number | null,
+  opts?: {
+    /** F7: hovuz-ombor va uning lockBalances qatori (qty, cost). */
+    pool?: { id: string; qty: string; cost: string };
+    /** F7: o'z omborning lockBalances qty/cost va Σyacheyka. */
+    own?: { qty: string; cost: string; assigned: string };
+  },
+) {
   const captured: Captured = { enters: [], losses: [] };
+  const ledger: Array<{
+    storeId: string;
+    cellId: string | null;
+    qtyDelta: unknown;
+    costDeltaMinor: bigint | null;
+    docType: string;
+  }> = [];
+  const lockRow = (storeId: string, qty: string, cost: string) => ({
+    account_id: 'acc-1',
+    store_id: storeId,
+    assortment_kind: 'product',
+    assortment_id: '11111111-1111-4111-8111-111111111111',
+    qty,
+    reserved_qty: '0',
+    cost_balance_minor: cost,
+  });
   const client = {
-    store: { findFirst: vi.fn(async () => ({ id: 'store-1' })) },
+    store: {
+      findFirst: vi.fn(async () => ({ id: 'store-1' })),
+      // findPoolStore: hovuz belgilangan bo'lsa bitta qator.
+      findMany: vi.fn(async () =>
+        opts?.pool ? [{ id: opts.pool.id, name: 'Taqsimlanmagan' }] : [],
+      ),
+    },
     storeCell: { findFirst: vi.fn(async () => ({ id: 'cell-1', name: '01-01-01-01' })) },
     product: { findFirst: vi.fn(async () => ({ id: 'prod-1', buyPrice: 1000n })) },
     organization: { findFirst: vi.fn(async () => ({ id: 'org-1' })) },
@@ -28,7 +59,36 @@ function makeService(currentQty: number | null) {
       findFirst: vi.fn(async () => (currentQty === null ? null : { qty: currentQty })),
       upsert: vi.fn(async () => undefined),
       deleteMany: vi.fn(async () => ({ count: 0 })),
+      groupBy: vi.fn(async (args: { where: { storeId: string } }) =>
+        args.where.storeId === 'store-1' && opts?.own
+          ? [
+              {
+                assortmentKind: 'product',
+                assortmentId: '11111111-1111-4111-8111-111111111111',
+                _sum: { qty: { toString: () => opts.own?.assigned ?? '0' } },
+              },
+            ]
+          : [],
+      ),
     },
+    stock: { upsert: vi.fn(async () => ({})) },
+    stockOperation: {
+      createMany: vi.fn(async (args: { data: typeof ledger }) => {
+        ledger.push(...args.data);
+        return { count: args.data.length };
+      }),
+    },
+    $queryRaw: vi.fn(async (_s: TemplateStringsArray, ...values: unknown[]) => {
+      const storeId = String(values[1]);
+      if (storeId === 'store-1' && opts?.own) {
+        return [lockRow('store-1', opts.own.qty, opts.own.cost)];
+      }
+      if (opts?.pool && storeId === opts.pool.id) {
+        return [lockRow(opts.pool.id, opts.pool.qty, opts.pool.cost)];
+      }
+      return [];
+    }),
+    $transaction: vi.fn(async (cb: (t: unknown) => Promise<unknown>) => cb(client)),
   };
   const enters = {
     create: vi.fn(
@@ -48,8 +108,14 @@ function makeService(currentQty: number | null) {
       },
     ),
   };
-  const svc = new StoreAddressService({ client } as never, enters as never, losses as never);
-  return { svc, captured, client };
+  const stock = new StockService({ client: {} } as never);
+  const svc = new StoreAddressService(
+    { client } as never,
+    enters as never,
+    losses as never,
+    stock as never,
+  );
+  return { svc, captured, client, ledger };
 }
 
 const CALL = { assortmentId: '11111111-1111-4111-8111-111111111111' };
@@ -153,5 +219,91 @@ describe('setCellStock — sanash semantikasi', () => {
     expect(client.stockByCell.deleteMany).toHaveBeenCalledTimes(1);
     expect(client.stockByCell.upsert).not.toHaveBeenCalled();
     expect(res.qty).toBe('0');
+  });
+});
+
+describe('setCellStock — F7 joylashtirish (hovuzdan avto-ko`chirish)', () => {
+  it("hovuz to'liq qoplasa: Enter YO'Q, cell_place juftligi cost bilan", async () => {
+    const { svc, captured, ledger } = makeService(0, {
+      pool: { id: 'pool-1', qty: '10', cost: '1000' },
+    });
+    const res = await svc.setCellStock(
+      'acc-1',
+      'store-1',
+      'cell-1',
+      { ...CALL, qty: '4', mode: 'add' },
+      'user-1',
+    );
+    expect(captured.enters).toEqual([]);
+    expect(res.placedQty).toBe('4');
+    expect(res.stockDoc).toBeNull();
+    expect(ledger.map((l) => [l.docType, l.storeId, String(l.qtyDelta), l.costDeltaMinor])).toEqual(
+      [
+        ['cell_place', 'pool-1', '-4', -400n],
+        ['cell_place', 'store-1', '4', 400n],
+      ],
+    );
+    expect(ledger[1]?.cellId).toBe('cell-1');
+  });
+
+  it('hovuz qisman qoplasa: qolgan qismgina Enter bo`ladi', async () => {
+    const { captured, res } = await (async () => {
+      const w = makeService(0, { pool: { id: 'pool-1', qty: '3', cost: '0' } });
+      const r = await w.svc.setCellStock(
+        'acc-1',
+        'store-1',
+        'cell-1',
+        { ...CALL, qty: '10', mode: 'add' },
+        'user-1',
+      );
+      return { ...w, res: r };
+    })();
+    expect(res.placedQty).toBe('3');
+    expect(captured.enters).toEqual([{ quantity: '7', cellId: 'cell-1' }]);
+    expect(res.stockDoc).toEqual({ type: 'enter', name: 'ENT-1' });
+  });
+
+  it("o'z omborning yacheykasiz qoldig'i hovuzdan OLDIN ishlatiladi", async () => {
+    const { svc, ledger, captured } = makeService(0, {
+      own: { qty: '100', cost: '0', assigned: '95' },
+      pool: { id: 'pool-1', qty: '50', cost: '0' },
+    });
+    await svc.setCellStock(
+      'acc-1',
+      'store-1',
+      'cell-1',
+      { ...CALL, qty: '5', mode: 'add' },
+      'user-1',
+    );
+    // remainder 5 o'z ombordan — hovuzga TEGILMAYDI, Enter yo'q
+    expect(ledger.map((l) => [l.docType, l.storeId, String(l.qtyDelta)])).toEqual([
+      ['cell_place', 'store-1', '-5'],
+      ['cell_place', 'store-1', '5'],
+    ]);
+    expect(ledger[0]?.costDeltaMinor).toBeNull();
+    expect(captured.enters).toEqual([]);
+  });
+
+  it('hovuz belgilanmagan akkauntda eski xulq: butun delta Enter', async () => {
+    const { svc, captured, ledger } = makeService(0);
+    const res = await svc.setCellStock(
+      'acc-1',
+      'store-1',
+      'cell-1',
+      { ...CALL, qty: '4', mode: 'add' },
+      'user-1',
+    );
+    expect(res.placedQty).toBe('0');
+    expect(ledger).toEqual([]);
+    expect(captured.enters).toEqual([{ quantity: '4', cellId: 'cell-1' }]);
+  });
+
+  it('kamaytirish (Loss) yo`li joylashtirishga tegmaydi', async () => {
+    const { svc, captured, ledger } = makeService(26, {
+      pool: { id: 'pool-1', qty: '50', cost: '0' },
+    });
+    await svc.setCellStock('acc-1', 'store-1', 'cell-1', { ...CALL, qty: '10' }, 'user-1');
+    expect(ledger).toEqual([]);
+    expect(captured.losses).toEqual([{ quantity: '16', cellId: 'cell-1' }]);
   });
 });

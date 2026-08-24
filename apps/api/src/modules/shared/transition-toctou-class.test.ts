@@ -493,8 +493,18 @@ describe('STOCK TOCTOU class-lock coverage is complete (Faza Q3)', () => {
    *   - retail-sale       — POS FSM (Faza Q1 hardened post + shift claim)
    *   - product-cell-move — warehouse cell transfer, not a document FSM
    *   - product-cut       — cut/repack helper, not a document FSM
+   *   - store-address     — F7 sanash-joylashtirish (cell_place juftligi,
+   *                         Serializable tx + lockBalances, hujjat FSM emas —
+   *                         product-cell-move.place bilan bir sinf)
    */
-  const KNOWN_UNPINNED = ['demand', 'inventory', 'product-cell-move', 'product-cut', 'retail-sale'];
+  const KNOWN_UNPINNED = [
+    'demand',
+    'inventory',
+    'product-cell-move',
+    'product-cut',
+    'retail-sale',
+    'store-address',
+  ];
 
   it('every service that moves Stock is either pinned here or listed as known debt', () => {
     // Keyed on the SERVICE file, not the module dir: `product/` alone holds two

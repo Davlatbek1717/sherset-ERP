@@ -3,7 +3,10 @@ import type { Prisma } from '@moysklad/db';
 import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { assertCellStockEmpty } from '../shared/cell-stock-guard.js';
+import { parseDecimalScaled } from '../shared/decimal.js';
 import { computeTransferCost } from '../shared/move-cost-basis.js';
+import { PlacementSource, allocatePlacement, totalTakenMicro } from '../shared/pool-placement.js';
+import { findPoolStore, sumAssignedByAssortment } from '../stock/pool-store.util.js';
 import { type StockBalance, StockService } from '../stock/stock.service.js';
 import { CellMoveSchema, CellPlaceSchema, CellRebindSchema } from './product-cell-move.schema.js';
 
@@ -225,14 +228,20 @@ export class ProductCellMoveService {
   }
 
   /**
-   * «Переместить» qty from the HOME-CELL remainder into a target cell. The home
-   * cell (resolved from attributes) holds the product's UNALLOCATED on-hand in its
-   * store = store stock − Σ(StockByCell in that store). Placing N moves N out of
-   * that pool:
-   *   SAME store  → StockByCell[target] += N; store stock unchanged (remainder −N).
-   *   OTHER store → source warehouse loses N (+cost), target warehouse gains N
-   *                 (+cost) and StockByCell[target] += N — a real transfer.
-   * Guard: N must not exceed the remainder (a warehouse can't ship what it lacks).
+   * «Переместить» qty from the UNALLOCATED remainder into a target cell.
+   *
+   * F7 (2026-08-24): manba endi BITTA emas — tartiblangan RO'YXAT:
+   *   1. maqsad yacheyka OMBORINING o'z yacheykasiz qoldig'i (masalan Move
+   *      hujjati bilan kelib hali joylashtirilmagan tovar) — store jami
+   *      o'zgarmaydi, faqat StockByCell[target] += N;
+   *   2. `__unassignedSource` hovuz-ombori («Taqsimlanmagan») — haqiqiy
+   *      omborlararo transfer: qty ham tannarx ham ko'chadi;
+   *   3. eski xulq: tovar uy-yacheykasining ombori (hovuz belgilanmagan
+   *      akkauntlar shu yo'ldan avvalgidek yuraveradi).
+   * Bitta joylashtirish bir nechta manbadan BO'LINIB kelishi mumkin; jami
+   * yetmasa butun amal rad etiladi. Har manba uchun juft delta (`cell_place`,
+   * bitta docId): manba tomoni `cellMode:'store-only'` (remainder — aniq bin
+   * emas), maqsad tomoni `cellId`. (2026-07-29 per-cell drift-fix saqlanadi.)
    */
   async place(accountId: string, userId: string, productId: string, raw: unknown) {
     const parsed = CellPlaceSchema.parse(raw);
@@ -246,95 +255,115 @@ export class ProductCellMoveService {
     const attrs = (product.attributes as Record<string, unknown>) ?? {};
     const homeCellName = typeof attrs.__yacheyka === 'string' ? attrs.__yacheyka : null;
     const homePolka = typeof attrs.__polka === 'string' ? attrs.__polka : null;
-    if (!homeCellName) throw new BadRequestException('Asosiy yacheyka belgilanmagan');
 
-    const homeCell = await this.prisma.client.storeCell.findFirst({
-      where: { accountId, name: homeCellName, ...(homePolka ? { zone: { name: homePolka } } : {}) },
-      select: { id: true, storeId: true },
-    });
-    if (!homeCell) throw new BadRequestException('Asosiy yacheyka haqiqiy yacheyka emas');
-    if (parsed.toCellId === homeCell.id) throw new BadRequestException('Boshqa yacheyka tanlang');
+    const pool = await findPoolStore(this.prisma.client, accountId);
+    // Uy-yacheyka endi MAJBURIY emas: hovuz belgilangan bo'lsa usiz ham
+    // joylashtirsa bo'ladi. Hovuzsiz akkauntda eski talab va xatolar saqlanadi.
+    const homeCell = homeCellName
+      ? await this.prisma.client.storeCell.findFirst({
+          where: {
+            accountId,
+            name: homeCellName,
+            ...(homePolka ? { zone: { name: homePolka } } : {}),
+          },
+          select: { id: true, storeId: true },
+        })
+      : null;
+    if (!pool) {
+      if (!homeCellName) throw new BadRequestException('Asosiy yacheyka belgilanmagan');
+      if (!homeCell) throw new BadRequestException('Asosiy yacheyka haqiqiy yacheyka emas');
+    }
+    if (homeCell && parsed.toCellId === homeCell.id) {
+      throw new BadRequestException('Boshqa yacheyka tanlang');
+    }
 
-    const fromStore = homeCell.storeId;
     const toStore = await this.resolveTargetStore(accountId, parsed.toCellId);
-    const crossStore = toStore !== fromStore;
+    // Manba omborlar PRIORITET tartibida (takrorsiz): o'z ombori → hovuz → uy.
+    const sourceStoreIds: string[] = [toStore];
+    if (pool && !sourceStoreIds.includes(pool.id)) sourceStoreIds.push(pool.id);
+    if (homeCell && !sourceStoreIds.includes(homeCell.storeId)) {
+      sourceStoreIds.push(homeCell.storeId);
+    }
 
     const docId = randomUUID();
+    let takenPlan: Array<{ storeId: string; qty: string; crossStore: boolean }> = [];
     await this.prisma.client.$transaction(
       async (tx) => {
-        const balances = await this.stock.lockBalances(tx, accountId, fromStore, [
-          { kind: 'product', id: productId },
-        ]);
-
-        // Fresh remainder under the lock = source-store stock − already-placed.
-        const [storeStock, alloc] = await Promise.all([
-          tx.stock.findUnique({
-            where: {
-              accountId_storeId_assortmentKind_assortmentId: {
-                accountId,
-                storeId: fromStore,
-                assortmentKind: 'product',
-                assortmentId: productId,
-              },
-            },
-            select: { qty: true },
-          }),
-          tx.stockByCell.aggregate({
-            where: {
-              accountId,
-              storeId: fromStore,
-              assortmentKind: 'product',
-              assortmentId: productId,
-            },
-            _sum: { qty: true },
-          }),
-        ]);
-        const remainder = storeStock
-          ? alloc._sum.qty
-            ? storeStock.qty.minus(alloc._sum.qty)
-            : storeStock.qty
-          : null;
-        if (!remainder || remainder.lessThan(parsed.qty)) {
-          throw new BadRequestException("Yacheykada yetarli miqdor yo'q");
+        // Qulf store-id TARTIBIDA (deadlock oldini olish); manba prioriteti
+        // esa quyida sourceStoreIds tartibida quriladi.
+        const balByStore = new Map<string, Map<string, StockBalance>>();
+        for (const sid of [...sourceStoreIds].sort()) {
+          balByStore.set(
+            sid,
+            await this.stock.lockBalances(tx, accountId, sid, [{ kind: 'product', id: productId }]),
+          );
+        }
+        const sources: PlacementSource[] = [];
+        for (const sid of sourceStoreIds) {
+          const bal = balByStore.get(sid)?.get(productId);
+          const assigned = await sumAssignedByAssortment(tx, accountId, sid, [
+            { kind: 'product', id: productId },
+          ]);
+          sources.push(
+            new PlacementSource({
+              storeId: sid,
+              qty: bal?.qty ?? '0',
+              assignedQty: assigned.get(`product|${productId}`) ?? '0',
+              reservedQty: bal?.reservedQty ?? '0',
+              costBalanceMinor: bal?.costBalanceMinor ? BigInt(bal.costBalanceMinor) : 0n,
+              crossStore: sid !== toStore,
+            }),
+          );
         }
 
-        const costOfN = crossStore ? this.costOfUnits(balances.get(productId), parsed.qty) : 0n;
-        // Source delta comes off the store's UNALLOCATED pool (remainder =
-        // store stock − Σ StockByCell), NOT a specific bin — so it must be
-        // `cellMode: 'store-only'`. Ilgari cellId:null edi, lekin outbound
-        // auto-deduct (054ff32) uni band yacheykadan yechardi ⇒ mavjud bin
-        // talanardi (remainder emas). Same store ⇒ the +N target cancels it at
-        // store level (store unchanged, remainder −N); other store ⇒ source
-        // warehouse really loses N. (2026-07-29 per-cell drift-fix.)
-        await this.stock.applyDeltas(tx, accountId, userId, [
+        const wantMicro = parseDecimalScaled(parsed.qty);
+        const takes = allocatePlacement(sources, wantMicro);
+        if (totalTakenMicro(takes) < wantMicro) {
+          throw new BadRequestException("Yacheykada yetarli miqdor yo'q");
+        }
+        takenPlan = takes.map((t) => ({
+          storeId: t.storeId,
+          qty: t.qty,
+          crossStore: t.crossStore,
+        }));
+
+        const deltas = takes.flatMap((t) => [
           {
-            storeId: fromStore,
+            storeId: t.storeId,
             assortmentKind: 'product',
             assortmentId: productId,
             cellId: null,
-            cellMode: 'store-only',
-            qtyDelta: `-${parsed.qty}`,
-            costDeltaMinor: crossStore ? -costOfN : null,
+            cellMode: 'store-only' as const,
+            qtyDelta: `-${t.qty}`,
+            costDeltaMinor: t.crossStore ? -t.costMinor : null,
             docType: 'cell_place',
             docId,
-            reason: 'post',
+            reason: 'post' as const,
           },
           {
             storeId: toStore,
             assortmentKind: 'product',
             assortmentId: productId,
             cellId: parsed.toCellId,
-            qtyDelta: parsed.qty,
-            costDeltaMinor: crossStore ? costOfN : null,
+            qtyDelta: t.qty,
+            costDeltaMinor: t.crossStore ? t.costMinor : null,
             docType: 'cell_place',
             docId,
-            reason: 'post',
+            reason: 'post' as const,
           },
         ]);
+        await this.stock.applyDeltas(tx, accountId, userId, deltas);
       },
       { isolationLevel: 'Serializable', timeout: 20000 },
     );
 
-    return { ok: true, crossStore, toCellId: parsed.toCellId, qty: parsed.qty };
+    return {
+      ok: true,
+      crossStore: takenPlan.some((t) => t.crossStore),
+      toCellId: parsed.toCellId,
+      qty: parsed.qty,
+      // F7: qaysi ombordan qancha olindi — UI/diagnostika uchun (additiv).
+      sources: takenPlan,
+    };
   }
 }

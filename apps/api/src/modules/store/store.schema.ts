@@ -62,6 +62,11 @@ export const CreateStoreSchema = z.object({
   // servis o'qishda top-level maydonga ko'taradi. ATAYLAB coerce EMAS —
   // z.coerce null'ni 0 ga aylantirib «kaskaddan chiqarish»ni buzardi.
   posPriority: z.number().int().min(1).max(999).nullish(),
+  // F7 — «Joylashtirish manbai»: sanash/joylashtirishda yacheykaga kirgan
+  // tovar shu ombordan (Taqsimlanmagan hovuzi) avto-ko'chiriladi. posPriority
+  // bilan bir naqsh: attributes JSON'ida (`__unassignedSource`) saqlanadi,
+  // servis o'qishda top-level maydonga ko'taradi.
+  unassignedSource: z.coerce.boolean().optional(),
   zones: z.array(z.string().min(1).max(100)).max(50).default([]),
   slots: z.array(z.string().min(1).max(100)).max(100).default([]),
   attributes: z.record(z.string(), z.unknown()).optional(),

@@ -46,7 +46,7 @@ function makeService(opts: FakeOpts): StoreAddressService {
     },
     $queryRaw: vi.fn(async () => (opts.boundCellNames ?? []).map((name) => ({ name }))),
   };
-  return new StoreAddressService({ client } as never, {} as never, {} as never);
+  return new StoreAddressService({ client } as never, {} as never, {} as never, {} as never);
 }
 
 describe('getAddressStorage — occupied flag', () => {

@@ -208,3 +208,21 @@ describe('posPriority (F6 — kassa kaskadi)', () => {
     }
   });
 });
+
+// F7 — joylashtirish manbai belgisi (`unassignedSource`, attributes JSON'iga boradi).
+describe('unassignedSource (F7 — joylashtirish manbai)', () => {
+  it('boolean qabul qilinadi; yubormaslik ham mumkin', () => {
+    const r = CreateStoreSchema.safeParse({ name: 'Taqsimlanmagan', unassignedSource: true });
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data.unassignedSource).toBe(true);
+    const r2 = CreateStoreSchema.safeParse({ name: 'X' });
+    expect(r2.success).toBe(true);
+    if (r2.success) expect(r2.data.unassignedSource).toBeUndefined();
+  });
+
+  it("update'da false — belgini olib tashlash", () => {
+    const r = UpdateStoreSchema.safeParse({ version: 1, unassignedSource: false });
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data.unassignedSource).toBe(false);
+  });
+});

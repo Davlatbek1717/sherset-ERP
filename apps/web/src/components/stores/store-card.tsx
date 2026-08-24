@@ -34,6 +34,7 @@ import { isOptimisticConflict } from '@/lib/optimistic-lock';
 import {
   Button,
   CatalogPickerField,
+  Checkbox,
   DropdownMenu,
   Icons,
   Input,
@@ -78,6 +79,8 @@ interface StoreDetail {
   cellInventory: boolean;
   /** F6 — kassa stok-kaskadi prioriteti (1 = birinchi; null = qatnashmaydi). */
   posPriority: number | null;
+  /** F7 — joylashtirish manbai: sanashda yacheykaga kirgan tovar shu ombordan ko'chadi. */
+  unassignedSource: boolean;
   archived: boolean;
   updatedAt: string;
 }
@@ -172,6 +175,8 @@ export function StoreCard({
   const [cellInventory, setCellInventory] = useState(true);
   // F6 — «Kassa prioriteti (POS)»: matn holida (bo'sh = kaskadda emas).
   const [posPriority, setPosPriority] = useState('');
+  // F7 — «Joylashtirish manbai» (Taqsimlanmagan hovuzi) belgisi.
+  const [unassignedSource, setUnassignedSource] = useState(false);
   // «Владелец» cluster (owner employee / department / Общий доступ) — moysklad
   // shows it top-right and edits it via the owner popover.
   const [ownerAccess, setOwnerAccess] = useState<OwnerAccessValue>({
@@ -242,6 +247,7 @@ export function StoreCard({
     setParentLabel(data.parent?.name ?? '');
     setCellInventory(data.cellInventory);
     setPosPriority(data.posPriority == null ? '' : String(data.posPriority));
+    setUnassignedSource(data.unassignedSource === true);
     setOwnerAccess({
       ownerId: data.owner?.id ?? null,
       ownerLabel: data.owner?.name ?? '',
@@ -274,6 +280,8 @@ export function StoreCard({
       shared: ownerAccess.shared,
       cellInventory,
       posPriority: Number.isInteger(posPriorityNum) && posPriorityNum > 0 ? posPriorityNum : null,
+      // F7: server `false` da `__unassignedSource` kalitini o'chiradi.
+      unassignedSource,
     };
   };
 
@@ -608,6 +616,20 @@ export function StoreCard({
               data-test-id="field-pos-priority"
             />
             <p className="mt-1 text-[11px] text-[var(--ms-text-muted)]">{t('pos_priority_hint')}</p>
+          </div>
+
+          <div>
+            <label className="inline-flex cursor-pointer items-center gap-2 text-[#222222] text-[12px]">
+              <Checkbox
+                checked={unassignedSource}
+                onCheckedChange={(v) => setUnassignedSource(!!v)}
+                data-test-id="field-unassigned-source"
+              />
+              <span>{t('unassigned_source')}</span>
+            </label>
+            <p className="mt-1 text-[11px] text-[var(--ms-text-muted)]">
+              {t('unassigned_source_hint')}
+            </p>
           </div>
 
           <div>

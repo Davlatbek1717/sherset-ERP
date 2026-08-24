@@ -3538,11 +3538,11 @@
       "groups": {
         "none": "Ombor × tovar",
         "product": "Tovar bo'yicha jami",
-        "warehouse": "Ombor kesimi (yacheyka prefiksi)"
+        "warehouse": "Ombor kesimi"
       },
       "hide_empty": "Bo'sh qoldirilmasin",
+      "in_cells": "Yacheykalarda",
       "in_transit": "Kutilmoqda",
-      "no_prefix": "Prefikssiz yacheykalar",
       "product": "Tovar",
       "qty": "Qoldiq",
       "reserved": "Rezervda",
@@ -3550,8 +3550,7 @@
       "sku_count": "SKU soni",
       "store": "Ombor",
       "title": "Qoldiqlar hisoboti",
-      "unassigned": "Taqsimlanmagan",
-      "warehouse_row": "Ombor {prefix}",
+      "unassigned_cells": "Biriktirilmagan",
       "totals_available": "Jami mavjud",
       "totals_in_transit": "Jami kutilmoqda",
       "totals_qty": "Jami qoldiq",
@@ -5956,6 +5955,8 @@
       "slots_placeholder": "A1-12-3, B2-04-1",
       "street": "Ko'cha",
       "title": "Omborlar",
+      "unassigned_source": "Joylashtirish manbai (Taqsimlanmagan hovuzi)",
+      "unassigned_source_hint": "Sanash/skanda yacheykaga kiritilgan tovar avval shu ombordagi qoldiqdan avto-ko'chiriladi. Odatda faqat «Taqsimlanmagan»da yoqiladi.",
       "zones": "Zonalar",
       "zones_hint": "Vergul yoki yangi qator bilan ajrating. Misol: Sovuq, Quruq, Muzlatilgan",
       "zones_placeholder": "Cold, Frozen, Dry"

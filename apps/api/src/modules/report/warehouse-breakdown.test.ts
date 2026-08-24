@@ -7,10 +7,9 @@ import {
 } from './warehouse-breakdown.js';
 
 /**
- * F1 (2026-08-23 reja) — yacheyka-prefiks hisob-mantig'ining qulfi.
- * Qabul mezoni: 01/02/Taqsimlanmagan/JAMI raqamlari DB'dagi haqiqiy sonlarga
- * teng — bu yerda SOF funksiya darajasida invariantlar qulflanadi
- * (Σprefiks + Taqsimlanmagan == JAMI; hech bir yacheyka qoldig'i yo'qolmaydi).
+ * Ombor-kesim hisob-mantig'ining qulfi (F1 prefiks davri → F7 Store davri).
+ * F7'dan boshlab qator = HAQIQIY Store: jami / yacheykalarda / biriktirilmagan;
+ * invariant Σqatorlar.qty == JAMI. Prefiks-yordamchilar tovar kartasi uchun qoladi.
  */
 
 describe('warehousePrefixOf — yacheyka kodidan ombor prefiksi', () => {
@@ -39,56 +38,59 @@ describe('comparePrefix — tartib: raqam bo`yicha, null oxirida', () => {
   });
 });
 
-describe('buildWarehouseSummary — Ombor 01/02 + Taqsimlanmagan + JAMI', () => {
-  it('invariant: Σprefiks + unassigned == JAMI (reja qabul mezoni)', () => {
+describe('buildWarehouseSummary — F7: haqiqiy Store qatorlari + JAMI', () => {
+  it('invariant: Σqatorlar.qty == JAMI; unassigned = qty − assigned', () => {
     const s = buildWarehouseSummary(
       [
-        { prefix: '02', skuCount: 5, qty: '2000.5' },
-        { prefix: '01', skuCount: 3, qty: '950' },
+        {
+          storeId: 'S2',
+          storeName: 'Taqsimlanmagan',
+          skuCount: 390,
+          qty: '49500000',
+          assignedQty: '0',
+        },
+        {
+          storeId: 'S1',
+          storeName: 'Ombor 02',
+          skuCount: 273,
+          qty: '3000000',
+          assignedQty: '3000000',
+        },
       ],
-      { totalQty: '52500000', totalSku: 400, unassignedQty: '52497049.5', unassignedSku: 390 },
+      { totalQty: '52500000', totalSku: 400, unassignedQty: '49500000' },
     );
-    expect(s.rows.map((r) => r.prefix)).toEqual(['01', '02']); // sortlangan
-    const assigned = s.rows.reduce((acc, r) => acc + Number(r.qty), 0);
-    expect(assigned + Number(s.unassigned.qty)).toBe(Number(s.totalQty));
+    // nom bo'yicha sortlangan
+    expect(s.rows.map((r) => r.storeName)).toEqual(['Ombor 02', 'Taqsimlanmagan']);
+    const sum = s.rows.reduce((acc, r) => acc + Number(r.qty), 0);
+    expect(sum).toBe(Number(s.totalQty));
+    expect(s.rows[0]?.unassignedQty).toBe('0');
+    expect(s.rows[1]?.unassignedQty).toBe('49500000');
+    expect(s.totalAssignedQty).toBe('3000000');
+    expect(s.totalUnassignedQty).toBe('49500000');
     expect(s.totalSku).toBe(400);
-    expect(s.unassigned.skuCount).toBe(390);
   });
 
-  it('null-prefiks guruhlar birlashadi va oxirida turadi', () => {
+  it('hideEmpty: qty=0 va assigned=0 ombor qatori tushib qoladi', () => {
     const s = buildWarehouseSummary(
       [
-        { prefix: null, skuCount: 1, qty: '5' },
-        { prefix: '01', skuCount: 2, qty: '10' },
-        { prefix: null, skuCount: 1, qty: '7' },
+        { storeId: 'S1', storeName: 'A', skuCount: 0, qty: '0', assignedQty: '0' },
+        { storeId: 'S2', storeName: 'B', skuCount: 1, qty: '4', assignedQty: '4' },
+        // qty 0, lekin yacheykada bor (nomuvofiqlik) — YASHIRILMAYDI
+        { storeId: 'S3', storeName: 'C', skuCount: 0, qty: '0', assignedQty: '2' },
       ],
-      { totalQty: '30', totalSku: 4, unassignedQty: '8', unassignedSku: 2 },
-    );
-    expect(s.rows).toHaveLength(2);
-    expect(s.rows[1]).toEqual({ prefix: null, skuCount: 2, qty: '12' });
-  });
-
-  it('hideEmpty: qty=0 prefiks qatori tushib qoladi', () => {
-    const s = buildWarehouseSummary(
-      [
-        { prefix: '01', skuCount: 1, qty: '0' },
-        { prefix: '02', skuCount: 1, qty: '4' },
-      ],
-      { totalQty: '4', totalSku: 1, unassignedQty: '0', unassignedSku: 0 },
+      { totalQty: '4', totalSku: 1, unassignedQty: '-2' },
       { hideEmpty: true },
     );
-    expect(s.rows.map((r) => r.prefix)).toEqual(['02']);
+    expect(s.rows.map((r) => r.storeName)).toEqual(['B', 'C']);
   });
 
-  it('kasrli qoldiqlar Decimal bilan yig`iladi (float drift yo`q)', () => {
+  it('kasrli qoldiqlar Decimal bilan hisoblanadi (float drift yo`q)', () => {
     const s = buildWarehouseSummary(
-      [
-        { prefix: null, skuCount: 1, qty: '0.1' },
-        { prefix: null, skuCount: 1, qty: '0.2' },
-      ],
-      { totalQty: '0.3', totalSku: 2, unassignedQty: '0', unassignedSku: 0 },
+      [{ storeId: 'S1', storeName: 'A', skuCount: 1, qty: '0.3', assignedQty: '0.1' }],
+      { totalQty: '0.3', totalSku: 1, unassignedQty: '0.2' },
     );
-    expect(s.rows[0]?.qty).toBe('0.3');
+    expect(s.rows[0]?.unassignedQty).toBe('0.2');
+    expect(s.totalAssignedQty).toBe('0.1');
   });
 });
 
