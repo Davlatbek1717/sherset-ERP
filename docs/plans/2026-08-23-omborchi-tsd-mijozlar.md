@@ -47,12 +47,29 @@ qobig'i ichida ochiladi; G4 faza F5+F6 tugaganini kutadi.
 - Tovarga yorliq yopishtirilmaydi (shtrix yacheykada); FAQAT vozvrat tovarlariga
   yorliq bosiladi (tovar shtrixi + yacheyka kodi), topish oson bo'lishi uchun.
 - Ombor xodimlari narx ko'rmaydi; kirim narxi faqat katta omborchiga (permission).
-- **Q1 aniqlashtiruvi (F-rejadagi Q1 ustidan, keyingi so'z):** 07-omborda yetmagan
-  tovar boshqa ombordan AVTOMATIK ayirilmaydi — bosh omborchiga so'rov boradi, u
-  manba yacheykani tanlab TASDIQLAGACH avto-Move (manba ombor → 07) o'tadi va
-  ayirish baribir 07 dan bo'ladi. Chek shu paytgacha qoralamada «kutilmoqda» turadi
-  (kassir boshqa mijozlar bilan ishlayveradi); smena yopilishida mavjud
-  `unresolved` ro'yxati uni baribir ushlaydi.
+- ~~**Q1 aniqlashtiruvi (2026-08-23):** 07-omborda yetmagan tovar boshqa ombordan
+  AVTOMATIK ayirilmaydi — bosh omborchiga so'rov boradi, u manba yacheykani tanlab
+  TASDIQLAGACH avto-Move (manba ombor → 07) o'tadi…~~
+  🔴 **BEKOR QILINDI (egasi, 2026-08-24) — pastdagi Q1-v2 kuchda.** Aynan shu
+  «tasdiq» qoidasi 2026-08-24 da kassani to'xtatib qo'ydi
+  (`docs/plans/2026-08-24-split-kassa-hodisasi.md`).
+
+- **🔵 Q1-v2 — KO'P OMBORLI AVTO-TAQSIMOT (egasi, 2026-08-24, YAKUNIY):**
+  **Omborchi tasdig'i degan narsa YO'Q.** Kassir buyurtma yozganda tizim tovarni
+  BARCHA omborlarning yacheykalari kesimida ko'radi va o'zi taqsimlaydi:
+
+  | # | Holat | Qaror |
+  |---|---|---|
+  | 1 | **07 dagi yacheyka butun miqdorni qoplaydi** | 07 dan olinadi (kassa oldida, eng tez — yig'ish kerak emas) |
+  | 2 | 07 yetmaydi, boshqa yacheykalardan **biri yolg'iz qoplaydi** | O'sha BITTA yacheykadan hammasi olinadi — bo'linish yo'q, bitta omborchi, bitta yurish. Bir nechtasi qoplasa — **yetadigan ENG KICHIGI** (yacheyka bo'shaydi, javonda joy ochiladi, kichik qoldiqlar yig'ilib qolmaydi) |
+  | 3 | Hech bir yacheyka yolg'iz qoplamaydi | Bo'linadi: **avval boshqa omborlar**, **07 ENG OXIRIDA** |
+
+  **Nega 07 bo'linishda oxirgi:** u kassa oldidagi ombor, donali xarid qiladigan
+  mijozga tez xizmat uchun turibdi va baribir boshqa omborlardan to'ldiriladi —
+  buyurtmalar uni bo'shatib qo'ymasligi kerak.
+
+  **Kassir huquqi:** tizim o'zi taqsimlaydi, kassir ekranda yacheykalarni KO'RADI
+  va kerak bo'lsa boshqa yacheyka/omborni tanlaydi (o'zgartira oladi).
 
 **Tayyor poydevor (qayta qurilmaydi):** RetailSale FSM `draft→picking→ready→posted`;
 `send-to-picking` yacheyka-prefiks bo'yicha sklad-kesim `RestockTask`lar ochib
@@ -167,49 +184,73 @@ hisobot — va TO'XTA.
 
 ---
 
-### G4 — Yetishmovchilikni bosh omborchi tasdig'i bilan yopish (F5+F6 dan KEYIN)
+### G4 — Ko'p omborli avto-taqsimot + yacheyka tavsiyasi (QAYTA YOZILDI 2026-08-24)
 
-**Maqsad:** Q1 aniqlashtiruvi (1-bo'lim): omborga yuborilmaydigan sotuvda 07 da
-yetmagan tovar — so'rov → bosh omborchi yacheyka tanlab tasdiqlaydi → avto-Move
-(manba → 07) → ayirish 07 dan.
+> 🔴 **BU FAZA BUTUNLAY QAYTA YOZILDI.** Eski G4 «bosh omborchi tasdig'i» oqimi
+> edi (so'rov → tasdiq → Move → 07 dan ayirish). Egasi 2026-08-24 da uni BEKOR
+> QILDI: «**omborchi ruxsati degan narsa yo'q**». Sabab ham amalda ko'rindi —
+> aynan o'sha tasdiq-to'siq 2026-08-24 da kassani to'xtatib qo'ydi
+> (`docs/plans/2026-08-24-split-kassa-hodisasi.md`). Eski tavsif git tarixida.
 
-**Oldshart:** F5 (split jonlida) va F6 (kaskad dvigateli, rezerv, to'lov-moment)
-TUGAGAN bo'lishi kerak — F6 hisobotini o'qi. F6 sof avto-kaskad qurgan bo'lsa,
-07dan tashqari qismini shu fazada tasdiq-darvoza orqasiga o'tkaz.
+**Maqsad:** Q1-v2 (1-bo'lim): kassir buyurtma yozganda tizim tovarni BARCHA
+omborlarning yacheykalari kesimida ko'rsatsin va o'zi taqsimlasin — hech kimning
+tasdig'isiz. Yig'ish topshirig'i tovar turgan omborga ketadi.
 
-> 🔴 **2026-08-24 HODISASI — bu fazaning ahamiyati o'zgardi.** F5 split jonlida
-> bajarilgan edi-yu, AYNAN shu faza (G4) yo'qligi sabab kassa to'xtab qoldi:
-> tovar «Ombor 02» ga ko'chgach POS unga yeta olmadi (avto-ayirish yo'q, tasdiq
-> oqimi ham yo'q) va split shoshilinch QAYTARILDI. Ya'ni **G4 endi F5 ning
-> oldsharti** ham (yoki uning o'rnini bosuvchi yechim — Ombor 07 ga o'tish yoki
-> vaqtinchalik avto-kaskad). Batafsil, egasiga savol (S1) va qayta yuritish
-> shartlari: **`docs/plans/2026-08-24-split-kassa-hodisasi.md`** (H4 fazasi).
+**Taqsimot qoidasi (1-bo'limdagi jadval — KANONIK):**
+1. 07 dagi yacheyka butun miqdorni qoplasa → **07 dan** (yig'ish kerak emas).
+2. Aks holda, yolg'iz qoplaydigan yacheykalar orasidan **yetadigan ENG KICHIGI** →
+   hammasi o'sha bitta yacheykadan (bo'linish yo'q).
+3. Hech biri yolg'iz qoplamasa → bo'linadi: **avval boshqa omborlar, 07 oxirida**.
+
+**Oldshart:** F6 (kaskad dvigateli — `retail-stock-cascade.ts`, rezerv,
+to'lov-moment) jonlida — BAJARILGAN. F5 split SHART EMAS: bu faza aksincha
+split'ni xavfsiz qiladi (H-reja H4).
 
 **Vazifalar:**
-1. So'rov obyekti: `RestockTask` ustiga yangi tur (`transfer_request`) — chek,
-   pozitsiya, yetmagan miqdor; SSE yangi turi bosh omborchiga.
-2. Bosh omborchi ekrani: so'rov navbati, tovar bo'yicha omborlar/yacheykalar
-   qoldig'i (`GET /pick-lists/cells-by-products` + `StockByCell`), manba yacheyka
-   tanlash, TASDIQLASH → avto-Move hujjati (manba ombor+yacheyka → 07) yaratilib
-   post bo'ladi. RAD ETISH yo'li ham bo'lsin (kassirga signal — pozitsiya olib
-   tashlanadi yoki chek bekor).
-3. `MovePosition`ga `cellId` (migratsiya idempotent DDL, F-reja 2.7-qoida;
-   inventarizatsiyadagi andoza).
-4. Kassir tomoni: chekda «boshqa ombordan kutilmoqda» belgisi, qoralamada qoladi,
-   tasdiq/rad SSE bilan jonli yangilanadi; «kutilmoqda» qatori bor chekni post
-   qilib bo'lmaydi.
-5. Testlar: so'rov→tasdiq→Move→post zanjiri, rad yo'li, cancel teskari yo'li,
-   ikki so'rov bitta yacheykaga (poyga).
+1. **Taqsimot dvigatelini qoidaga moslash** (`retail-stock-cascade.ts`):
+   mavjud `allocateAcrossStores` faqat «prioritet tartibida ketma-ket ol» qiladi —
+   u Q1-v2 ni ifodalay olmaydi (07 goh birinchi, goh oxirgi). Yangi sof funksiya:
+   kirish — YACHEYKA kesimidagi mavjudlik (`StockByCell` × ombor), chiqish —
+   (yacheyka × miqdor) ro'yxati. Uch bosqich: (a) 07 yolg'iz qoplaydimi;
+   (b) yolg'iz qoplaydigan eng kichik yacheyka; (c) bo'linish — 07 oxirida.
+   Micro-BigInt arifmetika (mavjud naqsh), rezerv chegirilgan «доступно».
+2. **«Kassa oldidagi ombor» belgisi:** 07 ni ajratish uchun `Store.attributes`
+   ga yangi bayroq (`__posFrontStore`, `__posPriority`/`__unassignedSource`
+   naqshi — MIGRATSIYA YO'Q) + ombor kartasida checkbox + i18n ru/uz.
+   Prioritet (`__posPriority`) tartib uchun qoladi, bayroq esa «bo'linishda
+   oxirgi» xulqini beradi.
+3. **🔴 Tasdiq-to'sig'ini OLIB TASHLASH** (`retail-sale.service` →
+   `assertAvailableCascade`): hozir u rejani hisoblab, keyin uni 400 xato ichida
+   tashlaydi («…FAQAT bosh omborchi tasdig'i bilan…»). O'rniga reja BAJARILADI:
+   `post()` deltalari ko'p omborli bo'ladi (har ombor uchun o'z `storeId`,
+   yacheyka kesimi bilan), rezerv (`sendToPicking`) ham shu reja bo'yicha
+   omborlarga bo'linadi, `cancel`/refund teskari yo'li ham.
+   Haqiqiy defitsit (butun tizimda yetmasa) avvalgidek 400 — lekin xabar endi
+   «tasdiq kerak» emas, «tizimda jami N ta yetmayapti».
+4. **Kassirga yacheyka tavsiyasi (POS UI):** pozitsiya qatorida «qayerdan
+   olinadi» — ombor + yacheyka + miqdor (masalan «01-02-05-03 · 100 ta»).
+   Bir nechta yacheykaga bo'lingan bo'lsa hammasi ko'rinadi. **Kassir
+   o'zgartira oladi:** boshqa yacheyka/ombor tanlash (mavjud yacheyka-tanlagich
+   naqshi), tanlov chek pozitsiyasida saqlanadi va taqsimot qayta hisoblanmaydi.
+5. **Yig'ish topshiriqlari:** `send-to-picking` allaqachon yacheyka prefiksi
+   bo'yicha ombor kesimida `RestockTask` ochadi va `SkladKeeper` ga biriktiradi —
+   endi u taqsimot natijasidan (yacheyka × miqdor) foydalansin, taxmindan emas.
+6. **Testlar:** sof dvigatel (uch holat + chegaralar: 07 aynan yetadi, ikki
+   yacheyka teng, hammasi yetmaydi, rezerv chegirilishi), wiring (ko'p omborli
+   deltalar, rezerv taqsimoti, cancel teskarisi), kassir o'zgartirishi,
+   permission/i18n. G2 kontrol zanjiri buzilmasin (regress).
 
-**Qabul mezoni:** jonlida 07 da yo'q tovar bilan chek ochilib, bosh omborchi
-tasdig'idan so'ng ledger'da Move (manba yacheykadan) + 07 dan sotuv ayirmasi
-ko'rinadi; tasdiqqacha post bloklangan.
+**Qabul mezoni:** jonlida 07 da yetmaydigan tovar bilan chek ochiladi →
+tizim boshqa ombordagi yacheykani ko'rsatadi → **hech qanday tasdiqsiz** chek
+yig'ishga ketadi va post bo'ladi; ledgerda ayirish AYNAN o'sha ombor(lar)dan
+ko'rinadi; 07 dagi qoldiq bo'linish holatida oxirgi bo'lib kamayadi.
 
 **PROMPT:**
 ```
-Ikkala rejani va docs/plans/2026-08-24-split-kassa-hodisasi.md ni to'liq o'qi (ayniqsa F5, F6 va G1–G3 hisobotlarini). Sen G4 fazasini
-bajarasan (yetishmovchilik tasdiq oqimi). Oldshartlar bajarilmagan bo'lsa foydalanuvchiga
-ayt va TO'XTA. Faqat G4 vazifalari, testlar, deploy, jonli tekshiruv, hisobot — va TO'XTA.
+Ikkala rejani va docs/plans/2026-08-24-split-kassa-hodisasi.md ni to'liq o'qi
+(ayniqsa 1-bo'limdagi Q1-v2 jadvali, F6 va G1–G3 hisobotlari). Sen G4 fazasini
+bajarasan (ko'p omborli avto-taqsimot + yacheyka tavsiyasi; TASDIQ OQIMI YO'Q).
+Faqat G4 vazifalari, testlar, deploy, jonli tekshiruv, hisobot — va TO'XTA.
 ```
 
 ---

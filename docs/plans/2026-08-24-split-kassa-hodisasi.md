@@ -1,6 +1,6 @@
 # Hodisa: ombor-split kassani to'xtatdi — tahlil va tuzatish rejasi
 
-> **Yaratilgan:** 2026-08-24 · **Buyurtmachi:** Ozodbek (egasi) · **Holat:** H0, H1 TUGADI · **H2 QISMAN** (kod+testlar tayyor, JONLI yugurtirish kutilmoqda — qoida 11) · navbat H3 · **S1 savoli hamon JAVOBSIZ** (6-bo'lim)
+> **Yaratilgan:** 2026-08-24 · **Buyurtmachi:** Ozodbek (egasi) · **Holat:** H0, H1 TUGADI · **H2 QISMAN** (kod+testlar tayyor, JONLI yugurtirish kutilmoqda — qoida 11) · navbat H3 · **✅ S1 JAVOB OLINDI** (6-bo'lim: tasdiqsiz ko'p omborli avto-taqsimot — G4 qayta yozildi)
 > **Ijro tartibi:** F-reja (`2026-08-23-ombor-restrukturizatsiya.md`) va G-reja
 > (`2026-08-23-omborchi-tsd-mijozlar.md`) bilan bir xil: bitta sessiya = bitta faza,
 > hisobot shu faylning oxiriga, so'ng TO'XTA.
@@ -180,7 +180,28 @@ hech kim jonli holat rejadan chetga chiqqanini bilmasdi.
 
 ---
 
-## 6. EGASIGA SAVOL (rejaning yo'nalishini belgilaydi)
+## 6. ✅ S1 — JAVOB OLINDI (egasi, 2026-08-24)
+
+> **JAVOB: HA — avtomatik, tasdiqsiz.** Egasining so'zi: «**omborchi ruxsati
+> degan narsa yo'q**; kassir barcha omborlardan mahsulot ro'yxatini tuza olishi
+> kerak». Ya'ni tanlov quyidagi variantlardan **B** (tasdiqsiz avto-taqsimot),
+> lekin vaqtinchalik emas — **DOIMIY qoida**, va yacheyka kesimida.
+>
+> To'liq qoida (Q1-v2) G-rejaning 1-bo'limida jadval bilan yozilgan; uni
+> quradigan faza — **G4 (butunlay qayta yozildi:** «tasdiq oqimi» → «ko'p
+> omborli avto-taqsimot + yacheyka tavsiyasi»**)**. Qisqacha: 07 yolg'iz
+> qoplasa 07 dan; aks holda yolg'iz qoplaydigan ENG KICHIK yacheykadan
+> to'liq; hech biri qoplamasa — bo'linadi va **07 eng oxirida** (u kassa
+> oldidagi tez-xizmat ombori, boshqa omborlardan to'ldiriladi). Kassir
+> taqsimotni ko'radi va o'zgartira oladi.
+>
+> **H4 uchun ma'nosi:** split endi «G4 tayyor bo'lgach» emas, **«G4 (yangi
+> tahriri) jonliga chiqqach»** yuritiladi — chunki aynan o'sha faza kassani
+> ko'p omborli qiladi. Ombor 07 (variant A) alohida, keyingi ish sifatida
+> qoladi: u savdo omborini fizik ajratadi, lekin split uchun SHART emas.
+
+<details>
+<summary>Tarixiy: savolning asl matni (2026-08-24 ertalab)</summary>
 
 **S1. Split qayta yugurtirilganda kassa boshqa ombordan AVTOMATIK olsinmi?**
 
@@ -207,6 +228,8 @@ bo'lgach yuritiladi.
 
 > Bu savolga javob H4 fazasining shaklini belgilaydi. Javob olinmaguncha H4
 > boshlanmaydi.
+
+</details>
 
 ---
 
@@ -348,7 +371,9 @@ qoldiq signali). Faqat H3 vazifalari, testlar, deploy, jonli tekshiruv, hisobot 
 bu safar savdo to'xtamasdan.
 
 **Oldshartlar (hammasi SHART):**
-- **S1 savoliga egasidan javob olingan** (6-bo'lim);
+- ✅ **S1 javob olindi** (6-bo'lim): kassa ko'p omborli, tasdiqsiz →
+  **G4 (yangi tahriri) JONLIDA bo'lishi shart** — split'ni xavfsiz qiladigan
+  faza aynan o'sha;
 - H2 (holat reyestri) va H3 (signal) jonlida;
 - Variant A tanlansa: Ombor 07 raqamlashtirilgan va POS tovari o'sha yerda;
 - Variant B tanlansa: avto-kaskad sozlamasi qurilgan va yoqilgan;
