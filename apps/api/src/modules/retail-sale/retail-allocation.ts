@@ -183,8 +183,26 @@ export function resolveAllocStores(
     .filter((s) => s.posPriority !== null && !s.isBrak)
     .sort((a, b) => (a.posPriority ?? 0) - (b.posPriority ?? 0) || a.name.localeCompare(b.name));
   if (cascade.length > 0) return cascade;
-  const fallback = stores.find((s) => s.id === fallbackStoreId && !s.isBrak);
-  return fallback ? [{ ...fallback, posPriority: 1 }] : [];
+  if (!fallbackStoreId) return [];
+  const fallback = stores.find((s) => s.id === fallbackStoreId);
+  // BRAK ombori zaxira yo'lda ham manba bo'lolmaydi.
+  if (fallback?.isBrak) return [];
+  // Ombor ro'yxatda topilmasa ham (arxivlangan, yoki ro'yxat boshqa filtr
+  // bilan o'qilgan) SINTETIK yozuv qaytariladi: kaskadsiz o'rnatmada kassa
+  // AVVALGIDEK smena omboridan sotishi shart. Bo'sh ro'yxat qaytarish har
+  // sotuvni 400 ga aylantirardi — F6 ning «xulq bayt-baytga o'zgarmaydi»
+  // kafolatini buzgan bo'lardi.
+  return [
+    fallback
+      ? { ...fallback, posPriority: 1 }
+      : {
+          id: fallbackStoreId,
+          name: '',
+          posPriority: 1,
+          isPosFront: false,
+          isBrak: false,
+        },
+  ];
 }
 
 /**
@@ -373,4 +391,69 @@ export function allocateForSale(input: AllocationInput): AllocationResult {
   }
 
   return { allocations, shortfalls, rules, warnings };
+}
+
+// ---------------------------------------------------------------------------
+// Pozitsiyalarga yoyish
+// ---------------------------------------------------------------------------
+
+export interface AllocPosition {
+  id: string;
+  assortmentId: string;
+  quantity: string;
+}
+
+export interface PositionAllocation {
+  positionId: string;
+  assortmentId: string;
+  storeId: string;
+  cellId: string | null;
+  qty: string;
+}
+
+/**
+ * Taqsimot TOVAR kesimida hisoblanadi (bir tovar chekda bir necha qatorda
+ * kelishi mumkin \u2014 F6 `allocateAcrossStores` naqshi), lekin saqlash va
+ * `post()` deltalari POZITSIYA kesimida bo'lishi kerak:
+ *   \u00b7 `retail_sale_position_allocations` qatori pozitsiyaga bog'lanadi;
+ *   \u00b7 ledger `docPositionId` bilan yoziladi (hisobotlar shunga tayanadi).
+ *
+ * Shuning uchun tovar bo'yicha ajratmalar pozitsiyalarga TARTIB bilan
+ * yoyiladi: birinchi pozitsiya to'lguncha birinchi manbadan, keyingisi
+ * qolganidan. Bo'linish natijasi o'zgarmaydi \u2014 faqat kimga tegishli ekani
+ * aniqlanadi.
+ */
+export function spreadAllocationsToPositions(
+  allocations: readonly Allocation[],
+  positions: readonly AllocPosition[],
+): PositionAllocation[] {
+  const queue = new Map<string, Array<{ storeId: string; cellId: string | null; qty: bigint }>>();
+  for (const a of allocations) {
+    const list = queue.get(a.assortmentId) ?? [];
+    list.push({ storeId: a.storeId, cellId: a.cellId, qty: parseDecimalScaled(a.qty) });
+    queue.set(a.assortmentId, list);
+  }
+
+  const out: PositionAllocation[] = [];
+  for (const p of positions) {
+    let need = parseDecimalScaled(p.quantity);
+    if (need <= 0n) continue;
+    const list = queue.get(p.assortmentId);
+    if (!list) continue;
+    for (const src of list) {
+      if (need <= 0n) break;
+      if (src.qty <= 0n) continue;
+      const take = src.qty < need ? src.qty : need;
+      out.push({
+        positionId: p.id,
+        assortmentId: p.assortmentId,
+        storeId: src.storeId,
+        cellId: src.cellId,
+        qty: formatDecimalScaled(take),
+      });
+      src.qty -= take;
+      need -= take;
+    }
+  }
+  return out;
 }

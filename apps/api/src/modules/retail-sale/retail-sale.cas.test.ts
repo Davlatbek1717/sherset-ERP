@@ -69,6 +69,13 @@ function makeService(
 describe('RetailSaleService.post — CAS state guard', () => {
   it('throws ConflictException when updateMany returns count=0 (lost race)', async () => {
     const tx = {
+      // G4 — post() endi ajratmani YACHEYKA kesimida quradi va saqlaydi.
+      stockByCell: { findMany: vi.fn().mockResolvedValue([]) },
+      retailSalePositionAllocation: {
+        findMany: vi.fn().mockResolvedValue([]),
+        deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+        createMany: vi.fn().mockResolvedValue({ count: 0 }),
+      },
       retailSale: {
         updateMany: vi.fn().mockResolvedValue({ count: 0 }),
         findUniqueOrThrow: vi.fn(),
@@ -128,6 +135,13 @@ describe('RetailSaleService.post — CAS state guard', () => {
 
   it('proceeds with cash inflow + session aggregate when CAS succeeds (count=1)', async () => {
     const tx = {
+      // G4 — post() ajratmani yacheyka kesimida quradi va saqlaydi.
+      stockByCell: { findMany: vi.fn().mockResolvedValue([]) },
+      retailSalePositionAllocation: {
+        findMany: vi.fn().mockResolvedValue([]),
+        deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+        createMany: vi.fn().mockResolvedValue({ count: 0 }),
+      },
       retailSale: {
         updateMany: vi.fn().mockResolvedValue({ count: 1 }),
         findUniqueOrThrow: vi.fn().mockResolvedValue({ id: SALE_ID, state: 'posted' }),
@@ -197,6 +211,13 @@ describe('RetailSaleService.post — CAS state guard', () => {
 
   it('skips cashDesk.update when cashAmount is zero (card-only payment)', async () => {
     const tx = {
+      // G4 — post() ajratmani yacheyka kesimida quradi va saqlaydi.
+      stockByCell: { findMany: vi.fn().mockResolvedValue([]) },
+      retailSalePositionAllocation: {
+        findMany: vi.fn().mockResolvedValue([]),
+        deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+        createMany: vi.fn().mockResolvedValue({ count: 0 }),
+      },
       retailSale: {
         updateMany: vi.fn().mockResolvedValue({ count: 1 }),
         findUniqueOrThrow: vi.fn().mockResolvedValue({ id: SALE_ID, state: 'posted' }),
@@ -249,6 +270,13 @@ describe('RetailSaleService.post — CAS state guard', () => {
 
   it('runs the stock cascade for positions with productId and skips service-only rows', async () => {
     const tx = {
+      // G4 — post() ajratmani yacheyka kesimida quradi va saqlaydi.
+      stockByCell: { findMany: vi.fn().mockResolvedValue([]) },
+      retailSalePositionAllocation: {
+        findMany: vi.fn().mockResolvedValue([]),
+        deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+        createMany: vi.fn().mockResolvedValue({ count: 0 }),
+      },
       retailSale: {
         updateMany: vi.fn().mockResolvedValue({ count: 1 }),
         findUniqueOrThrow: vi.fn().mockResolvedValue({ id: SALE_ID, state: 'posted' }),
@@ -390,6 +418,12 @@ describe('RetailSaleService.cancel — CAS state guard', () => {
 describe('RetailSaleService.refund — CAS state guard', () => {
   it('throws ConflictException when another refund already flipped state', async () => {
     const tx = {
+      // G4 — post() ajratmani yacheyka kesimida quradi va saqlaydi.
+      stockByCell: { findMany: vi.fn().mockResolvedValue([]) },
+      retailSalePositionAllocation: {
+        deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+        createMany: vi.fn().mockResolvedValue({ count: 0 }),
+      },
       retailSale: {
         updateMany: vi.fn().mockResolvedValue({ count: 0 }),
         create: vi.fn(),

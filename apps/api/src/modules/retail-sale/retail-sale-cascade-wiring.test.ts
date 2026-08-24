@@ -26,9 +26,50 @@ const CASCADE_ROWS = [
   { id: STORE_07, name: 'Ombor 07', allowNegativeStock: false, attributes: { __posPriority: 1 } },
 ];
 
-function makeStockStub() {
+/** «Kassa oldidagi ombor» bayrog'i qo'yilgan variant (G4 3-qoidasi uchun). */
+const CASCADE_ROWS_FRONT = [
+  { id: STORE_02, name: 'Ombor 02', allowNegativeStock: false, attributes: { __posPriority: 2 } },
+  {
+    id: STORE_07,
+    name: 'Ombor 07',
+    allowNegativeStock: false,
+    attributes: { __posPriority: 1, __posFrontStore: true },
+  },
+];
+
+/**
+ * G4 (2026-08-25) — yetarlilik qarorini endi `assertAvailable` emas, TAQSIMOT
+ * qiladi va u qulflangan balansdan o'qiydi. Shuning uchun stub `lockBalances`
+ * ombor bo'yicha HAQIQIY qoldiq qaytarishi kerak (ilgari bo'sh Map yetardi).
+ */
+function balancesFor(qtyByStore: Record<string, string>) {
+  return (
+    _tx: unknown,
+    _acc: string,
+    storeId: string,
+    assortments: Array<{ kind: string; id: string }>,
+  ) => {
+    const qty = qtyByStore[storeId];
+    const map = new Map<string, unknown>();
+    if (qty !== undefined) {
+      for (const a of assortments) {
+        map.set(a.id, {
+          storeId,
+          assortmentKind: a.kind,
+          assortmentId: a.id,
+          qty,
+          reservedQty: '0',
+          costBalanceMinor: '0',
+        });
+      }
+    }
+    return Promise.resolve(map);
+  };
+}
+
+function makeStockStub(qtyByStore: Record<string, string> = {}) {
   return {
-    lockBalances: vi.fn().mockResolvedValue(new Map()),
+    lockBalances: vi.fn(balancesFor(qtyByStore)),
     assertAvailable: vi.fn(),
     applyDeltas: vi.fn().mockResolvedValue(undefined),
     applyReservationDeltas: vi.fn().mockResolvedValue(undefined),
@@ -52,6 +93,13 @@ function makeService(client: unknown, stock: ReturnType<typeof makeStockStub>) {
 
 function makePostHarness(opts: { stores: unknown[] }) {
   const tx = {
+    // G4 — post() endi ajratmani YACHEYKA kesimida quradi va saqlaydi.
+    stockByCell: { findMany: vi.fn().mockResolvedValue([]) },
+    retailSalePositionAllocation: {
+      findMany: vi.fn().mockResolvedValue([]),
+      deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+      createMany: vi.fn().mockResolvedValue({ count: 0 }),
+    },
     retailSale: {
       updateMany: vi.fn().mockResolvedValue({ count: 1 }),
       findUniqueOrThrow: vi.fn().mockResolvedValue({
@@ -119,21 +167,48 @@ const POST_BODY = {
 };
 
 describe('F6 — post(): stok ombori kaskaddan', () => {
-  it('kaskad sozlangan: ayirish PRIORITETI ENG KICHIK ombordan (07), smena omboridan emas', async () => {
+  it('kaskad sozlangan: ayirish tovar TURGAN ombordan (07), smena omboridan emas', async () => {
+    // G4: ombor endi «kaskadning birinchisi» bo'lgani uchun emas, TOVAR o'sha
+    // yerda bo'lgani uchun tanlanadi. Bu holatda faqat 07 da qoldiq bor.
     const { client } = makePostHarness({ stores: CASCADE_ROWS });
-    const stock = makeStockStub();
+    const stock = makeStockStub({ [STORE_07]: '10' });
 
     await makeService(client, stock).post(ACCOUNT, USER_ID, SALE_ID, POST_BODY);
 
-    // Qulf ham, deltalar ham 07 da.
     expect(stock.lockBalances.mock.calls[0][2]).toBe(STORE_07);
     expect(stock.applyDeltas).toHaveBeenCalledTimes(1);
     const deltas = stock.applyDeltas.mock.calls[0][3] as Array<{
       storeId: string;
       qtyDelta: string;
+      cellId: string | null;
+      cellMode: string;
     }>;
     expect(deltas).toHaveLength(1);
     expect(deltas[0].storeId).toBe(STORE_07);
+    expect(deltas[0].qtyDelta).toBe('-2');
+    // Yacheykasiz ajratma ⇒ `store-only`: `applyDeltas` band yacheykalardan
+    // KATTA-BIRINCHI avtomat ayirmasin (sanalgan yacheykani buzardi).
+    expect(deltas[0].cellId).toBeNull();
+    expect(deltas[0].cellMode).toBe('store-only');
+  });
+
+  it('🔴 07 yetmasa: qolgani BOSHQA ombordan AVTOMATIK (tasdiq YO‘Q)', async () => {
+    // Egasining Q1-v2 qarori (2026-08-24): «omborchi ruxsati degan narsa yo'q».
+    // Aynan eski tasdiq-to'siq 2026-08-24 06:46 da kassani to'xtatib qo'ygan edi.
+    const { client } = makePostHarness({ stores: CASCADE_ROWS });
+    const stock = makeStockStub({ [STORE_07]: '1', [STORE_02]: '10' });
+
+    await makeService(client, stock).post(ACCOUNT, USER_ID, SALE_ID, POST_BODY);
+
+    expect(stock.applyDeltas).toHaveBeenCalledTimes(1);
+    const deltas = stock.applyDeltas.mock.calls[0][3] as Array<{
+      storeId: string;
+      qtyDelta: string;
+    }>;
+    // 2 dona kerak: 07 da 1 ta yolg'iz qoplamaydi ⇒ yolg'iz qoplaydigan
+    // ENG KICHIK manba — Ombor 02 (10 ta). Hammasi bitta joydan.
+    expect(deltas).toHaveLength(1);
+    expect(deltas[0].storeId).toBe(STORE_02);
     expect(deltas[0].qtyDelta).toBe('-2');
   });
 
@@ -141,7 +216,7 @@ describe('F6 — post(): stok ombori kaskaddan', () => {
     const { client, tx } = makePostHarness({
       stores: [{ id: STORE_UN, name: 'Taqsimlanmagan', allowNegativeStock: false, attributes: {} }],
     });
-    const stock = makeStockStub();
+    const stock = makeStockStub({ [STORE_UN]: '10' });
 
     await makeService(client, stock).post(ACCOUNT, USER_ID, SALE_ID, POST_BODY);
 
@@ -152,30 +227,12 @@ describe('F6 — post(): stok ombori kaskaddan', () => {
     expect(tx.stockReservation.findMany).not.toHaveBeenCalled();
   });
 
-  it('07 yetmasa: 400 ichida G4 uchun kaskad-reja; hech narsa ayirilmaydi', async () => {
-    const { client, tx } = makePostHarness({ stores: CASCADE_ROWS });
-    const stock = makeStockStub();
-    // Haqiqiy assertAvailable shakli bilan InsufficientStock (07 da 2 dona kam).
-    stock.assertAvailable.mockImplementation(() => {
-      throw new BadRequestException({
-        error: 'InsufficientStock',
-        message: "Omborda yetarli miqdor yo'q",
-        details: {
-          shortages: [
-            {
-              assortmentKind: 'product',
-              assortmentId: PRODUCT_ID,
-              requested: '2',
-              available: '0',
-              shortage: '2',
-            },
-          ],
-        },
-      });
-    });
-    tx.stock.findMany.mockResolvedValue([
-      { storeId: STORE_02, assortmentId: PRODUCT_ID, qty: '10', reservedQty: '1' },
-    ]);
+  it('HECH QAYERDA yetmasa: 400, hech narsa ayirilmaydi', async () => {
+    // Eski xulq (F6) «bosh omborchi tasdig'i kerak» der edi — egasi uni BEKOR
+    // QILDI. Endi 400 faqat HAQIQIY defitsitda: tizimning hech bir omborida
+    // yetarli tovar yo'q.
+    const { client } = makePostHarness({ stores: CASCADE_ROWS });
+    const stock = makeStockStub({ [STORE_07]: '1' });
 
     let caught: BadRequestException | null = null;
     try {
@@ -185,20 +242,151 @@ describe('F6 — post(): stok ombori kaskaddan', () => {
     }
     expect(caught).toBeInstanceOf(BadRequestException);
     const resp = caught?.getResponse() as {
+      error: string;
       message: string;
-      details: {
-        cascadePlan: Array<{ storeId: string; qty: string; storeName: string | null }>;
-        stillMissing: unknown[];
-      };
+      details: { shortages: Array<{ assortmentId: string; missing: string }> };
     };
-    // Xabar 07 nomi bilan va bosh omborchi tasdig'iga (G4) ishora qiladi.
-    expect(resp.message).toContain('Ombor 07');
-    expect(resp.message).toContain("bosh omborchi tasdig'i");
-    // G4 darvozasi uchun tayyor reja: 2 dona Ombor 02 dan.
-    expect(resp.details.cascadePlan).toEqual([
-      { storeId: STORE_02, assortmentId: PRODUCT_ID, qty: '2', storeName: 'Ombor 02' },
+    expect(resp.error).toBe('InsufficientStock');
+    // Xabar endi tasdiqqa EMAS, defitsitga ishora qiladi.
+    expect(resp.message).not.toContain("bosh omborchi tasdig'i");
+    expect(resp.details.shortages).toEqual([
+      { assortmentId: PRODUCT_ID, requested: '2', missing: '1' },
     ]);
-    expect(resp.details.stillMissing).toEqual([]);
+    expect(stock.applyDeltas).not.toHaveBeenCalled();
+  });
+});
+
+// ── G4: ajratma → delta va saqlash ─────────────────────────────────
+
+describe('G4 — post(): ajratma deltaga va jadvalga tushadi', () => {
+  const CELL_A = 'cell-a';
+
+  it('yacheykadagi tovar: delta cellId bilan yoziladi va ajratma SAQLANADI', async () => {
+    const { client, tx } = makePostHarness({ stores: CASCADE_ROWS });
+    const stock = makeStockStub({ [STORE_07]: '10' });
+    tx.stockByCell.findMany.mockResolvedValue([
+      {
+        storeId: STORE_07,
+        cellId: CELL_A,
+        assortmentId: PRODUCT_ID,
+        qty: '5',
+        cell: { name: '07-01-01-01' },
+      },
+    ]);
+
+    await makeService(client, stock).post(ACCOUNT, USER_ID, SALE_ID, POST_BODY);
+
+    const deltas = stock.applyDeltas.mock.calls[0][3] as Array<{
+      storeId: string;
+      cellId: string | null;
+      cellMode: string;
+      qtyDelta: string;
+      docPositionId: string;
+    }>;
+    expect(deltas).toHaveLength(1);
+    expect(deltas[0].cellId).toBe(CELL_A);
+    // Yacheykali ajratmada `auto` — `applyDeltas` AYNAN o'sha yacheykani siljitadi.
+    expect(deltas[0].cellMode).toBe('auto');
+    expect(deltas[0].docPositionId).toBe('pos-1');
+
+    // Ajratma jadvalga yozildi (eski qatorlar avval o'chiriladi — qayta post).
+    expect(tx.retailSalePositionAllocation.deleteMany).toHaveBeenCalled();
+    const rows = tx.retailSalePositionAllocation.createMany.mock.calls[0][0].data as Array<{
+      positionId: string;
+      storeId: string;
+      cellId: string | null;
+      qty: string;
+    }>;
+    expect(rows).toEqual([
+      { accountId: ACCOUNT, positionId: 'pos-1', storeId: STORE_07, cellId: CELL_A, qty: '2' },
+    ]);
+  });
+
+  it('bo‘linish: ikki manba → ikki delta va ikki ajratma qatori', async () => {
+    // 07 da 1 ta, 02 da 1 ta — hech biri yolg'iz qoplamaydi ⇒ 3-holat.
+    // Tartib: avval boshqa omborlar, 07 ENG OXIRIDA.
+    //
+    // 🔴 DIQQAT: «07 oxirida» qoidasi FAQAT `__posFrontStore` bayrog'i
+    // qo'yilganda ishlaydi. Bayroqsiz tartibni `__posPriority` belgilaydi va
+    // pp=1 bo'lgan 07 BIRINCHI kelardi — ya'ni egasining «07 bo'shab qolmasin»
+    // qoidasi jimgina bajarilmasdi. Ombor kartasidagi checkbox SHART.
+    const { client, tx } = makePostHarness({ stores: CASCADE_ROWS_FRONT });
+    const stock = makeStockStub({ [STORE_07]: '1', [STORE_02]: '1' });
+
+    await makeService(client, stock).post(ACCOUNT, USER_ID, SALE_ID, POST_BODY);
+
+    const deltas = stock.applyDeltas.mock.calls[0][3] as Array<{
+      storeId: string;
+      qtyDelta: string;
+    }>;
+    expect(deltas.map((d) => [d.storeId, d.qtyDelta])).toEqual([
+      [STORE_02, '-1'],
+      [STORE_07, '-1'],
+    ]);
+    const rows = tx.retailSalePositionAllocation.createMany.mock.calls[0][0].data as Array<{
+      storeId: string;
+      qty: string;
+    }>;
+    expect(rows.map((r) => [r.storeId, r.qty])).toEqual([
+      [STORE_02, '1'],
+      [STORE_07, '1'],
+    ]);
+  });
+
+  it('🔴 SAQLANGAN ajratma ustuvor — post() qayta rejalashtirmaydi', async () => {
+    // `sendToPicking` tovarni AYNAN shu yacheykada band qilgan va omborchi
+    // o'sha yerdan yig'gan. Qayta rejalashtirsak, jismonan olingan joy bilan
+    // hisobdan chiqarilgan joy mos kelmay qolardi.
+    const { client, tx } = makePostHarness({ stores: CASCADE_ROWS });
+    const stock = makeStockStub({ [STORE_07]: '10', [STORE_02]: '10' });
+    tx.retailSalePositionAllocation.findMany.mockResolvedValue([
+      { positionId: 'pos-1', storeId: STORE_02, cellId: 'cell-x', qty: '2' },
+    ]);
+
+    await makeService(client, stock).post(ACCOUNT, USER_ID, SALE_ID, POST_BODY);
+
+    const deltas = stock.applyDeltas.mock.calls[0][3] as Array<{
+      storeId: string;
+      cellId: string | null;
+      qtyDelta: string;
+    }>;
+    expect(deltas).toHaveLength(1);
+    // 07 da ham tovar bor edi, lekin saqlangan ajratma 02 ni ko'rsatgan.
+    expect(deltas[0].storeId).toBe(STORE_02);
+    expect(deltas[0].cellId).toBe('cell-x');
+    expect(deltas[0].qtyDelta).toBe('-2');
+  });
+
+  it('saqlangan ajratma YETMASA qayta rejalashtiriladi', async () => {
+    const { client, tx } = makePostHarness({ stores: CASCADE_ROWS });
+    const stock = makeStockStub({ [STORE_07]: '10' });
+    // Pozitsiya 2 ta, saqlangan qator atigi 1 ta ⇒ qoplamaydi.
+    tx.retailSalePositionAllocation.findMany.mockResolvedValue([
+      { positionId: 'pos-1', storeId: STORE_02, cellId: null, qty: '1' },
+    ]);
+
+    await makeService(client, stock).post(ACCOUNT, USER_ID, SALE_ID, POST_BODY);
+
+    const deltas = stock.applyDeltas.mock.calls[0][3] as Array<{ storeId: string }>;
+    expect(deltas[0].storeId).toBe(STORE_07);
+  });
+
+  it('BRAK omboridagi qoldiq sotilmaydi (400)', async () => {
+    const brakRows = [
+      ...CASCADE_ROWS,
+      {
+        id: 'store-brak',
+        name: 'BRAK',
+        allowNegativeStock: false,
+        attributes: { __posPriority: 9, __brakStore: true },
+      },
+    ];
+    const { client } = makePostHarness({ stores: brakRows });
+    const stock = makeStockStub({ 'store-brak': '100' });
+
+    await expect(
+      makeService(client, stock).post(ACCOUNT, USER_ID, SALE_ID, POST_BODY),
+    ).rejects.toBeInstanceOf(BadRequestException);
     expect(stock.applyDeltas).not.toHaveBeenCalled();
   });
 });
@@ -208,6 +396,12 @@ describe('F6 — post(): stok ombori kaskaddan', () => {
 describe('F6 — sendToPicking(): rezerv kaskad omborida', () => {
   it('hold post() ayiradigan omborda (07) yoziladi', async () => {
     const tx = {
+      // G4 — post() ajratmani yacheyka kesimida quradi va saqlaydi.
+      stockByCell: { findMany: vi.fn().mockResolvedValue([]) },
+      retailSalePositionAllocation: {
+        deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+        createMany: vi.fn().mockResolvedValue({ count: 0 }),
+      },
       retailSale: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
     };
     const client = {
@@ -232,11 +426,16 @@ describe('F6 — sendToPicking(): rezerv kaskad omborida', () => {
         .fn()
         .mockImplementation(async (fn: (t: typeof tx) => Promise<unknown>) => fn(tx)),
     };
-    const stock = makeStockStub();
+    // G4: rezerv ham TAQSIMOT bo'yicha — qoldiq qulflangan balansdan o'qiladi.
+    const stock = makeStockStub({ [STORE_07]: '10' });
 
     await makeService(client, stock).sendToPicking(ACCOUNT, SALE_ID, USER_ID, USER_NAME);
 
-    expect(stock.lockBalances.mock.calls[0][2]).toBe(STORE_07);
+    // G4: qulflash tartibi endi kaskad emas, ID bo'yicha (deadlock oldini
+    // olish) — shuning uchun «birinchi qulf» emas, «hammasi qulflandi» va
+    // rezerv AYNAN kerakli omborda ekani tekshiriladi.
+    const lockedStores = stock.lockBalances.mock.calls.map((c) => c[2]);
+    expect(lockedStores).toEqual([STORE_02, STORE_07]);
     const deltas = stock.applyReservationDeltas.mock.calls[0][3] as Array<{
       storeId: string;
       qtyDelta: string;
@@ -253,6 +452,12 @@ describe('F6 — sendToPicking(): rezerv kaskad omborida', () => {
 describe('F6 — cancel(): qulf hold HAQIQATAN turgan omborga', () => {
   it('rezerv 07 da yozilgan bo‘lsa, qulf ham 07 da (smena omborida emas)', async () => {
     const tx = {
+      // G4 — post() ajratmani yacheyka kesimida quradi va saqlaydi.
+      stockByCell: { findMany: vi.fn().mockResolvedValue([]) },
+      retailSalePositionAllocation: {
+        deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+        createMany: vi.fn().mockResolvedValue({ count: 0 }),
+      },
       retailSale: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
       stockReservation: { findMany: vi.fn().mockResolvedValue([{ storeId: STORE_07 }]) },
       cashierAuditEvent: { createMany: vi.fn().mockResolvedValue({ count: 0 }) },
@@ -299,6 +504,13 @@ describe('F6 — refund(): qaytgan tovar kaskad omboriga kiradi', () => {
   it('kirim deltasi 07 ga (sotuv ayirgan ombor), smena omboriga emas', async () => {
     const stockApplyDeltas = vi.fn().mockResolvedValue(undefined);
     const tx = {
+      // G4 — post() ajratmani yacheyka kesimida quradi va saqlaydi.
+      stockByCell: { findMany: vi.fn().mockResolvedValue([]) },
+      retailSalePositionAllocation: {
+        findMany: vi.fn().mockResolvedValue([]),
+        deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+        createMany: vi.fn().mockResolvedValue({ count: 0 }),
+      },
       retailSale: {
         updateMany: vi.fn().mockResolvedValue({ count: 1 }),
         create: vi.fn().mockImplementation(async (args: { data: Record<string, unknown> }) => ({

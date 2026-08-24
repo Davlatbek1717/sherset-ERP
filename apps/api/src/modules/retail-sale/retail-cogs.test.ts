@@ -34,7 +34,12 @@ describe('post() books a real weighted-average cost outflow (STK-02)', () => {
   });
 
   it('valueless stock falls back to the frozen buyPrice snapshot (NULL≠0 contract preserved)', () => {
-    expect(STRIPPED).toMatch(/frozen\.get\(p\.productId\)\?\.costMinor \?\? 0n/);
+    // G4 (2026-08-25): delta endi POZITSIYADAN emas, AJRATMADAN quriladi —
+    // o'zgaruvchi `p.productId` → `a.assortmentId`. Fallback shartnomasi
+    // (NULL ≠ 0) o'zgarmadi, shuning uchun naqsh nomга emas, SHAKLGA qaraydi.
+    expect(STRIPPED).toMatch(
+      /frozen\.get\((?:p\.productId|a\.assortmentId)\)\?\.costMinor \?\? 0n/,
+    );
   });
 
   it('the outflow delta carries the priced value (negative)', () => {

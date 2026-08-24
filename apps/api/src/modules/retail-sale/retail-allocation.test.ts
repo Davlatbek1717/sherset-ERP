@@ -6,6 +6,7 @@ import {
   type AllocationInput,
   allocateForSale,
   resolveAllocStores,
+  spreadAllocationsToPositions,
 } from './retail-allocation.js';
 
 /**
@@ -420,5 +421,118 @@ describe('so‘rov chegaralari', () => {
     );
     // 0.25 «доступно» ⇒ 0.1 + 0.1 + 0.05 (yacheykasiz) = 0.25, yetmagani 0.05
     expect(r.shortfalls[0]?.missing).toBe('0.05');
+  });
+});
+
+describe('pozitsiyalarga yoyish', () => {
+  const A = (storeId: string, cellId: string | null, qty: string) => ({
+    assortmentId: P,
+    storeId,
+    storeName: storeId,
+    cellId,
+    cellName: cellId,
+    qty,
+  });
+
+  it('bitta pozitsiya, bitta manba', () => {
+    const r = spreadAllocationsToPositions(
+      [A(S01, 'c1', '100')],
+      [{ id: 'pos1', assortmentId: P, quantity: '100' }],
+    );
+    expect(r).toEqual([
+      { positionId: 'pos1', assortmentId: P, storeId: S01, cellId: 'c1', qty: '100' },
+    ]);
+  });
+
+  it('bitta pozitsiya, bo‘lingan manba — ikki qator', () => {
+    const r = spreadAllocationsToPositions(
+      [A(S01, 'c1', '60'), A(S02, null, '40')],
+      [{ id: 'pos1', assortmentId: P, quantity: '100' }],
+    );
+    expect(r.map((x) => [x.storeId, x.cellId, x.qty])).toEqual([
+      [S01, 'c1', '60'],
+      [S02, null, '40'],
+    ]);
+  });
+
+  it('bir tovar IKKI pozitsiyada — ajratma tartib bilan yoyiladi', () => {
+    // Taqsimot tovar kesimida 120 ta bergan; pozitsiyalar 50 va 70.
+    const r = spreadAllocationsToPositions(
+      [A(S01, 'c1', '80'), A(S02, 'c2', '40')],
+      [
+        { id: 'pos1', assortmentId: P, quantity: '50' },
+        { id: 'pos2', assortmentId: P, quantity: '70' },
+      ],
+    );
+    expect(r.map((x) => [x.positionId, x.cellId, x.qty])).toEqual([
+      ['pos1', 'c1', '50'],
+      ['pos2', 'c1', '30'],
+      ['pos2', 'c2', '40'],
+    ]);
+  });
+
+  it('ajratma yetmasa qolgan pozitsiya qatorsiz qoladi (shortfall alohida)', () => {
+    const r = spreadAllocationsToPositions(
+      [A(S01, 'c1', '30')],
+      [{ id: 'pos1', assortmentId: P, quantity: '100' }],
+    );
+    expect(r).toHaveLength(1);
+    expect(r[0]?.qty).toBe('30');
+  });
+
+  it('boshqa tovarning pozitsiyasiga tegmaydi', () => {
+    const r = spreadAllocationsToPositions(
+      [A(S01, 'c1', '100')],
+      [
+        { id: 'pos1', assortmentId: 'p2', quantity: '10' },
+        { id: 'pos2', assortmentId: P, quantity: '100' },
+      ],
+    );
+    expect(r).toHaveLength(1);
+    expect(r[0]?.positionId).toBe('pos2');
+  });
+
+  it('Decimal kasrlari saqlanadi', () => {
+    const r = spreadAllocationsToPositions(
+      [A(S01, 'c1', '0.3')],
+      [
+        { id: 'pos1', assortmentId: P, quantity: '0.1' },
+        { id: 'pos2', assortmentId: P, quantity: '0.2' },
+      ],
+    );
+    expect(r.map((x) => x.qty)).toEqual(['0.1', '0.2']);
+  });
+});
+
+describe('zaxira yo‘l (kaskad sozlanmagan)', () => {
+  it('ombor ro‘yxatda bo‘lmasa ham SINTETIK yozuv qaytaradi', () => {
+    // F6 kafolati: kaskadsiz o'rnatmada kassa AVVALGIDEK smena omboridan
+    // sotadi. Bo'sh ro'yxat qaytarish har sotuvni 400 ga aylantirardi.
+    const r = resolveAllocStores([], 'smena-ombori');
+    expect(r).toEqual([
+      { id: 'smena-ombori', name: '', posPriority: 1, isPosFront: false, isBrak: false },
+    ]);
+  });
+
+  it('fallback berilmasa bo‘sh', () => {
+    expect(resolveAllocStores([], null)).toEqual([]);
+  });
+
+  it('BRAK ombori zaxira yo‘lda ham manba bo‘lmaydi', () => {
+    const brak = { id: 'b', name: 'BRAK', posPriority: null, isPosFront: false, isBrak: true };
+    expect(resolveAllocStores([brak], 'b')).toEqual([]);
+  });
+
+  it('sintetik ombor bilan sotuv o‘tadi', () => {
+    const r = allocateForSale({
+      requests: [{ assortmentId: P, requested: '5' }],
+      stores: [],
+      cellsByProduct: new Map(),
+      availableByProduct: new Map([[P, [{ storeId: 'smena', available: '10' }]]]),
+      fallbackStoreId: 'smena',
+    });
+    expect(r.allocations).toEqual([
+      { assortmentId: P, storeId: 'smena', storeName: '', cellId: null, cellName: null, qty: '5' },
+    ]);
   });
 });

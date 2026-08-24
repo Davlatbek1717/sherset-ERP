@@ -44,6 +44,13 @@ function makeHarness(positions: OriginalPosition[]) {
   const stockApplyDeltas = vi.fn().mockResolvedValue(undefined);
 
   const tx = {
+    // G4 — post() endi ajratmani YACHEYKA kesimida quradi va saqlaydi.
+    stockByCell: { findMany: vi.fn().mockResolvedValue([]) },
+    retailSalePositionAllocation: {
+      findMany: vi.fn().mockResolvedValue([]),
+      deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+      createMany: vi.fn().mockResolvedValue({ count: 0 }),
+    },
     retailSale: {
       updateMany: vi.fn().mockResolvedValue({ count: 1 }),
       create: vi.fn().mockImplementation(async (args: { data: Record<string, unknown> }) => {

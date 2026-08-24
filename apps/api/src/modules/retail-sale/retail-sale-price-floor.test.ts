@@ -57,6 +57,13 @@ function makeHarness(opts: Opts) {
   const saleRow: Row = { id: SALE, accountId: ACC, state: 'draft', agentId: null };
 
   const tx = {
+    // G4 — post() endi ajratmani YACHEYKA kesimida quradi va saqlaydi.
+    stockByCell: { findMany: vi.fn().mockResolvedValue([]) },
+    retailSalePositionAllocation: {
+      findMany: vi.fn().mockResolvedValue([]),
+      deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+      createMany: vi.fn().mockResolvedValue({ count: 0 }),
+    },
     retailSale: {
       updateMany: vi.fn(async (args: { where: Row; data: Row }) => {
         if (!matchesState(args.where.state, saleRow.state)) return { count: 0 };

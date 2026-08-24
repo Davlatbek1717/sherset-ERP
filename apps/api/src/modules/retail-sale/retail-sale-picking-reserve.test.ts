@@ -35,9 +35,36 @@ const STORE_ID = 'store-1';
 const PRODUCT_A = 'prod-A';
 const PRODUCT_B = 'prod-B';
 
+/**
+ * G4 (2026-08-25) — rezerv ham TAQSIMOT bo'yicha quriladi va u qulflangan
+ * balansdan o'qiydi, shuning uchun stub endi haqiqiy qoldiq qaytaradi
+ * (ilgari bo'sh Map yetardi: yetarlilikni `assertAvailable` stubi hal qilardi).
+ */
 function makeStockStub(opts: { hasHold?: boolean; unavailable?: boolean } = {}) {
   return {
-    lockBalances: vi.fn().mockResolvedValue(new Map()),
+    lockBalances: vi.fn(
+      (
+        _tx: unknown,
+        _acc: string,
+        storeId: string,
+        assortments: Array<{ kind: string; id: string }>,
+      ) =>
+        Promise.resolve(
+          new Map(
+            assortments.map((a) => [
+              a.id,
+              {
+                storeId,
+                assortmentKind: a.kind,
+                assortmentId: a.id,
+                qty: opts.unavailable ? '0' : '100',
+                reservedQty: '0',
+                costBalanceMinor: '0',
+              },
+            ]),
+          ),
+        ),
+    ),
     assertAvailable: vi.fn(() => {
       if (opts.unavailable) {
         throw new BadRequestException('Insufficient stock: prod-A (requested 2, available 1)');
@@ -73,6 +100,13 @@ function makePickingClient(opts: { state?: string; positions?: Array<[string, nu
     quantity,
   }));
   const tx = {
+    // G4 — post() endi ajratmani YACHEYKA kesimida quradi va saqlaydi.
+    stockByCell: { findMany: vi.fn().mockResolvedValue([]) },
+    retailSalePositionAllocation: {
+      findMany: vi.fn().mockResolvedValue([]),
+      deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+      createMany: vi.fn().mockResolvedValue({ count: 0 }),
+    },
     retailSale: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
   };
   const client = {
@@ -191,6 +225,13 @@ describe('P3 — «Omborchiga yuborish» tovarni REZERV qiladi', () => {
 
 function makeCancelClient(state: string) {
   const tx = {
+    // G4 — post() ajratmani yacheyka kesimida quradi va saqlaydi.
+    stockByCell: { findMany: vi.fn().mockResolvedValue([]) },
+    retailSalePositionAllocation: {
+      findMany: vi.fn().mockResolvedValue([]),
+      deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+      createMany: vi.fn().mockResolvedValue({ count: 0 }),
+    },
     retailSale: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
     cashierAuditEvent: { createMany: vi.fn().mockResolvedValue({ count: 1 }) },
   };
@@ -270,6 +311,13 @@ describe('P3 — bekor qilingan chek rezervni BO‘SHATADI', () => {
 
 function makePostClient(state: string) {
   const tx = {
+    // G4 — post() ajratmani yacheyka kesimida quradi va saqlaydi.
+    stockByCell: { findMany: vi.fn().mockResolvedValue([]) },
+    retailSalePositionAllocation: {
+      findMany: vi.fn().mockResolvedValue([]),
+      deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+      createMany: vi.fn().mockResolvedValue({ count: 0 }),
+    },
     retailSale: {
       updateMany: vi.fn().mockResolvedValue({ count: 1 }),
       findUniqueOrThrow: vi
@@ -348,21 +396,22 @@ describe('P3 — to‘langan chek o‘z holdini YUTADI', () => {
    * kassada «qoldiq yetmaydi» xatosini olardi. Ya'ni H5 tuzatilib, o'rniga
    * battari qo'yilgan bo'lardi — va bu faqat REZERVLI yo'lda ko'rinardi.
    */
-  it('bo‘shatish assertAvailable dan OLDIN, qoldiq esa qayta o‘qiladi', async () => {
-    const { client } = makePostClient('ready');
+  it('bo‘shatish YETARLILIK QARORIDAN oldin, qoldiq esa qayta o‘qiladi', async () => {
+    // G4 (2026-08-25): yetarlilik qarorini endi `assertAvailable` emas,
+    // TAQSIMOT qiladi — ajratma qulflangan `qty − rezerv` bilan chegaralangan,
+    // ya'ni undan oshib ketolmaydi. Tartib invarianti O'ZGARMADI, faqat
+    // «qaror nuqtasi» ko'chdi: uni taqsimotning yacheyka-o'qishi belgilaydi.
+    const { client, tx } = makePostClient('ready');
     const stock = makeStockStub({ hasHold: true });
 
     await makeService(client, stock).post(ACCOUNT, USER_ID, SALE_ID, PAYMENT);
 
-    expect(stock.releaseReservationByDoc.mock.invocationCallOrder[0]).toBeLessThan(
-      stock.assertAvailable.mock.invocationCallOrder[0],
-    );
+    const planRead = tx.stockByCell.findMany.mock.invocationCallOrder[0] as number;
+    expect(stock.releaseReservationByDoc.mock.invocationCallOrder[0]).toBeLessThan(planRead);
     // Bo'shatishdan keyin balanslar ESKIRADI — qayta qulflanadi (2-chaqiruv),
-    // aks holda `assertAvailable` bo'shatilgan holdni hamon band deb sanardi.
+    // aks holda taqsimot bo'shatilgan holdni hamon band deb sanardi.
     expect(stock.lockBalances).toHaveBeenCalledTimes(2);
-    expect(stock.lockBalances.mock.invocationCallOrder[1]).toBeLessThan(
-      stock.assertAvailable.mock.invocationCallOrder[0],
-    );
+    expect(stock.lockBalances.mock.invocationCallOrder[1]).toBeLessThan(planRead);
   });
 
   /**
