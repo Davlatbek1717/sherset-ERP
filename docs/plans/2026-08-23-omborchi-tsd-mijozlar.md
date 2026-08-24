@@ -1,6 +1,6 @@
 # Omborchi va TSD mijozlari — kontrol, vozvrat, TSD APK
 
-> **Yaratilgan:** 2026-08-23 · **Buyurtmachi:** Ozodbek (egasi) · **Holat:** G1+G2+G3 KOD TAYYOR (deploy kutilmoqda — egasi «keyinroq» dedi VA 2026-08-24 hodisasi hal bo'lmagan: `docs/plans/2026-08-24-split-kassa-hodisasi.md`; deploy'da `topup-role-permissions.ts` MAJBURIY — `retailcontrol` + `returnacceptance`; ikkita migratsiya: G1 `…120000_drawer_cash_out_sales_return`, G3 `…170000_sales_return_retail_sale`)
+> **Yaratilgan:** 2026-08-23 · **Buyurtmachi:** Ozodbek (egasi) · **Holat:** G1+G2+G3 KOD TAYYOR · **G4 1-BOSQICH TAYYOR** (yadro + migratsiya + 07 bayrog'i; `retail-sale.service` simlari — 2-bosqich) (deploy kutilmoqda — egasi «keyinroq» dedi VA 2026-08-24 hodisasi hal bo'lmagan: `docs/plans/2026-08-24-split-kassa-hodisasi.md`; deploy'da `topup-role-permissions.ts` MAJBURIY — `retailcontrol` + `returnacceptance`; ikkita migratsiya: G1 `…120000_drawer_cash_out_sales_return`, G3 `…170000_sales_return_retail_sale`)
 > **Ijro tartibi:** har faza ALOHIDA sessiyada. Agent shu faylni va
 > `docs/plans/2026-08-23-ombor-restrukturizatsiya.md` ni (F-reja) TO'LIQ o'qiydi,
 > O'Z fazasini bajaradi, testlardan o'tkazadi, pastdagi «Hisobotlar»ga yozadi va TO'XTAYDI.
@@ -400,6 +400,102 @@ Ikkala rejani va docs/plans/2026-08-24-split-kassa-hodisasi.md ni to'liq o'qi (a
 > Shablon: **Faza · sana · commit(lar)** — nima qilindi (fayl ro'yxati bilan qisqa),
 > test natijalari (raqamlar), deploy holati (jonli tekshiruv dalili), ochiq qolganlar,
 > keyingi fazaga eslatmalar.
+
+### G4 — Ko'p omborli avto-taqsimot · ⚠️ 1-BOSQICH (2 dan) · 2026-08-25 · `3ebc9ffe`
+
+**Holat: QISMAN (qoida 11).** Bu sessiya ATAYLAB ikkiga bo'lingan: 1-bosqich
+`retail-sale.service.ts` ga TEGMAYDI (parallel sessiya bilan kolliziya xavfi —
+CLAUDE.md §6). Ya'ni jonli xulq HALI O'ZGARMAGAN: kassa avvalgidek ishlaydi.
+
+**Ikki tomonlama bog'liqlik javobi (qoida 10 — «bu nima buzishi mumkin?»):**
+1-bosqichda HECH NARSA: yangi sof modul hech kim tomonidan chaqirilmaydi, yangi
+jadval bo'sh turadi, `posFrontStore` bayrog'i esa hozircha faqat SAQLANADI
+(uni o'qiydigan yagona joy — o'sha chaqirilmagan modul). Yagona xavf sxema
+o'zgarishida edi va u to'liq test to'plami bilan tekshirildi (pastda).
+
+**Nima qilindi:**
+
+1. **`apps/api/src/modules/retail-sale/retail-allocation.ts`** — sof taqsimot
+   dvigateli (Prisma yo'q). Q1-v2 ning uch qoidasi:
+   - **1-holat** — «kassa oldidagi ombor» (07) dagi manba butun miqdorni
+     qoplasa → o'shandan (yig'ish kerak emas);
+   - **2-holat** — aks holda YOLG'IZ qoplaydigan manbalar orasidan ENG KICHIGI;
+   - **3-holat** — bo'linish: boshqa omborlar avval, **07 ENG OXIRIDA**;
+     ombor ichida KATTADAN kichikka (omborchining yurishi kamaysin).
+   Chiqishda `rule` maydoni (`front`/`single`/`split`/`none`) — POS ekrani ham,
+   testlar ham qaysi qoida ishlaganini ko'radi.
+
+2. **🔴 E1 — yacheykasiz qoldiq ham MANBA.** Jonlida qoldiqning ~94 % i hech bir
+   yacheykaga biriktirilmagan. Faqat `StockByCell` ga tayangan dvigatel
+   tovarlarning aksariyati uchun reja qura olmasdi va kassa to'xtardi. Har ombor
+   uchun yacheykasiz qoldiq `cellId = null` psevdo-manba sifatida qatnashadi.
+   **Qaror:** 2-holatda REAL yacheyka kattaroq bo'lsa ham yacheykasizdan AFZAL —
+   «eng kichigi» qoidasining maqsadi yacheykani BO'SHATISH (javonda joy ochilsin),
+   yacheykasiz qoldiqni «bo'shatish» esa hech narsa bermaydi va omborchiga
+   manzil ham qolmaydi.
+
+3. **🔴 E4 — BRAK ombori manba EMAS** (test bilan qulflangan). F6 kaskadida u
+   `__posPriority` yo'qligi bilan chiqib turardi; bu dvigatel yacheykalardan
+   ishlagani uchun istisno OCHIQ yozilgan.
+
+4. **E2 — yangi jadval `retail_sale_position_allocations`** + migratsiya
+   `20260825020000_retail_sale_position_allocation` (idempotent DDL).
+   Ustun emas, JADVAL: 3-holat bitta pozitsiyani bir necha yacheykaga bo'ladi.
+   `cell_id` NULL bo'la oladi (E1). FK: position CASCADE, store RESTRICT,
+   cell SET NULL. **Lokal dev bazada 2 marta yugurtirilib isbotlangan**
+   (ikkinchisi no-op); ustunlar/FK siyosati/indekslar SQL bilan tekshirildi.
+
+5. **«Kassa oldidagi ombor» bayrog'i `__posFrontStore`** (migratsiya yo'q,
+   `__brakStore` naqshi): `store.schema` + servis lift/yozish + ombor kartasida
+   checkbox + i18n ru/uz. **Nega prioritetning o'zi yetmaydi:** `__posPriority`
+   faqat TARTIBNI beradi, 07 esa ikki xil ishlatiladi — yolg'iz qoplasa
+   BIRINCHI, bo'linishda ENG OXIRGI. Bitta raqam buni ifodalay olmaydi.
+
+**Yo'l-yo'lakay tuzatilgan ikki test (ikkalasi ham G4 mantig'iga tegishli emas):**
+- **`kpi-target-cascade.test.ts` (MK22 qo'riqchisi) — TORAYTIRILDI.** U BUTUN
+  sxemadan `/cascade|allocation/i` ni qidirardi, ya'ni istalgan domendagi model
+  uni uyg'otardi. Qo'riqchining maqsadi — KPI/plan domenida uchinchi model
+  ochilmasligi; endi faqat `Kpi*`/`*Plan*` nomlari tekshiriladi. **O'chirilmadi.**
+- **`onboarding.service.test.ts` — KALENDAR BOMBASI.** Fikstura absolyut sanaga
+  bog'langan (sinov 2026-09-01 da tugaydi), holat esa `now` ga qarab hisoblanadi.
+  **2026-08-25 da** `daysLeft` aynan 7 = `EVALUATION_WARN_DAYS` bo'ldi va
+  `in_probation` → `due_soon` ga o'tdi. G4 ga aloqasi YO'Q — sana o'zgargani
+  uchun yiqildi. Vaqt muzlatildi (`toFake: ['Date']`, faqat Date — async oqim
+  o'zgarmaydi) + `afterEach` da tiklanadi.
+
+**Testlar:** yangi 3 fayl — taqsimot yadrosi **23**, sxema qulfi **9**, web ombor
+kartasi **3**; `store.schema.test.ts` ga +3.
+TO'LIQ: **api 632 fayl / 8839 passed (2 skipped, 0 xato)**; **web 325 fayl / 4283 passed (26 skipped, 0 xato)**; turbo typecheck api/web/db yashil;
+i18n gate'lar yashil (key-existence 15 779 kalit); biome yangi fayllarda xatosiz.
+
+**Deploy holati: KUTILMOQDA** — G1+G2+G3 bilan bir deltada boradi. Deploy'da
+**uchinchi migratsiya** qo'shiladi: `20260825020000_retail_sale_position_allocation`
+(`prisma db execute` → `migrate resolve --applied` → `prisma generate`).
+Jonli xulq 1-bosqichda O'ZGARMAYDI — bayroq qo'yilmaguncha va 2-bosqich
+simlanmaguncha kassa avvalgidek ishlaydi.
+
+**2-BOSQICH (qolgan ish — `retail-sale.service.ts` ga tegadi):**
+1. **E3 — `post()` deltalarini AJRATMADAN qurish.** Hozir
+   `retail-sale.service.ts:1188–1209` hamma pozitsiyaga bitta `storeId` beradi va
+   `cellId` umuman yo'q. Kerak: har ajratma → o'z `storeId` + `cellId`; tannarx
+   har ombor balansidan alohida (`computePerUnitCost` hozir bitta omborga
+   tayanadi); `cancel`/refund teskari yo'li ham ajratma kesimida.
+2. **Rezerv** (`sendToPicking` → `StockReservation`) ajratma kesimida.
+3. **`assertAvailableCascade` ni almashtirish** — «tasdiq kerak» 400 o'rniga
+   reja BAJARILADI; haqiqiy defitsitda xabar «tizimda jami N ta yetmayapti».
+4. **Yig'ish topshiriqlari** (`send-to-picking`) taxmindan emas, AJRATMADAN.
+5. **POS UI** — pozitsiya qatorida «qayerdan olinadi» + kassir o'zgartira olishi
+   (`manual = true` ustuni tayyor).
+6. **E5 — H2/H3 ni yangilash:** G4 dan keyin «POS yeta olmaydigan qoldiq» modeli
+   o'zgaradi (`needs_approval` bosqichi ma'nosini yo'qotadi) ⇒
+   `warehouse-state-core.ts`, `docs/ops/jonli-holat.md` (+ `__posFrontStore`
+   qatori) va H3 qo'riqchisi shu bosqichda qayta yoziladi.
+
+**Ochiq savol (egasiga):** 07 da tovar YETARLI, lekin bitta yacheykasi yolg'iz
+qoplamaydigan holatda hozirgi kod boshqa ombordan oladi (07 ni bo'shatmaslik
+qoidasi bo'yicha). Agar egasi «07 da yetsa, ikki yacheykadan bo'lsa ham 07 dan
+olinsin» desa — 1-holatga qo'shimcha shart kerak (bir qatorlik o'zgarish, testi
+tayyor).
 
 ### G3 — Vozvrat qabul ekranlari + vozvrat yorlig'i · 2026-08-24 · `6022e58c` (+ `acdf5ea7` lint)
 
