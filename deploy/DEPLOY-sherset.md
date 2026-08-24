@@ -142,6 +142,23 @@ Rules that are easy to get wrong:
   (`desktop/updater.js`), so each tenant domain must serve its own
   `/downloads/desktop/`. All three nginx configs in `deploy/` already do.
 
+### 7b. Sherset Omborchi (F8) — second app, second channel
+
+The warehouse-manager shell is built from the same `desktop/` folder
+(`pnpm run dist:omborchi` → `desktop/dist-omborchi/`) and updates from its
+own directory under the same nginx `location /downloads/`:
+
+```bash
+sudo mkdir -p /var/www/kassa-downloads/omborchi
+scp "desktop/dist-omborchi/Sherset-Omborchi-Setup-<version>.exe" <vps>:/var/www/kassa-downloads/omborchi/
+scp desktop/dist-omborchi/latest.yml    <vps>:/var/www/kassa-downloads/omborchi/   # LAST
+curl -I https://erp.sherset.uz/downloads/omborchi/latest.yml
+```
+
+Same rules as the kassa channel (exe first, manifest last, never edit
+`latest.yml`, keep the previous exe). The two channels must never share a
+directory — each app's `latest.yml` would clobber the other's.
+
 ## Updates (redeploy) — use the SMART script (2026-07-23 slow-deploy fix)
 
 The old "always `git pull` + `pnpm install` + `next build` + `migrate`" sequence ran the ~10-min-plus (much more

@@ -30,13 +30,16 @@ const {
 } = require('electron');
 const store = require('./device-store');
 const logger = require('./logger'); // F2 (K05) — qurilma logi faylga
+const mode = require('./mode'); // F8 — kassa yoki omborchi qobig'i
 const updater = require('./updater'); // F4 — avtoyangilanish (spec §8.3)
 
 // Build vaqtida beriladigan default (elektron-builder `extraMetadata`/env orqali).
 const DEFAULT_SERVER_URL = store.normalizeServerUrl(process.env.SHERSET_SERVER_URL || '');
 
 const HEALTH_PATH = '/api/v1/health'; // apps/api: setGlobalPrefix('api/v1') + HealthController
-const ENTRY_PATH = '/kassa-kirish'; // kassir har doim shu ekrandan boshlaydi
+// Kassir PIN ekrandan, omborchi esa o'z panelidan boshlaydi (sessiya bo'lmasa
+// web (app)/layout uni /login ga o'zi olib boradi va logindan keyin qaytaradi).
+const ENTRY_PATH = mode.isOmborchi ? '/omborchi' : '/kassa-kirish';
 /** Boot'da yangilanishni shuncha kutamiz — undan keyin savdo boshlanadi. */
 const BOOT_UPDATE_WAIT_MS = 25000;
 const CFD_PATH = '/customer-display'; // mijoz-ekran sahifasi (apps/web)
@@ -141,7 +144,9 @@ function stopHealthPolling() {
 function showOffline(reason) {
   if (!win) return;
   logger.write('shell', `offline: ${reason}`);
-  win.loadFile(localPage('offline.html'), { query: { reason: String(reason || '') } });
+  win.loadFile(localPage('offline.html'), {
+    query: { reason: String(reason || ''), app: mode.id },
+  });
   stopHealthPolling();
   healthTimer = setInterval(async () => {
     if (await probeHealth()) {
@@ -155,7 +160,8 @@ function loadApp() {
   if (!win) return;
   const base = serverBase();
   if (!base) {
-    win.loadFile(localPage('setup.html'));
+    // `app` — sarlavha uchun: setup.html ikkala dasturda BITTA fayl.
+    win.loadFile(localPage('setup.html'), { query: { app: mode.id } });
     return;
   }
   stopHealthPolling();
@@ -169,7 +175,19 @@ function loadApp() {
  */
 function onEntryScreen() {
   if (!win || win.isDestroyed()) return false;
-  return win.webContents.getURL().endsWith(ENTRY_PATH);
+  const url = win.webContents.getURL();
+  if (mode.isOmborchi) {
+    // Omborchi: «kirish ekrani» = /login (sessiya yo'q) yoki hali ish
+    // boshlanmagan panel (/omborchi). Login sahifasi query bilan keladi
+    // (`/login?redirect=…`), shuning uchun endsWith emas, pathname.
+    try {
+      const p = new URL(url).pathname;
+      return p === ENTRY_PATH || p === '/login';
+    } catch {
+      return false;
+    }
+  }
+  return url.endsWith(ENTRY_PATH);
 }
 
 // ─── Kiosk oyna ─────────────────────────────────────────────────────────────
@@ -181,6 +199,8 @@ function onEntryScreen() {
  * Electron o'zini Windows avtoyuklanishiga yozib qo'yardi.
  */
 function applyAutoStart() {
+  // Omborchi — oddiy dastur: foydalanuvchi tizimiga avtoyuklanish yozilmaydi.
+  if (mode.isOmborchi) return;
   if (!app.isPackaged) return;
   try {
     app.setLoginItemSettings({ openAtLogin: true, path: process.execPath, args: [] });
@@ -198,6 +218,8 @@ let powerBlockerId = null;
  * «kompyuter o'chib qoldi» deb tushunadi.
  */
 function keepScreenAwake() {
+  // Omborchi kompyuteri kassa monobloki emas — energiya sozlamasiga tegilmaydi.
+  if (mode.isOmborchi) return;
   if (powerBlockerId !== null) return;
   try {
     powerBlockerId = powerSaveBlocker.start('prevent-display-sleep');
@@ -216,28 +238,54 @@ function createWindow() {
   // Ilgari shart `juftlangan qurilma` edi — juftlash 2026-08-11 da butunlay
   // olib tashlandi (egasining talabi), shuning uchun mezon manzilga ko'chdi.
   const configured = !!serverBase();
-  win = new BrowserWindow({
-    kiosk: configured,
-    frame: !configured,
-    width: 1280,
-    height: 800,
-    show: false,
-    autoHideMenuBar: true,
-    backgroundColor: '#0f172a',
-    webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
-      contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: true,
-      spellcheck: false,
-      devTools: isDev,
-    },
-  });
+  // Rejim preload'ga argument bilan beriladi: sandbox'dagi preload package.json
+  // ni o'qiy olmaydi, `process.argv` esa unga ochiq (`mode.js` izohi).
+  const webPreferences = {
+    preload: path.join(__dirname, 'preload.js'),
+    contextIsolation: true,
+    nodeIntegration: false,
+    sandbox: true,
+    spellcheck: false,
+    devTools: isDev,
+    additionalArguments: [`--sherset-shell-mode=${mode.id}`],
+  };
+  // Omborchi — ODDIY ramkali oyna (F8): katta omborchi ishonchli operator,
+  // unga kiosk qulflari (Alt+F4 bloki, chiqish-imosi) kerak emas va xalaqit
+  // beradi. Kassa oynasi esa avvalgidek kiosk (pastdagi izohlar).
+  win = mode.isOmborchi
+    ? new BrowserWindow({
+        width: 1440,
+        height: 900,
+        show: false,
+        autoHideMenuBar: true,
+        backgroundColor: '#0f172a',
+        webPreferences,
+      })
+    : new BrowserWindow({
+        kiosk: configured,
+        frame: !configured,
+        width: 1280,
+        height: 800,
+        show: false,
+        autoHideMenuBar: true,
+        backgroundColor: '#0f172a',
+        webPreferences,
+      });
 
   win.once('ready-to-show', () => {
     win?.show();
-    if (!configured) win?.maximize();
+    if (!configured || mode.isOmborchi) win?.maximize();
   });
+
+  if (mode.isOmborchi) {
+    // Kamera skaneri (getUserMedia, /cell va joylashtirish oqimlari) so'rovi
+    // FAQAT o'z serverimiz sahifasiga beriladi — dialog chiqmaydi, begona
+    // manzilga esa hech qachon berilmaydi.
+    win.webContents.session.setPermissionRequestHandler((wc, _permission, cb) => {
+      const base = serverBase();
+      cb(!!base && wc.getURL().startsWith(base));
+    });
+  }
 
   // Kassir oynani yopa olmasin (Alt+F4, tizim tugmasi) — chiqish faqat
   // operator kaliti (Ctrl+Alt+Shift+Q), burchak-imosi yoki ✕ tugmasi orqali.
@@ -247,6 +295,15 @@ function createWindow() {
   // ilovani JIM yopib yuborardi. Sozlash oynasi (serverBase bo'sh) esa
   // oddiy «X» bilan yopilaveradi — hali kassir yo'q, qulflaydigan narsa yo'q.
   win.on('close', (e) => {
+    if (mode.isOmborchi) {
+      // Oddiy «X» bilan yopish MUMKIN — lekin yopishdan oldin tayyor
+      // yangilanish bo'lsa o'rnatiladi (quitShell → installOnQuit).
+      if (!allowQuit) {
+        e.preventDefault();
+        quitShell();
+      }
+      return;
+    }
     if (!allowQuit && serverBase()) e.preventDefault();
   });
   win.on('closed', () => {
@@ -270,6 +327,7 @@ function createWindow() {
     }
     const devtools = key === 'f12' || (input.control && input.shift && key === 'i');
     if (devtools && !isDev) event.preventDefault();
+    if (mode.isOmborchi) return; // oddiy oyna — Alt+F4 / Ctrl+W bloklanmaydi
     if (input.control && key === 'w') event.preventDefault();
     if (input.alt && key === 'f4') event.preventDefault();
   });
@@ -867,8 +925,8 @@ if (!app.requestSingleInstanceLock()) {
     keepScreenAwake();
     // Oyna DARHOL ochiladi — kassir 25 soniya qora ekran ko'rmasin.
     createWindow();
-    // Oldingi seansda ochiq qolgan mijoz-ekranni tiklaymiz (K19).
-    if (store.getCustomerDisplayOpen()) openCustomerDisplay();
+    // Oldingi seansda ochiq qolgan mijoz-ekranni tiklaymiz (K19, faqat kassa).
+    if (mode.isKassa && store.getCustomerDisplayOpen()) openCustomerDisplay();
 
     const res = updater.start(serverBase);
     if (!res.started) return;

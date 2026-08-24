@@ -65,7 +65,7 @@
   </head>
   <body>
     <div class="card">
-      <h1>Sherset Kassa</h1>
+      <h1 id="app-name">Sherset Kassa</h1>
       <p>Birinchi ishga tushirish. Do'kon serverining manzilini kiriting — u shu kompyuterda saqlanadi.</p>
       <label for="url">Server manzili</label>
       <input id="url" type="text" placeholder="erp.sherset.uz" autocomplete="off" spellcheck="false" />
@@ -78,6 +78,13 @@
       const button = document.getElementById('save');
       const error = document.getElementById('error');
       const bridge = window.shersetShell;
+
+      // Bitta setup fayli ikkala dasturga xizmat qiladi (F8) — nomni main.js
+      // `?app=` bilan beradi.
+      if (new URLSearchParams(window.location.search).get('app') === 'omborchi') {
+        document.getElementById('app-name').textContent = 'Sherset Omborchi';
+        document.title = 'Sherset Omborchi — sozlash';
+      }
 
       input.value = bridge ? bridge.getServerUrl() : '';
       input.focus();

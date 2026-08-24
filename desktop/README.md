@@ -18,6 +18,44 @@
 > Avtoyangilanish: **kanal tomoni o'lchangan**, qurilmadagi o'tish (yuklab olish →
 > «Chiqish» → UAC → 1.3.0) — «Avtoyangilanish» bo'limining oxiridagi jadvalda.
 
+## IKKI DASTUR, BITTA KOD BAZASI (F8, 2026-08-24)
+
+Shu papkadan **ikkita** dastur yig'iladi (rejim — `mode.js`):
+
+| | Sherset Kassa | Sherset Omborchi |
+|---|---|---|
+| Yig'ish | `pnpm run dist` | `pnpm run dist:omborchi` (`omborchi.builder.json`) |
+| Oyna | kiosk, qulflangan | ODDIY ramkali, maksimal |
+| Kirish | `/kassa-kirish` (PIN) | `/omborchi` (sessiya bo'lmasa web `/login` ga olib boradi) |
+| Kiosk yordamchilar (imo, OSK, uchlik, zoom-qulf) | bor | YO'Q (haqiqiy klaviatura bor) |
+| Chop etish ko'prigi (`printSheet`) | bor | bor (yig'ish varag'i, etiketka) |
+| Kanal | `/downloads/desktop/` | `/downloads/omborchi/` (VPS: `/var/www/kassa-downloads/omborchi/`) |
+| Ikonka | `build/icon.ico` | `build/icon-omborchi.ico` |
+| Versiya | `package.json` | `omborchi.builder.json` → `extraMetadata.version` (hozir **1.0.0**, artefakt `Sherset-Omborchi-Setup-1.0.0.exe`) |
+| userData | `%APPDATA%/@moysklad/desktop` | `%APPDATA%/Sherset Omborchi` (extraMetadata `name`/`productName`) |
+
+Rejim paketlangan ilovaga `extraMetadata.shersetMode` bilan, preload'ga esa
+`additionalArguments` (`--sherset-shell-mode=`) bilan yetadi. Web tomonda
+preload `shellKind: 'omborchi'` beradi va `pos-device.ts → isShersetShell()`
+FAQAT kassa qobig'ida true qaytaradi — aks holda omborchi .exe ichida
+/kassa-kirish PIN ekrani ochilib qolardi (qo'riqchi:
+`apps/web/src/__tests__/omborchi-installer-config.test.ts`).
+
+Dasturchi rejimi: `SHERSET_SHELL_MODE=omborchi SHERSET_SERVER_URL=http://localhost:3100 pnpm run dev`
+(dev'da userData kassa bilan umumiy — faqat paketlanganda ajratiladi).
+
+Omborchi ikonkasi (`build/icon-omborchi.ico`) binar bo'lgani uchun repo'da
+YO'Q (`.gitignore` → `build/`), lekin kassanikidan farqli — u GENERATSIYA
+qilinadi va toza klonda ham tiklanadi:
+`node desktop/tools/icon/gen-omborchi-icon.js` (kutubxonasiz, deterministik).
+
+Omborchi versiyasini ko'tarish: `omborchi.builder.json` → `extraMetadata.version`
++ shu jadvaldagi artefakt nomi (qo'riqchi test mosligini talab qiladi).
+Kanalga chiqarish tartibi kassaniki bilan bir xil («Yangi versiyani kanalga
+qo'yish»), faqat katalog `/var/www/kassa-downloads/omborchi/`.
+
+---
+
 ## Nima qiladi
 
 Yupqa kiosk o'ram (spec §3.1): savdo mantiqi web ilovasida qoladi, bu jarayon faqat

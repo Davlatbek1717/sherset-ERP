@@ -7,10 +7,14 @@
   "scripts": {
     "dev": "electron .",
     "start": "electron .",
-    "dist": "node check-build-assets.js && electron-builder --win nsis"
+    "dist": "node check-build-assets.js && electron-builder --win nsis",
+    "dist:omborchi": "node check-build-assets.js omborchi && electron-builder --win nsis --config omborchi.builder.json"
   },
   "dependencies": {
     "electron-updater": "^6.3.9"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": ["electron"]
   },
   "devDependencies": {
     "electron": "^33.4.11",

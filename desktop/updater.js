@@ -26,9 +26,14 @@
 
 const { app } = require('electron');
 const logger = require('./logger');
+const mode = require('./mode');
 
-/** Nginx statik kanali — deploy/nginx-*.conf dagi `location` bilan BIR XIL. */
-const UPDATE_PATH = '/downloads/desktop/';
+/**
+ * Nginx statik kanali — deploy/nginx-*.conf dagi `location /downloads/` bilan
+ * BIR XIL ildizdan. Har dastur O'Z katalogini so'raydi (F8): kassa va omborchi
+ * bitta kanalda tursa, `latest.yml` bir-birinikini bosib ketardi.
+ */
+const UPDATE_PATH = mode.isOmborchi ? '/downloads/omborchi/' : '/downloads/desktop/';
 
 /** Spec §8.3 — ishga tushganda va har 4 soatda tekshiriladi. */
 const CHECK_INTERVAL_MS = 4 * 60 * 60 * 1000;

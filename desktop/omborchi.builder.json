@@ -1,0 +1,43 @@
+{
+  "appId": "uz.sherset.omborchi",
+  "productName": "Sherset Omborchi",
+  "copyright": "Sherset",
+  "directories": {
+    "output": "dist-omborchi",
+    "buildResources": "build"
+  },
+  "files": ["**/*.js", "**/*.html", "package.json", "!check-build-assets.js"],
+  "extraMetadata": {
+    "name": "sherset-omborchi",
+    "productName": "Sherset Omborchi",
+    "version": "1.0.0",
+    "shersetMode": "omborchi"
+  },
+  "win": {
+    "target": [
+      {
+        "target": "nsis",
+        "arch": ["x64"]
+      }
+    ],
+    "icon": "build/icon-omborchi.ico",
+    "artifactName": "Sherset-Omborchi-Setup-${version}.exe"
+  },
+  "nsis": {
+    "oneClick": false,
+    "perMachine": false,
+    "allowToChangeInstallationDirectory": true,
+    "createDesktopShortcut": true,
+    "createStartMenuShortcut": true,
+    "shortcutName": "Sherset Omborchi",
+    "installerLanguages": ["ru_RU"],
+    "runAfterFinish": true
+  },
+  "publish": [
+    {
+      "provider": "generic",
+      "url": "https://erp.sherset.uz/downloads/omborchi/",
+      "channel": "latest"
+    }
+  ]
+}

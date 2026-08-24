@@ -1,5 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { clearPosDevice, readPosDevice, writePosDevice } from '../pos-device';
+import {
+  clearPosDevice,
+  isPosWorkstation,
+  isShersetShell,
+  readPosDevice,
+  writePosDevice,
+} from '../pos-device';
 
 const CREDS = { deviceId: 'dev-1', deviceSecret: 'x'.repeat(64), name: '1-kassa' };
 
@@ -53,5 +59,41 @@ describe('pos-device (Electron varianti)', () => {
     writePosDevice(CREDS);
     expect(setDevice).toHaveBeenCalledWith(CREDS);
     expect(localStorage.getItem('sherset.pos-device')).toBeNull();
+  });
+});
+
+/**
+ * F8 — qobiq TURI: «Sherset Omborchi» .exe'si ham `isSherset: true` beradi
+ * (chop etish ko'prigi uchun), lekin u KASSA ish o'rni EMAS. Aks holda
+ * (app)/layout omborchi .exe ichida /kassa-kirish PIN ekranini ochib,
+ * kiosk-ko'rinishga o'tkazib yuborardi.
+ */
+describe('isShersetShell — qobiq turi (F8)', () => {
+  it('oddiy brauzerda false', () => {
+    expect(isShersetShell()).toBe(false);
+  });
+
+  it('kassa qobig`ida (shellKind yo`q, eski exe ≤1.9.0) true — orqaga moslik', () => {
+    // biome-ignore lint/suspicious/noExplicitAny: test ko'prigi
+    (window as any).electronAPI = { isSherset: true };
+    expect(isShersetShell()).toBe(true);
+  });
+
+  it('kassa qobig`ida (shellKind="kassa", yangi exe) true', () => {
+    // biome-ignore lint/suspicious/noExplicitAny: test ko'prigi
+    (window as any).electronAPI = { isSherset: true, shellKind: 'kassa' };
+    expect(isShersetShell()).toBe(true);
+  });
+
+  it('🔴 omborchi qobig`ida FALSE — PIN ekrani va kiosk-ko`rinish ochilmasin', () => {
+    // biome-ignore lint/suspicious/noExplicitAny: test ko'prigi
+    (window as any).electronAPI = { isSherset: true, shellKind: 'omborchi' };
+    expect(isShersetShell()).toBe(false);
+  });
+
+  it('omborchi qobig`i kassa ISH O`RNI ham emas (juftlanmagan holatda)', () => {
+    // biome-ignore lint/suspicious/noExplicitAny: test ko'prigi
+    (window as any).electronAPI = { isSherset: true, shellKind: 'omborchi' };
+    expect(isPosWorkstation()).toBe(false);
   });
 });

@@ -18,9 +18,26 @@
 
 const { contextBridge, ipcRenderer, webFrame } = require('electron');
 
+/**
+ * Qobiq REJIMI (F8) — main.js `additionalArguments` bilan beradi (sandbox'da
+ * package.json o'qib bo'lmaydi). Marker yo'q bo'lsa — kassa (eski xulq).
+ */
+const SHELL_MODE = (() => {
+  try {
+    const arg = process.argv.find((a) => a.startsWith('--sherset-shell-mode='));
+    return arg && arg.slice(arg.indexOf('=') + 1) === 'omborchi' ? 'omborchi' : 'kassa';
+  } catch {
+    return 'kassa';
+  }
+})();
+
 contextBridge.exposeInMainWorld('electronAPI', {
   // Web qobiqni shu bayroq bilan taniydi (`print-agent.ts:67`, `pos-device.ts:29`).
   isSherset: true,
+  // Qaysi qobiq (F8): web `isShersetShell()` FAQAT kassa qobig'ida true beradi —
+  // omborchi .exe'sida /kassa-kirish PIN ekrani ochilib qolmasin. Eski kassa
+  // exe'larida bu maydon yo'q (undefined) — web uni kassa deb o'qiydi.
+  shellKind: SHELL_MODE,
   version: ipcRenderer.sendSync('app:version'),
 
   // ── Chop etish (F3 da main.js tomonda to'ldiriladi) ──────────────────────
@@ -549,6 +566,10 @@ function lockZoom() {
 }
 
 function installShellHelpers() {
+  // Omborchi (F8) — oddiy ramkali oyna, haqiqiy klaviatura va sichqoncha bor:
+  // kiosk yordamchilari (imo, suzuvchi uchlik, ekran klaviaturasi, zoom qulfi)
+  // O'RNATILMAYDI. Skaner (klaviatura-wedge) oddiy kiritish sifatida ishlaydi.
+  if (SHELL_MODE === 'omborchi') return;
   lockZoom();
   installExitGesture();
   installWindowControls();

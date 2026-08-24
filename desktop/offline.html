@@ -51,8 +51,8 @@
   <body>
     <div class="card">
       <h1><span class="dot"></span>Server bilan aloqa yo'q</h1>
-      <p>Kassa do'kon serveriga ulana olmayapti. Internet yoki server o'chgan bo'lishi mumkin.</p>
-      <p>Aloqa tiklanishi bilan kassa <b>o'zi</b> qaytadi — hech narsa bosish shart emas.</p>
+      <p id="msg1">Kassa do'kon serveriga ulana olmayapti. Internet yoki server o'chgan bo'lishi mumkin.</p>
+      <p id="msg2">Aloqa tiklanishi bilan kassa <b>o'zi</b> qaytadi — hech narsa bosish shart emas.</p>
       <button id="retry" type="button">Hozir qayta urinish</button>
       <div class="reason" id="reason"></div>
       <div class="hint">Chiqish: Ctrl + Alt + Shift + Q</div>
@@ -62,6 +62,15 @@
       const params = new URLSearchParams(window.location.search);
       const reason = params.get('reason');
       if (reason) document.getElementById('reason').textContent = 'Texnik sabab: ' + reason;
+
+      // Bitta offline fayli ikkala dasturga xizmat qiladi (F8).
+      if (params.get('app') === 'omborchi') {
+        document.title = "Sherset Omborchi — aloqa yo'q";
+        document.getElementById('msg1').textContent =
+          "Dastur serverga ulana olmayapti. Internet yoki server o'chgan bo'lishi mumkin.";
+        document.getElementById('msg2').innerHTML =
+          "Aloqa tiklanishi bilan dastur <b>o'zi</b> qaytadi — hech narsa bosish shart emas.";
+      }
 
       const button = document.getElementById('retry');
       button.addEventListener('click', async () => {

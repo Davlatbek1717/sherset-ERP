@@ -18,6 +18,9 @@ const KEY = 'sherset.pos-device';
 
 interface ShellBridge {
   isSherset?: boolean;
+  // Qobiq TURI (F8): 'kassa' | 'omborchi'. Eski kassa exe'lari (≤1.9.0) bu
+  // maydonni bermaydi — undefined KASSA deb o'qiladi (orqaga moslik).
+  shellKind?: string;
   getDevice?: () => PosDeviceCreds | null;
   setDevice?: (creds: PosDeviceCreds) => void;
   clearDevice?: () => void;
@@ -41,9 +44,17 @@ function shell(): ShellBridge | null {
  *
  * ⚠️ Bu — QULAYLIK, xavfsizlik emas (bayroqni istagan sahifa soxtalashi
  * mumkin). Haqiqiy cheklovlar serverda (`KioskGuard`, ruxsat matritsasi).
+ *
+ * 🔴 F8 (2026-08-24): «Sherset Omborchi» .exe'si HAM `isSherset: true` beradi
+ * (chop etish ko'prigi uchun shart), lekin u KASSA ish o'rni EMAS — layout uni
+ * /kassa-kirish PIN ekraniga olib bormasligi va kiosk-ko'rinishga o'tkazmasligi
+ * kerak. Shuning uchun bu funksiya endi faqat KASSA qobig'ini bildiradi:
+ * `shellKind === 'omborchi'` bo'lsa false. Eski kassa exe'larida (≤1.9.0)
+ * `shellKind` yo'q (undefined) — ular avvalgidek kassa deb taniladi.
  */
 export function isShersetShell(): boolean {
-  return shell() !== null;
+  const el = shell();
+  return el !== null && el.shellKind !== 'omborchi';
 }
 
 /**

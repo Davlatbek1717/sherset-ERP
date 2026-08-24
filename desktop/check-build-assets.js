@@ -11,12 +11,25 @@
 const { existsSync } = require('node:fs');
 const { join } = require('node:path');
 
-const REQUIRED = [
-  {
-    path: 'build/icon.ico',
-    why: 'Windows installer va yorliq ikonkasi. Kamida 256×256, ko`p o`lchamli .ico.',
-  },
-];
+// `node check-build-assets.js omborchi` — omborchi build'i O'Z ikonkasini
+// talab qiladi (F8): ikki dastur bitta ikonka bilan chiqsa foydalanuvchi
+// panelda ularni ajrata olmaydi.
+const target = process.argv[2] === 'omborchi' ? 'omborchi' : 'kassa';
+
+const REQUIRED =
+  target === 'omborchi'
+    ? [
+        {
+          path: 'build/icon-omborchi.ico',
+          why: 'Sherset Omborchi ikonkasi. Tiklash: node tools/icon/gen-omborchi-icon.js',
+        },
+      ]
+    : [
+        {
+          path: 'build/icon.ico',
+          why: 'Windows installer va yorliq ikonkasi. Kamida 256×256, ko`p o`lchamli .ico.',
+        },
+      ];
 
 const missing = REQUIRED.filter((item) => !existsSync(join(__dirname, item.path)));
 
