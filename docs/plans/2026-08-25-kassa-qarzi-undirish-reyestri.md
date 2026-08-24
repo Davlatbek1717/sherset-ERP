@@ -1,6 +1,6 @@
 # Kassada mijoz hisob-kitobi — qarzni undirish ro'yxatiga ulash + avans bilan ishlash
 
-> **Yaratilgan:** 2026-08-25 · **Buyurtmachi:** Ozodbek (egasi) · **Holat:** Q1 QISMAN (2026-08-25) — poydevor qurildi, `opening` manbasi qarori ochiq; Q2 boshlanmagan
+> **Yaratilgan:** 2026-08-25 · **Buyurtmachi:** Ozodbek (egasi) · **Holat:** Q1 QISMAN + **Q2 QISMAN** (2026-08-25) — asosiy funksiya kodda va testda tayyor (`7ef30b61`, `af8d3339`), **jonli tasdiq va deploy KUTILMOQDA**; `opening` manbasi qarori hamon ochiq; Q3 boshlanmagan
 > **Ikki shikoyat (egasi, 2026-08-25):**
 > 1. «Qarzdorlikni undirish bo'limiga kassadan qo'shilgan yangi qarzdorliklar
 >    ko'rinmayapti.» → fazalar **Q1…Q6**
@@ -1130,3 +1130,291 @@ BITTA deploy oynasida berish mantiqiyroq. Commit lokal
    bering, qayta matn yozmang.
 5. Cross-check shovqini haqidagi «OCHIQ QAROR» ni birinchi hal qiling, aks holda
    Q2 dan keyin «hujjatlar ≠ jurnal» chiqishini umuman o'qib bo'lmaydi.
+
+### Q2 — Chekdan reyestr qatori · 2026-08-25 · **QISMAN** (jonli tasdiq kutilmoqda)
+
+**Xulq O'ZGARDI.** Bu rejaning ASOSIY funksiyasi: kassadan qarzga sotilgan chek
+endi `Debt` reyestriga ham qator ochadi va shu bilan undirish ro'yxatiga,
+qo'ng'iroq jadvaliga, eslatma oqimiga va menejer navbatiga tushadi. Balans yo'li
+BIR BAYT ham o'zgarmadi.
+
+Commitlar: `7ef30b61` (funksiya + testlar), `af8d3339` (lokal baza zondi).
+
+#### 🔴 Sessiya boshida ikkita to'siq — ikkalasi ham hisobotga yozilishi shart
+
+**1. Q1 «QISMAN» edi (qoida 11).** Egasi (2026-08-25) Q2 ni davom ettirishga
+ruxsat berdi; Q1 ning ikki ochiq bandi **OCHIQ QOLDI** va pastda takrorlanadi.
+Q2 ular tufayli funksional bloklanmaydi — dalil pastdagi «OCHIQ QAROR» bandida.
+
+**2. `retail-sale.service.ts` da G4 ning 2-bosqichi commit qilinmagan holda
+turgan edi** (+247 qator, 21 fayl). Q2 ham AYNAN `post()` ga yozadi, ya'ni
+commit ikkalasini ajrata olmasdi — bu 2026-08-24 hodisasining SINFI (ombor
+o'zgarishi kassa bilan birga jonliga chiqishi). Egasining qarori bo'yicha
+G4-2 `git stash` ga olindi va Q2 toza HEAD (`ff2db056`, Q1) ustiga qurildi.
+
+**⚠️ SESSIYA O'RTASIDA BAZHA O'ZGARDI (operatsion hodisa, qayd etiladi).**
+Ish davomida BOSHQA sessiya shu branch'ga `b4c27d24` + `7a75ce80` («G4 2a —
+kassa AJRATMADAN ayiradi») ni commit qildi (04:21). Oqibatlari:
+  · git indeksi eskirgan ko'rindi — birinchi `git status` 3 fayl, ikkinchisi
+    21 fayl ko'rsatdi;
+  · **`refs/stash` ustidan yozildi va G4-2 stash yozuvi YO'QOLDI.** U
+    `git fsck --unreachable` orqali topilib (`8f51caea`) `git stash store`
+    bilan QAYTARILDI. Hozir: `stash@{0}` = G4-2 (21 fayl).
+    ⚠️ Uning katta qismi endi `b4c27d24` bilan USTMA-UST tushadi — pop
+    qilishdan oldin solishtirilsin, ko'r-ko'rona `pop` qilinmasin.
+  · Mening `7ef30b61` commit'im `7a75ce80` ustiga tushdi. **G4-2a kodi
+    BUZILMAGANI tekshirildi:** `git diff b4c27d24 HEAD -- retail-sale.service.ts`
+    dagi YAGONA o'chirishlar — mening ataylab olib tashlagan ikki joyim
+    (eski «reyestrga yozmaymiz» izohi va `postedAt: new Date()`).
+  · Barcha test/typecheck raqamlari YAKUNIY commit ustida QAYTA o'lchandi.
+
+**SABOQ (keyingi sessiyalarga):** bitta repoda ikki sessiya parallel ishlasa
+`git stash` ISHONCHSIZ. Ish boshida `git log -1` va `git status` ni qayta
+tekshirish, stash o'rniga alohida branch ishlatish xavfsizroq.
+
+#### Nima qilindi
+
+| # | Fayl | Nima |
+|---|---|---|
+| 1 | `apps/api/src/modules/retail-sale/retail-sale.service.ts` | `post()` qarz bloki: balans QULFI + reyestr yozuvchisi; ikkita yangi private helper; `postedAt` yagona instantga keltirildi; eski izoh «BEKOR QILINDI» deb qayta yozildi |
+| 2 | `apps/api/src/modules/debt/sale-debt-registry.ts` | `DEBT_LEDGER_CURRENCY` YAGONA e'lon bo'lib shu yerga ko'chdi |
+| 3 | `apps/api/src/modules/debt/pos-debt-payment.service.ts` | yopiq nusxa o'chirildi, import qilinadi (ikki haqiqat qolmasin) |
+| 4 | `apps/api/src/modules/debt/pos-customer-debt.ts` | sarlavha izohi: «reyestrga ATAYLAB yozmaydi» BEKOR, eski matn tarix uchun saqlandi |
+| 5 | `apps/api/src/modules/debt/sale-debt-registry.mock.ts` | **YANGI** — umumiy tranzaksiya-mock'i (`$queryRaw` + `debt` + `debtNote` + sequence) |
+| 6 | `apps/api/src/modules/retail-sale/retail-sale-debt-registry.test.ts` | **YANGI**, 17 test |
+| 7 | `retail-sale-{tenders-wiring,post-guards,payed-sum}.test.ts` | harness'larga yangi delegatlar (mock'dan, nusxa emas) |
+| 8 | `apps/api/src/scripts/q2-local-registry-probe.ts` | **YANGI** — lokal dev bazada HAQIQIY indeks zondi (o'zi ROLLBACK qiladi) |
+
+**Yozuvchining shakli** (`writeSaleDebtRegistryRow`):
+
+```
+balansOldin ← lockCounterpartyBalance(FOR UPDATE)      ← applyDelta DAN OLDIN
+applyDelta(+debtAmount, source:'retailsale')            ← MAVJUD yo'l, o'zgarmadi
+audit (SOLD_ON_CREDIT)                                  ← o'zgarmadi
+plan ← planSaleDebtRow({debtAmount, balansOldin}, postedAt)
+  plan === null  ⇒ QATOR YO'Q (avans qopladi) + log
+  plan !== null  ⇒ mavjudlik tekshiruvi → QRZ- raqami →
+                   createMany({skipDuplicates}) → DebtNote(debt_issue)
+```
+
+#### 🔴 Rejadan ikkita ATAYLAB chekinish
+
+**1. `create` + `P2002` EMAS, `createMany({ skipDuplicates })`.**
+Reja «unique konflikt (`P2002`) tutiladi» degan edi. Bu **ishlamas edi**:
+Postgres unique-buzilishida tranzaksiyani ABORT holatiga o'tkazadi va Prisma
+savepoint ishlatmaydi — xato tutilgan taqdirda ham chekning QOLGAN yozuvlari
+(`customerOrders.applyPayment`, yakuniy `findUniqueOrThrow`) `25P02` bilan
+yiqilardi, ya'ni **muvaffaqiyatli chek 500 bo'lib qaytardi**. `skipDuplicates`
+esa `ON CONFLICT DO NOTHING` — xato ham, abort ham yo'q.
+Bu **taxmin emas, o'lchov**: `q2-local-registry-probe.ts` HAQIQIY indeks ustida
+tranzaksiya tirik qolganini isbotlaydi (pastda raqamlari bilan).
+
+**2. `postedAt` endi tranzaksiyadan OLDIN bir marta olinadi.** Ilgari
+`postedAt: new Date()` flip'ning ichida tug'ilardi; endi u qarz muddatini ham
+belgilaydi. Ikki alohida `new Date()` yarim tunda ikki xil kalendar kuni berib,
+chek sanasi bilan qarz muddati bir-biriga zid bo'lib qolishi mumkin edi.
+
+#### Test natijalari (raqam bilan)
+
+- `apps/api` **to'liq** vitest, YAKUNIY commit ustida: **634 fayl · 8918 test
+  YASHIL**, 1 fayl / 2 test skip.
+- **Bazaviy o'lchov** (mening o'zgarishlarim `git stash` ga olinib, AYNAN shu
+  ota-commit ustida): **633 fayl · 8901 test**. Ya'ni delta AYNAN **+1 fayl,
+  +17 test** — boshqa hech bir test o'zgarmadi.
+  (⚠️ Q1 hisobotidagi «8885» raqami bilan farq mening ishimdan EMAS: oradagi
+  `b4c27d24`/`7a75ce80` commitlari ham testlar qo'shgan. Shuning uchun bazaviy
+  o'lchov qayta olindi.)
+- Tegilgan uch modul kesimida: `retail-sale`+`debt`+`manager` **1967 → 1984**
+  (126 → 127 fayl) — yana AYNAN +17.
+- typecheck (`tsc --noEmit`, `--max-old-space-size=8192`): **0 xato**.
+- `node scripts/check-lint.mjs`: **0 error** (1178 warning — siyosat bo'yicha).
+- `pnpm i18n:gate`: **19 test yashil** (Q2 da yangi UI matni YO'Q — server
+  tomoni; loglar i18n'ga kirmaydi).
+
+**17 yangi test nimani qulflaydi:**
+
+| Guruh | Testlar |
+|---|---|
+| Asosiy | qator ochiladi (`balanceAdopted`, `sourceDocId=sale.id`, `nextContactAt` NULL EMAS, `QRZ-YYYY-NNNNN`, `issuedById`=kassir) · `DebtNote(debt_issue)` · **invariant 1: `applyDelta` AYNAN 1 marta, `source:'retailsale'`** · to'liq naqd → qator YO'Q · mijozsiz qarz → 400 |
+| Idempotentlik (inv. 3) | mavjud qator → ikkinchisi ochilmaydi VA raqam sarflanmaydi · takroriy post → qator qo'shilmaydi |
+| **§2.2 kesishuv (inv. 4)** | avans > qarz → **qator YO'Q**, balans esa o'sadi · avans qisman → qator FAQAT qolgan qismga + izohda avans summasi · balans `null` → to'liq qator + izohda «O'LCHANMAGAN» · balans musbat → to'liq qator |
+| Valyuta (§2.3) | USD yashiq → qator YO'Q, qulf OLINMAYDI, **ogohlantirish logi** (jim emas), balans yo'li buzilmaydi |
+| Kod shakli | qulf `applyDelta` DAN OLDIN · yozuvchi deltadan KEYIN · qulf `FOR UPDATE` va `counterparty_balances` dan · **yozuvchi `applyDelta` ni CHAQIRMAYDI** (izohlar olib tashlangan holda) |
+| Uchma-uch | yozilgan qator AYNAN o'sha shaklda `DebtCollectionService.list` dan CHIQADI (muddati va javobgari bilan) |
+
+#### 🔴 Lokal dev bazasida zond — MOCK emas, HAQIQIY indeks
+
+`q2-local-registry-probe.ts` (`sherset_v2_dev` @ localhost, bitta tranzaksiya,
+oxirida o'zi `ROLLBACK` qiladi — qoida 12 ma'nosidagi teskari yo'l skriptning
+O'ZIDA, qo'shimcha buyruq kerak emas):
+
+```
+  · 1-yozuv count=1 (kutilgan: 1)
+  · 2-yozuv count=0 (kutilgan: 0 — ON CONFLICT DO NOTHING)
+  · tranzaksiya TIRIK, qator soni=1 (kutilgan: 1)   ← eng muhim tekshiruv
+  · NULL,NULL ikki qator count=2 (kutilgan: 2)      ← Q1 NULL semantikasi
+  · FOR UPDATE so'rovi ishladi, qator soni=1
+  · ROLLBACK'dan keyin bazada qolgan zond qatorlari=0 (kutilgan: 0)
+```
+
+Uchinchi qator — rejadan chekinishning ISBOTI: `create`+`P2002` yo'li bilan
+bu so'rov `25P02` bilan yiqilardi.
+
+#### OCHIQ QAROR (Q1 dan meros) — Q2 uni SURMAYDI
+
+Q1 «cross-check'ga `opening` manbasi qo'shilsin» degan qarorni ochiq
+qoldirgan va Q2 ga «birinchi hal qil» deb yozgan edi. **O'lchandi va hal
+qilinmadi — sabab bilan:**
+
+Q2 ochadigan qatorlar HAR DOIM `balanceAdopted = true`, va
+`recompute-counterparty-balances.ts:277` dagi `debt.groupBy` filtri
+(`balanceAdopted: false`, Q1 qo'ygan) ularni hujjat-hisobidan CHIQARADI.
+Ya'ni **Q2 cross-check shovqinini bir zarra ham oshirmaydi** — 759 mos
+kelmaydigan kalit Q2 dan oldin ham, keyin ham o'sha. `opening` manbasi
+diagnostikani yaxshilaydi, lekin u **yangi manba-shartnomasi ochadi** (A2 ham
+`PREPAY` ni qo'shishi kerak) va Q2 ning vazifalar ro'yxatida YO'Q.
+Egasining qarori (2026-08-25): Q2 davom etsin, band ochiq qolsin.
+
+**Q1 dan ochiq qolganlar (o'zgarishsiz):**
+1. `recompute` cross-check'iga `opening` manbasi — Q1b yoki Q4 ga.
+2. Jonlida `APPLY=1` yugurtirilgan-yugurtirilmagani — **VPS kirishi kerak**,
+   tekshirilmadi. (Pul tomoni Q1 da koddan yopilgan: Faza 10 dan beri nishon —
+   jurnal, hujjat-rekonstruksiyasi esa faqat cross-check.)
+
+#### Qoida 10 — «bu o'zgarish qaysi mavjud oqimni buzishi mumkin?»
+
+1. **Balans / pul — TEGILMAYDI (invariant 1).** `applyDelta` chaqiruvi
+   BITTA va o'zgarmadi; yozuvchi `applyDelta` ni umuman chaqirmaydi (kod-shakl
+   testi bilan qulflangan). `DECLARED_BALANCE_WRITERS` ga yangi fayl
+   qo'shilmadi — `retail-sale.service.ts` allaqachon ro'yxatda.
+2. **Mijozga Telegram xabari — IKKINCHISI KETMAYDI.** Xabar `applyDelta` ning
+   `source` argumentidan ketadi; yangi qator `applyDelta` chaqirmagani uchun
+   `source:'debt'` («🛒 Qarzga qo'shildi») yo'li OCHILMAYDI. Qo'riqchi
+   (`debt-source-wiring.test.ts`) yashil, va yangi testda `source:'retailsale'`
+   AYNAN bir marta ekani tekshiriladi.
+3. **Undirish ro'yxati / qo'ng'iroq jadvali / menejer navbati — MAQSAD, lekin
+   HAJMI O'SADI.** Endi har qarzga sotuv `unpaid` qator beradi. Egasiga
+   oldindan aytilsin: `outstandingMinor` va `debtorCount` **o'sadi** — bu
+   TO'G'RI (qarz rostdan bor), lekin ekrandagi son «birdan sakraganday»
+   ko'rinadi. `manager-queue` ning `DEBT_CAP` i yangi nomzodlar oladi.
+4. **Eslatma cron'i (`debt-reminder.service.ts`) — 14 KUNDAN KEYIN uyg'onadi.**
+   `nextContactAt` = post + 14 kun ⇒ birinchi to'lqin **2026-09-08** atrofida
+   operatorlarga bildirishnoma bo'lib keladi. Mijozga AVTOMATIK xabar YO'Q
+   (`lastTgReminderAt` cron'i kodda mavjud emas — Q0 da tekshirilgan).
+   🔴 **Bu Q6 gacha esda tutilsin: 2026-09-08 da operator navbati birdan
+   to'lishi KUTILGAN xulq, nosozlik emas.**
+5. **POS «Qarz to'lovi» oynasi — SON O'ZGARMAYDI.** `payableMinor =
+   max(reyestr, balans)`; endi ikki son tenglashadi, maksimum o'sha qoladi.
+   `unregisteredMinor` yangi cheklar uchun 0 ga tushadi (to'g'ri), adopsiya
+   yo'li esa eski cheklar va boshqa hujjat manbalari uchun ishlashda qoladi —
+   `pos-debt-payment.balance-adoption.test.ts` yashil.
+6. **Akt-sverka (`counterparty-settlement.util.ts`) — O'ZGARMAYDI.** U
+   `debtRegistryOutstandingMinor` ni «saldoning TARKIBI, qo'shiluvchi EMAS»
+   deb ta'riflaydi va `balanceAdopted` qatori uchun bu premise TO'G'RI.
+7. **`recompute` cross-check'i — SHOVQIN OSHMAYDI.** Yuqorida o'lchandi.
+8. **Smena hisobi / kutilgan naqd — TEGILMAGAN.** Qarz tenderi naqdga
+   kirmaydi (o'zgarmadi), reyestr qatori esa pul emas.
+9. **Chek rollback bo'lsa qator ham qolmaydi** — yozuv AYNAN o'sha
+   tranzaksiyada.
+10. **USD yashiq — qator ochilmaydi.** Bu XULQ CHEGARASI (§2.3), va u JIM
+    emas: ogohlantirish logi + shu hisobotdagi qayd. Bugungi o'rnatmada
+    barcha yashiqlar so'mda, ya'ni amalda hech qanday chek chetda qolmaydi.
+11. **Ombor / qoldiq / yacheyka — TEGILMAGAN.** Q2 `stock`, `store-cell`,
+    `retail-allocation` fayllariga bir qator ham yozmadi. Lekin ⚠️ branch'da
+    endi G4-2a (`b4c27d24`) BOR — **deploy oynasi ombor xulqini ham olib
+    chiqadi**, shuning uchun qoida 8 ning `warehouse-state.ts` qo'shimchasi va
+    qoida 13 ning uchma-uch smoke'i deploy paytida MAJBURIY.
+12. **`QRZ-` raqamlar ketma-ketligi** — `allocateDocumentNumber` orqali,
+    `adoptBalanceDebt` bilan BIR xil hisoblagichdan. Ikki yozuvchi bir
+    hisoblagichni bo'lishadi, race-safe. Idempotent skip'da raqam
+    SARFLANMAYDI (test bilan qulflangan).
+
+#### Deploy holati
+
+**Deploy QILINMADI**, VPS'ga tegilmadi, jonli bazaga tegilmadi.
+
+🔴 **Deploy oldidan hal qilinishi SHART:** branch'da endi Q1+Q2 (kassa qarzi)
+bilan BIR QATORDA **G4-1 + G4-2a (ombor avto-taqsimoti)** ham turibdi, va
+G-rejada G4 «deploy kutilmoqda — egasi keyinroq dedi VA 2026-08-24 hodisasi
+hal bo'lmagan» deb belgilangan. `git merge --ff-only` retsepti ularni AJRATA
+OLMAYDI. Ikki yo'l: (a) egasi ikkalasini birga chiqarishga rozi bo'ladi va
+deploy qoida 8+13 to'liq bajariladi; (b) Q1+Q2 alohida branch'ga
+cherry-pick qilinadi. **Qaror egasiniki.**
+
+Migratsiya: Q1 niki (`20260825120000_debt_source_doc`) hali VPS'da
+BERILMAGAN — Q2 dan oldin berilishi SHART, aks holda `post()` mavjud
+bo'lmagan ustunga yozib chekni yiqitardi.
+
+#### Qabul mezoni bo'yicha holat (qoida 11)
+
+| # | Mezon | Holat |
+|---|---|---|
+| 1 | qarzga sotuv → reyestrda 1 qator (`balanceAdopted`, `sourceDocId`, muddat) | ✅ test + lokal baza zondi |
+| 2 | balansga IKKI MARTA yozilmadi | ✅ test (invariant 1) |
+| 3 | Telegram xabari BIR MARTA | ✅ test + mavjud wiring qo'riqchisi |
+| 4 | idempotentlik | ✅ test + **HAQIQIY indeks** zondi |
+| 5 | §2.2 kesishuv — uch holat | ✅ test (to'rt holat) |
+| 6 | qulf `applyDelta` dan OLDIN | ✅ kod-shakl testi |
+| 7 | undirish ro'yxati qatorni qaytaradi | ✅ `DebtCollectionService.list` uchma-uch testi |
+| 8 | api testlari to'liq yashil | ✅ 8918 |
+| 9 | **jonlida sinov-chek → `/menejer/undirish` da `upcoming`** | ❌ **VPS/deploy kerak** |
+| 10 | **jonlida balans AYNAN bir marta o'sdi** | ❌ VPS kerak |
+| 11 | **jonlida `payableMinor` o'zgarmadi** | ❌ VPS kerak |
+| 12 | **jonlida manfiy balansli mijozga qator OCHILMADI** | ❌ VPS kerak |
+| 13 | **sinov cheki storno + reyestr qatorini qo'lda tozalash** | ❌ VPS kerak |
+
+**Shuning uchun holat «TUGADI» EMAS, «QISMAN».** Yopish sharti: 9–13 bandlari.
+
+#### Jonli tekshiruv retsepti (deploy'dan KEYIN yugurtiriladi)
+
+Deploy oldidan va keyin (qoida 8): `packages/db` da
+`npx tsx scripts/warehouse-state.ts` — chiqishi shu hisobotga ko'chiriladi.
+
+1. Sinov mijozga (balansi **0** yoki musbat) POS'dan kichik summali chek
+   QARZGA post qilinadi.
+2. `/menejer/undirish` → mijoz `upcoming` chelagida, muddati **post + 14 kun**,
+   javobgari — kassir.
+3. Kontragent kartasi: balans AYNAN chek qarziga o'sgan (ikki barobar EMAS).
+4. POS «Qarz to'lovi» oynasi: `payableMinor` o'sha son (o'zgarmagan).
+5. **Manfiy balansli (avansi bor) sinov mijoziga** qarzga chek → reyestrda
+   qator YO'Q, undirish ro'yxatida CHIQMAYDI.
+6. Uchma-uch smoke (qoida 13): bitta sotuv (post → tekshir → cancel), bitta
+   yacheyka sanash, bitta ko'chirish — chunki deploy G4-2a ni ham olib chiqadi.
+7. Izni tozalash (Q3 gacha qo'lda — `refund()` hali reyestrni harakatlantirmaydi):
+
+```sql
+-- AVVAL o'qib ko'ring, keyin o'chiring. <SALE_ID> — sinov chekining id'si.
+SELECT id, name, total_minor, status FROM debts
+ WHERE source_doc_type = 'retailsale' AND source_doc_id = '<SALE_ID>';
+
+DELETE FROM debt_notes WHERE debt_id IN (
+  SELECT id FROM debts
+   WHERE source_doc_type = 'retailsale' AND source_doc_id = '<SALE_ID>');
+DELETE FROM debts
+ WHERE source_doc_type = 'retailsale' AND source_doc_id = '<SALE_ID>';
+```
+
+⚠️ `DELETE` ataylab `deletedAt` EMAS: soft-delete qator unique indeksni band
+qilib turardi va o'sha chek qayta post qilinsa qator OCHILMASDI. Sinov izi
+butunlay ketishi kerak.
+
+#### Keyingi fazaga (Q3) eslatmalar
+
+1. Qator manzili — `sourceDocId = sale.id` (`sourceDocType='retailsale'`).
+   `refund()` uni AYNAN shu bo'yicha topadi.
+2. `planSaleDebtDelta` (Q1) AYNAN Q3 uchun yozilgan — `clampedByPaidMinor` >
+   0 bo'lsa bu **haqiqiy nizo**, 400 emas, `DebtNote` bilan ochiq qayd.
+3. 🔴 **`recompute-counterparty-balances.ts:277` ustidagi izohda «`totalMinor`
+   create'dan keyin o'zgarmaydi (Debt'da uni tahrirlaydigan yo'l yo'q)» degan
+   da'vo bor. Q3 bu da'voni BUZADI** (vozvrat `totalMinor` ni kamaytiradi).
+   Amalda xato tug'ilmaydi — Q3 harakatlantiradigan qatorlar
+   `balanceAdopted = true`, ya'ni filtrdan CHIQIB ketadi — lekin **izoh
+   yangilanmasa keyingi o'quvchi noto'g'ri premise ustida qaror qabul qiladi.**
+4. `retail-sale.service.ts` da endi ikkita helper bor: `lockCounterpartyBalance`
+   (qayta ishlatiladi) va `writeSaleDebtRegistryRow`. Q3 ning `refund()` yo'li
+   ham balansni AYNAN shu qulf bilan, AYNAN shu tartibda olishi kerak.
+5. `refund()` va `edit()` da valyuta tekshiruvi ham TAKRORLANSIN — USD yashiq
+   chekida qator YO'Q, demak uni harakatlantirishga urinish `findFirst → null`
+   beradi va bu XATO emas.
+6. `git stash@{0}` da G4-2 ning eski nusxasi turibdi — Q3 sessiyasi uni
+   ko'r-ko'rona `pop` QILMASIN (yuqoridagi operatsion hodisaga qarang).
