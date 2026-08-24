@@ -11389,6 +11389,35 @@ model Debt {
   /// yozmasligi shart, aks holda o'chirish mijozning qarzini yo'q qilardi.
   balanceAdopted Boolean @default(false) @map("balance_adopted")
 
+  /// 🔴 HUJJAT-MANBA BOG'LAMI (Q1, 2026-08-25 — kassa qarzini undirish reyestriga ulash).
+  ///
+  /// Qator qaysi hujjatdan tug'ilgani. Hozircha yagona qiymat — `'retailsale'`
+  /// (POS cheki, Q2 yozuvchisi); `null` = qo'lda ochilgan yoki P1 adopsiya qatori.
+  ///
+  /// NEGA KERAK (uchta ish bitta bog'lamda):
+  ///   1. **IDEMPOTENTLIK** — `@@unique([accountId, sourceDocType, sourceDocId])`
+  ///      bitta chekdan ikkinchi qator tug'ilishiga yo'l qo'ymaydi (post
+  ///      takrorlansa chaqiruvchi `P2002` ni tutadi);
+  ///   2. **SIMMETRIYA MANZILI** — `refund()`/`edit()` (Q3) qatorni AYNAN
+  ///      `sourceDocId = sale.id` bo'yicha topib, balans deltasiga teng
+  ///      harakatlantiradi (invariant 2);
+  ///   3. **MANBA KO'RSATISH** — undirish ekranida «bu qarz qayerdan keldi» (Q4)
+  ///      va Q5 backfill'ining «allaqachon qatori bor» filtri.
+  ///
+  /// `balanceAdopted` BILAN MUNOSABATI: chekdan tug'ilgan qator HAR DOIM
+  /// `balanceAdopted = true` bo'ladi — qarz mijoz balansiga `post()` da
+  /// allaqachon yozilgan (`applyDelta(+debtAmount)`), reyestr qatori esa uni
+  /// FAQAT KO'RINADIGAN qiladi. Ikkisi bir-birining o'rnini bosmaydi:
+  /// `balanceAdopted` — «balansga yozamizmi?» degan PUL savoliga javob,
+  /// `sourceDocType/sourceDocId` — «qaysi hujjatdan?» degan MANBA savoliga.
+  ///
+  /// ⚠️ Postgres'da nullable ustunlar bo'yicha unique indeks NULL larni
+  /// TAKRORLANUVCHI sanamaydi (`NULL != NULL`), shuning uchun mavjud qatorlar
+  /// (`NULL, NULL`) va kelajakda qo'lda ochiladigan qarzlar bir-biriga
+  /// to'sqinlik qilmaydi — backfill kerak emas.
+  sourceDocType String? @map("source_doc_type") @db.VarChar(32)
+  sourceDocId   String? @map("source_doc_id") @db.Uuid
+
   /// Mas'ul xodim (call-markaz operatori) — ro'yxat filtri.
   ownerId    String? @map("owner_id") @db.Uuid
   /// Qarzni bergan kassir — §3.9 kunlik kassir hisoboti shu ustundan yig'iladi.
@@ -11410,6 +11439,9 @@ model Debt {
   notes        DebtNote[]
 
   @@unique([accountId, name])
+  /// Q1 (2026-08-25) — bitta hujjatdan ko'pi bilan BITTA reyestr qatori.
+  /// NULL lar takrorlanuvchi sanalmaydi ⇒ qo'lda ochilgan qarzlar cheklanmaydi.
+  @@unique([accountId, sourceDocType, sourceDocId])
   /// «Qarzdorlar ro'yxati» (§3.1) — status bo'yicha faol qarzlar.
   @@index([accountId, status, nextContactAt])
   /// «Bugungi qo'ng'iroqlar» (§3.5) — sana bo'yicha tanlash.

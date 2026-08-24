@@ -30,7 +30,8 @@
  * Hujjat cross-checkining formulasi (avvalgidek, `applyDelta` bilan bir xil):
  *   +InvoiceOut −Supply +PurchaseReturn  −PaymentIn +PaymentOut  −CashIn +CashOut
  *   −Prepayment +PrepaymentReturn  CounterpartyAdjustment ±direction
- *   −DebtPayment  +Debt(QRZ- reyestr)  +RetailSale(qarz tender) −RetailSale(qarz qaytarish)
+ *   −DebtPayment  +Debt(QRZ- reyestr, `balanceAdopted=false`)
+ *   +RetailSale(qarz tender) −RetailSale(qarz qaytarish)
  * `applicable: true` is the precise predicate applyDelta gates on (cancel clears it).
  *
  * ⚠️ QAMROV — Faza 8 dan qolgan guard SAQLANADI. Endi u nishonni emas,
@@ -251,11 +252,35 @@ async function main() {
   // (Faza 12'gacha aksi to'g'ri edi: reversal yo'q edi, shuning uchun
   // o'chirilgan qarz ham qo'shilardi.)
   //
+  // 🔴 ADOPSIYA QATORLARI SANALMAYDI (Q1, 2026-08-25 — reja §2.1 yorig'i).
+  //
+  // P1 (2026-08-11) dan beri reyestrda IKKI XIL qator bor:
+  //   · odatdagi `DebtService.create` qatori — balansga `+totalMinor` YOZADI;
+  //   · `balanceAdopted = true` qatori — balansga HECH NARSA yozmaydi, chunki
+  //     qarz balansda ALLAQACHON bor (`pos-debt-payment.service.ts#adoptBalanceDebt`;
+  //     Q2 dan keyin `retail-sale.service.ts#post` ham shunday qator ochadi).
+  //
+  // Ya'ni pastdagi «Σ totalMinor = Σ yozilgan delta» tengligi adopsiya
+  // qatorlari uchun NOTO'G'RI. Filtrsiz qolsa hujjat-rekonstruksiyasi ularning
+  // `totalMinor` ini qo'shadi, jurnalda esa mos delta yo'q ⇒ cross-check
+  // «hujjatlar X vs jurnal Y» deb YOLG'ON farq ko'rsatardi. (Faza 10 dan beri
+  // NISHON — jurnal, shuning uchun bu ma'lumotni BUZMAYDI; buzadigani —
+  // skriptning yagona diagnostik signalining ishonchi.)
+  //
+  // ⚠️ SIMMETRIYA: `debt.service.ts#remove()` ham adopsiya qatoriga
+  // `−totalMinor` YOZMAYDI (`if (!debt.balanceAdopted)`), ya'ni ikkala tomon
+  // ham daftarga tegmaydi — filtr aynan shu haqiqatning ko'zgusi. Ikkovi
+  // `counterparty-balance-sources.test.ts` da birga qulflangan.
+  //
   // `totalMinor` create'dan keyin o'zgarmaydi (Debt'da uni tahrirlaydigan yo'l
-  // yo'q), shuning uchun Σ totalMinor = Σ yozilgan delta.
+  // yo'q), shuning uchun qolgan qatorlar uchun Σ totalMinor = Σ yozilgan delta.
   const debts = await prisma.debt.groupBy({
     by: ['accountId', 'counterpartyId', 'currency'],
-    where: { deletedAt: null, ...(ONLY_CP ? { counterpartyId: ONLY_CP } : {}) },
+    where: {
+      deletedAt: null,
+      balanceAdopted: false,
+      ...(ONLY_CP ? { counterpartyId: ONLY_CP } : {}),
+    },
     _sum: { totalMinor: true },
   });
   for (const d of debts) {

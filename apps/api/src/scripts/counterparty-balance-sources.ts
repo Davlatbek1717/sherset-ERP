@@ -132,7 +132,10 @@ export const DECLARED_BALANCE_WRITERS: readonly BalanceWriter[] = [
     note:
       'create() +totalMinor (QRZ- reyestri, 2026-08-05 balans-simmetriyasi). ' +
       'remove() −totalMinor reversal YOZADI (Faza 12/DUP-03) — shuning uchun skript ' +
-      "o'chirilganlarni (deletedAt != null) SANAMAYDI.",
+      "o'chirilganlarni (deletedAt != null) SANAMAYDI. " +
+      '🔴 Q1 (2026-08-25): ADOPSIYA qatorlari (balanceAdopted=true) balansga UMUMAN ' +
+      'yozmaydi (ochilishi ham, remove() ham) — skript ularni ham SANAMAYDI, aks holda ' +
+      "cross-check «hujjatlar ≠ jurnal» deb yolg'on farq ko'rsatardi.",
   },
   {
     file: 'modules/retail-sale/retail-sale.service.ts',

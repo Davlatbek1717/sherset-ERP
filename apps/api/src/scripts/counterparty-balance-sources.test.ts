@@ -160,4 +160,56 @@ describe('skript manbalari yozuvchilar semantikasiga mos (DUP-02 fix)', () => {
     expect(scanBalanceWriters()).toContain('modules/purchase-return/purchase-return.service.ts');
     expect(SCRIPT_SRC).toMatch(/prisma\.purchaseReturn as unknown as GroupByDelegate, 1n/);
   });
+
+  /**
+   * 🔴 Q1 (2026-08-25, reja §2.1) — ADOPSIYA QATORLARI hujjat-hisobiga KIRMAYDI.
+   *
+   * P1 dan beri reyestrda balansga UMUMAN yozmaydigan qator turi bor
+   * (`balanceAdopted = true`): ochilishi `applyDelta` chaqirmaydi va
+   * `remove()` ham unga teskari delta yozmaydi. `debt-issue` manbasi esa
+   * BARCHA `totalMinor` ni qo'shardi — ya'ni cross-check «hujjatlar ≠ jurnal»
+   * deb YOLG‘ON farq ko‘rsatardi va skriptning yagona diagnostik signali
+   * ishonchsiz bo‘lardi.
+   *
+   * Uch tomon BITTA testda qulflanadi, chunki ular birga o'zgarishi shart:
+   * (a) adopsiya qatori ochilishida `applyDelta` yo‘q, (b) `remove()` uni
+   * bayroq bilan chetlab o‘tadi, (c) skriptning `groupBy` i uni sanamaydi.
+   */
+  it('adopsiya qatori (balanceAdopted) ↔ skriptning filtri birga yuradi', () => {
+    // (a) Adopsiya qatori ochilganda balansga yozilmaydi — `adoptBalanceDebt`
+    // tanasida `applyDelta` chaqirig'i YO'Q.
+    const posSrc = readFileSync(
+      join(API_SRC_ROOT, 'modules', 'debt', 'pos-debt-payment.service.ts'),
+      'utf8',
+    );
+    const adoptStart = posSrc.indexOf('private async adoptBalanceDebt(');
+    expect(adoptStart).toBeGreaterThan(0);
+    const adoptBody = posSrc.slice(adoptStart, posSrc.indexOf('\n  /**', adoptStart));
+    expect(adoptBody).toContain('balanceAdopted: true');
+    expect(adoptBody).not.toMatch(/\.applyDelta\s*\(/);
+
+    // (b) `remove()` teskari deltani bayroq bilan to‘sadi.
+    const debtSrc = readFileSync(join(API_SRC_ROOT, 'modules', 'debt', 'debt.service.ts'), 'utf8');
+    const removeBody = debtSrc.slice(debtSrc.indexOf('async remove('));
+    expect(removeBody).toMatch(/if\s*\(!debt\.balanceAdopted\)/);
+
+    // (c) Demak rekonstruksiya ham ularni SANAMAYDI. Da‘vo AYNAN `groupBy`
+    // chaqirig‘ining TANASIGA bog‘lanadi — izohdagi so‘z dalil emas (CLAUDE.md §4).
+    const callStart = SCRIPT_SRC.indexOf('prisma.debt.groupBy');
+    expect(callStart).toBeGreaterThan(0);
+    const groupByCall = SCRIPT_SRC.slice(callStart, SCRIPT_SRC.indexOf('});', callStart));
+    expect(groupByCall).toMatch(/where:[\s\S]*balanceAdopted:\s*false/);
+  });
+
+  /**
+   * Non-vakuum: filtr rostdan ham `debt-issue` blokida turibdi, boshqa
+   * manbaga tasodifan tushib qolmagan.
+   */
+  it('balanceAdopted filtri AYNAN debt-issue manbasida turadi', () => {
+    const blockStart = SCRIPT_SRC.indexOf('SOURCE: debt-issue');
+    const blockEnd = SCRIPT_SRC.indexOf('SOURCE: retail-credit', blockStart);
+    expect(blockStart).toBeGreaterThan(0);
+    expect(blockEnd).toBeGreaterThan(blockStart);
+    expect(SCRIPT_SRC.slice(blockStart, blockEnd)).toMatch(/balanceAdopted:\s*false/);
+  });
 });
