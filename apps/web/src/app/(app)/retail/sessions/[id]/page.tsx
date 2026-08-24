@@ -94,6 +94,8 @@ interface ZFull {
   returnsMinor: string;
   expenseMinor: string;
   collectionMinor: string;
+  /** G1 — vozvratlar uchun mijozlarga kassadan qaytarilgan naqd. */
+  returnPayoutMinor: string;
   expenseByItem: Array<{ id: string | null; name: string | null; sumMinor: string }>;
   expectedCashMinor: string;
   /**
@@ -321,6 +323,11 @@ export default function SessionDetailPage() {
             <MetaRow
               label={tZ('collection')}
               value={formatMoney(BigInt(zFull.collectionMinor), currency)}
+            />
+            {/* G1 — vozvrat puli o'z qatori (xarajatga aralashmaydi). */}
+            <MetaRow
+              label={tZ('return_payout')}
+              value={formatMoney(BigInt(zFull.returnPayoutMinor), currency)}
             />
           </div>
 

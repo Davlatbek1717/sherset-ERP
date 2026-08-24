@@ -16,6 +16,9 @@ interface CashOutDoc {
   createdAt: string;
   expenseItem: { id: string; name: string } | null;
   recipient: { id: string; name: string } | null;
+  /** G1 — vozvrat-to'lov (`kind='return_payout'`) hujjatida to'ldiriladi. */
+  agent: { id: string; name: string } | null;
+  salesReturn: { id: string; name: string } | null;
   owner: { id: string; name: string } | null;
   organization: { name: string; legalTitle: string | null } | null;
   retailShift: { id: string; cashDesk: { name: string } | null } | null;
@@ -59,8 +62,14 @@ export default function PrintCashOutPage() {
   if (!data) return <div style={{ padding: 24 }}>Not found</div>;
 
   const isCollection = data.kind === 'collection';
-  const title = isCollection ? 'INKASSATSIYA' : 'XARAJAT';
-  const subtitle = isCollection ? 'Naqd pul topshirish' : 'Chiqim kassa orderi (RKO)';
+  // G1 — vozvrat puli: mijozga kassadan qaytarilgan naqd cheki.
+  const isReturnPayout = data.kind === 'return_payout';
+  const title = isReturnPayout ? 'VOZVRAT PULI' : isCollection ? 'INKASSATSIYA' : 'XARAJAT';
+  const subtitle = isReturnPayout
+    ? 'Mijozga naqd qaytarish'
+    : isCollection
+      ? 'Naqd pul topshirish'
+      : 'Chiqim kassa orderi (RKO)';
 
   return (
     <PrintShell autoPrint={auto}>
@@ -105,11 +114,21 @@ export default function PrintCashOutPage() {
         {/* «Nima uchun» — hujjatning ma'nosi shu qatorda. */}
         <div style={{ marginBottom: 8 }}>
           <div style={ROW}>
-            <span>{isCollection ? 'Qabul qildi' : 'Modda'}</span>
+            <span>{isReturnPayout ? 'Mijoz' : isCollection ? 'Qabul qildi' : 'Modda'}</span>
             <span style={{ fontWeight: 700 }}>
-              {isCollection ? (data.recipient?.name ?? '—') : (data.expenseItem?.name ?? '—')}
+              {isReturnPayout
+                ? (data.agent?.name ?? '—')
+                : isCollection
+                  ? (data.recipient?.name ?? '—')
+                  : (data.expenseItem?.name ?? '—')}
             </span>
           </div>
+          {isReturnPayout && (
+            <div style={ROW}>
+              <span>Vozvrat</span>
+              <span style={{ fontWeight: 700 }}>{data.salesReturn?.name ?? '—'}</span>
+            </div>
+          )}
           {data.description && (
             <div style={{ marginTop: 4, fontSize: 12, color: '#444' }}>{data.description}</div>
           )}
@@ -136,7 +155,7 @@ export default function PrintCashOutPage() {
             <span>_________________</span>
           </div>
           <div style={ROW}>
-            <span>{isCollection ? 'Qabul qildi' : 'Oldi'}</span>
+            <span>{isReturnPayout ? 'Oldim (mijoz)' : isCollection ? 'Qabul qildi' : 'Oldi'}</span>
             <span>_________________</span>
           </div>
         </div>

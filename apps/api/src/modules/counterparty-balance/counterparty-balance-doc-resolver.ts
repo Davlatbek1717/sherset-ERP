@@ -143,6 +143,13 @@ export interface BalanceDocClient {
       select: { id: true; name: true; moment: true };
     }): Promise<Array<{ id: string; name: string; moment: Date }>>;
   };
+  /** G1 — `returnPayout` yorlig'i (ВВ- raqami) shu jadvaldan o'qiladi. */
+  retailDrawerCashOut: {
+    findMany(args: {
+      where: { accountId: string; id: { in: string[] } };
+      select: { id: true; name: true; moment: true };
+    }): Promise<Array<{ id: string; name: string; moment: Date }>>;
+  };
 }
 
 // `purchaseReturn` — Faza 13 (`PP-02`). `salesReturn` — P14 (`H1`). `invoiceIn`
@@ -311,6 +318,29 @@ export async function resolveBalanceDocs(
   }
 
   jobs.push(resolveDebtPayments(client, accountId, byType.get('debtpayment'), out));
+
+  // G1 — vozvrat puli hujjati (ВВ- raqami). Topilmasa qator raqamsiz chiqadi
+  // (resolverning ataylab tanlangan degradatsiya yo'li — saldoga ta'sir yo'q).
+  const payoutIds = byType.get('returnPayout');
+  if (payoutIds?.size) {
+    jobs.push(
+      client.retailDrawerCashOut
+        .findMany({
+          where: { accountId, id: { in: [...payoutIds] } },
+          select: { id: true, name: true, moment: true },
+        })
+        .then((rows) => {
+          for (const d of rows) {
+            out.set(docKey('returnPayout', d.id), {
+              number: d.name,
+              moment: d.moment,
+              contractId: null,
+              items: [],
+            });
+          }
+        }),
+    );
+  }
 
   const saleIds = byType.get('retailsale');
   if (saleIds?.size) {

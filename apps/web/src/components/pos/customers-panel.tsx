@@ -1,11 +1,12 @@
 'use client';
 
 import { api } from '@/lib/api-client';
+import { formatAmountInput, parseAmountToMinor } from '@/lib/pos/parse-amount';
 import type { ListEnvelope } from '@moysklad/contracts';
 import type { CurrencyCode } from '@moysklad/money/currencies';
 import { Input, formatMoney, useToast } from '@moysklad/ui';
-import { useMutation, useQuery } from '@tanstack/react-query';
-import { ChevronRight, Receipt } from 'lucide-react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { ChevronRight, Receipt, Undo2 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useState } from 'react';
 import type { CustomerCardRow } from './customer-card-panel';
@@ -54,9 +55,41 @@ interface ChekRow {
   state: string;
 }
 
+/** `GET /cashier-sessions/unpaid-returns?agentId=` — G1 bloki. */
+interface UnpaidReturnRow {
+  id: string;
+  name: string;
+  moment: string;
+  currency: string;
+  sumMinor: string;
+  payedSumMinor: string;
+  remainingMinor: string;
+  /** `false` — valyutali vozvrat: ko'rinadi, lekin kassadan to'lab bo'lmaydi. */
+  payable: boolean;
+}
+
+interface UnpaidReturnsPayload {
+  items: UnpaidReturnRow[];
+  totalRemainingMinor: string;
+}
+
+interface PayoutDoc {
+  id: string;
+  name: string;
+  sumMinor: string;
+  remainingMinor: string;
+  auditTypes: string[];
+}
+
 interface Props {
   /** Kassa valyutasi — qarz AYNAN shu valyuta kesimida o'qiladi. */
   currency?: CurrencyCode;
+  /**
+   * G1 — ochiq smena id'si: vozvrat pulini qaytarish `POST
+   * /cashier-sessions/:id/customer-payout` shu smenadan chiqadi. `null` —
+   * to'lash tugmalari o'chiq (smenasiz pul berib bo'lmaydi).
+   */
+  sessionId?: string | null;
   /** «Mijoz kartasi» — chaqiruvchi `CustomerCardPanel`ni ochadi. */
   onOpenCustomerCard: (agent: CustomerCardRow) => void;
   /** «Qarzni to'lash» — chaqiruvchi qarz oynasini shu mijoz bilan ochadi. */
@@ -67,6 +100,7 @@ interface Props {
 
 export function CustomersPanel({
   currency = 'UZS',
+  sessionId = null,
   onOpenCustomerCard,
   onPayDebt,
   onOpenChek,
@@ -84,7 +118,14 @@ export function CustomersPanel({
    * qulayroq.
    */
   const [receiptOpen, setReceiptOpen] = useState(false);
+  /**
+   * G1 — to'lanayotgan vozvrat: `id` + summa maydoni (default — qolgan
+   * qaytim TO'LIQ; qisman to'lash mumkin, cap server tomonda).
+   */
+  const [payingReturnId, setPayingReturnId] = useState<string | null>(null);
+  const [payoutAmount, setPayoutAmount] = useState('');
   const { toast } = useToast();
+  const queryClient = useQueryClient();
 
   const { data: cpData, isLoading: cpLoading } = useQuery<ListEnvelope<CustomerCardRow>>({
     queryKey: ['pos-customers-search', search],
@@ -115,6 +156,38 @@ export function CustomersPanel({
     staleTime: 0,
   });
 
+  // G1 — mijozning to'lanmagan vozvratlari (post bo'lgan SalesReturn'lar).
+  const { data: unpaidReturns } = useQuery<UnpaidReturnsPayload>({
+    queryKey: ['pos-unpaid-returns', agent?.id],
+    queryFn: () => api.get(`/cashier-sessions/unpaid-returns?agentId=${agent?.id}`),
+    enabled: !!agent,
+  });
+
+  const payReturn = useMutation({
+    mutationFn: (args: { salesReturnId: string; sumMinor: bigint }) =>
+      api.post<PayoutDoc>(`/cashier-sessions/${sessionId}/customer-payout`, {
+        salesReturnId: args.salesReturnId,
+        sumMinor: args.sumMinor.toString(),
+      }),
+    onSuccess: (doc) => {
+      setPayingReturnId(null);
+      setPayoutAmount('');
+      // Blok va qarz-raqami yangilansin — pul chiqdi, balans surildi.
+      queryClient.invalidateQueries({ queryKey: ['pos-unpaid-returns', agent?.id] });
+      queryClient.invalidateQueries({ queryKey: ['pos-customers-debt', agent?.id] });
+      if (doc.auditTypes.includes('CASH_OVERDRAWN')) {
+        // Yashiqda kutilgandan ko'p pul chiqdi — server to'xtatmadi (Q10),
+        // lekin kassir BILISHI kerak (cash-out oqimi bilan bir xil signal).
+        toast.error(t('unpaid_returns_overdrawn'));
+      } else {
+        toast.success(t('unpaid_returns_paid', { name: doc.name }));
+      }
+      // Chek — mijoz imzo qo'yadigan qog'oz (RKO sahifasining payout varianti).
+      window.open(`/print/cash-out/${doc.id}?auto=1`, '_blank');
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
   const sendReceipt = useMutation({
     mutationFn: () =>
       api.post<{ queued: number }>(`/counterparty-debt-receipts/${agent?.id}/send`, {}),
@@ -130,6 +203,8 @@ export function CustomersPanel({
     // Oldingi mijozning ochiq bloklari yangisiga «meros» qolmasin.
     setCheksOpen(false);
     setReceiptOpen(false);
+    setPayingReturnId(null);
+    setPayoutAmount('');
   }
 
   return (
@@ -220,6 +295,109 @@ export function CustomersPanel({
                   {t('customer_card_balance_missing')}
                 </p>
               )}
+            </div>
+          )}
+
+          {/* ── G1: To'lanmagan vozvratlar — qaytim kassadan beriladi ──── */}
+          {(unpaidReturns?.items.length ?? 0) > 0 && (
+            <div
+              data-test-id="pos-unpaid-returns"
+              className="rounded-xl border border-[var(--ms-border)] p-4"
+            >
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <p className="flex items-center gap-2 font-medium text-[16px]">
+                  <Undo2 className="h-5 w-5 shrink-0 text-[var(--ms-text-muted)]" />
+                  {t('unpaid_returns_title')}
+                </p>
+                <p
+                  data-test-id="pos-unpaid-returns-total"
+                  className="shrink-0 font-semibold text-[18px] tabular-nums"
+                >
+                  {formatMoney(unpaidReturns?.totalRemainingMinor ?? '0', currency)}
+                </p>
+              </div>
+              <div className="flex flex-col divide-y divide-[var(--ms-border)]">
+                {(unpaidReturns?.items ?? []).map((r) => (
+                  <div key={r.id} className="flex flex-col gap-2 py-2">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="truncate font-medium text-[16px]">{r.name}</p>
+                        <p className="text-[13px] text-[var(--ms-text-muted)]">
+                          {new Date(r.moment).toLocaleDateString('uz-UZ', {
+                            day: '2-digit',
+                            month: '2-digit',
+                            year: '2-digit',
+                          })}
+                          {r.payedSumMinor !== '0' &&
+                            ` · ${t('unpaid_returns_partially_paid', {
+                              sum: formatMoney(r.payedSumMinor, currency),
+                            })}`}
+                        </p>
+                      </div>
+                      <div className="flex shrink-0 items-center gap-2">
+                        <span className="font-semibold text-[16px] tabular-nums">
+                          {formatMoney(r.remainingMinor, r.currency as CurrencyCode)}
+                        </span>
+                        {r.payable ? (
+                          <button
+                            type="button"
+                            data-test-id="pos-unpaid-returns-pay"
+                            disabled={!sessionId}
+                            onClick={() => {
+                              // Qayta bosish blokni yopadi; ochilganda summa
+                              // maydoni QOLGAN qaytim bilan to'ladi.
+                              setPayingReturnId((cur) => (cur === r.id ? null : r.id));
+                              setPayoutAmount(
+                                formatAmountInput(BigInt(r.remainingMinor), currency),
+                              );
+                            }}
+                            className="h-[44px] rounded-lg bg-[var(--ms-bg-brand)] px-4 font-semibold text-[15px] text-white disabled:opacity-50"
+                          >
+                            {t('unpaid_returns_pay')}
+                          </button>
+                        ) : (
+                          <span className="text-[13px] text-[var(--ms-text-muted)]">
+                            {t('unpaid_returns_foreign_currency')}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    {payingReturnId === r.id && (
+                      <div
+                        data-test-id="pos-unpaid-returns-confirm"
+                        className="flex items-center gap-2"
+                      >
+                        <Input
+                          type="text"
+                          inputMode="decimal"
+                          data-test-id="pos-unpaid-returns-amount"
+                          value={payoutAmount}
+                          onChange={(e) => setPayoutAmount(e.target.value)}
+                          className="h-[44px] flex-1 text-[16px] tabular-nums"
+                        />
+                        <button
+                          type="button"
+                          data-test-id="pos-unpaid-returns-submit"
+                          disabled={
+                            payReturn.isPending ||
+                            parseAmountToMinor(payoutAmount, currency) <= 0n ||
+                            parseAmountToMinor(payoutAmount, currency) > BigInt(r.remainingMinor)
+                          }
+                          onClick={() =>
+                            payReturn.mutate({
+                              salesReturnId: r.id,
+                              sumMinor: parseAmountToMinor(payoutAmount, currency),
+                            })
+                          }
+                          className="h-[44px] shrink-0 rounded-lg bg-[var(--ms-bg-brand)] px-4 font-semibold text-[15px] text-white disabled:opacity-50"
+                        >
+                          {t('unpaid_returns_confirm')}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 

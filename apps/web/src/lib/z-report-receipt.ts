@@ -55,6 +55,8 @@ export interface ZReportPayload {
   returnsMinor: string;
   expenseMinor: string;
   collectionMinor: string;
+  /** G1 — vozvratlar uchun mijozlarga kassadan qaytarilgan naqd. */
+  returnPayoutMinor: string;
   expenseByItem: Array<{ id: string | null; name: string | null; sumMinor: string }>;
   openingCashMinor: string;
   expectedCashMinor: string;
@@ -96,6 +98,8 @@ export interface ZReceiptLabels {
   returns: string;
   expense: string;
   collection: string;
+  /** G1 — «Vozvrat puli (mijozlarga)» qatori. */
+  returnPayout: string;
   expenseByItem: string;
   expenseNoItem: string;
   cashBlockUzs: string;
@@ -289,6 +293,8 @@ export function buildZReceipt(z: ZReportPayload, opts: BuildZReceiptOptions): ZR
       },
       { key: 'expense', label: L.expense, value: bare(z.expenseMinor) },
       { key: 'collection', label: L.collection, value: bare(z.collectionMinor) },
+      // G1 — vozvrat puli o'z qatori (xarajat/inkassatsiyaga aralashmaydi).
+      { key: 'return-payout', label: L.returnPayout, value: bare(z.returnPayoutMinor) },
     ],
   });
 

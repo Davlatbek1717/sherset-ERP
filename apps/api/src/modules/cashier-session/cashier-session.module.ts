@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { PrismaModule } from '../../prisma/prisma.module.js';
 import { AuthModule } from '../auth/auth.module.js';
+import { CounterpartyBalanceModule } from '../counterparty-balance/counterparty-balance.module.js';
 import { MoneyModule } from '../money/money.module.js';
 import { CashierSessionController } from './cashier-session.controller.js';
 import { CashierSessionService } from './cashier-session.service.js';
@@ -27,8 +28,11 @@ import { ShiftAcceptanceService } from './shift-acceptance.service.js';
  * amallari pul daftariga yozadi). Import unutilsa DI grafi ishga tushishda
  * yiqiladi va butun API 502 beradi — typecheck buni KO'RMAYDI.
  */
+// G1 (2026-08-24) — `CounterpartyBalanceModule` OSHKORA import qilinadi:
+// vozvrat-to'lov mijoz balansiga yozadi. Import unutilsa DI grafi ishga
+// tushishda yiqiladi va butun API 502 beradi (MoneyModule saboqi bilan bir).
 @Module({
-  imports: [AuthModule, MoneyModule, PrismaModule],
+  imports: [AuthModule, CounterpartyBalanceModule, MoneyModule, PrismaModule],
   controllers: [CashierSessionController],
   providers: [CashierSessionService, ShiftAcceptanceService, ShiftAcceptanceCron],
   exports: [CashierSessionService, ShiftAcceptanceService],

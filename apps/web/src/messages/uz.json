@@ -3739,6 +3739,7 @@
           "debt": "Qarz berildi",
           "debtpayment": "Qarz to'lovi",
           "retailsale": "Chakana savdo (qarzga)",
+          "returnPayout": "Vozvrat puli (kassadan)",
           "opening": "Boshlang'ich qoldiq"
         }
       },
@@ -6178,6 +6179,7 @@
       "expense_by_item": "Xarajatlar moddalar bo`yicha",
       "expense_no_item": "(moddasiz)",
       "full_title": "Z-hisobot (to'liq)",
+      "return_payout": "Vozvrat puli (mijozlarga)",
       "gross_profit": "Yalpi foyda",
       "list_subtitle": "Yopilgan smenalardan birini tanlab to'liq Z-hisobotni ko'ring",
       "list_title": "Z-hisobotlar",
@@ -9134,6 +9136,7 @@
       "customer_card_comment": "Izoh",
       "customer_card_doc": {
         "retailsale": "Chek",
+        "returnPayout": "Vozvrat puli",
         "debt": "Qarz",
         "debtpayment": "Qarz to'lovi",
         "invoiceOut": "Hisob-faktura",
@@ -9170,6 +9173,13 @@
       "customer_card_title": "Mijoz kartasi",
       "customer_optional": "Mijoz (ixtiyoriy)",
       "customers_cheks": "Cheklari",
+      "unpaid_returns_confirm": "Berish",
+      "unpaid_returns_foreign_currency": "valyutali — kassadan to'lanmaydi",
+      "unpaid_returns_overdrawn": "Diqqat: summa yashiqdagi naqddan ko'p — menejerga bildirildi",
+      "unpaid_returns_paid": "{name} — pul mijozga qaytarildi",
+      "unpaid_returns_partially_paid": "to'langan: {sum}",
+      "unpaid_returns_pay": "To'lash",
+      "unpaid_returns_title": "To'lanmagan vozvratlar",
       "debt": "Qarz",
       "debt_assigned_to": "{name} ga yoziladi",
       "debt_currency_usd": "Dollar",

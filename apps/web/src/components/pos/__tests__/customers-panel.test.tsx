@@ -54,11 +54,45 @@ function squash(text: string | null | undefined): string {
   return (text ?? '').replace(/[\s  ]/g, '');
 }
 
-function routes(summary: Record<string, unknown> = SUMMARY) {
+/** G1 — `GET /cashier-sessions/unpaid-returns?agentId=` bo'sh sukut. */
+const NO_UNPAID = { items: [], totalRemainingMinor: '0' };
+
+/** G1 — qisman to'langan + valyutali vozvratli javob. */
+const UNPAID = {
+  items: [
+    {
+      id: 'r-1',
+      name: 'ВП-2026-00007',
+      moment: '2026-08-23T09:00:00.000Z',
+      currency: 'UZS',
+      sumMinor: '50000000',
+      payedSumMinor: '10000000',
+      remainingMinor: '40000000',
+      payable: true,
+    },
+    {
+      id: 'r-2',
+      name: 'ВП-2026-00008',
+      moment: '2026-08-23T10:00:00.000Z',
+      currency: 'USD',
+      sumMinor: '70000',
+      payedSumMinor: '0',
+      remainingMinor: '70000',
+      payable: false,
+    },
+  ],
+  totalRemainingMinor: '40000000',
+};
+
+function routes(
+  summary: Record<string, unknown> = SUMMARY,
+  unpaid: Record<string, unknown> = NO_UNPAID,
+) {
   return async (path: string) => {
     if (path.startsWith('/counterparties')) return { items: [CP] };
     if (path.startsWith('/debts/pos/summary')) return summary;
     if (path.startsWith('/retail-sales')) return CHEKS;
+    if (path.startsWith('/cashier-sessions/unpaid-returns')) return unpaid;
     throw new Error(`kutilmagan so'rov: ${path}`);
   };
 }
@@ -69,6 +103,7 @@ function renderPanel() {
   const onOpenChek = vi.fn();
   renderWithProviders(
     <CustomersPanel
+      sessionId="sess-1"
       onOpenCustomerCard={onOpenCustomerCard}
       onPayDebt={onPayDebt}
       onOpenChek={onOpenChek}
@@ -178,5 +213,95 @@ describe('CustomersPanel — uch amal-tugma', () => {
     await user.click(screen.getByTestId('pos-customers-change'));
     expect(await screen.findByTestId('pos-customers-search')).toBeInTheDocument();
     expect(screen.queryByTestId('pos-customers-debt')).toBeNull();
+  });
+});
+
+describe('CustomersPanel — G1 to‘lanmagan vozvratlar', () => {
+  it('vozvrat yo‘q mijozda blok UMUMAN chiqmaydi', async () => {
+    const user = userEvent.setup();
+    renderPanel();
+    await pickCustomer(user);
+    expect(screen.queryByTestId('pos-unpaid-returns')).toBeNull();
+  });
+
+  it('ro‘yxat + jami qaytim ko‘rinadi; valyutali qatorda To‘lash tugmasi YO‘Q', async () => {
+    vi.mocked(api.get).mockImplementation(routes(SUMMARY, UNPAID));
+    const user = userEvent.setup();
+    renderPanel();
+    await pickCustomer(user);
+
+    const block = await screen.findByTestId('pos-unpaid-returns');
+    expect(block.textContent).toContain('ВП-2026-00007');
+    expect(block.textContent).toContain('ВП-2026-00008');
+    // Jami — faqat so'm vozvratlarning qolgani (400 000,00).
+    expect(squash(screen.getByTestId('pos-unpaid-returns-total').textContent)).toContain('400000');
+    // payable=true bitta qator ⇒ bitta To'lash tugmasi.
+    expect(screen.getAllByTestId('pos-unpaid-returns-pay')).toHaveLength(1);
+  });
+
+  it('To‘lash → summa (default: qolgan qaytim) → POST customer-payout + chek chop', async () => {
+    vi.mocked(api.get).mockImplementation(routes(SUMMARY, UNPAID));
+    vi.mocked(api.post).mockResolvedValue({
+      id: 'doc-1',
+      name: 'ВВ-2026-00001',
+      sumMinor: '40000000',
+      remainingMinor: '0',
+      auditTypes: ['RETURN_PAYOUT'],
+    });
+    const openSpy = vi.spyOn(window, 'open').mockReturnValue(null);
+    const user = userEvent.setup();
+    renderPanel();
+    await pickCustomer(user);
+
+    await user.click((await screen.findAllByTestId('pos-unpaid-returns-pay'))[0] as HTMLElement);
+    // Maydon qolgan qaytim bilan to'lgan (400 000 so'm).
+    const amount = await screen.findByTestId('pos-unpaid-returns-amount');
+    expect((amount as HTMLInputElement).value).toBe('400000');
+
+    await user.click(screen.getByTestId('pos-unpaid-returns-submit'));
+    await waitFor(() => {
+      expect(api.post).toHaveBeenCalledWith('/cashier-sessions/sess-1/customer-payout', {
+        salesReturnId: 'r-1',
+        sumMinor: '40000000',
+      });
+    });
+    // Chek — RKO sahifasining payout varianti, imzo uchun.
+    expect(openSpy).toHaveBeenCalledWith('/print/cash-out/doc-1?auto=1', '_blank');
+    openSpy.mockRestore();
+  });
+
+  it('QISMAN: summa qo‘lda kamaytirilsa aynan shu summa ketadi; ortiq summa bloklanadi', async () => {
+    vi.mocked(api.get).mockImplementation(routes(SUMMARY, UNPAID));
+    vi.mocked(api.post).mockResolvedValue({
+      id: 'doc-2',
+      name: 'ВВ-2026-00002',
+      sumMinor: '10000000',
+      remainingMinor: '30000000',
+      auditTypes: ['RETURN_PAYOUT'],
+    });
+    const openSpy = vi.spyOn(window, 'open').mockReturnValue(null);
+    const user = userEvent.setup();
+    renderPanel();
+    await pickCustomer(user);
+
+    await user.click((await screen.findAllByTestId('pos-unpaid-returns-pay'))[0] as HTMLElement);
+    const amount = await screen.findByTestId('pos-unpaid-returns-amount');
+
+    // Qolgan qaytimdan ORTIQ — tugma o'chiq (cap serverda ham bor, lekin
+    // kassirga darhol ko'rinishi kerak).
+    await user.clear(amount);
+    await user.type(amount, '500000');
+    expect(screen.getByTestId('pos-unpaid-returns-submit')).toBeDisabled();
+
+    await user.clear(amount);
+    await user.type(amount, '100000');
+    await user.click(screen.getByTestId('pos-unpaid-returns-submit'));
+    await waitFor(() => {
+      expect(api.post).toHaveBeenCalledWith('/cashier-sessions/sess-1/customer-payout', {
+        salesReturnId: 'r-1',
+        sumMinor: '10000000',
+      });
+    });
+    openSpy.mockRestore();
   });
 });

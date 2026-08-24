@@ -54,6 +54,7 @@ function payload(over: Partial<ZReportPayload> = {}): ZReportPayload {
     returnsMinor: '1000000',
     expenseMinor: '700000',
     collectionMinor: '20000000',
+    returnPayoutMinor: '0',
     expenseByItem: [{ id: 'ei-1', name: 'Ijara', sumMinor: '700000' }],
     openingCashMinor: '10000000',
     expectedCashMinor: '92300000',

@@ -42,6 +42,7 @@ export const SCRIPT_SOURCES = [
   'debt-issue',
   'retail-credit',
   'retail-credit-refund',
+  'return-payouts',
 ] as const;
 
 export type ScriptSource = (typeof SCRIPT_SOURCES)[number];
@@ -139,6 +140,14 @@ export const DECLARED_BALANCE_WRITERS: readonly BalanceWriter[] = [
     note:
       'post() +debtAmount (DEBT tender qatori), refund() −debtReturnMinor (SALES-04). ' +
       'Kontragent SOLD_ON_CREDIT audit hodisasidan aniqlanadi.',
+  },
+  {
+    file: 'modules/cashier-session/cashier-session.service.ts',
+    sources: ['return-payouts'],
+    note:
+      'customerPayout() +sumMinor (G1, 2026-08-24): vozvrat puli kassadan naqd qaytarildi — ' +
+      '`SalesReturn.post()` yozgan −sumMinor kreditning yopilishi. Hujjat: `RetailDrawerCashOut` ' +
+      "(kind='return_payout', agentId bilan), holati doim posted.",
   },
 ];
 

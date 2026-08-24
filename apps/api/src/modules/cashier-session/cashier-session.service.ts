@@ -11,6 +11,10 @@ import {
 } from '@nestjs/common';
 import { allocateDocumentNumber } from '../../prisma/document-number.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
+// G1 (2026-08-24) — vozvrat puli mijoz balansini ham suradi: post()dagi
+// `−sumMinor` kredit naqd bilan yopiladi (`+payout`, cashOut semantikasi).
+import { BALANCE_DOC_TYPE } from '../counterparty-balance/counterparty-balance-doc-types.js';
+import { CounterpartyBalanceService } from '../counterparty-balance/counterparty-balance.service.js';
 // P4 — «unutilgan smena» chegarasi MK13 registrida (ikkinchi sozlama manbai
 // yaratilmaydi — `sla-thresholds-in-rule-config-table` intizomi).
 //
@@ -51,15 +55,18 @@ import {
 } from './cashier-session-reconciliation.js';
 import {
   CloseSessionSchema,
+  CustomerPayoutSchema,
   DrawerCashSchema,
   OpenSessionSchema,
   PosCashOutSchema,
   SessionFilterSchema,
+  UnpaidReturnsQuerySchema,
 } from './cashier-session.schema.js';
 // Yashiq amalining pul-daftari tomoni — sof modul (ishorani FAQAT u qo'yadi).
 import { drawerMoneyDeltas } from './drawer-money-ledger.js';
 // Xarajat/inkassatsiya qoidalari — sof modul (§8.2/§8.3).
 import {
+  CASH_OUT_KIND,
   type CashOutKind,
   cashOutLedgerLabel,
   cashOutPrefix,
@@ -120,6 +127,9 @@ export class CashierSessionService {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(MoneyService) private readonly money: MoneyService,
+    // G1 — vozvrat to'lovi mijoz balansiga yozadi. Import unutilsa DI grafi
+    // ishga tushishda yiqiladi (modul izohidagi MoneyModule saboqi).
+    @Inject(CounterpartyBalanceService) private readonly balance: CounterpartyBalanceService,
   ) {}
 
   async list(accountId: string, rawFilter: unknown) {
@@ -1280,6 +1290,7 @@ export class CashierSessionService {
       returnsMinor: refundAgg._sum.sumMinor ?? 0n,
       expenseMinor: BigInt(cashOut.expenseMinor),
       collectionMinor: BigInt(cashOut.collectionMinor),
+      returnPayoutMinor: BigInt(cashOut.returnPayoutMinor),
       // `varianceMinor` ni sof modul AYNAN shu qiymatdan hisoblaydi — aks
       // holda farq ikki avlod raqam aralashmasi bo'lib qolardi.
       expectedCashMinor: expectedCash,
@@ -1324,6 +1335,7 @@ export class CashierSessionService {
       returnsMinor: z.returnsMinor.toString(),
       expenseMinor: z.expenseMinor.toString(),
       collectionMinor: z.collectionMinor.toString(),
+      returnPayoutMinor: z.returnPayoutMinor.toString(),
       expenseByItem: cashOut.byExpenseItem,
       // Kutilgan naqd/farq qaysi avloddan — `'frozen'` = yopishda muzlatilgan
       // (kassir imzolagan hujjat), `'live'` = shu so'rovda qayta hisoblangan
@@ -1674,6 +1686,241 @@ export class CashierSessionService {
     });
   }
 
+  // ---- G1 — vozvrat pulini kassadan qaytarish ----
+
+  /**
+   * Mijozning TO'LANMAGAN vozvratlari — POS mijoz profili bloki.
+   *
+   * Mezon: `SalesReturn` post bo'lgan va `payedSumMinor < sumMinor`.
+   * Ustun-ustun taqqoslash Prisma where'da yo'q, shuning uchun mijozning
+   * oxirgi 100 ta post-vozvrati o'qilib JS'da filtrlanadi (bitta mijozda
+   * bunchalik ochiq vozvrat bo'lishi amalda mumkin emas).
+   *
+   * `totalRemainingMinor` FAQAT so'm vozvratlarni yig'adi — kassadan
+   * qaytarish G1 chegarasida faqat UZS (valyutali vozvrat ro'yxatda
+   * ko'rinadi, lekin to'lab bo'lmaydi va jamiga kirmaydi).
+   */
+  async unpaidReturns(accountId: string, rawQuery: unknown) {
+    const q = UnpaidReturnsQuerySchema.parse(rawQuery);
+    const rows = await this.prisma.client.salesReturn.findMany({
+      where: { accountId, agentId: q.agentId, state: 'posted', deletedAt: null },
+      orderBy: { moment: 'desc' },
+      take: 100,
+      select: {
+        id: true,
+        name: true,
+        moment: true,
+        currency: true,
+        sumMinor: true,
+        payedSumMinor: true,
+      },
+    });
+    const unpaid = rows.filter((r) => r.sumMinor > r.payedSumMinor);
+    let totalRemainingMinor = 0n;
+    const items = unpaid.map((r) => {
+      const remaining = r.sumMinor - r.payedSumMinor;
+      const payable = r.currency === BASE_CURRENCY;
+      if (payable) totalRemainingMinor += remaining;
+      return {
+        id: r.id,
+        name: r.name,
+        moment: r.moment,
+        currency: r.currency,
+        sumMinor: r.sumMinor.toString(),
+        payedSumMinor: r.payedSumMinor.toString(),
+        remainingMinor: remaining.toString(),
+        payable,
+      };
+    });
+    return { items, totalRemainingMinor: totalRemainingMinor.toString() };
+  }
+
+  /**
+   * Vozvrat pulini KASSADAN qaytarish (G1) — `RetailDrawerCashOut`
+   * (`kind='return_payout'`) + pul daftari + mijoz balansi + audit, BITTA
+   * tranzaksiyada.
+   *
+   * Pul izi to'rt joyda birdan ko'rinadi:
+   *   · `CashDesk.balanceMinor` kamayadi (overdraft qo'riqchisi bilan);
+   *   · kutilgan-naqd formulasi (§8.4) — hujjat shu jadvalda turgani uchun
+   *     `collectCashInputs.drawerOutMinor` ga O'Z-O'ZIDAN kiradi;
+   *   · Z-hisobot — `summarizeCashOut.returnPayoutMinor` qatori;
+   *   · mijoz balansi `+summa` — `SalesReturn.post()` yozgan `−sumMinor`
+   *     kreditning naqd bilan yopilishi (aks holda mijoz ikki marta olardi:
+   *     qarz kamayishi HAM, naqd HAM).
+   *
+   * CAP: jami to'lovlar `SalesReturn.sumMinor` dan oshmaydi. Qulf optimistik —
+   * `payedSumMinor` AYNAN o'qilgan qiymatda turgan qatorgina yangilanadi;
+   * parallel ikkinchi to'lov `count=0` olib 409 bilan qaytadi (bitta vozvratni
+   * ikki marta to'lab bo'lmaydi, qisman to'lash mumkin).
+   *
+   * G1 chegarasi: to'lov faqat SO'M vozvrat uchun (kassa ham UZS —
+   * `loadOpenShiftForDrawer` qo'riqchisi). Valyutali vozvrat ochiq 400 oladi.
+   */
+  async customerPayout(accountId: string, cashierId: string, sessionId: string, raw: unknown) {
+    const parsed = CustomerPayoutSchema.parse(raw);
+    const session = await this.loadOpenShiftForDrawer(accountId, cashierId, sessionId);
+
+    const ret = await this.prisma.client.salesReturn.findFirst({
+      where: { id: parsed.salesReturnId, accountId, deletedAt: null },
+      select: {
+        id: true,
+        name: true,
+        state: true,
+        currency: true,
+        sumMinor: true,
+        payedSumMinor: true,
+        agentId: true,
+        agent: { select: { id: true, name: true } },
+      },
+    });
+    if (!ret) throw new NotFoundException('Vozvrat hujjati topilmadi');
+    if (ret.state !== 'posted') {
+      throw new BadRequestException(
+        `Vozvrat ${ret.name} hali qabul qilinmagan (post emas) — pul faqat qabul qilingan vozvrat uchun qaytariladi`,
+      );
+    }
+    if (ret.currency !== BASE_CURRENCY) {
+      throw new BadRequestException(
+        `Vozvrat valyutasi ${ret.currency} — kassadan qaytarish hozircha faqat ${BASE_CURRENCY} vozvratlar uchun`,
+      );
+    }
+    const remaining = ret.sumMinor - ret.payedSumMinor;
+    if (remaining <= 0n) {
+      throw new BadRequestException(`Vozvrat ${ret.name} allaqachon to'liq to'langan`);
+    }
+    const requested = parsed.sumMinor != null ? BigInt(parsed.sumMinor) : remaining;
+    if (requested > remaining) {
+      throw new BadRequestException(
+        `So'ralgan summa qolgan qaytimdan katta — qolgani ${remaining.toString()} tiyin`,
+      );
+    }
+
+    // «Yashiqda yo'q pul chiqarildi» anomaliya-signali uchun (posCashOut naqshi).
+    const cashBeforeMinor = expectedCashMinor(
+      await this.collectCashInputs(
+        this.prisma.client,
+        accountId,
+        sessionId,
+        session.openingCashMinor,
+      ),
+    );
+
+    const kind = CASH_OUT_KIND.returnPayout as CashOutKind;
+    const year = new Date().getFullYear();
+    const prefix = cashOutPrefix(kind, year);
+    const n = await allocateDocumentNumber(this.prisma.client, accountId, prefix, async () => {
+      const last = await this.prisma.client.retailDrawerCashOut.findFirst({
+        where: { accountId, name: { startsWith: prefix } },
+        orderBy: { name: 'desc' },
+        select: { name: true },
+      });
+      return last ? Number.parseInt(last.name.slice(prefix.length), 10) || 0 : 0;
+    });
+    const name = `${prefix}${String(n).padStart(5, '0')}`;
+    const creatorGroupId = await resolveCreatorGroupId(this.prisma.client, accountId, cashierId);
+
+    return this.prisma.client.$transaction(async (tx) => {
+      // CAP QULFI — birinchi yozuv: qulf yiqilsa hujjat ham, pul ham yozilmaydi.
+      const claim = await tx.salesReturn.updateMany({
+        where: { id: ret.id, accountId, state: 'posted', payedSumMinor: ret.payedSumMinor },
+        data: { payedSumMinor: { increment: requested } },
+      });
+      if (claim.count === 0) {
+        throw new ConflictException(
+          `Vozvrat ${ret.name} bo'yicha parallel to'lov aniqlandi — qayta urinib ko'ring`,
+        );
+      }
+
+      const doc = await tx.retailDrawerCashOut.create({
+        data: {
+          accountId,
+          ownerId: cashierId,
+          groupId: creatorGroupId,
+          name,
+          retailShiftId: sessionId,
+          organizationId: session.organizationId,
+          sumMinor: requested,
+          currency: session.cashDesk.currency,
+          moment: new Date(),
+          applicable: true,
+          state: 'posted',
+          postedAt: new Date(),
+          description: parsed.description ?? null,
+          kind,
+          salesReturnId: ret.id,
+          agentId: ret.agentId,
+        },
+        select: {
+          id: true,
+          name: true,
+          sumMinor: true,
+          currency: true,
+          kind: true,
+          description: true,
+          createdAt: true,
+        },
+      });
+
+      const events = planCashOutAuditEvents({
+        docId: doc.id,
+        docName: doc.name,
+        kind,
+        sumMinor: requested,
+        salesReturnId: ret.id,
+        salesReturnName: ret.name,
+        agentId: ret.agentId,
+        agentName: ret.agent?.name ?? null,
+        description: parsed.description ?? null,
+        cashBeforeMinor,
+      });
+      if (events.length > 0) {
+        await tx.cashierAuditEvent.createMany({
+          data: events.map((e) => ({
+            accountId,
+            sessionId,
+            employeeId: cashierId,
+            type: e.type,
+            docId: e.docId,
+            payload: e.payload as Prisma.InputJsonValue,
+          })),
+        });
+      }
+
+      // Pul daftari — overdraft qo'riqchisi shu yerda (posCashOut naqshi):
+      // yashiqda yo'q pulni qaytarib bo'lmaydi, tranzaksiya orqaga qaytadi.
+      await this.money.applyDeltas(
+        tx,
+        accountId,
+        drawerMoneyDeltas({
+          kind: 'out',
+          cashDeskId: session.cashDeskId,
+          currency: session.cashDesk.currency,
+          sumMinor: doc.sumMinor,
+          documentId: doc.id,
+          description: `${cashOutLedgerLabel(kind)} ${doc.name} (${ret.name})`,
+        }),
+      );
+
+      // Mijoz balansi: post()dagi `−sumMinor` kredit naqd bilan yopildi.
+      await this.balance.applyDelta(tx, accountId, ret.agentId, BASE_CURRENCY, requested, {
+        docType: BALANCE_DOC_TYPE.returnPayout,
+        docId: doc.id,
+        organizationId: session.organizationId,
+      });
+
+      return {
+        ...doc,
+        sumMinor: doc.sumMinor.toString(),
+        salesReturn: { id: ret.id, name: ret.name },
+        agent: ret.agent,
+        remainingMinor: (remaining - requested).toString(),
+        /** Yozilgan audit hodisalari — FE «anomaliya» belgisini shundan oladi. */
+        auditTypes: events.map((e) => e.type),
+      };
+    });
+  }
+
   /**
    * Inkassatsiyani qabul qila oladigan xodimlar — FAQAT `id` va `name`.
    *
@@ -1711,6 +1958,9 @@ export class CashierSessionService {
         createdAt: true,
         expenseItem: { select: { id: true, name: true } },
         recipient: { select: { id: true, name: true } },
+        // G1 — vozvrat-to'lov chekida mijoz va vozvrat raqami chiqadi.
+        agent: { select: { id: true, name: true } },
+        salesReturn: { select: { id: true, name: true } },
         owner: { select: { id: true, name: true } },
         organization: { select: { name: true, legalTitle: true } },
         retailShift: { select: { id: true, cashDesk: { select: { name: true } } } },
@@ -1749,6 +1999,7 @@ export class CashierSessionService {
     return {
       expenseMinor: s.expenseMinor.toString(),
       collectionMinor: s.collectionMinor.toString(),
+      returnPayoutMinor: s.returnPayoutMinor.toString(),
       otherMinor: s.otherMinor.toString(),
       totalMinor: s.totalMinor.toString(),
       byExpenseItem: s.byExpenseItem.map((i) => ({

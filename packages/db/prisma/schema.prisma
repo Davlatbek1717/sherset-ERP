@@ -3799,6 +3799,12 @@ model RetailDrawerCashOut {
   /// «Pulni kimga topshirdim» — javobgarlik shu yerdan boshlanadi.
   recipientId String? @map("recipient_id") @db.Uuid
 
+  /// G1 (`kind='return_payout'` da majburiy) — QAYSI vozvrat uchun pul
+  /// qaytarildi. Cap (`SalesReturn.payedSumMinor ≤ sumMinor`) shu bog' orqali
+  /// tekshiriladi; hujjat pul izining o'zi, shuning uchun Restrict —
+  /// to'langan vozvratni o'chirish pul dalilini yetim qoldirardi.
+  salesReturnId String? @map("sales_return_id") @db.Uuid
+
   createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz()
   updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz()
   deletedAt DateTime? @map("deleted_at") @db.Timestamptz()
@@ -3813,11 +3819,14 @@ model RetailDrawerCashOut {
   // va Z-hisobotdagi moddalar kesimi jimgina buzilardi.
   expenseItem  ExpenseItem?   @relation("RetailDrawerOutExpenseItem", fields: [expenseItemId], references: [id], onDelete: Restrict)
   recipient    Employee?      @relation("RetailDrawerOutRecipient", fields: [recipientId], references: [id], onDelete: SetNull)
+  salesReturn  SalesReturn?   @relation("RetailDrawerOutSalesReturn", fields: [salesReturnId], references: [id], onDelete: Restrict)
 
   @@unique([accountId, name])
   @@index([accountId, retailShiftId])
   // Z-hisobot: smenadagi xarajat/inkassatsiya kesimi.
   @@index([accountId, retailShiftId, kind])
+  // G1: bitta vozvratning to'lov hujjatlari (cap va tarix).
+  @@index([accountId, salesReturnId])
   @@map("retail_drawer_cash_out")
 }
 
@@ -6765,6 +6774,8 @@ model SalesReturn {
   customerOrder       CustomerOrder?        @relation(fields: [customerOrderId], references: [id], onDelete: SetNull)
   status              State?                @relation("SalesReturnStatus", fields: [statusId], references: [id], onDelete: SetNull)
   positions           SalesReturnPosition[]
+  /// G1 — kassadan qaytarilgan pul hujjatlari (`kind='return_payout'`).
+  drawerPayouts       RetailDrawerCashOut[] @relation("RetailDrawerOutSalesReturn")
 
   @@unique([accountId, name])
   @@index([accountId, state, deletedAt])

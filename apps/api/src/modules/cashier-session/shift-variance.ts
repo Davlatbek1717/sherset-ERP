@@ -146,6 +146,8 @@ export interface ZReportInput {
   returnsMinor: bigint;
   expenseMinor: bigint;
   collectionMinor: bigint;
+  /** G1 — vozvratlar uchun mijozlarga kassadan qaytarilgan naqd (§8.5 qatori). */
+  returnPayoutMinor: bigint;
   expectedCashMinor: bigint;
   countedCashMinor: bigint | null;
   /** Dollar yashiq — sentda (MK31 · §8.4). Berilmasa 0. */

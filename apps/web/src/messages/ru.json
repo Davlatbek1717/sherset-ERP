@@ -3739,6 +3739,7 @@
           "debt": "Выдача долга",
           "debtpayment": "Оплата долга",
           "retailsale": "Розничная продажа (в долг)",
+          "returnPayout": "Возврат денег (из кассы)",
           "opening": "Входящий остаток"
         }
       },
@@ -6178,6 +6179,7 @@
       "expense_by_item": "Расходы по статьям",
       "expense_no_item": "(без статьи)",
       "full_title": "Z-отчёт (полный)",
+      "return_payout": "Возврат денег покупателям",
       "gross_profit": "Валовая прибыль",
       "list_subtitle": "Выберите закрытую смену для просмотра полного Z-отчёта",
       "list_title": "Z-отчёты",
@@ -9134,6 +9136,7 @@
       "customer_card_comment": "Комментарий",
       "customer_card_doc": {
         "retailsale": "Чек",
+        "returnPayout": "Возврат денег",
         "debt": "Долг",
         "debtpayment": "Оплата долга",
         "invoiceOut": "Счёт покупателю",
@@ -9170,6 +9173,13 @@
       "customer_card_title": "Карточка клиента",
       "customer_optional": "Клиент (необязательно)",
       "customers_cheks": "Чеки",
+      "unpaid_returns_confirm": "Выдать",
+      "unpaid_returns_foreign_currency": "валютный — не выплачивается из кассы",
+      "unpaid_returns_overdrawn": "Внимание: сумма больше наличных в ящике — менеджер уведомлён",
+      "unpaid_returns_paid": "{name} — деньги выданы покупателю",
+      "unpaid_returns_partially_paid": "выплачено: {sum}",
+      "unpaid_returns_pay": "Выплатить",
+      "unpaid_returns_title": "Невыплаченные возвраты",
       "debt": "Долг",
       "debt_assigned_to": "Записывается на: {name}",
       "debt_currency_usd": "Доллар",

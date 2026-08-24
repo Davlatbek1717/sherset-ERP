@@ -45,6 +45,23 @@ export class CashierSessionController {
     return this.sessions.cashOutRecipients(user.accountId, user.sub);
   }
 
+  /**
+   * G1 — mijozning to'lanmagan vozvratlari (POS mijoz profili bloki).
+   *
+   * `:id` dan OLDIN (statik yo'l birinchi — fayldagi konventsiya). Marshrut
+   * `/cashier-sessions` ostida ATAYLAB: kiosk-allowlist va kassirning
+   * `cashiersession.view` ruxsati shu prefiksni allaqachon ochadi
+   * (`cash-out-recipients` bilan bir sabab — eng tor yo'l).
+   */
+  @Get('unpaid-returns')
+  @RequirePermission({ entity: 'cashiersession', action: 'view' })
+  async unpaidReturns(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: Record<string, unknown>,
+  ) {
+    return this.sessions.unpaidReturns(user.accountId, query);
+  }
+
   /** Bitta pul-chiqishi hujjati — RKO cheki uchun (§8.2). */
   @Get('cash-out/:docId')
   @RequirePermission({ entity: 'cashiersession', action: 'view' })
@@ -178,6 +195,20 @@ export class CashierSessionController {
     @Body() body: unknown,
   ) {
     return this.sessions.posCashOut(user.accountId, user.sub, id, body);
+  }
+
+  /**
+   * G1 — vozvrat pulini kassadan qaytarish. Ruxsat `cash-out` bilan bir xil
+   * (kassir yangi pul-hujjat yaratadi); cap va valyuta qo'riqchilari servisda.
+   */
+  @Post(':id/customer-payout')
+  @RequirePermission({ entity: 'cashiersession', action: 'create' })
+  async customerPayout(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ) {
+    return this.sessions.customerPayout(user.accountId, user.sub, id, body);
   }
 
   /**

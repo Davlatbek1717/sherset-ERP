@@ -347,6 +347,28 @@ async function main() {
     );
   }
 
+  // SOURCE: return-payouts — vozvrat pulining kassadan qaytarilishi (G1, 2026-08-24).
+  //
+  // `CashierSessionService.customerPayout` `RetailDrawerCashOut`
+  // (`kind='return_payout'`, `agentId` to'ldirilgan) yozadi va o'sha
+  // tranzaksiyada `applyDelta(+sumMinor)` — `SalesReturn.post()` yozgan
+  // `−sumMinor` kreditning naqd bilan yopilishi. Hujjat holati doim `posted`
+  // (draft bosqichi yo'q), soft-delete yo'li yo'q — filtrlar himoya uchun.
+  const returnPayouts = await prisma.retailDrawerCashOut.groupBy({
+    by: ['accountId', 'agentId', 'currency'],
+    where: {
+      kind: 'return_payout',
+      state: 'posted',
+      deletedAt: null,
+      agentId: ONLY_CP ? ONLY_CP : { not: null },
+    },
+    _sum: { sumMinor: true },
+  });
+  for (const r of returnPayouts) {
+    // `agentId: not null` filtri bor — TS uchun ochiq tekshiruv.
+    if (r.agentId) add(r.accountId, r.agentId, r.currency, r._sum.sumMinor ?? 0n);
+  }
+
   // ══ NISHON — BALANS JURNALI (Faza 10). Hujjat-hisobi yuqorida `target` da
   // qoldi va faqat solishtirish uchun ishlatiladi.
   const journalRows = await prisma.counterpartyBalanceEntry.groupBy({

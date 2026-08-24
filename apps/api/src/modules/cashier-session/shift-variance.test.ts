@@ -162,6 +162,7 @@ describe('buildZReport — §8.5 raqamlari', () => {
     returnsMinor: 10_000n,
     expenseMinor: 25_000n,
     collectionMinor: 400_000n,
+    returnPayoutMinor: 0n,
     expectedCashMinor: 225_000n,
     countedCashMinor: 220_000n,
   };
@@ -218,6 +219,7 @@ describe('buildZReport — dollar qatori va konvertatsiya shartnomasi', () => {
     returnsMinor: 0n,
     expenseMinor: 0n,
     collectionMinor: 0n,
+    returnPayoutMinor: 0n,
     expectedCashMinor: 100_000n,
     countedCashMinor: 100_000n,
   };

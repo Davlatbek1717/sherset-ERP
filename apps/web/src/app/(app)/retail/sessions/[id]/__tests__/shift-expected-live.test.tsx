@@ -83,6 +83,7 @@ function zFull() {
     returnsMinor: '0',
     expenseMinor: '0',
     collectionMinor: '0',
+    returnPayoutMinor: '0',
     expenseByItem: [],
     basis: 'live',
     openingCashMinor: '5500000',

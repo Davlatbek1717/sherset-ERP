@@ -20,6 +20,13 @@ export const CASH_OUT_KIND = {
   expense: 'expense',
   /** Inkassatsiya — pulni topshirish, qabul qiluvchi ko'rsatiladi (§8.3). */
   collection: 'collection',
+  /**
+   * G1 — VOZVRAT PULI: ombor qabul qilgan `SalesReturn` uchun mijozga
+   * kassadan qaytarilgan naqd. Hujjat `salesReturnId` bilan bog'lanadi;
+   * cap (`payedSumMinor ≤ sumMinor`) servisda. Shu jadvalda turgani uchun
+   * kutilgan-naqd formulasiga (§8.4) O'Z-O'ZIDAN kiradi.
+   */
+  returnPayout: 'return_payout',
   /** Tasniflanmagan — eski «Изъятие» yozuvlari. Yangi hujjat bunday bo'lmaydi. */
   other: 'other',
 } as const;
@@ -87,6 +94,7 @@ export function validateCashOut(input: CashOutInput): CashOutProblem[] {
 export function cashOutPrefix(kind: CashOutKind, year: number): string {
   if (kind === CASH_OUT_KIND.expense) return `РКО-${year}-`;
   if (kind === CASH_OUT_KIND.collection) return `ИНК-${year}-`;
+  if (kind === CASH_OUT_KIND.returnPayout) return `ВВ-${year}-`;
   return `ИЗ-${year}-`;
 }
 
@@ -102,6 +110,7 @@ export function cashOutPrefix(kind: CashOutKind, year: number): string {
 export function cashOutLedgerLabel(kind: CashOutKind): string {
   if (kind === CASH_OUT_KIND.expense) return 'Xarajat';
   if (kind === CASH_OUT_KIND.collection) return 'Inkassatsiya';
+  if (kind === CASH_OUT_KIND.returnPayout) return 'Vozvrat puli';
   return 'Изъятие';
 }
 
@@ -110,6 +119,8 @@ export function cashOutLedgerLabel(kind: CashOutKind): string {
 export const CASH_OUT_EVENT = {
   expense: 'CASH_EXPENSE',
   collection: 'CASH_COLLECTION',
+  /** G1 — vozvrat uchun mijozga naqd qaytarildi. */
+  returnPayout: 'RETURN_PAYOUT',
   /** Yashiqda yo'q pul chiqarildi — TAQIQ emas, ko'rinadigan anomaliya. */
   overdrawn: 'CASH_OVERDRAWN',
 } as const;
@@ -131,6 +142,11 @@ export interface CashOutAuditArgs {
   expenseItemName?: string | null;
   recipientId?: string | null;
   recipientName?: string | null;
+  /** G1 (`return_payout`): qaysi vozvrat va qaysi mijozga to'landi. */
+  salesReturnId?: string | null;
+  salesReturnName?: string | null;
+  agentId?: string | null;
+  agentName?: string | null;
   description?: string | null;
   /**
    * Hujjatdan OLDINGI kutilgan naqd. `null` = hisoblab bo'lmadi (masalan
@@ -179,6 +195,20 @@ export function planCashOutAuditEvents(args: CashOutAuditArgs): CashOutAuditEven
         recipientName: args.recipientName ?? null,
       },
     });
+  } else if (args.kind === CASH_OUT_KIND.returnPayout) {
+    // G1: iz «kimga va qaysi vozvrat uchun» savoliga hujjatsiz ham javob
+    // berishi kerak — nomlar MUZLATIB yoziladi (modda/qabul qiluvchi naqshi).
+    events.push({
+      type: CASH_OUT_EVENT.returnPayout,
+      docId: args.docId,
+      payload: {
+        ...base,
+        salesReturnId: args.salesReturnId ?? null,
+        salesReturnName: args.salesReturnName ?? null,
+        agentId: args.agentId ?? null,
+        agentName: args.agentName ?? null,
+      },
+    });
   }
 
   // `null` = noma'lum, `0n` = haqiqatan bo'sh yashiq. Ikkalasini
@@ -212,6 +242,8 @@ export interface CashOutSummary {
   expenseMinor: bigint;
   /** Inkassatsiya jami. */
   collectionMinor: bigint;
+  /** G1 — vozvratlar uchun mijozlarga qaytarilgan naqd jami. */
+  returnPayoutMinor: bigint;
   /** Tasniflanmagan eski «Изъятие». */
   otherMinor: bigint;
   /** Barchasi — smena naqdidan chiqqan jami summa. */
@@ -231,6 +263,7 @@ export interface CashOutSummary {
 export function summarizeCashOut(rows: ReadonlyArray<CashOutRow>): CashOutSummary {
   let expenseMinor = 0n;
   let collectionMinor = 0n;
+  let returnPayoutMinor = 0n;
   let otherMinor = 0n;
   const items = new Map<string, { id: string | null; name: string | null; sumMinor: bigint }>();
 
@@ -249,6 +282,11 @@ export function summarizeCashOut(rows: ReadonlyArray<CashOutRow>): CashOutSummar
       });
     } else if (r.kind === CASH_OUT_KIND.collection) {
       collectionMinor += r.sumMinor;
+    } else if (r.kind === CASH_OUT_KIND.returnPayout) {
+      // G1: vozvrat puli — o'z qatori. `other`ga qo'shilsa Z-hisobotda
+      // «Изъятие» bo'lib ko'rinar va «qancha vozvrat to'landi» savoli
+      // javobsiz qolardi.
+      returnPayoutMinor += r.sumMinor;
     } else {
       otherMinor += r.sumMinor;
     }
@@ -257,8 +295,9 @@ export function summarizeCashOut(rows: ReadonlyArray<CashOutRow>): CashOutSummar
   return {
     expenseMinor,
     collectionMinor,
+    returnPayoutMinor,
     otherMinor,
-    totalMinor: expenseMinor + collectionMinor + otherMinor,
+    totalMinor: expenseMinor + collectionMinor + returnPayoutMinor + otherMinor,
     // Kattadan kichikka: menejer eng katta xarajat moddasini birinchi ko'rsin.
     byExpenseItem: [...items.values()].sort((a, b) =>
       b.sumMinor === a.sumMinor ? 0 : b.sumMinor > a.sumMinor ? 1 : -1,

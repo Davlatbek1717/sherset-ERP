@@ -42,6 +42,14 @@ export const BALANCE_DOC_TYPE = {
    * `purchaseReturn` ning savdo tomonidagi ko'zgusi.
    */
   salesReturn: 'salesReturn',
+  /**
+   * G1 (2026-08-24): vozvrat pulining KASSADAN naqd qaytarilishi
+   * (`RetailDrawerCashOut`, `kind='return_payout'`). `+sumMinor` —
+   * `salesReturn` post'idagi `−sumMinor` kreditning naqd bilan yopilishi
+   * (`cashOut` semantikasi: biz to'ladik ⇒ bizning qarzimiz kamayadi).
+   * `docId` = drawer-hujjat id'si.
+   */
+  returnPayout: 'returnPayout',
   paymentIn: 'paymentIn',
   paymentOut: 'paymentOut',
   cashIn: 'cashIn',

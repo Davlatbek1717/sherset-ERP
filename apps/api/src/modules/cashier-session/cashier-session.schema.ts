@@ -112,6 +112,30 @@ export const PosCashOutSchema = z.object({
 });
 export type PosCashOutInput = z.infer<typeof PosCashOutSchema>;
 
+/**
+ * G1 — vozvrat pulini kassadan qaytarish.
+ *
+ * `sumMinor` IXTIYORIY: berilmasa qolgan qaytim TO'LIQ to'lanadi. Berilsa —
+ * qisman to'lash (cap servisda: jami to'lovlar `SalesReturn.sumMinor` dan
+ * oshmaydi, ikkinchi to'liq to'lov urinishi 400/409 oladi).
+ */
+export const CustomerPayoutSchema = z.object({
+  salesReturnId: z.string().uuid(),
+  sumMinor: z.coerce
+    .string()
+    .regex(/^\d+$/, 'sumMinor must be a non-negative integer')
+    .refine((v) => /[1-9]/.test(v), 'sumMinor must be greater than 0')
+    .optional(),
+  description: z.string().trim().max(4000).nullish(),
+});
+export type CustomerPayoutInput = z.infer<typeof CustomerPayoutSchema>;
+
+/** G1 — mijozning to'lanmagan vozvratlari (POS mijoz profili bloki). */
+export const UnpaidReturnsQuerySchema = z.object({
+  agentId: z.string().uuid(),
+});
+export type UnpaidReturnsQueryInput = z.infer<typeof UnpaidReturnsQuerySchema>;
+
 // --- List filter ---
 
 const boolFromString = z

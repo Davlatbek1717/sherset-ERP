@@ -66,6 +66,8 @@ const ACT_DOC_TYPES = new Set([
   'debt',
   'debtpayment',
   'retailsale',
+  // G1: vozvrat pulining kassadan qaytarilishi balans jurnaliga yozadi.
+  'returnPayout',
   'opening',
 ]);
 
