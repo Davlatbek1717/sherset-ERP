@@ -1,6 +1,6 @@
 # Omborchi va TSD mijozlari — kontrol, vozvrat, TSD APK
 
-> **Yaratilgan:** 2026-08-23 · **Buyurtmachi:** Ozodbek (egasi) · **Holat:** G1+G2 KOD TAYYOR (deploy kutilmoqda — egasi «keyinroq» dedi; G2 deploy'ida `topup-role-permissions.ts` MAJBURIY — `retailcontrol`)
+> **Yaratilgan:** 2026-08-23 · **Buyurtmachi:** Ozodbek (egasi) · **Holat:** G1+G2+G3 KOD TAYYOR (deploy kutilmoqda — egasi «keyinroq» dedi VA 2026-08-24 hodisasi hal bo'lmagan: `docs/plans/2026-08-24-split-kassa-hodisasi.md`; deploy'da `topup-role-permissions.ts` MAJBURIY — `retailcontrol` + `returnacceptance`; ikkita migratsiya: G1 `…120000_drawer_cash_out_sales_return`, G3 `…170000_sales_return_retail_sale`)
 > **Ijro tartibi:** har faza ALOHIDA sessiyada. Agent shu faylni va
 > `docs/plans/2026-08-23-ombor-restrukturizatsiya.md` ni (F-reja) TO'LIQ o'qiydi,
 > O'Z fazasini bajaradi, testlardan o'tkazadi, pastdagi «Hisobotlar»ga yozadi va TO'XTAYDI.
@@ -284,6 +284,179 @@ Ikkala rejani to'liq o'qi (ayniqsa G5 va F7 hisobotlarini). Sen G6 fazasini baja
 > Shablon: **Faza · sana · commit(lar)** — nima qilindi (fayl ro'yxati bilan qisqa),
 > test natijalari (raqamlar), deploy holati (jonli tekshiruv dalili), ochiq qolganlar,
 > keyingi fazaga eslatmalar.
+
+### G3 — Vozvrat qabul ekranlari + vozvrat yorlig'i · 2026-08-24 · `6022e58c` (+ `acdf5ea7` lint)
+
+**1-vazifa tadqiqoti — POS chekini vozvratga QANDAY bog'lash (reja shuni so'ragan):**
+Uch yo'l ko'rildi, ikkitasi rad etildi:
+- **`RetailSalesReturn` modeli (sxemada BOR) — O'LIK KOD.** `apps/api` va `apps/web`
+  da unga BIRORTA murojaat yo'q; `positions` relationi ham yo'q (moysklad-parity
+  qoldig'i). Ishlatib bo'lmaydi.
+- **`SalesReturn.demandId`** — POS sotuvi `Demand` YARATMAYDI (u `RetailSale`),
+  ya'ni bu ustun POS yo'lini umuman ifodalay olmaydi.
+- **`attributes` JSON (F6 `__posPriority` naqshi)** — `SalesReturn` da ISHLAMAYDI:
+  `AttributeMetadataService.validateAndNormalize` chiqishni FAQAT ro'yxatdan
+  o'tgan meta-kodlardan quradi, ya'ni `__retailSaleId` jimgina TASHLANARDI.
+  (Store'da ishlagani — u boshqa yo'l bilan yoziladi.)
+⇒ **Yangi ustun** `sales_returns.retail_sale_id` (FK → `retail_sales`, ON DELETE
+SET NULL, indeks) — G1 ning `retail_drawer_cash_out.sales_return_id` naqshi.
+
+**Ikkinchi tadqiqot natijasi — POS'ning O'Z qaytarish yo'li (muhim):**
+kassadagi tez qaytarish `RetailSale` mirror cheki (`refundedFromId`) bilan
+ishlaydi: pul DARHOL beriladi, tovar esa kaskad omboriga **yacheykasiz** qaytadi
+(`retail-sale.service` refund yo'li). Ya'ni **mirror chek qabul manbasi BO'LA
+OLMAYDI** — uning tovari qoldiqqa allaqachon kirgan, ustiga ВП yozish qoldiqni
+IKKI marta oshirardi. Kod buni ochiq rad etadi va omborchini to'g'ri ishga
+yo'naltiradi: mirror chek tovarini yacheykaga **joylashtirish** kerak (F7
+`cell-place`), qabul qilish emas. Mavjud `sendToWarehouse`
+(`attributes.__sentToWarehouse` + SSE `return_to_warehouse`) faqat qo'ng'iroq
+chaladi — uning ombor tomonida ekrani YO'Q (G6/F7 uchun ochiq band).
+
+**Nima qilindi (backend):**
+- **Sof yadro `sales-return-acceptance.ts`** (SQL yo'q):
+  - `computeReturnableLines` — chek bo'yicha cap **IKKALA yo'nalishdan**:
+    sotilgan − POS mirror qaytarishlari − shu chekka bog'langan avvalgi ВП lar
+    (`state != cancelled`, draft ham band qiladi). Busiz mijoz kassadan pulni
+    olib, keyin omborda yana qaytim yozdirib, G1 orqali IKKINCHI marta pul
+    olardi. Cap TOVAR kesimida — POS'ning `validateRefundPositions` guard'i ham
+    aynan shu kesimda ishlaydi.
+  - `planAcceptance` — so'ralgan qatorlarni tekshirib OMBOR kesimida hujjatlarga
+    bo'ladi; narx/chegirma CHEKDAN olinadi (so'rovdan EMAS — `priceRefundFromOriginal`
+    naqshi).
+  - `readBrakStore` / `BRAK_STORE_KEY`.
+- **`sales-return-acceptance.service/controller`** — `GET …/acceptance/targets`
+  (omborlar + BRAK + standart = kaskad boshi), `GET …/acceptance/receipts`
+  (faqat ASL, o'tkazilgan cheklar), `GET …/acceptance/source/:id` (qatorlar +
+  cap), `POST …/acceptance/from-retail-sale/:id` (hujjat(lar) yaratib
+  o'tkazadi). Javobda har pozitsiya uchun YORLIQ ma'lumoti (shtrix + yacheyka
+  kodi) — ekran qo'shimcha so'rovsiz chop etadi.
+- **Migratsiya `20260824170000_sales_return_retail_sale`** (idempotent DDL).
+  **Lokal dev bazada (`sherset_v2_dev`) 2 marta yugurtirilib isbotlangan**
+  (ikkinchisi no-op); ustun/FK(`confdeltype=n` = SET NULL)/indeks tekshirildi.
+- **`create()` da manba-chek butunligi:** chek shu tenantniki, `posted|refunded`
+  va mirror EMAS — aks holda 400.
+- **G1 ning ochiq bandi YOPILDI:** `assertNotPaid` — `payedSumMinor > 0` bo'lgan
+  vozvratni `unpost`/`cancel` qilib bo'lmaydi. Tekshiruv TRANZAKSIYA ICHIDA,
+  holat claim'idan KEYIN (parallel `customer-payout` bilan poyga bo'lmasin).
+
+**BRAK qarori (reja «o'zing hal qilib hisobotga yoz» degan band):**
+brak **ZONA emas, alohida OMBOR** — `Store.attributes.__brakStore = true`
+(migratsiya yo'q, F6/F7 naqshi) + ombor kartasida maydon.
+**Sabab:** kassa kaskadi (F6) omborni tanlaydi, ya'ni «sotiladigan» birlik —
+OMBOR. Bir ombor ichidagi «BRAK zonasi» ombor-darajadagi `Stock` ni sotuvga
+ochiq qoldirardi va `assertAvailableCascade` brakni ham «bor» deb sanardi —
+ya'ni qabul mezoni («brak sotuv qoldig'iga aralashmaydi») BAJARILMASDI.
+BRAK ombori kaskadda qatnashmaydi (`posPriority` bo'sh) ⇒ POS unga hech qachon
+yetmaydi. Bitta ВП = bitta ombor (`assertCellsInStore`), shuning uchun
+sifatli+brak aralash qabul **IKKI hujjat** bo'lib yoziladi (bu ataylab:
+`SalesReturn.storeId` ni pozitsiya darajasiga tushirish post/unpost/cancel
+deltalari va cost-freeze zanjirini qayta qurishni talab qilardi).
+Pozitsiyaga yangi «brak» maydoni QO'SHILMADI — yacheykaning o'zi tasnif.
+
+**Nima qilindi (web):**
+- **`/omborchi/vozvrat`** — qabul ekrani: chek qidiruvi (raqam yoki mijoz nomi),
+  qolgan miqdor chek raqamlari bilan, har qatorda son + «Sifatli/Brak» +
+  yacheyka kodi (skaner-do'st `resolveCellByCode`), qabul → yorliq oynasi.
+  Tegish nishonlari ANIQ pikselda (`min-h-[44px]`, `h-11`) — dizayn-tizim rem
+  bazasi 12px. Ekran NARX YUBORMAYDI (test bilan qulflangan).
+- **`return-label-print.tsx`** — 58×40mm vozvrat yorlig'i: tovar nomi + soni,
+  BRAK belgisi, KATTA yacheyka kodi, Code128 tovar shtrixi.
+  **`POST /labels/render` ATAYLAB ishlatilmadi:** u tovar × nusxa sonini
+  template geometriyasi bilan qaytaradi va javobida YACHEYKA tushunchasi UMUMAN
+  yo'q (`label.service` faqat `id/name/code/article/barcodes/salePrices` o'qiydi),
+  vozvrat yorlig'ining butun ma'nosi esa «shu tovar SHU yacheykada» juftligi.
+  Repodagi mavjud naqsh olindi — yacheyka yorlig'i ham, narx yorlig'i ham
+  mijoz tomonda SVG bilan chiziladi va `window.print()` ga beriladi.
+- `/omborchi` panelida «Vozvrat qabuli» havolasi (`can('returnacceptance','view')`);
+  ombor kartasida «BRAK ombori» belgisi; `access-sections` «Retail» qatori.
+- i18n ru+uz: `pages.omborchi_vozvrat` (30 kalit) + `stores.brak_store*` (2) +
+  `access_entity_returnacceptance`.
+
+**Ruxsatlar (reja 4-vazifasi ham shu yerda):**
+- **Yangi entity `returnacceptance`** (`salesreturn` EMAS): qabul oqimi hujjat
+  yaratib O'TKAZADI, ya'ni umumiy `salesreturn.create`+`approve` kerak bo'lardi va
+  bu katta omborchiga butun `/sales-returns` modulini (mass-edit, delete,
+  ixtiyoriy narxda hujjat) ochib yuborardi. G2 `retailcontrol` naqshi.
+  warehouse_manager `view+create`; storekeeper/kassir NO. Ro'yxatlar: types +
+  PERMISSION_ENTITIES + seedSystemRoles + seed.ts + topup NEW_ENTITIES +
+  **TOPUP_ENTITIES (vaqtincha!)** + roles.controller (KNOWN + kategoriya) +
+  shablon + snapshot.
+- **🔴 `supply` STOREKEEPER'dan OLIB TASHLANDI.** Egasining qoidasi: «Ombor
+  xodimlari narx ko'rmaydi; kirim narxi faqat katta omborchiga». Ta'minot hujjati
+  aynan kirim narxini ko'rsatadi, ya'ni `storekeeper.supply.view` shu qoidaning
+  to'g'ridan-to'g'ri buzilishi edi. warehouse_manager'da `supply.view = ALL`
+  (PURCHASE_DOCS) — tekshirildi, o'zgartirilmadi.
+  ⚠️ **Bu SHABLON o'zgarishi — jonli rolga o'z-o'zidan tatbiq BO'LMAYDI**
+  (topup faqat QO'SHADI). Jonli «Omborchi» rolidan `Ta'minot` qatorlarini egasi
+  rol matritsasidan olib tashlashi kerak (deploy retseptida).
+
+**Testlar:** yangi 7 fayl — sof yadro 21, wiring 20, ruxsat 26, to'lov qo'riqchisi 6,
+**G3↔G1 zanjiri 5** (qabul → posted → kassirning `unpaid-returns` ro'yxatida
+qaytim summasi bilan chiqishi; qoralama tushmasligi; mijozsiz chek qabul
+qilinmasligi), ombor sxemasi +2; web qabul sahifasi 9, ombor kartasi 2.
+TO'LIQ: **api 628 fayl / 8754 passed** (2 skipped, 0 xato); **web 324 fayl / 4280 passed** (26 skipped, 0 xato — birinchi yugurishdagi 1 ta 5s-timeout `sales-screen-shift.test.tsx` da parallel-yuklama flake'i edi, toza yugurishda 0, F6 hisobotidagi bilan bir klass);
+typecheck api(8G)/web yashil; i18n gate'lar (key-existence 15777 kalit,
+no-hardcoded, raw-element, dead-route-links) yashil; pre-push guard + lint
+gate yashil; `role-templates` snapshotlari yangilandi (returnacceptance qatorlari
++ storekeeper'dan `supply` chiqishi).
+
+**Deploy holati: KUTILMOQDA (ataylab).** Sabablari:
+1) G1 va G2 deploy'i egasining «keyinroq» qarori bilan kutib turibdi — G3 o'sha
+   delta ustiga qo'shildi (`62a27024..HEAD` = G1+G2+G3 birga ketadi);
+2) **2026-08-24 06:46 dagi hodisa** (`docs/plans/2026-08-24-split-kassa-hodisasi.md`):
+   jonli split shoshilinch qaytarilgan, H1 navbatda, egasiga savol S1 javobsiz.
+   Ombor tuzilmasiga tegadigan deploy'ni hodisa rejasidan OLDIN yuritish noto'g'ri
+   bo'lardi;
+3) VPS paroli bu sessiyada berilmagan (F-reja 2.5/2.8 qoidasi).
+Push qilingan: `mirfayz` remote, branch HEAD **`acdf5ea7`**.
+
+**Deploy retsepti (G1+G2 retseptiga G3 qo'shimchalari):**
+1) VPS HEAD tekshir (Davlatbek tuzog'i) → `git merge --ff-only`;
+2) **Migratsiyalar (ikkitasi):** G1 `20260824120000_drawer_cash_out_sales_return`
+   va G3 `20260824170000_sales_return_retail_sale` — har biri
+   `prisma db execute --file …` → `prisma migrate resolve --applied …` →
+   oxirida `prisma generate`;
+3) `build:web` → pm2 restart **web va api**;
+4) **MAJBURIY:** `npx tsx src/scripts/topup-role-permissions.ts`
+   (`retailcontrol` + `returnacceptance` qatorlari) → api yana restart (perm cache)
+   → so'ng follow-up commit: TOPUP_ENTITIES'dan ikkalasini olib tashlash;
+5) **Egasi qo'lda (rol matritsasi):** «Omborchi» rolidan `Ta'minot` (supply)
+   qatorlarini olib tashlash — shablon o'zgarishi jonli rolga ko'chmaydi;
+6) **Egasi qo'lda (BRAK ombori):** F3 «Yangi ombor raqamlashtirish» bilan BRAK
+   ombori yaratilsin (masalan 99), yacheykalari raqamlansin, ombor kartasida
+   «BRAK ombori» belgilansin va **POS prioriteti BO'SH qoldirilsin**. Shu
+   qilinmaguncha ekranda «Brak» tugmasi o'chiq turadi (ataylab, test bilan);
+7) **Jonli tekshiruv (qabul mezoni):** mijozli sinov-chek → `/omborchi/vozvrat` da
+   chek topiladi → 1 qator sifatli + 1 qator brak → qabul → yorliqlar chop →
+   kassirda mijoz profilida qaytim summasi chiqadi → G1 to'lovi → brak tovar
+   BRAK omborida turgani qoldiq hisobotida ko'rinadi va POS uni ko'rmaydi.
+   Storekeeper bilan `/omborchi/vozvrat` 403 berishini ham tekshirish.
+
+**Ochiq qolganlar / keyingi fazalarga:**
+- **🔴 H-reja bilan kesishma (H2/H3 uchun MUHIM):** BRAK ombori — bu ATAYLAB
+  «POS yeta olmaydigan qoldiq». H3 ning deploy-oldi qo'riqchisi («POS yeta
+  olmaydigan qoldiq > 0 ⇒ chiqish kodi 2») va H2 holat reyestri BRAK omborini
+  ISTISNO qilishi shart, aks holda birinchi brak qabulidan keyin har deploy
+  bloklanadi va signal «bo'ri keldi» qilib qoladi. R4 xavfi bilan bir shakl,
+  lekin sabab boshqa.
+- Qabul ikki hujjat yozganda ular KETMA-KET yaratiladi (bitta tashqi tranzaksiya
+  emas — `create()` o'z tranzaksiyasini ochadi). Ikkinchisi yiqilsa birinchisi
+  post bo'lgan holda qoladi: har hujjat mustaqil to'g'ri va cap keyingi urinishda
+  allaqachon post bo'lganini hisobga oladi, lekin omborchiga «brak qatori
+  yozilmadi» deb qayta urinish kerak bo'ladi.
+- **Egasiga savol:** brak tovar uchun ham mijozga to'liq qaytim beriladimi?
+  Hozirgi xulq — HA (ikkala hujjat ham mijoz balansiga kredit yozadi, G1 ikkalasini
+  ham to'laydi). Boshqacha bo'lsa — alohida ish.
+- Qabul FAQAT chekdan boshlanadi (chek-siz erkin vozvrat qurilmadi): narxsiz
+  qabul qilishning yagona ishonchli manbasi mijoz to'lagan chek. Chek-siz
+  vozvrat mavjud `/sales-returns/new` (back-office) ekranida qoladi.
+- POS mirror cheklari uchun ombor tomonida ekran hali yo'q (`__sentToWarehouse`
+  faqat bildirishnoma) — bu qabul emas, JOYLASHTIRISH ishi: F7 `cell-place`
+  ustiga G6 (TSD) yoki alohida kichik ekran bilan yopilsin.
+- READ_ONLY_BASE'li shablonlar (sales_manager, accountant, supplier)
+  `returnacceptance.view` oladi (zararsiz — `create` YO'Q); xohlasa egasi yopadi.
+- `guard-baseline.json` dagi `label-grounding.test.ts` («#18 / #35») qatori hamon
+  PASS bo'lib turibdi (G2 hisobotidagi eslatma kuchda, alohida tozalash).
 
 ### G2 — Kontrol oqimi · 2026-08-24 · `2b6068b9`
 
