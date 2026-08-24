@@ -1,11 +1,13 @@
 # Hodisa: ombor-split kassani to'xtatdi — tahlil va tuzatish rejasi
 
-> **Yaratilgan:** 2026-08-24 · **Buyurtmachi:** Ozodbek (egasi) · **Holat:** H0 TUGADI, navbat H1
+> **Yaratilgan:** 2026-08-24 · **Buyurtmachi:** Ozodbek (egasi) · **Holat:** H0, H1 TUGADI · navbat H2 · **S1 savoli hamon JAVOBSIZ** (6-bo'lim)
 > **Ijro tartibi:** F-reja (`2026-08-23-ombor-restrukturizatsiya.md`) va G-reja
 > (`2026-08-23-omborchi-tsd-mijozlar.md`) bilan bir xil: bitta sessiya = bitta faza,
 > hisobot shu faylning oxiriga, so'ng TO'XTA.
 > **O'ZGARMAS QOIDALAR:** F-rejaning 2-bo'limi (testlar, i18n, maxfiylik, deploy
 > retsepti, jonli skript intizomi) shu rejaga ham AYNAN tatbiq etiladi.
+> **10–14 bandlari (shu hodisadan tug'ilgan) endi F-rejaning 2-bo'limida —
+> KANONIK matn o'sha yerda, bu yerdagi H1 tavsifi tarixiy.**
 
 ---
 
@@ -227,7 +229,7 @@ haqiqatni aytadi; keyingi sessiya bu faylni o'qib to'g'ri qaror qabul qila oladi
 
 ---
 
-### H1 — Jarayon qoidalari: bunday hodisa qaytmasin
+### H1 — Jarayon qoidalari: bunday hodisa qaytmasin ✅ (bajarildi — hisobot 9-bo'limda)
 
 **Maqsad:** IS-1, IS-2, IS-4, IS-6 ni jarayon darajasida yopish — kod emas,
 qoida ishi.
@@ -521,6 +523,64 @@ qaytarish — H4 dagi `warehouse-split.ts` (kod prefiksi bo'yicha, idempotent).
 *Ochiq:* stelaj o'lchamlari eng kam chegarada — sanash paytida yetmasa
 qo'shiladi (o'sha skript, idempotent). `01-04` (1-qavat o'rin 47–169) va
 `02-04` (1-qavat o'rin 1–93) tarixiy irregular diapazonlar — to'ldirilmadi.
+
+### H1 — Jarayon qoidalari · 2026-08-24
+
+**Nima qilindi (kod yo'q — jarayon/hujjat ishi):**
+
+1. **10–14-bandlar F-rejaning 2-bo'limiga KANONIK matn sifatida kiritildi**
+   (`docs/plans/2026-08-23-ombor-restrukturizatsiya.md`, 9-banddan keyin).
+   Nusxa qilinmadi — G-reja va H-reja sarlavhalarida **havola** turadi
+   (bir haqiqat, bir joyda). Har bandda uni tug'dirgan ildiz sabab qavs ichida
+   ko'rsatilgan (IS-1 … IS-6), ya'ni «nega bu qoida bor» savoli hujjatda javobli.
+2. **Promptlar tuzatildi (qoida 10 ning amaliy qismi — IS-1 ning haqiqiy yopilishi):**
+   - F-rejadagi **8 ta** faza-prompti (F1…F8) endi G-rejani VA hodisa rejasini ham
+     o'qishni talab qiladi;
+   - G-rejadagi **5 ta** «Ikkala rejani to'liq o'qi» prompti (G2–G6) va **G1** prompti
+     hodisa rejasini qo'shdi.
+   Sabab: qoidani faqat 2-bo'limga yozish yetarli emas edi — F5 sessiyasi aynan
+   PROMPT bo'yicha ishlagan va prompt G-rejani so'ramagan edi.
+3. **Qoida (11) RETROSPEKTIV tatbiq etildi** — bu bandning birinchi haqiqiy sinovi:
+   - F-reja sarlavhasidagi «Holat» qatori qayta yozildi: **F5 endi «TUGADI» emas,
+     «QISMAN, TUGAMAGAN»** (qabul mezonining «kassa sotuvi ishlaydi» bandi
+     bajarilmagan va split qaytarilgan) → H4 yopadi;
+   - **F7 ham «QISMAN»** (kodi jonlida, hisoboti yo'q) → H6/4-band;
+   - F5 hisoboti sarlavhasiga `⚠️ QISMAN (yopilmagan)` belgisi qo'yildi.
+   Ya'ni endi rejani o'qigan sessiya «F5 tugagan» degan noto'g'ri xulosaga
+   kela olmaydi — sarlavhaning O'ZI to'g'ri holatni aytadi.
+4. **`CLAUDE.md` ga 5.5-bo'lim** («Jonli OMBOR/QOLDIQ/KASSA ma'lumotiga tegishdan
+   oldin») — har sessiya auto-load qiladigan faylda, hodisa rejasiga yo'naltiruvchi
+   + 10–14 bandlarining bir qatorlik xulosasi + reyestr yo'llari.
+
+**Fayllar:** `docs/plans/2026-08-23-ombor-restrukturizatsiya.md` (2-bo'lim +8 band,
+sarlavha, 8 prompt, F5 hisobot sarlavhasi); `docs/plans/2026-08-23-omborchi-tsd-mijozlar.md`
+(sarlavha + 6 prompt); `docs/plans/2026-08-24-split-kassa-hodisasi.md` (sarlavha + shu hisobot);
+`CLAUDE.md` (yangi 5.5).
+
+**Testlar:** bu fazada kod o'zgarmadi — vitest/typecheck uchun yangi narsa yo'q.
+Tekshiruv o'rniga **deterministik tatbiq**: har tahrir anchor-asosli skript bilan
+qilindi (`assert` bilan — anchor topilmasa skript TO'XTAYDI, «jimgina yarim
+qo'llanish» bo'lmaydi, `CLAUDE.md` §6.5 saboqi). Sanoq natijalari skript chiqishida:
+F 8/8 prompt, G 5+1 prompt.
+
+**Deploy holati:** talab qilinmaydi (faqat hujjat).
+
+**Qabul mezoni tekshiruvi** (qoida 11 o'zini ham qamraydi):
+- «yangi sessiya F yoki G fazasini boshlaganda bu qoidalarni o'qimasdan o'ta olmaydi»
+  — ✅ uch yo'l bilan qulflangan: (a) prompt matni ikkala rejani + hodisa rejasini
+  so'raydi, (b) F-reja 2-bo'limi kanonik matn, (c) `CLAUDE.md` auto-load bo'lgani
+  uchun prompt buzilgan holatda ham 5.5-bo'lim ko'rinadi.
+- «qoidalar ikkala rejada ham bir xil» — ✅ nusxa emas, havola (matn bitta joyda).
+
+**Ochiq qolganlar / keyingi fazalarga:**
+- `docs/ops/jonli-holat.md` va `packages/db/scripts/warehouse-state.ts` ga havolalar
+  (CLAUDE.md 5.5 va qoida 14 da) **H2 da yaratiladi** — H2 gacha bu ikki yo'l mavjud emas.
+- Qoida (13) ning «uchma-uch smoke» ni KIM bajaradi degan tomoni ochiq: hozircha
+  «javobgar shaxs hisobotda yoziladi» deb qo'yildi. Jonli sotuv sinovini agent o'zi
+  qila olmaydi (kassa POS'i odam qo'lida) — H4 da bu javobgarlik aniq ismga
+  biriktirilishi kerak.
+- Qoida (11) bo'yicha **G4 ham hozir boshlanmaydi**: uning oldsharti F5, F5 esa endi
+  rasman «QISMAN». G4 ning yo'li S1 javobiga bog'liq (variant C).
 
 ### H0 — Hodisa hujjatlashtirildi · 2026-08-24
 

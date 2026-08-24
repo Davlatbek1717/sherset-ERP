@@ -7,6 +7,12 @@
 > **O'ZGARMAS QOIDALAR:** F-rejaning 2-bo'limi shu rejaga ham AYNAN tatbiq etiladi
 > (bitta sessiya = bitta faza; testlar + i18n ru/uz majburiy; maxfiy ma'lumot yozilmaydi;
 > branch/push/deploy retsepti o'sha yerda; jonli bazaga skript avval lokalda).
+> **Jumladan 2026-08-24 hodisasidan keyin qo'shilgan 10–14 bandlari:**
+> (10) ikki tomonlama bog'liqlik — hisobotda «bu o'zgarish nimani buzishi mumkin?»
+> savoliga yozma javob; (11) bajarilmagan qabul mezoni bilan faza YOPILMAYDI va
+> keyingi faza boshlanmaydi; (12) jonli skriptning teskarisi o'sha sessiyada
+> yoziladi va sinaladi; (13) jonli o'zgarishdan keyin uchma-uch smoke
+> (sotuv + sanash + ko'chirish); (14) VPS'da yozilgan skript o'sha kuni git'ga.
 >
 > 🔴 **2026-08-24 hodisasi:** jonli split kassani to'xtatib qo'ydi va qaytarildi.
 > Jonli ma'lumotga tegadigan faza boshlanishidan oldin
@@ -89,6 +95,7 @@ ikkinchi to'lov urinishi rad etiladi.
 ```
 D:\sherset-v2 dagi docs/plans/2026-08-23-omborchi-tsd-mijozlar.md va
 docs/plans/2026-08-23-ombor-restrukturizatsiya.md rejalarini to'liq o'qi.
+docs/plans/2026-08-24-split-kassa-hodisasi.md ni ham o'qi (qoida 10).
 Sen G1 fazasini bajarasan (vozvrat pulini kassadan qaytarish). Faqat G1 vazifalari,
 testlar, deploy, jonli tekshiruv, hisobot shu faylga — va TO'XTA.
 ```
@@ -120,7 +127,7 @@ so'ng kassir post qila oladi.
 
 **PROMPT:**
 ```
-Ikkala rejani to'liq o'qi (omborchi-tsd-mijozlar + ombor-restrukturizatsiya, avvalgi
+Ikkala rejani va docs/plans/2026-08-24-split-kassa-hodisasi.md ni to'liq o'qi (omborchi-tsd-mijozlar + ombor-restrukturizatsiya, avvalgi
 hisobotlar bilan). Sen G2 fazasini bajarasan (kontrol oqimi). Faqat G2 vazifalari,
 testlar, deploy, jonli tekshiruv, hisobot — va TO'XTA.
 ```
@@ -153,7 +160,7 @@ qaytim ko'rinadi → (G1) to'lov; brak tovar sotuv qoldig'iga aralashmaydi
 
 **PROMPT:**
 ```
-Ikkala rejani to'liq o'qi (avvalgi hisobotlar bilan). Sen G3 fazasini bajarasan
+Ikkala rejani va docs/plans/2026-08-24-split-kassa-hodisasi.md ni to'liq o'qi (avvalgi hisobotlar bilan). Sen G3 fazasini bajarasan
 (vozvrat qabul + yorliq). Faqat G3 vazifalari, testlar, deploy, jonli tekshiruv,
 hisobot — va TO'XTA.
 ```
@@ -200,7 +207,7 @@ ko'rinadi; tasdiqqacha post bloklangan.
 
 **PROMPT:**
 ```
-Ikkala rejani to'liq o'qi (ayniqsa F5, F6 va G1–G3 hisobotlarini). Sen G4 fazasini
+Ikkala rejani va docs/plans/2026-08-24-split-kassa-hodisasi.md ni to'liq o'qi (ayniqsa F5, F6 va G1–G3 hisobotlarini). Sen G4 fazasini
 bajarasan (yetishmovchilik tasdiq oqimi). Oldshartlar bajarilmagan bo'lsa foydalanuvchiga
 ayt va TO'XTA. Faqat G4 vazifalari, testlar, deploy, jonli tekshiruv, hisobot — va TO'XTA.
 ```
@@ -233,7 +240,7 @@ serverga yetadi; narx hech qayerda ko'rinmaydi.
 
 **PROMPT:**
 ```
-Ikkala rejani to'liq o'qi (avvalgi hisobotlar bilan). Sen G5 fazasini bajarasan
+Ikkala rejani va docs/plans/2026-08-24-split-kassa-hodisasi.md ni to'liq o'qi (avvalgi hisobotlar bilan). Sen G5 fazasini bajarasan
 (TSD auth + APK skeleti). Faqat G5 vazifalari, testlar, hisobot — va TO'XTA.
 ```
 
@@ -265,7 +272,7 @@ sanaladi va hujjatda to'g'ri ko'rinadi.
 
 **PROMPT:**
 ```
-Ikkala rejani to'liq o'qi (ayniqsa G5 va F7 hisobotlarini). Sen G6 fazasini bajarasan
+Ikkala rejani va docs/plans/2026-08-24-split-kassa-hodisasi.md ni to'liq o'qi (ayniqsa G5 va F7 hisobotlarini). Sen G6 fazasini bajarasan
 (TSD ish ekranlari). Faqat G6 vazifalari, testlar, jonli tekshiruv, hisobot — va TO'XTA.
 ```
 

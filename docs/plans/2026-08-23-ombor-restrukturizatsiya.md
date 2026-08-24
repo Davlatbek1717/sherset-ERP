@@ -1,6 +1,6 @@
 # Ombor restrukturizatsiyasi — 7+ fizik ombor, yacheyka-birinchi hisob
 
-> **Yaratilgan:** 2026-08-23 · **Buyurtmachi:** Ozodbek (egasi) · **Holat:** F1–F6 va F8 TUGADI (F8 jonlida 2026-08-24); F7 kodi `afd27a47` jonlida, lekin F7 HISOBOTI hali yozilmagan (o'z sessiyasi yozsin)
+> **Yaratilgan:** 2026-08-23 · **Buyurtmachi:** Ozodbek (egasi) · **Holat (qoida 11 bo'yicha qayta baholandi, H1/2026-08-24):** F1–F4, F6, F8 **TUGADI** (F8 jonlida 2026-08-24); **F5 — QISMAN, TUGAMAGAN**: qabul mezonining «kassa sotuvi ishlaydi» bandi bajarilmagan va split 2026-08-24 06:46 da QAYTARILGAN → H4 fazasi yopadi; **F7 — QISMAN**: kodi `afd27a47` jonlida, HISOBOTI yo'q → H6/4-band
 >
 > 🔴 **DIQQAT — F5 SPLIT AMALDA QAYTARILGAN (2026-08-24 06:46).** Jonli split
 > kassani to'xtatib qo'ydi (tovar POS yeta olmaydigan omborga ko'chgan edi) va
@@ -70,6 +70,39 @@
 9. Ishlar faqat `D:\sherset-v2` da. Boshqa loyihalarga (VPS'dagi biznesjon,
    global-erp, sherset-servis, akademiya…) TEGILMAYDI.
 
+10. **Ikki tomonlama bog'liqlik.** Jonli ma'lumotni yoki jonli XULQni
+    o'zgartiradigan faza boshlanishidan oldin agent IKKALA rejani ham
+    (`2026-08-23-ombor-restrukturizatsiya.md` + `2026-08-23-omborchi-tsd-mijozlar.md`)
+    va `2026-08-24-split-kassa-hodisasi.md` ni o'qiydi, so'ng hisobotda
+    **«bu o'zgarish qaysi mavjud oqimni buzishi mumkin?»** savoliga YOZMA javob
+    beradi. Bu band bo'sh o'tkazilmaydi — «buzmaydi» deyish ham dalil bilan
+    yoziladi. (Sabab: IS-1 — F5 sessiyasi G-rejani o'qimagani uchun split
+    tovarni POS yeta olmaydigan omborga ko'chirganini bilmasdi.)
+11. **Qabul mezoni — yopish sharti.** Qabul mezonining biror bandi bajarilmasa
+    faza **«TUGADI» deb yopilmaydi**; holati «QISMAN — jonli tasdiq kutilmoqda»
+    bo'ladi va **keyingi faza boshlanmaydi**. Mezonni uchinchi shaxsga
+    (egasi/jamoa) o'tkazish — yopish EMAS. Reja sarlavhasidagi «Holat» qatori
+    ham shu haqiqatni aytadi. (Sabab: IS-2.)
+12. **Qaytarish yo'li majburiy.** Jonli ma'lumotni o'zgartiradigan har skript
+    bilan birga uning **TESKARISI** o'sha sessiyada yoziladi, lokal dev bazada
+    sinaladi va hisobotda **buyrug'i bilan** ko'rsatiladi. Zaxira dump — yetarli
+    EMAS (oradagi savdo yo'qoladi). (Sabab: IS-4 — revert skripti savdo
+    shiddatida, 06:45 da shoshilinch yozilgan.)
+13. **Jonli o'zgarishdan keyin uchma-uch smoke.** Ombor/qoldiq/kassaga tegadigan
+    har o'zgarishdan keyin: bitta sinov **SOTUV** (post → tekshir → cancel),
+    bitta yacheyka **sanash**, bitta **ko'chirish**. «Sahifa 200 + log toza»
+    verify sifatida YETARLI EMAS. Ish soatidan tashqari qilingan o'zgarish
+    **savdo boshlanishidan oldin** qayta tekshiriladi — javobgar shaxs va vaqt
+    hisobotda yoziladi. (Sabab: IS-3.)
+14. **Favqulodda tuzatish protokoli.** VPS'da yozilgan HAR QANDAY skript
+    **o'sha kuni** git'ga kiritiladi va tegishli rejaga hodisa yozuvi qo'shiladi.
+    Jonli holatga qo'lda tegilgan bo'lsa — jonli holat reyestri
+    (`docs/ops/jonli-holat.md`, H2) yangilanadi. (Sabab: IS-6.)
+
+> 🔴 **10–14 bandlari 2026-08-24 hodisasidan keyin qo'shildi** (H1 fazasi).
+> Ildiz sabablar va to'liq tahlil: `docs/plans/2026-08-24-split-kassa-hodisasi.md`.
+> Ular F-, G- va H-rejalarning HAMMASIGA tatbiq etiladi.
+
 ## 3. Maqsad-arxitektura (hamma faza shu tomon boradi)
 
 | Egasida | Kod segmenti | Tizimda |
@@ -115,6 +148,8 @@ taqsimlanmagan/jami raqamlari DB'dagi haqiqiy sonlarga teng (test bilan qulflang
 
 **PROMPT (yangi sessiyaga ko'chirib qo'ying):**
 ```
+Qoida (10): docs/plans/2026-08-23-omborchi-tsd-mijozlar.md (G-reja) va
+docs/plans/2026-08-24-split-kassa-hodisasi.md (hodisa qoidalari) ni HAM to'liq o'qi.
 D:\sherset-v2 dagi docs/plans/2026-08-23-ombor-restrukturizatsiya.md rejasini to'liq o'qi.
 Sen F1 fazasini bajarasan (qoldiq ko'rinishlari: ombor-kesim, ma'lumot ko'chirilmaydi).
 Reja qoidalariga qat'iy amal qil: faqat F1 vazifalari, barcha testlar, deploy va jonli
@@ -143,6 +178,8 @@ kiritilib, post'da o'sha yacheykaga qoldiq yozilishi tekshirilgan.
 
 **PROMPT:**
 ```
+Qoida (10): docs/plans/2026-08-23-omborchi-tsd-mijozlar.md (G-reja) va
+docs/plans/2026-08-24-split-kassa-hodisasi.md (hodisa qoidalari) ni HAM to'liq o'qi.
 D:\sherset-v2 dagi docs/plans/2026-08-23-ombor-restrukturizatsiya.md rejasini to'liq o'qi
 (avvalgi hisobotlar bilan). Sen F2 fazasini bajarasan (inventarizatsiyada «+ Yacheyka
 qo'shish»). Faqat F2 vazifalari, testlar, deploy, jonli tekshiruv, hisobot — va TO'XTA.
@@ -172,6 +209,8 @@ oqimda raqamlashtira oladi; dublikat/xato kiritish himoyalangan.
 
 **PROMPT:**
 ```
+Qoida (10): docs/plans/2026-08-23-omborchi-tsd-mijozlar.md (G-reja) va
+docs/plans/2026-08-24-split-kassa-hodisasi.md (hodisa qoidalari) ni HAM to'liq o'qi.
 D:\sherset-v2 dagi docs/plans/2026-08-23-ombor-restrukturizatsiya.md rejasini to'liq o'qi
 (avvalgi hisobotlar bilan). Sen F3 fazasini bajarasan (yangi omborni raqamlashtirish
 vositasi). Faqat F3 vazifalari, testlar, deploy, jonli tekshiruv, hisobot — va TO'XTA.
@@ -214,6 +253,8 @@ skript ikki marta yuritilsa ikkinchi yugurish no-op.
 
 **PROMPT:**
 ```
+Qoida (10): docs/plans/2026-08-23-omborchi-tsd-mijozlar.md (G-reja) va
+docs/plans/2026-08-24-split-kassa-hodisasi.md (hodisa qoidalari) ni HAM to'liq o'qi.
 D:\sherset-v2 dagi docs/plans/2026-08-23-ombor-restrukturizatsiya.md rejasini to'liq o'qi
 (avvalgi hisobotlar bilan). Sen F4 fazasini bajarasan (ombor-split migratsiya skripti +
 LOKAL dry-run; jonli bazaga yozish TAQIQLANGAN). Avval foydalanuvchidan Q1 javobini ol.
@@ -242,6 +283,8 @@ to'liq ishlar holatda topshirish.
 
 **PROMPT:**
 ```
+Qoida (10): docs/plans/2026-08-23-omborchi-tsd-mijozlar.md (G-reja) va
+docs/plans/2026-08-24-split-kassa-hodisasi.md (hodisa qoidalari) ni HAM to'liq o'qi.
 D:\sherset-v2 dagi docs/plans/2026-08-23-ombor-restrukturizatsiya.md rejasini to'liq o'qi
 (ayniqsa F4 hisobotini). Sen F5 fazasini bajarasan (jonli split + verifikatsiya).
 Jonli ishga kirishdan avval foydalanuvchidan ruxsat va VPS parolini ol, zaxira dump ol.
@@ -284,6 +327,8 @@ kamaytirmaydi (faqat rezerv qiladi).
 
 **PROMPT:**
 ```
+Qoida (10): docs/plans/2026-08-23-omborchi-tsd-mijozlar.md (G-reja) va
+docs/plans/2026-08-24-split-kassa-hodisasi.md (hodisa qoidalari) ni HAM to'liq o'qi.
 D:\sherset-v2 dagi docs/plans/2026-08-23-ombor-restrukturizatsiya.md rejasini to'liq o'qi
 (ayniqsa F5 hisobotini). Sen F6 fazasini bajarasan (kassa kaskadli ayirish + to'lov
 paytida ayirish). Faqat F6 vazifalari, testlar, deploy, jonli tekshiruv, hisobot — va TO'XTA.
@@ -308,6 +353,8 @@ oqimini bitta amal bilan bajara oladi; hisobotlar to'g'ri.
 
 **PROMPT:**
 ```
+Qoida (10): docs/plans/2026-08-23-omborchi-tsd-mijozlar.md (G-reja) va
+docs/plans/2026-08-24-split-kassa-hodisasi.md (hodisa qoidalari) ni HAM to'liq o'qi.
 D:\sherset-v2 dagi docs/plans/2026-08-23-ombor-restrukturizatsiya.md rejasini to'liq o'qi
 (avvalgi hisobotlar bilan). Sen F7 fazasini bajarasan (omborlararo kundalik oqimlar).
 Faqat F7 vazifalari, testlar, deploy, jonli tekshiruv, hisobot — va TO'XTA.
@@ -334,6 +381,8 @@ raqamlashtirish va inventarizatsiya qila oladi; yangilanish avto keladi.
 
 **PROMPT:**
 ```
+Qoida (10): docs/plans/2026-08-23-omborchi-tsd-mijozlar.md (G-reja) va
+docs/plans/2026-08-24-split-kassa-hodisasi.md (hodisa qoidalari) ni HAM to'liq o'qi.
 D:\sherset-v2 dagi docs/plans/2026-08-23-ombor-restrukturizatsiya.md rejasini to'liq o'qi
 (avvalgi hisobotlar bilan). Sen F8 fazasini bajarasan (katta omborchi .exe dasturi).
 Faqat F8 vazifalari, testlar, deploy, jonli tekshiruv, hisobot — va TO'XTA.
@@ -480,7 +529,7 @@ posPriority=1 berilsa (Taqsimlanmaganni 2 ga surish/olib tashlash bilan) POS
 - F3 follow-up (TOPUP_ENTITIES'dan warehousenumbering'ni olib tashlash) hali
   turibdi.
 
-### F5 — Jonli split + verifikatsiya · 2026-08-23 · `bd58988f` (+ hisobot commiti)
+### F5 — Jonli split + verifikatsiya · ⚠️ QISMAN (yopilmagan) · 2026-08-23 · `bd58988f` (+ hisobot commiti)
 
 > 🔴 **BU HISOBOT TARIXIY — split 2026-08-24 06:46 da QAYTARILGAN** (kassa
 > to'xtab qolgani uchun). Quyidagi raqamlar split kunidagi holat; joriy jonli

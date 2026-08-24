@@ -128,6 +128,24 @@ desktop/                       — Electron desktop o'rami · docs/ — roadmap/
 turbo.json · biome.json · pnpm-workspace.yaml · tsconfig.base.json — monorepo config
 ```
 
+## 5.5. Jonli OMBOR/QOLDIQ/KASSA ma'lumotiga tegishdan oldin (2026-08-24 — MAJBURIY)
+
+Jonli bazadagi ombor tuzilmasi, qoldiq yoki kassa xulqini o'zgartiradigan ish
+(split, ko'chirish, prioritet, hisobdan chiqarish, kaskad sozlamasi) boshlanishidan
+oldin **`docs/plans/2026-08-24-split-kassa-hodisasi.md`** to'liq o'qiladi.
+Sabab: 2026-08-23 dagi ombor-split kassani 46 daqiqa to'xtatib qo'ygan (eng shiddatli
+savdo soatida), tovar POS yeta olmaydigan omborga ko'chgani uchun.
+
+Majburiy qoidalar (kanonik matn: `docs/plans/2026-08-23-ombor-restrukturizatsiya.md`
+2-bo'lim, 10–14-bandlar): (10) ikki tomonlama bog'liqlik — F va G rejalarni ikkalasini
+o'qi, hisobotda «bu nimani buzishi mumkin?» savoliga yozma javob ber; (11) bajarilmagan
+qabul mezoni bilan faza YOPILMAYDI; (12) jonli skriptning teskarisi o'sha sessiyada
+yoziladi va sinaladi; (13) o'zgarishdan keyin uchma-uch smoke — sotuv + sanash +
+ko'chirish (sahifa 200 YETARLI EMAS); (14) VPS'da yozilgan skript o'sha kuni git'ga.
+
+Jonli holatning kutilayotgan reyestri: `docs/ops/jonli-holat.md`
+(tekshirish: `packages/db/scripts/warehouse-state.ts`).
+
 ## 6. Parallel sessiyalar protokoli (2026-07-04 — MAJBURIY)
 
 Bir vaqtda bir nechta Claude sessiyasi ishlashi mumkin. Halaqit bermaslik qoidalari:
