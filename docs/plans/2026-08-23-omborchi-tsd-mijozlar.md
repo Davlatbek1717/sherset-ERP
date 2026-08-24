@@ -1,6 +1,6 @@
 # Omborchi va TSD mijozlari — kontrol, vozvrat, TSD APK
 
-> **Yaratilgan:** 2026-08-23 · **Buyurtmachi:** Ozodbek (egasi) · **Holat:** G1 KOD TAYYOR (deploy kutilmoqda — egasi «keyinroq» dedi)
+> **Yaratilgan:** 2026-08-23 · **Buyurtmachi:** Ozodbek (egasi) · **Holat:** G1+G2 KOD TAYYOR (deploy kutilmoqda — egasi «keyinroq» dedi; G2 deploy'ida `topup-role-permissions.ts` MAJBURIY — `retailcontrol`)
 > **Ijro tartibi:** har faza ALOHIDA sessiyada. Agent shu faylni va
 > `docs/plans/2026-08-23-ombor-restrukturizatsiya.md` ni (F-reja) TO'LIQ o'qiydi,
 > O'Z fazasini bajaradi, testlardan o'tkazadi, pastdagi «Hisobotlar»ga yozadi va TO'XTAYDI.
@@ -271,6 +271,105 @@ Ikkala rejani to'liq o'qi (ayniqsa G5 va F7 hisobotlarini). Sen G6 fazasini baja
 > Shablon: **Faza · sana · commit(lar)** — nima qilindi (fayl ro'yxati bilan qisqa),
 > test natijalari (raqamlar), deploy holati (jonli tekshiruv dalili), ochiq qolganlar,
 > keyingi fazaga eslatmalar.
+
+### G2 — Kontrol oqimi · 2026-08-24 · `2b6068b9`
+
+**Nima qilindi (backend):**
+- **Navbat:** `GET /retail-sales/control-queue` — `picking` holatidagi, HAMMA
+  yig'ish topshiriqlari (`RestockTask type=picking`) yopiq cheklar, FIFO
+  (moment asc), har kartada sklad/omborchi/holat cheklar. Sof shart —
+  `retail-control.ts#isControlReady`: **topshiriqsiz chek navbatga TUSHMAYDI**
+  (sabab: `send-to-picking` topshiriqlarni tx tashqarisida best-effort ochadi —
+  0-topshiriqli oynada kontrol yig'ilmagan chekni tasdiqlashi mumkin edi;
+  bunday chek kassirning o'z «tayyor» tugmasi bilan yopiladi).
+- **«To'liq»:** `POST /retail-sales/:id/control-approve` — `picking→ready`
+  CAS-flip; ochiq topshiriq bo'lsa 400; **KIM tekshirgani** flip bilan bir
+  tranzaksiyada `CashierAuditEvent CONTROL_APPROVED` (employeeId=kontrolchi,
+  payload'da tasdiqlangan tarkib); kassirga `sale_ready` SSE.
+- **Tahrir:** `PATCH /retail-sales/:id/control-edit` — qator o'chirish / sonni
+  o'zgartirish, FAQAT `picking` da (FSM: ready'dan keyin tahrir yo'q — test).
+  **Qaror: faqat KAMAYTIRISH** — ko'paytirish omborchi yig'magan (rezerv
+  qilinmagan) tovarni chekka qo'shish bo'lardi; oshirish kerak bo'lsa kassir
+  yangi chek ochadi. Sof reja moduli `planControlEdit` (narx/chegirma
+  tegilmaydi, summa `computePositionTotal` bilan qayta); yozuv versiya+holat
+  BIR filtrda (poyga → 409); **rezerv ham kamayadi** — delta hold turgan
+  (store×product) qatorlar bo'yicha net-cap bilan, `release_manual`,
+  cancel() dagi lockBalances intizomi; `CONTROL_EDITED` audit (qaysi qatorlar,
+  eski→yangi); kassirga `sale_edited` SSE — body'da o'zgargan qatorlar NOMI.
+  (Rejadagi «Tahrirlash → PATCH :id/edit» bajarilmadi-o'zgartirildi: mavjud
+  `:id/edit` POSTED chekning pul qatlamini tahrirlaydi — boshqa klass;
+  picking-tarkib uchun alohida endpoint to'g'ri.)
+- **`markReady` o'zgarishi (zanjir o'zagi):** o'z topshirig'i bor chaqiruvchi
+  (kichik omborchi) endi flip qilMAYDI — topshiriqlari yopilib chek kontrol
+  navbatiga tushadi. Topshiriqsiz chaqiruvchi (kassirning 2026-08-11 zaxira
+  yo'li) eski xulqda: hammasini yopadi va flip qiladi — omborchi kelmay qolgan
+  chek qotib qolmaydi.
+- **Ruxsat — yangi entity `retailcontrol`** (`retailsale` EMAS, chunki uning
+  view/update'i storekeeper'da ham bor): warehouse_manager view+update ALL;
+  storekeeper/kassir NO (lifecycle-permission testlari qulflaydi; kassir uchun
+  kiosk-allowlist'da ham marshrut yo'q — ikki qulf). Ro'yxatlar: types +
+  PERMISSION_ENTITIES + seedSystemRoles + seed.ts + topup NEW_ENTITIES +
+  **TOPUP_ENTITIES (vaqtincha!)** + roles.controller + shablon + snapshot (6).
+- **SSE:** `NotificationKind` + `sale_edited`/`sale_ready`, ikkalasi
+  «Розница» qatori (notification-settings-filter). Qabul qiluvchi — chek
+  smenasining kassiri.
+- **`GET /retail-sales` filtri:** `assigneeId` endi HAQIQIY (sxema uni ilgari
+  jimgina kesib tashlar edi — omborchi paneli 2026-08 dan beri yuboradi-yu har
+  omborchi HAMMA chekni ko'rardi); `assigneeOpen=1` — faqat ochiq topshiriqli
+  cheklar. Diqqat: endi topshiriqsiz omborchi ro'yxati bo'sh (fail-closed).
+
+**Nima qilindi (web):**
+- **`/omborchi/kontrol`** — kontrol ekrani (skanersiz): FIFO navbat (8s poll +
+  SSE invalidatsiya), kartada chek/summa/kassir/sklad-cheklar, «Ko'rish»
+  (tafsilot `GET /retail-sales/:id`), «To'liq» (tasdiq dialogi), «Tahrirlash»
+  (DS Input h-11, qator o'chirish/qaytarish, bo'sh chek bloklanadi). i18n ru+uz
+  (`pages.omborchi_kontrol.*` 24 kalit). F8 qobig'i /omborchi ichida — yo'l mos.
+- `/omborchi` paneli: «Kontrol» havolasi (`can('retailcontrol','view')`),
+  picking so'roviga `assigneeOpen=1` — omborchi «Tayyor» bosgach karta
+  ro'yxatidan chiqadi (chek kontrolda).
+- `use-notification-stream`: `sale_edited`/`sale_ready` da POS
+  `retail-sales-picking/ready/session` + kontrol keshlari invalidatsiya —
+  kassir 8s poll kutmaydi, toast'da o'zgargan qatorlar ko'rinadi.
+- `access-sections` «Retail» bo'limiga `retailcontrol` qatori + i18n.
+
+**Testlar:** yangi — `retail-control.test.ts` 21 (navbat sharti, tahrir
+rejasi chegaralari, sxema), `retail-sale-control-wiring.test.ts` 18 (navbat
+filtri qisman/topshiriqsiz, approve flip+audit+SSE/400/409, edit yozuv+rezerv
+net-cap+409/400/noop, markReady flip-yo'q/zaxira-yo'l, assigneeId simlari),
+lifecycle-permissions +12 (retailcontrol qulfi), web kontrol sahifa 5, stream 2.
+TO'LIQ: **api 8674 passed (2 skipped, 0 xato); web 322 fayl / 4269 passed
+(26 skipped, 0 xato)**; typecheck api(8G)/web/db yashil; biome yangi fayllarda
+xatosiz; snapshotlar faqat `retailcontrol` qatorlari bilan yangilandi.
+
+**Deploy holati: KUTILMOQDA** — G1 deploy'i ham egasi aytganidek kutib turibdi
+(«keyinroq»), G2 o'sha delta ustiga qo'shildi: keyingi deploy `62a27024..HEAD`
+ni birga olib boradi (G1+G2). **Retsept (G1 retsepti + G2 qo'shimchalari):**
+1) VPS HEAD tekshir (Davlatbek tuzog'i) → ff-merge;
+2) G1 migratsiyasi (`20260824120000_drawer_cash_out_sales_return` — db execute
+   + resolve + generate); G2 da YANGI MIGRATSIYA YO'Q (sxema o'zgarmagan);
+3) `build:web` → pm2 restart web **va api**;
+4) **MAJBURIY:** apps/api'da `npx tsx src/scripts/topup-role-permissions.ts`
+   (jonli rollarga `retailcontrol` qatorlari) → api yana restart (perm cache) →
+   so'ng follow-up commit: TOPUP_ENTITIES'dan `retailcontrol`ni olib tashlash
+   (template-topup qoidasi; testdagi TOPUP asserti bilan birga);
+5) Jonli tekshiruv (qabul mezoni): 2 skladli sinov-chek → omborchilar «Tayyor» →
+   chek kontrol navbatida → bitta qator o'chirilganda kassir ekranida summa
+   o'zgaradi (SSE toast) → «To'liq» → kassir post qila oladi; storekeeper bilan
+   /omborchi/kontrol 403 berishini tekshirish.
+
+**Ochiq qolganlar / keyingi fazalarga:**
+- Deploy + jonli tekshiruv egasining ruxsati/VPS paroli bilan (yuqoridagi
+  retsept); topup'dan keyin `retailcontrol`ni TOPUP_ENTITIES'dan olib tashlash.
+- Kontrol tahriri POSTED chekka tegmaydi (ataylab) — u `PATCH :id/edit`
+  (pul qatlami) bilan qoladi; picking-tahrir narx/chegirmaga ham tegmaydi.
+- `sale_edited` bildirishnomasi faqat smena kassiriga boradi — kassir
+  almashgan smenada (admin boshqa kassaga kirsa) toast o'sha kassirga ketadi;
+  ro'yxatlar baribir 8s poll bilan yangilanadi.
+- G6 (TSD) uchun: TSD'da «tayyor» oqimi ham `mark-ready` orqali — flip
+  bo'lmasligi TSD UX'ida hisobga olinsin (chek «kontrolda» deb ko'rsatilsin).
+- READ_ONLY_BASE'li boshqa shablonlar (sales_manager, accountant, supplier)
+  `retailcontrol.view` oladi (navbatni ko'rish — zarasiz, update YO'Q);
+  xohlasa egasi rol matritsasidan yopadi.
 
 ### G1 — Vozvrat pulini kassadan qaytarish · 2026-08-24 · `8b39a083`
 
