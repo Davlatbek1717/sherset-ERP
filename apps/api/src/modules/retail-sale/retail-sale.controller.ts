@@ -36,6 +36,21 @@ export class RetailSaleController {
     return this.sales.zReport(user.accountId, sessionId);
   }
 
+  /**
+   * G2 — kontrol navbati: yig'ib bo'lingan (`picking` + hamma topshiriq yopiq)
+   * cheklar, katta omborchi «To'liq»/«Tahrirlash» qiladi. `:id` dan OLDIN
+   * turishi shart (marshrut to'qnashuvi — z-report bilan bir sabab).
+   *
+   * Ruxsat — alohida `retailcontrol` entity: `retailsale.view` bilan
+   * qo'riqlasak oddiy omborchi (storekeeper) ham kontrolni ko'rardi, egasining
+   * qoidasi esa aniq: kontrol FAQAT katta omborchida.
+   */
+  @Get('control-queue')
+  @RequirePermission({ entity: 'retailcontrol', action: 'view' })
+  async controlQueue(@CurrentUser() user: AuthenticatedUser, @Query() query: unknown) {
+    return this.sales.controlQueue(user.accountId, query);
+  }
+
   @Get(':id')
   @RequirePermission({ entity: 'retailsale', action: 'view' })
   async findById(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
@@ -62,6 +77,33 @@ export class RetailSaleController {
   @RequirePermission({ entity: 'retailsale', action: 'update' })
   async markReady(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
     return this.sales.markReady(user.accountId, id, user.sub);
+  }
+
+  /**
+   * G2 — kontrol «To'liq»: `picking → ready` KATTA OMBORCHI qo'lidan.
+   * `mark-ready` dan farqi — ruxsat (`retailcontrol.update`) va audit
+   * (kim tekshirgani yoziladi). Kichik omborchining `mark-ready`i endi
+   * flip qilmaydi (servis izohi) — zanjir: omborchilar → kontrol → kassir.
+   */
+  @Post(':id/control-approve')
+  @RequirePermission({ entity: 'retailcontrol', action: 'update' })
+  async controlApprove(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    return this.sales.controlApprove(user.accountId, user.sub, id);
+  }
+
+  /**
+   * G2 — kontrol tahriri: qator o'chirish / sonni kamaytirish, `picking`
+   * holatida. `PATCH :id/edit` bilan ADASHTIRMANG — u to'langan (posted)
+   * chekning pul qatlamini tahrirlaydi; bu esa yig'ilayotgan chek TARKIBINI.
+   */
+  @Patch(':id/control-edit')
+  @RequirePermission({ entity: 'retailcontrol', action: 'update' })
+  async controlEdit(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ) {
+    return this.sales.controlEdit(user.accountId, user.sub, id, body);
   }
 
   @Post(':id/send-to-picking')

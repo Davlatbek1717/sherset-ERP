@@ -193,6 +193,10 @@ export const ACCESS_SECTIONS: AccessSection[] = [
     entities: [
       doc('retailsale', 'subnav.retail.sales'),
       doc('cashiersession', 'subnav.retail.sessions'),
+      // G2 (2026-08-24): chek kontroli — katta omborchi navbati. Qator
+      // bo'lmasa admin bu ruxsatni hech qaysi ekrandan bera/ola olmasdi
+      // (storecell'dagi I4 saboqlari bilan bir klass).
+      dict('retailcontrol', card('access_entity_retailcontrol')),
     ],
   },
   {

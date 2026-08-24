@@ -319,6 +319,7 @@ export class PermissionsService {
       'payroll',
       'cashiersession',
       'retailsale',
+      'retailcontrol',
       'saleschannel',
       'onlineorder',
       'pipeline',

@@ -261,6 +261,36 @@ export const UpdateSaleCommentSchema = z.object({
 });
 export type UpdateSaleCommentInput = z.infer<typeof UpdateSaleCommentSchema>;
 
+// --- G2: kontrol tahriri ---
+
+/**
+ * G2 — kontrol tahriri (`PATCH /retail-sales/:id/control-edit`).
+ *
+ * Kontrolchi CHEKDA QOLADIGAN qatorlarni yuboradi: ro'yxatda yo'q qator
+ * O'CHIRILADI, `quantity` esa yangi son (faqat kamaytirish — qoida sof
+ * modulda, `retail-control.ts`). Narx/chegirma tahrir qilinMAYDI: kontrol
+ * tarkibni haqiqatga moslaydi, narx siyosati kassir/menejer ishi.
+ */
+export const ControlQueueFilterSchema = z.object({
+  limit: z.coerce.number().int().min(1).max(200).default(50),
+});
+export type ControlQueueFilterInput = z.infer<typeof ControlQueueFilterSchema>;
+
+export const ControlEditSchema = z.object({
+  /** Optimistik qulf — kassir yoki boshqa kontrolchi bilan poyga 409 oladi. */
+  version: z.coerce.number().int().nonnegative(),
+  positions: z
+    .array(
+      z.object({
+        /** Mavjud `RetailSalePosition.id` — yangi qator qo'shilmaydi. */
+        id: z.string().uuid(),
+        quantity: z.string().regex(/^\d+(\.\d{1,6})?$/, "Miqdor musbat o'nlik son bo'lishi kerak"),
+      }),
+    )
+    .max(500),
+});
+export type ControlEditInput = z.infer<typeof ControlEditSchema>;
+
 // --- Z-report query ---
 
 /**
@@ -283,6 +313,20 @@ export const RetailSaleFilterSchema = z.object({
   // xil ismli ikki mijoz aralashib ketardi.
   agentId: z.string().uuid().optional(),
   state: RetailSaleStateSchema.optional(),
+  // G2 — omborchi paneli. `/omborchi` sahifasi `assigneeId` ni 2026-08 dan beri
+  // YUBORARDI, lekin sxema uni jimgina tashlab yuborardi (z.object unknown
+  // kalitlarni kesadi) — ya'ni har omborchi HAMMA cheklarni ko'rardi. Endi
+  // filtr haqiqiy: chekning yig'ish topshirig'i (RestockTask type=picking)
+  // shu xodimga biriktirilgan bo'lishi kerak.
+  assigneeId: z.string().uuid().optional(),
+  // `true` bo'lsa faqat OCHIQ (done/cancelled emas) topshiriqli cheklar —
+  // omborchining «yig'ilishi kerak» ro'yxati. U «Tayyor» bosgach chek uning
+  // ro'yxatidan chiqadi (kontrol navbatiga o'tadi), «ishim tugadi» darhol
+  // ko'rinadi.
+  assigneeOpen: z
+    .union([z.boolean(), z.string()])
+    .transform((v) => (typeof v === 'boolean' ? v : v === 'true' || v === '1'))
+    .optional(),
   dateFrom: z.coerce.date().optional(),
   dateTo: z.coerce.date().optional(),
   search: z.string().max(100).optional(),

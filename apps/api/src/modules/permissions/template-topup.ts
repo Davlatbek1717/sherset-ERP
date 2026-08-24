@@ -83,7 +83,14 @@ export interface ExistingPermissionRow {
 // `warehousenumbering` (F3) 2026-08-23 F5 deploy'ida prod topup bilan
 // yugurtirilib TASDIQLANGAN (PASS1 4 rol / 2304 qator) va shu yerdan olib
 // tashlandi (template-topup qoidasi: prod run'dan keyin DARHOL chiqariladi).
-export const TOPUP_ENTITIES: readonly PermissionEntity[] = ['storecell', 'customerorder'];
+// `retailcontrol` (G2, 2026-08-24) — kontrol oqimi: warehouse_manager
+// view+update oladi. Prod topup yugurtirilib tasdiqlangach DARHOL olib
+// tashlansin (yuqoridagi qoida).
+export const TOPUP_ENTITIES: readonly PermissionEntity[] = [
+  'storecell',
+  'customerorder',
+  'retailcontrol',
+];
 
 /**
  * Shablon matritsasidan roldagi YETISHMAYOTGAN qatorlar.

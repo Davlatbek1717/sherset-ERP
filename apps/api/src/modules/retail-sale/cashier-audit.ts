@@ -36,6 +36,11 @@ export const CASHIER_EVENT = {
   refund: 'REFUND',
   shiftOutOfSchedule: 'SHIFT_OUT_OF_SCHEDULE',
   soldOnCredit: 'SOLD_ON_CREDIT',
+  // G2 (2026-08-24) — kontrol oqimi: katta omborchi yig'ilgan chekni ko'z
+  // bilan tekshirib «To'liq» dedi yoki tarkibini o'zgartirdi. `employeeId`
+  // ustuni «KIM tekshirgani chek tarixida qolsin» talabini beradi.
+  controlApproved: 'CONTROL_APPROVED',
+  controlEdited: 'CONTROL_EDITED',
 } as const;
 
 export type CashierEventType = (typeof CASHIER_EVENT)[keyof typeof CASHIER_EVENT];
@@ -244,6 +249,72 @@ export function planCreditSaleAuditEvent(
       debtMinor: args.debtMinor.toString(),
       totalMinor: args.totalMinor.toString(),
       newBalanceMinor: args.newBalanceMinor == null ? null : args.newBalanceMinor.toString(),
+    },
+  };
+}
+
+/** G2 — kontrol «To'liq»: chek KIM tomonidan tekshirilib tayyor deb topilgani.
+ *  Stage har doim `picking` (FSM shuni talab qiladi) — payload'da holat emas,
+ *  TARKIB turadi: keyin «nima tasdiqlangan edi» degan savolga javob shu. */
+export function planControlApproveAuditEvent(
+  saleId: string,
+  args: {
+    name: string;
+    sumMinor: bigint;
+    lines: ReadonlyArray<{ productId: string | null; quantity: string }>;
+  },
+): CashierAuditEventInput {
+  return {
+    type: CASHIER_EVENT.controlApproved,
+    docId: saleId,
+    payload: {
+      name: args.name,
+      sumMinor: args.sumMinor.toString(),
+      lineCount: args.lines.length,
+      lines: args.lines.map((l) => ({ productId: l.productId, quantity: l.quantity })),
+    },
+  };
+}
+
+/** G2 — kontrol tahriri: qaysi qatorlar o'chdi/kamaydi va summa qanday
+ *  o'zgardi. Kassir keyin «nega summa boshqa» desa, javob shu yozuvda. */
+export function planControlEditAuditEvent(
+  saleId: string,
+  args: {
+    name: string;
+    oldSumMinor: bigint;
+    newSumMinor: bigint;
+    removed: ReadonlyArray<{
+      productId: string | null;
+      productName: string | null;
+      quantity: string;
+    }>;
+    changed: ReadonlyArray<{
+      productId: string | null;
+      productName: string | null;
+      oldQuantity: string;
+      quantity: string;
+    }>;
+  },
+): CashierAuditEventInput {
+  return {
+    type: CASHIER_EVENT.controlEdited,
+    docId: saleId,
+    payload: {
+      name: args.name,
+      oldSumMinor: args.oldSumMinor.toString(),
+      newSumMinor: args.newSumMinor.toString(),
+      removed: args.removed.map((l) => ({
+        productId: l.productId,
+        productName: l.productName,
+        quantity: l.quantity,
+      })),
+      changed: args.changed.map((l) => ({
+        productId: l.productId,
+        productName: l.productName,
+        oldQuantity: l.oldQuantity,
+        quantity: l.quantity,
+      })),
     },
   };
 }

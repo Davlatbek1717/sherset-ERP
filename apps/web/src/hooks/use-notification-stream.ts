@@ -62,6 +62,21 @@ export function useNotificationStream() {
         const data = JSON.parse(event.data) as StreamEvent;
         // Refresh the bell + drawer; cheap because we only invalidate.
         void qc.invalidateQueries({ queryKey: ['notifications'] });
+        // G2 — kontrol oqimi: katta omborchi chek tarkibini o'zgartirdi
+        // (`sale_edited`) yoki «To'liq» dedi (`sale_ready`). Kassirning ochiq
+        // POS ro'yxatlari 8s poll'ni KUTMASDAN yangilansin — kassir mijoz
+        // oldida turibdi. Prefiks-invalidatsiya: kalitlar sessionId bilan
+        // tugaydi, prefiks hammasini qamraydi. Kontrol navbati ham yangilanadi
+        // (boshqa kontrolchi tahrir qilgan bo'lishi mumkin).
+        if (data.kind === 'sale_edited' || data.kind === 'sale_ready') {
+          void qc.invalidateQueries({ queryKey: ['retail-sales-picking'] });
+          void qc.invalidateQueries({ queryKey: ['retail-sales-ready'] });
+          void qc.invalidateQueries({ queryKey: ['retail-sales-session'] });
+          void qc.invalidateQueries({ queryKey: ['kontrol-queue'] });
+          if (data.entityId) {
+            void qc.invalidateQueries({ queryKey: ['kontrol-sale', data.entityId] });
+          }
+        }
         // F2 «signal-xabar»: audible ding — works in background tabs too
         // (AudioContext was unlocked by a prior gesture).
         playNotificationSound();

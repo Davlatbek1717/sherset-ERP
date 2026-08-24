@@ -7493,6 +7493,7 @@
       "access_entity_settings": "Kompaniya sozlamalari",
       "access_entity_storecell": "Yacheyka amallari",
       "access_entity_warehousenumbering": "Yangi ombor raqamlashtirish",
+      "access_entity_retailcontrol": "Chek kontroli (katta omborchi)",
       "access_entity_task": "Vazifalar",
       "access_entity_tasktype": "Vazifa turlari",
       "access_entity_taxrate": "QQS stavkalari",
@@ -9110,6 +9111,34 @@
       "surplus": "Ortiqcha",
       "title": "Kassa farqlari"
     },
+    "omborchi_kontrol": {
+      "title": "Kontrol navbati",
+      "subtitle": "Yig'ib bo'lingan cheklar — ko'z bilan tekshirib tasdiqlang yoki tarkibni to'g'irlang",
+      "empty": "Navbat bo'sh — yig'ib bo'lingan chek yo'q",
+      "loading": "Yuklanmoqda...",
+      "load_error": "Navbatni yuklab bo'lmadi",
+      "refresh": "Yangilash",
+      "items_count": "{count} ta tovar",
+      "cashier": "Kassir",
+      "sklad_chip": "Sklad {no}",
+      "sklad_chip_none": "Yacheykasiz",
+      "view": "Ko'rish",
+      "close": "Yopish",
+      "approve": "To'liq",
+      "approve_confirm": "{name} — chek to'liq yig'ilganmi?",
+      "approve_hint": "Tasdiqlagach kassir to'lovni qabul qiladi. Tarkib noto'g'ri bo'lsa avval «Tahrirlash»ni ishlating.",
+      "approve_success": "{name} tasdiqlandi — kassirga yuborildi",
+      "cancel": "Bekor qilish",
+      "edit": "Tahrirlash",
+      "edit_hint": "Faqat sonini kamaytirish yoki qatorni o'chirish mumkin — yig'ilmagan tovar chekka qo'shilmaydi. O'zgarish kassirga darhol ko'rinadi.",
+      "edit_save": "Saqlash",
+      "edit_success": "Tarkib saqlandi — kassirga xabar ketdi",
+      "edit_row_remove": "Qatorni o'chirish",
+      "edit_row_restore": "Qatorni qaytarish",
+      "edit_empty_warning": "Chekda kamida bitta tovar qolishi kerak",
+      "qty": "Soni",
+      "detail_not_loaded": "Chek tafsiloti hali yuklanmadi"
+    },
     "pos": {
       "add": "Qo'shish",
       "amount": "Summa",
@@ -9937,7 +9966,9 @@
       "system": "Tizim xabari",
       "return_to_warehouse": "Omborga vozvrat",
       "restock_assigned": "Joylashtirish vazifasi",
-      "picking_assigned": "Yig'ish vazifasi"
+      "picking_assigned": "Yig'ish vazifasi",
+      "sale_edited": "Chek tarkibi o'zgardi (kontrol)",
+      "sale_ready": "Chek tayyor — to'lash mumkin"
     }
   },
   "help": {

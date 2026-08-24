@@ -108,6 +108,7 @@ const NEW_ENTITIES = [
   'payroll',
   'cashiersession',
   'retailsale',
+  'retailcontrol',
   'saleschannel',
   'onlineorder',
   'pipeline',

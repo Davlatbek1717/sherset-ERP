@@ -99,6 +99,10 @@ export type PermissionEntity =
   // Retail / E-commerce
   | 'cashiersession'
   | 'retailsale'
+  // G2 (2026-08-24) — kassa cheki KONTROLI (katta omborchi navbati). Alohida
+  // slug, chunki `retailsale.view/update` oddiy omborchida (storekeeper) ham
+  // bor — kontrol esa FAQAT katta omborchiga ochilishi kerak (egasi qoidasi)
+  | 'retailcontrol'
   | 'saleschannel'
   | 'onlineorder'
   // CRM
@@ -232,6 +236,7 @@ export const PERMISSION_ENTITIES: readonly PermissionEntity[] = [
   // Retail / E-commerce
   'cashiersession',
   'retailsale',
+  'retailcontrol',
   'saleschannel',
   'onlineorder',
   // CRM

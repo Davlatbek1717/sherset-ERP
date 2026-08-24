@@ -35,11 +35,18 @@ import {
 import { resolveCreatorGroupId } from '../shared/group-stamp.js';
 // Optimistic-lock (lost-update guard) for the draft field-edit update() path.
 import { mapVersionedUpdateError } from '../shared/optimistic-lock.js';
-import { type StockBalance, type StockDelta, StockService } from '../stock/stock.service.js';
+import {
+  type StockBalance,
+  type StockDelta,
+  StockService,
+  netOutstandingReservations,
+} from '../stock/stock.service.js';
 import {
   CASHIER_EVENT,
   type CashierAuditEventInput,
   planCancelAuditEvent,
+  planControlApproveAuditEvent,
+  planControlEditAuditEvent,
   planCreditSaleAuditEvent,
   planRefundAuditEvent,
   planSaleAuditEvents,
@@ -51,6 +58,14 @@ import {
   resolveWholesaleMinor,
   snapshotPricesByProduct,
 } from './price-snapshot.js';
+// G2 — kontrol oqimi (sof qaror moduli): navbatga tushish sharti + tahrir
+// rejasi (faqat kamaytirish) + kassirga boradigan bildirishnoma matni.
+import {
+  type ControlPositionBefore,
+  controlEditNotificationBody,
+  isControlReady,
+  planControlEdit,
+} from './retail-control.js';
 import { planLoyaltyAccrual, planLoyaltyReversal } from './retail-loyalty.js';
 // Faza 18a: refund returns EXACTLY the value the original sale's outflow
 // booked (cumulative remainder over partial refunds; NULL mirror for legacy
@@ -72,6 +87,8 @@ import {
 import { formatQty, parseQty, planReceiptEdit } from './retail-sale-edit-plan.js';
 import { allowedFrom, canTransition, transitionRejection } from './retail-sale-fsm.js';
 import {
+  ControlEditSchema,
+  ControlQueueFilterSchema,
   CreateRetailSaleSchema,
   EditRetailSaleSchema,
   ORDER_PAYABLE_STATES,
@@ -394,6 +411,27 @@ export class RetailSaleService {
           }
         : {}),
     };
+
+    // G2 — omborchi paneli filtri: faqat shu xodimga biriktirilgan yig'ish
+    // topshirig'i bor cheklar (assigneeOpen=true bo'lsa — faqat hali OCHIQ
+    // topshiriqlilar). RestockTask polimorf (sourceType/sourceId), Prisma
+    // relation yo'q — shuning uchun ikki bosqichli so'rov.
+    if (filter.assigneeId) {
+      const tasks = await this.prisma.client.restockTask.findMany({
+        where: {
+          accountId,
+          type: 'picking',
+          sourceType: 'retailsale',
+          assigneeId: filter.assigneeId,
+          ...(filter.assigneeOpen ? { status: { notIn: ['done', 'cancelled'] } } : {}),
+        },
+        select: { sourceId: true },
+        distinct: ['sourceId'],
+        // Ochiq navbat kichik; cheklov faqat himoya uchun (limit=500 max).
+        take: 1000,
+      });
+      where.id = { in: tasks.map((t) => t.sourceId) };
+    }
 
     const rows = await this.prisma.client.retailSale.findMany({
       where,
@@ -2891,23 +2929,19 @@ export class RetailSaleService {
         },
         data: { status: 'done' },
       });
-    } else {
-      // No keeper-assigned task for this user → legacy behaviour: close everything.
-      await this.prisma.client.restockTask.updateMany({
-        where: {
-          accountId,
-          sourceId: id,
-          sourceType: 'retailsale',
-          type: 'picking',
-          status: { notIn: ['done', 'cancelled'] },
-        },
-        data: { status: 'done' },
-      });
+      // 🔴 G2 (egasi, 2026-08-23): kichik omborchining «tayyor»i endi chekni
+      // `ready` ga O'TKAZMAYDI — hatto oxirgi topshiriq yopilganda ham. Hamma
+      // topshiriq yopilgach chek KATTA OMBORCHI KONTROL NAVBATIGA tushadi
+      // (`controlQueue`), va faqat uning «To'liq»i (`controlApprove`) yoki
+      // kassirning o'z «tayyor» tugmasi (pastdagi zaxira yo'l) flip qiladi.
+      // Ilgari oxirgi omborchi flip qilardi — kontrol bosqichi chetlab o'tilardi.
+      return this.prisma.client.retailSale.findUniqueOrThrow({ where: { id } });
     }
 
-    // Any warehouse still outstanding? Then the sale stays 'picking' — this
-    // omborchi's zone is done, but another keeper hasn't collected theirs yet.
-    const remaining = await this.prisma.client.restockTask.count({
+    // No keeper-assigned task for this user → legacy behaviour: close everything
+    // and flip. Bu KASSIRNING zaxira yo'li (egasi, 2026-08-11): omborchi
+    // belgilamasa/tovar qo'lma-qo'l berilsa chek «Jarayonda» da qotib qolmasin.
+    await this.prisma.client.restockTask.updateMany({
       where: {
         accountId,
         sourceId: id,
@@ -2915,12 +2949,10 @@ export class RetailSaleService {
         type: 'picking',
         status: { notIn: ['done', 'cancelled'] },
       },
+      data: { status: 'done' },
     });
-    if (remaining > 0) {
-      return this.prisma.client.retailSale.findUniqueOrThrow({ where: { id } });
-    }
 
-    // All warehouses done → flip to 'ready' (atomic guard against a racing post/cancel).
+    // Flip to 'ready' (atomic guard against a racing post/cancel).
     const result = await this.prisma.client.retailSale.updateMany({
       where: { id, accountId, state: 'picking' },
       data: { state: 'ready' },
@@ -2929,5 +2961,332 @@ export class RetailSaleService {
       throw new ConflictException('Sale state changed; mark-ready aborted');
     }
     return this.prisma.client.retailSale.findUniqueOrThrow({ where: { id } });
+  }
+
+  // ─── G2 — kontrol oqimi ───────────────────────────────────────────────────
+
+  /**
+   * Kontrol navbati: `picking` holatidagi, HAMMA yig'ish topshiriqlari yopilgan
+   * cheklar (FIFO — eng eski birinchi). Qisman yopilgani navbatga TUSHMAYDI
+   * (omborchi hali yig'moqda); topshiriqsiz chek ham TUSHMAYDI (sabab sof
+   * modulda — `isControlReady` izohi).
+   */
+  async controlQueue(accountId: string, rawFilter: unknown) {
+    const filter = ControlQueueFilterSchema.parse(rawFilter ?? {});
+    const sales = await this.prisma.client.retailSale.findMany({
+      where: { accountId, state: 'picking' },
+      orderBy: { moment: 'asc' },
+      // Navbatdan ko'ra kengroq o'qiladi: filtrlash (topshiriq holati) DB'da
+      // emas, sof modulda — `picking` cheklar soni kichik (ochiq smena ishi).
+      take: Math.max(filter.limit * 4, 200),
+      include: {
+        session: {
+          select: {
+            id: true,
+            cashDesk: { select: { id: true, name: true, currency: true } },
+            cashier: { select: { id: true, name: true } },
+          },
+        },
+        agent: { select: { id: true, name: true } },
+        _count: { select: { positions: true } },
+      },
+    });
+    if (sales.length === 0) return { items: [] };
+
+    const tasks = await this.prisma.client.restockTask.findMany({
+      where: {
+        accountId,
+        type: 'picking',
+        sourceType: 'retailsale',
+        sourceId: { in: sales.map((s) => s.id) },
+      },
+      select: { sourceId: true, status: true, skladNo: true, assigneeName: true },
+    });
+    const bySale = new Map<string, typeof tasks>();
+    for (const t of tasks) {
+      const bucket = bySale.get(t.sourceId);
+      if (bucket) bucket.push(t);
+      else bySale.set(t.sourceId, [t]);
+    }
+
+    const items = sales
+      .filter((s) => isControlReady(bySale.get(s.id) ?? []))
+      .slice(0, filter.limit)
+      .map((s) => ({
+        ...s,
+        // Kontrol kartasida «qaysi skladlar yig'di» ko'rinadi.
+        pickingTasks: (bySale.get(s.id) ?? []).map((t) => ({
+          skladNo: t.skladNo,
+          assigneeName: t.assigneeName,
+          status: t.status,
+        })),
+      }));
+    return { items };
+  }
+
+  /**
+   * Kontrol «To'liq» — katta omborchi chekni ko'z bilan tekshirib tasdiqladi:
+   * `picking → ready`, KIM tekshirgani auditda, kassirga `sale_ready` SSE.
+   */
+  async controlApprove(accountId: string, userId: string, id: string) {
+    const sale = await this.prisma.client.retailSale.findFirst({
+      where: { id, accountId },
+      select: {
+        id: true,
+        name: true,
+        state: true,
+        sumMinor: true,
+        sessionId: true,
+        session: { select: { cashierId: true } },
+        positions: { select: { productId: true, quantity: true }, orderBy: { position: 'asc' } },
+      },
+    });
+    if (!sale) throw new NotFoundException(`RetailSale ${id} not found`);
+    if (!canTransition(sale.state, 'mark-ready')) {
+      throw new BadRequestException(transitionRejection(sale.state, 'mark-ready'));
+    }
+
+    // Ochiq topshiriq bor chek tasdiqlanMAYDI — omborchi hali yig'moqda.
+    // (Navbat buni ko'rsatmaydi ham; bu to'g'ridan-to'g'ri API chaqiruviga
+    // qarshi qo'riqchi.) Omborchi kelmay qolgan chek uchun kassirning o'z
+    // «tayyor» tugmasi bor — kontrol majburan o'tkazish nuqtasi emas.
+    const openTasks = await this.prisma.client.restockTask.count({
+      where: {
+        accountId,
+        sourceId: id,
+        sourceType: 'retailsale',
+        type: 'picking',
+        status: { notIn: ['done', 'cancelled'] },
+      },
+    });
+    if (openTasks > 0) {
+      throw new BadRequestException(
+        `${sale.name}: ${openTasks} ta yig'ish topshirig'i hali ochiq — omborchi tugatishini kuting`,
+      );
+    }
+
+    await this.prisma.client.$transaction(async (tx) => {
+      const flip = await tx.retailSale.updateMany({
+        where: { id, accountId, state: 'picking' },
+        data: { state: 'ready' },
+      });
+      if (flip.count === 0) {
+        throw new ConflictException('Sale state changed; control-approve aborted');
+      }
+      // Kim tekshirgani — flip bilan BIR tranzaksiyada (poygada yutgan yoziladi).
+      await this.writeAuditEvents(tx, accountId, sale.sessionId, userId, [
+        planControlApproveAuditEvent(id, {
+          name: sale.name,
+          sumMinor: sale.sumMinor,
+          lines: sale.positions.map((p) => ({
+            productId: p.productId,
+            quantity: String(p.quantity),
+          })),
+        }),
+      ]);
+    });
+
+    // Kassirga jonli signal — POS `ready` ro'yxatini darhol yangilaydi.
+    // Best-effort (emit o'zi xatoni yutadi): bildirishnoma yiqilsa ham chek
+    // allaqachon `ready` va 8s poll baribir yetkazadi.
+    if (sale.session?.cashierId) {
+      await this.notifications.emit(
+        accountId,
+        sale.session.cashierId,
+        'sale_ready',
+        'Chek tayyor',
+        `${sale.name} — kontroldan o'tdi, to'lash mumkin`,
+        'RetailSale',
+        id,
+      );
+    }
+    return this.prisma.client.retailSale.findUniqueOrThrow({ where: { id } });
+  }
+
+  /**
+   * Kontrol tahriri — katta omborchi yig'ilgan chek tarkibini haqiqatga
+   * moslaydi: qator o'chirish / sonni KAMAYTIRISH (qoida sof modulda).
+   *
+   * FAQAT `picking` holatida: `ready` dan keyin tahrir yo'q (kassir allaqachon
+   * to'lov oynasini ochgan bo'lishi mumkin), `posted` uchun alohida `edit()`
+   * (pul daftarlariga tegadigan boshqa klass) bor.
+   *
+   * Rezerv ham KAMAYADI: `send-to-picking` har pozitsiyani band qilgan edi —
+   * qator qisqarganda hold ham qisqarmasa, o'sha tovar to'lovgacha boshqa
+   * kassaga «band» bo'lib turaverardi.
+   */
+  async controlEdit(accountId: string, userId: string, id: string, raw: unknown) {
+    const parsed = ControlEditSchema.parse(raw);
+
+    const sale = await this.prisma.client.retailSale.findFirst({
+      where: { id, accountId },
+      select: {
+        id: true,
+        name: true,
+        state: true,
+        version: true,
+        sumMinor: true,
+        sessionId: true,
+        session: { select: { cashierId: true } },
+        positions: {
+          select: {
+            id: true,
+            productId: true,
+            quantity: true,
+            priceMinor: true,
+            discount: true,
+            sumMinor: true,
+            product: { select: { name: true } },
+          },
+          orderBy: { position: 'asc' },
+        },
+      },
+    });
+    if (!sale) throw new NotFoundException(`RetailSale ${id} not found`);
+    if (sale.state !== 'picking') {
+      throw new BadRequestException(
+        `Kontrol tahriri faqat yig'ilayotgan (picking) chekka — hozir: ${sale.state}. «Tayyor» chek uchun avval kassir bilan kelishing (post/cancel).`,
+      );
+    }
+
+    const before: ControlPositionBefore[] = sale.positions.map((p) => ({
+      id: p.id,
+      productId: p.productId,
+      productName: p.product?.name ?? null,
+      quantity: String(p.quantity),
+      priceMinor: p.priceMinor,
+      discount: String(p.discount ?? '0'),
+      sumMinor: p.sumMinor,
+    }));
+    const plan = planControlEdit(before, parsed.positions);
+    if (plan.refusals.length > 0) throw new BadRequestException(plan.refusals.join('; '));
+    if (plan.noop) return { ok: true, changed: false };
+
+    await this.prisma.client.$transaction(async (tx) => {
+      // Optimistik qulf + holat qo'riqchisi BIR filtrda: kassir ayni damda
+      // post/cancel qilgan yoki boshqa kontrolchi tahrirlagan bo'lsa — 409.
+      const flip = await tx.retailSale.updateMany({
+        where: { id, accountId, version: parsed.version, state: 'picking' },
+        data: { sumMinor: plan.newSumMinor, version: { increment: 1 } },
+      });
+      if (flip.count === 0) {
+        throw new ConflictException(
+          `${sale.name} boshqa joyda o'zgardi — sahifani yangilab qayta urinib ko'ring.`,
+        );
+      }
+
+      for (const k of plan.keeps) {
+        if (!k.changed) continue;
+        await tx.retailSalePosition.updateMany({
+          where: { id: k.id, accountId, retailSaleId: id },
+          data: { quantity: k.quantity, sumMinor: k.sumMinor },
+        });
+      }
+      if (plan.removed.length > 0) {
+        await tx.retailSalePosition.deleteMany({
+          where: { id: { in: plan.removed.map((r) => r.id) }, accountId, retailSaleId: id },
+        });
+      }
+
+      // Rezerv-bo'shatish: hold HAQIQATAN turgan (store × product) qatorlar
+      // bo'yicha, har mahsulotning kamaygan miqdori net-qoldiqdan oshmagan
+      // holda taqsimlanadi (cancel() dagi bilan bir intizom: qulf avval,
+      // deterministik store tartibi, idempotent cap).
+      if (plan.releaseByProduct.length > 0) {
+        const rows = await tx.stockReservation.findMany({
+          where: { accountId, docType: 'retailsale', docId: id },
+          select: { storeId: true, assortmentKind: true, assortmentId: true, qtyDelta: true },
+        });
+        const nets = netOutstandingReservations(
+          rows.map((r) => ({
+            storeId: r.storeId,
+            assortmentKind: r.assortmentKind,
+            assortmentId: r.assortmentId,
+            qtyDelta: r.qtyDelta.toString(),
+          })),
+        );
+        const releaseDeltas: Array<{
+          storeId: string;
+          assortmentKind: string;
+          assortmentId: string;
+          qtyDelta: string;
+          docType: string;
+          docId: string;
+          reason: 'release_manual';
+        }> = [];
+        for (const rel of plan.releaseByProduct) {
+          let remaining = parseQty(rel.qty) ?? 0n;
+          const productNets = nets
+            .filter((n) => n.assortmentId === rel.productId)
+            .sort((a, b) => a.storeId.localeCompare(b.storeId));
+          for (const n of productNets) {
+            if (remaining <= 0n) break;
+            const avail = parseQty(n.net) ?? 0n;
+            if (avail <= 0n) continue;
+            const take = remaining < avail ? remaining : avail;
+            releaseDeltas.push({
+              storeId: n.storeId,
+              assortmentKind: n.assortmentKind,
+              assortmentId: rel.productId,
+              qtyDelta: `-${formatQty(take)}`,
+              docType: 'retailsale',
+              docId: id,
+              reason: 'release_manual',
+            });
+            remaining -= take;
+          }
+          // remaining > 0n bo'lsa — bu mahsulotga rezerv umuman yozilmagan
+          // (masalan picking'gacha yaratilgan eski chek); jim o'tamiz,
+          // `releaseReservationByDoc` dagi «net ≤ 0 → no-op» intizomi bilan bir.
+        }
+        if (releaseDeltas.length > 0) {
+          const products = [...new Set(releaseDeltas.map((d) => d.assortmentId))].map((pid) => ({
+            kind: 'product' as const,
+            id: pid,
+          }));
+          for (const sid of [...new Set(releaseDeltas.map((d) => d.storeId))].sort()) {
+            await this.stock.lockBalances(tx, accountId, sid, products);
+          }
+          await this.stock.applyReservationDeltas(tx, accountId, userId, releaseDeltas);
+        }
+      }
+
+      // Kim tahrirlagani — chek tarixida (flip bilan bir tranzaksiyada).
+      await this.writeAuditEvents(tx, accountId, sale.sessionId, userId, [
+        planControlEditAuditEvent(id, {
+          name: sale.name,
+          oldSumMinor: sale.sumMinor,
+          newSumMinor: plan.newSumMinor,
+          removed: plan.removed.map((r) => ({
+            productId: r.productId,
+            productName: r.productName,
+            quantity: r.quantity,
+          })),
+          changed: plan.keeps
+            .filter((k) => k.changed)
+            .map((k) => ({
+              productId: k.productId,
+              productName: k.productName,
+              oldQuantity: k.oldQuantity,
+              quantity: k.quantity,
+            })),
+        }),
+      ]);
+    });
+
+    // Kassirga jonli signal — POS ochiq qoralama/kutish chekni qayta yuklaydi
+    // va toast'da AYNAN qaysi qatorlar o'zgarganini ko'radi (reja G2.3).
+    if (sale.session?.cashierId) {
+      await this.notifications.emit(
+        accountId,
+        sale.session.cashierId,
+        'sale_edited',
+        `Chek tahrirlandi — ${sale.name}`,
+        controlEditNotificationBody(plan),
+        'RetailSale',
+        id,
+      );
+    }
+    return { ok: true, changed: true };
   }
 }

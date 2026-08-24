@@ -165,6 +165,70 @@ describe('useNotificationStream', () => {
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['notifications'] });
   });
 
+  it("G2: sale_edited — POS retail-sales ro'yxatlari va kontrol keshini invalidatsiya qiladi", () => {
+    const qc = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    const invalidateSpy = vi.spyOn(qc, 'invalidateQueries');
+    mockedUseAuth.mockReturnValue({
+      user: { id: 'u1', name: 'Alice', email: 'a@x' },
+    } as unknown as ReturnType<typeof useAuth>);
+    mockedGetAccessToken.mockReturnValue('tok-1');
+    renderHookWithProviders(() => useNotificationStream(), { queryClient: qc });
+
+    const es = FakeEventSource.instances[0];
+    act(() => {
+      es!.triggerMessage({
+        id: 'evt-g2',
+        accountId: 'a-1',
+        recipientId: 'u1',
+        kind: 'sale_edited',
+        title: 'Chek tahrirlandi — CH-1',
+        body: '− Tovar X',
+        entity: 'RetailSale',
+        entityId: 'sale-9',
+        createdAt: '2026-08-24T12:00:00Z',
+      });
+    });
+
+    // Kassir POS'i 8s poll'ni kutmasdan yangilanadi (G2.3).
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['retail-sales-picking'] });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['retail-sales-ready'] });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['retail-sales-session'] });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['kontrol-queue'] });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['kontrol-sale', 'sale-9'] });
+  });
+
+  it("G2: oddiy bildirishnoma (boshqa kind) POS ro'yxatlariga TEGMAYDI", () => {
+    const qc = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    const invalidateSpy = vi.spyOn(qc, 'invalidateQueries');
+    mockedUseAuth.mockReturnValue({
+      user: { id: 'u1', name: 'Alice', email: 'a@x' },
+    } as unknown as ReturnType<typeof useAuth>);
+    mockedGetAccessToken.mockReturnValue('tok-1');
+    renderHookWithProviders(() => useNotificationStream(), { queryClient: qc });
+
+    const es = FakeEventSource.instances[0];
+    act(() => {
+      es!.triggerMessage({
+        id: 'evt-3',
+        accountId: 'a-1',
+        recipientId: 'u1',
+        kind: 'mention',
+        title: 'Eslatma',
+        body: null,
+        entity: null,
+        entityId: null,
+        createdAt: '2026-08-24T12:00:00Z',
+      });
+    });
+
+    const keys = invalidateSpy.mock.calls.map((c) => (c[0] as { queryKey: unknown[] }).queryKey[0]);
+    expect(keys).toEqual(['notifications']);
+  });
+
   it('falls back to the kind label when body is null', () => {
     mockedUseAuth.mockReturnValue({
       user: { id: 'u1', name: 'Alice', email: 'a@x' },

@@ -20,6 +20,11 @@ export const NotificationKind = z.enum([
   'restock_assigned',
   // Sherset /sotuv: sotilgan buyurtmaning yig'ish topshirig'i omborchiga berildi.
   'picking_assigned',
+  // G2 (2026-08-24) — kontrol oqimi, ikkalasi ham KASSIRGA boradi:
+  // katta omborchi chek tarkibini o'zgartirdi (POS ochiq chekni qayta yuklaydi)…
+  'sale_edited',
+  // …yoki «To'liq» dedi — chek `ready`, to'lash mumkin.
+  'sale_ready',
   // Debts (Sherset KEEP — B3): operator call-due reminder.
   'debt_call_due',
 ]);

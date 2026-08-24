@@ -301,6 +301,7 @@ const KNOWN_ENTITIES = [
   // Retail / E-commerce
   'cashiersession',
   'retailsale',
+  'retailcontrol',
   'saleschannel',
   'onlineorder',
   // CRM
@@ -400,6 +401,7 @@ const CATEGORY_BY_ENTITY: Record<(typeof KNOWN_ENTITIES)[number], (typeof CATEGO
   payroll: 'Production',
   cashiersession: 'Retail / E-commerce',
   retailsale: 'Retail / E-commerce',
+  retailcontrol: 'Retail / E-commerce',
   saleschannel: 'Retail / E-commerce',
   onlineorder: 'Retail / E-commerce',
   pipeline: 'CRM',

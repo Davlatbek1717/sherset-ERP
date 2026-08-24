@@ -1,11 +1,13 @@
 'use client';
 
+import { usePermissions } from '@/hooks/use-permissions';
 import { api } from '@/lib/api-client';
 import { useAuth } from '@/lib/auth-store';
 import { formatBinLocation } from '@/lib/bin-location';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   CheckCircle,
+  ClipboardCheck,
   Clock,
   ExternalLink,
   Package,
@@ -252,6 +254,7 @@ function SaleCard({
 export default function OmborchiPage() {
   const qc = useQueryClient();
   const { user } = useAuth();
+  const { can } = usePermissions();
   const myId = user?.id;
 
   // Find current user's zone from sklad-keepers
@@ -264,9 +267,12 @@ export default function OmborchiPage() {
   );
   const myZone = keepersData?.items.find((k) => k.employeeId === myId)?.skladNo ?? null;
 
-  // Picking orders — filtered by assigneeId (via RestockTask) if zone is assigned
+  // Picking orders — filtered by assigneeId (via RestockTask) if zone is assigned.
+  // G2: `assigneeOpen=1` — faqat OCHIQ topshiriqlar. Omborchi «Tayyor» bosgach
+  // chek uning ro'yxatidan chiqadi (endi u KATTA OMBORCHI kontrol navbatida —
+  // flip'ni kontrol qiladi, servisdagi markReady izohi).
   const pickingParams = myId
-    ? `state=picking&limit=50&assigneeId=${myId}`
+    ? `state=picking&limit=50&assigneeId=${myId}&assigneeOpen=1`
     : 'state=picking&limit=50';
   const readyParams = myId ? `state=ready&limit=20&assigneeId=${myId}` : 'state=ready&limit=20';
 
@@ -336,6 +342,18 @@ export default function OmborchiPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          {/* G2 — kontrol ekrani faqat katta omborchida (`retailcontrol`).
+              `can` fail-open (matritsa yuklanguncha true) — haqiqiy qulf
+              serverda; oddiy omborchi bossa 403 xabarini ko'radi. */}
+          {can('retailcontrol', 'view') && (
+            <Link
+              href="/omborchi/kontrol"
+              className="flex items-center gap-1.5 rounded-lg border border-sky-300 px-3 py-2 text-xs font-semibold text-sky-700 hover:bg-sky-50"
+            >
+              <ClipboardCheck className="h-3.5 w-3.5" />
+              Kontrol
+            </Link>
+          )}
           <a
             href="/cell"
             className="flex items-center gap-1.5 rounded-lg border border-[var(--ms-border)] px-3 py-2 text-xs font-medium text-[var(--ms-text-muted)] hover:bg-[var(--ms-bg-hover)]"

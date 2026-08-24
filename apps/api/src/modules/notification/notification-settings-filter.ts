@@ -27,6 +27,9 @@ const ROW_BY_KIND: Partial<Record<NotificationKindValue, string>> = {
   return_to_warehouse: 'retail',
   restock_assigned: 'retail',
   picking_assigned: 'retail',
+  // G2 — kontrol oqimi kassir-signallari ham «Розница» qatorida.
+  sale_edited: 'retail',
+  sale_ready: 'retail',
 };
 
 export function notificationRowForKind(kind: NotificationKindValue): string | undefined {

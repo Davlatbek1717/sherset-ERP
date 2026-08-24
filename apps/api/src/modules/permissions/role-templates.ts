@@ -293,6 +293,13 @@ export const ROLE_TEMPLATES: Record<RoleTemplateSlug, RoleTemplate> = {
       // Oddiy omborchi (`storekeeper`) esa OLMAYDI — u yacheyka bilan ishlaydi,
       // ombor tuzilmasini yaratmaydi (warehouse-numbering-permission.test.ts).
       grant(['warehousenumbering'], { view: 'ALL', create: 'ALL' }),
+      // G2 (2026-08-24) — kassa cheki kontroli: yig'ilgan chek navbatini
+      // ko'rish (`view`) va «To'liq»/tarkib tahriri (`update`) — FAQAT katta
+      // omborchi. Oddiy omborchi (`storekeeper`) ATAYLAB OLMAYDI: u yig'adi,
+      // o'z ishini o'zi «qabul qilib» yubormasin (retail-control-permission
+      // testi qulflaydi). Chek RO'YXATI/DETALINI ko'rishga READ_ONLY_BASE
+      // default'idagi `retailsale.view = ALL` yetadi.
+      grant(['retailcontrol'], { view: 'ALL', update: 'ALL' }),
       grant(['product', 'variant', 'bundle', 'productfolder'], { view: 'ALL', update: 'ALL' }),
       // Yig'ish/jo'natish — realizatsiyani tasdiqlaydi, lekin YARATMAYDI.
       grant(['demand'], { view: 'ALL', update: 'ALL', approve: 'ALL', print: 'ALL' }),

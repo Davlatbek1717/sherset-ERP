@@ -211,3 +211,44 @@ describe('P3 — omborchi chekni yig‘adi, pulga tegmaydi', () => {
     expect(await allows('storekeeper', handler)).toBe(false);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 4. G2 — KONTROL: faqat KATTA omborchi (egasi qoidasi, 2026-08-23)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('G2 — kontrol oqimi ruxsatlari (`retailcontrol`)', () => {
+  const CONTROL: Array<[step: string, handler: unknown]> = [
+    ['control-queue (navbat)', C.controlQueue],
+    ['control-approve («To‘liq»)', C.controlApprove],
+    ['control-edit (tarkib tahriri)', C.controlEdit],
+  ];
+
+  /**
+   * Endpointlar `retailsale` EMAS, alohida `retailcontrol` ostida — chunki
+   * `retailsale.view/update` oddiy omborchida HAM bor (u «tayyor» bosadi),
+   * kontrol esa faqat katta omborchiniki. Kimdir buni `retailsale` ga
+   * qaytarsa, storekeeper o'z ishini o'zi «qabul qilib» yuborar edi.
+   */
+  it('uchala endpoint ham `retailcontrol` entity ostida', () => {
+    expect(permissionOf(C.controlQueue)).toEqual({ entity: 'retailcontrol', action: 'view' });
+    expect(permissionOf(C.controlApprove)).toEqual({ entity: 'retailcontrol', action: 'update' });
+    expect(permissionOf(C.controlEdit)).toEqual({ entity: 'retailcontrol', action: 'update' });
+  });
+
+  it.each(CONTROL)('katta omborchi (warehouse_manager): %s — ruxsat bor', async (_s, handler) => {
+    expect(await allows('warehouse_manager', handler)).toBe(true);
+  });
+
+  it.each(CONTROL)('oddiy omborchi (storekeeper): %s — YO‘Q', async (_s, handler) => {
+    expect(await allows('storekeeper', handler)).toBe(false);
+  });
+
+  it.each(CONTROL)('kassir: %s — YO‘Q (kontrol kiosk ishi emas)', async (_s, handler) => {
+    expect(await allows('cashier', handler)).toBe(false);
+  });
+
+  it('admin/egasi kontrolni ko‘ra oladi (to‘liq matritsa)', async () => {
+    expect(await allows('admin', C.controlApprove)).toBe(true);
+    expect(await allows('owner', C.controlEdit)).toBe(true);
+  });
+});
