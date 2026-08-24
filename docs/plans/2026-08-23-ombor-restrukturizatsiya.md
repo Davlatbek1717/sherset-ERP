@@ -1,6 +1,15 @@
 # Ombor restrukturizatsiyasi — 7+ fizik ombor, yacheyka-birinchi hisob
 
 > **Yaratilgan:** 2026-08-23 · **Buyurtmachi:** Ozodbek (egasi) · **Holat:** F1–F6 va F8 TUGADI (F8 jonlida 2026-08-24); F7 kodi `afd27a47` jonlida, lekin F7 HISOBOTI hali yozilmagan (o'z sessiyasi yozsin)
+>
+> 🔴 **DIQQAT — F5 SPLIT AMALDA QAYTARILGAN (2026-08-24 06:46).** Jonli split
+> kassani to'xtatib qo'ydi (tovar POS yeta olmaydigan omborga ko'chgan edi) va
+> shoshilinch qaytarildi: hozir 291 yacheyka ham, butun qoldiq ham
+> «Taqsimlanmagan» da, «Ombor 02» BO'SH. Ya'ni pastdagi F5 hisoboti tarixiy
+> holatni tasvirlaydi, JORIY holatni EMAS. Hodisa tahlili, ildiz sabablari va
+> split'ni xavfsiz qayta yuritish shartlari:
+> **`docs/plans/2026-08-24-split-kassa-hodisasi.md`** — jonli ma'lumotga
+> tegadigan har qanday faza boshlanishidan oldin SHU FAYL o'qiladi.
 > **Ijro tartibi:** har faza ALOHIDA sessiyada. Agent shu faylni o'qiydi, O'Z fazasini bajaradi, testlardan o'tkazadi, pastdagi «Hisobotlar»ga yozadi va TO'XTAYDI.
 
 ---
@@ -472,6 +481,13 @@ posPriority=1 berilsa (Taqsimlanmaganni 2 ga surish/olib tashlash bilan) POS
   turibdi.
 
 ### F5 — Jonli split + verifikatsiya · 2026-08-23 · `bd58988f` (+ hisobot commiti)
+
+> 🔴 **BU HISOBOT TARIXIY — split 2026-08-24 06:46 da QAYTARILGAN** (kassa
+> to'xtab qolgani uchun). Quyidagi raqamlar split kunidagi holat; joriy jonli
+> holat va sabablar: `docs/plans/2026-08-24-split-kassa-hodisasi.md`.
+> **Saboq shu yerdan boshlangan:** «kassa sotuvi ishlaydi» qabul mezoni
+> bajarilmay, «egasi tekshirib qo'ysin» deb o'tkazib yuborilgan — va faza
+> TUGADI deb yopilgan.
 
 **⚠️ Kutilmagan hodisa — VPS reset:** F5 boshlanganda VPS `climart-adoption`
 branch'i bugun 12:55 (+02) da Davlatbek tomonidan `f41bf559` (kassa smena-qaytarish

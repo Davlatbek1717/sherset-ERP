@@ -7,6 +7,11 @@
 > **O'ZGARMAS QOIDALAR:** F-rejaning 2-bo'limi shu rejaga ham AYNAN tatbiq etiladi
 > (bitta sessiya = bitta faza; testlar + i18n ru/uz majburiy; maxfiy ma'lumot yozilmaydi;
 > branch/push/deploy retsepti o'sha yerda; jonli bazaga skript avval lokalda).
+>
+> 🔴 **2026-08-24 hodisasi:** jonli split kassani to'xtatib qo'ydi va qaytarildi.
+> Jonli ma'lumotga tegadigan faza boshlanishidan oldin
+> **`docs/plans/2026-08-24-split-kassa-hodisasi.md`** o'qiladi (u yerda yangi
+> majburiy qoidalar: qaytarish yo'li, qabul mezoni bilan yopish, uchma-uch smoke).
 
 ---
 
@@ -164,6 +169,14 @@ yetmagan tovar — so'rov → bosh omborchi yacheyka tanlab tasdiqlaydi → avto
 **Oldshart:** F5 (split jonlida) va F6 (kaskad dvigateli, rezerv, to'lov-moment)
 TUGAGAN bo'lishi kerak — F6 hisobotini o'qi. F6 sof avto-kaskad qurgan bo'lsa,
 07dan tashqari qismini shu fazada tasdiq-darvoza orqasiga o'tkaz.
+
+> 🔴 **2026-08-24 HODISASI — bu fazaning ahamiyati o'zgardi.** F5 split jonlida
+> bajarilgan edi-yu, AYNAN shu faza (G4) yo'qligi sabab kassa to'xtab qoldi:
+> tovar «Ombor 02» ga ko'chgach POS unga yeta olmadi (avto-ayirish yo'q, tasdiq
+> oqimi ham yo'q) va split shoshilinch QAYTARILDI. Ya'ni **G4 endi F5 ning
+> oldsharti** ham (yoki uning o'rnini bosuvchi yechim — Ombor 07 ga o'tish yoki
+> vaqtinchalik avto-kaskad). Batafsil, egasiga savol (S1) va qayta yuritish
+> shartlari: **`docs/plans/2026-08-24-split-kassa-hodisasi.md`** (H4 fazasi).
 
 **Vazifalar:**
 1. So'rov obyekti: `RestockTask` ustiga yangi tur (`transfer_request`) — chek,
