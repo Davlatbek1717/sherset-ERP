@@ -67,6 +67,12 @@
    `nohup corepack pnpm build:web` (BUILD_RC poll) → `pm2 restart sherset-v2-web`
    (+ api o'zgargan bo'lsa `sherset-v2-api`) → jonli verify (sahifa 200, chunk marker).
    Diqqat: SSH'da ko'p muvaffaqiyatsiz urinish fail2ban banga olib boradi.
+   **Ombor/qoldiq/kassaga tegadigan deploy'da QO'SHIMCHA (H2):** deploy'dan
+   OLDIN va KEYIN `packages/db` ichida `npx tsx scripts/warehouse-state.ts`
+   (faqat o'qish) — chiqishi hisobotga ko'chiriladi. Chiqish kodi 2 bo'lsa
+   jonli holat reyestrdan (`docs/ops/jonli-holat.md`) chetda: sabab
+   aniqlanmaguncha davom etilmaydi. «Sahifa 200» verify qoida 13 dagi
+   uchma-uch smoke'ni ALMASHTIRMAYDI.
 9. Ishlar faqat `D:\sherset-v2` da. Boshqa loyihalarga (VPS'dagi biznesjon,
    global-erp, sherset-servis, akademiya…) TEGILMAYDI.
 

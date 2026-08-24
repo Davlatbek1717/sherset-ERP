@@ -1,6 +1,6 @@
 # Hodisa: ombor-split kassani to'xtatdi — tahlil va tuzatish rejasi
 
-> **Yaratilgan:** 2026-08-24 · **Buyurtmachi:** Ozodbek (egasi) · **Holat:** H0, H1 TUGADI · navbat H2 · **S1 savoli hamon JAVOBSIZ** (6-bo'lim)
+> **Yaratilgan:** 2026-08-24 · **Buyurtmachi:** Ozodbek (egasi) · **Holat:** H0, H1 TUGADI · **H2 QISMAN** (kod+testlar tayyor, JONLI yugurtirish kutilmoqda — qoida 11) · navbat H3 · **S1 savoli hamon JAVOBSIZ** (6-bo'lim)
 > **Ijro tartibi:** F-reja (`2026-08-23-ombor-restrukturizatsiya.md`) va G-reja
 > (`2026-08-23-omborchi-tsd-mijozlar.md`) bilan bir xil: bitta sessiya = bitta faza,
 > hisobot shu faylning oxiriga, so'ng TO'XTA.
@@ -271,7 +271,7 @@ Sen H1 fazasini bajarasan (jarayon qoidalari). Faqat H1 vazifalari, hisobot — 
 
 ---
 
-### H2 — Jonli holat reyestri + tekshirgich skript
+### H2 — Jonli holat reyestri + tekshirgich skript ⚠️ QISMAN (hisobot 9-bo'limda)
 
 **Maqsad:** IS-7 ni yopish — jonli holat yozib qo'yiladi va drift avtomatik
 ko'rinadi.
@@ -523,6 +523,132 @@ qaytarish — H4 dagi `warehouse-split.ts` (kod prefiksi bo'yicha, idempotent).
 *Ochiq:* stelaj o'lchamlari eng kam chegarada — sanash paytida yetmasa
 qo'shiladi (o'sha skript, idempotent). `01-04` (1-qavat o'rin 47–169) va
 `02-04` (1-qavat o'rin 1–93) tarixiy irregular diapazonlar — to'ldirilmadi.
+
+### H2 — Jonli holat reyestri + warehouse-state.ts · ⚠️ QISMAN · 2026-08-24
+
+**Holat qoida 11 bo'yicha: «QISMAN — jonli tasdiq kutilmoqda».** Kod, reyestr va
+testlar tayyor va yashil; qabul mezonining «skript JONLIDA yugurtirilib hozirgi
+holatni to'g'ri chiqaradi» bandi bajarilMAGAN — bu sessiyada jonli baza kirishi
+berilmagan. O'zim yozgan qoidani o'zimga tatbiq qildim: faza «TUGADI» deb
+yopilmaydi (aynan F5 ni yopib yuborgan xato).
+
+**Ikki tomonlama bog'liqlik javobi (qoida 10 — «bu nima buzishi mumkin?»):**
+HECH NARSA. `warehouse-state.ts` da birorta `create/update/delete/executeRaw` YO'Q,
+`--apply` flagi ham ataylab yo'q — u faqat `findMany`/`groupBy` qiladi. Yagona
+tashqi ta'siri — chiqish kodi 2 (kelajakdagi H3 deploy-qo'riqchisi uchun).
+Reyestr fayli — hujjat. G-reja bo'yicha tekshirildi: G3 ning BRAK ombori yadroda
+ISTISNO qilingan (pastda), G1/G2 ga tegishli joyi yo'q.
+
+**Nima qilindi:**
+
+1. **`docs/ops/jonli-holat.md`** — jonli holat reyestri. Ikki qatlam bitta faylda:
+   - **1-bo'lim: mashina o'qiydigan json bloki** (`split`, `posSessionStore`,
+     `allowUnreachableQty`, `stores[]` → `posPriority`/`brak`/`unassignedSource`);
+   - **2–4-bo'limlar: odam uchun** — o'lchangan jadval, «nega hozir shunday»
+     izohlari (R1/R4 xavflari nomi bilan), tekshirish buyruqlari va
+     **o'zgarishlar jurnali** (qoida 14).
+
+   *Qaror:* `.md` + alohida `.json` ko'rildi va RAD ETILDI — ikki fayl bir-biridan
+   ajralib ketardi va aynan IS-7 («hujjat haqiqatni aytmaydi») qaytardi.
+   Skript md ichidan json blokini o'qiydi; blok yo'q bo'lsa OCHIQ yiqiladi
+   (jimgina «farq yo'q» demaydi — silent-wrong-0 tuzog'i).
+
+2. **`packages/db/scripts/warehouse-state-core.ts`** — SOF yadro (SQL yo'q):
+   - `buildWarehouseState` → ombor kesimi (yacheyka/zona/zonasiz, ombor qoldig'i,
+     yacheykalardagi, **yacheykasiz = ayirma**), kaskad tartibi, split holati;
+   - **`ReachStatus` — fazaning o'zagi:** `reachable` (kaskadning BIRINCHI ombori —
+     POS avtomatik ayiradi), `needs_approval` (kaskadda bor, birinchi emas → G4
+     tasdig'i kerak, **G4 hali YO'Q**), `outside_cascade` (kaskadda umuman yo'q),
+     `brak` (ataylab yopiq). **«POS yeta olmaydigan qoldiq» = birinchi ikkalasi.**
+   - **BRAK ombori ISTISNO** — G3 hisobotidagi ogohlantirish bajarildi: busiz
+     birinchi brak qabulidan keyin har deploy bloklanardi va signal «bo'ri keldi»
+     bo'lib qolardi;
+   - **kaskad sozlanmagan holat** — F6 zaxira yo'li: POS smena omboridan ishlaydi,
+     shuning uchun «reachable» ochiq smenalar ombori bo'ladi;
+   - split holati yacheyka kodi prefiksidan: `bajarilgan` / `qaytarilgan` /
+     `qisman` / `yacheyka yoq` + yetishmayotgan ombor nomlari;
+   - `diffAgainstRegistry` → `xato` / `ogohlantirish` darajali driftlar;
+     `exitCodeFor` → 0 yoki 2.
+   - ⚠️ `readPosPriority` va kaskad tartibi apps/api dagi `retail-stock-cascade.ts`
+     ning TAKRORI (packages/db app qatlamiga qaray olmaydi — `warehouse-split-core`
+     dagi cost-basis takrori bilan bir sabab). Ikkalasida ham izoh qo'yilgan;
+     testda qoida aynan qulflangan.
+
+3. **`packages/db/scripts/warehouse-state.ts`** — 🔒 FAQAT O'QISH CLI.
+   `--json` (mashina uchun), `--no-registry` (faqat o'lchov). Har akkaunt bo'yicha
+   jadval + drift ro'yxati; oxirida `process.exitCode`.
+
+4. **Deploy retseptiga qadam** (F-reja 2-bo'lim, 8-band): ombor/qoldiq/kassaga
+   tegadigan deploy'dan **OLDIN va KEYIN** skript yugurtiriladi, chiqishi hisobotga
+   ko'chiriladi; kod 2 bo'lsa sabab aniqlanmaguncha davom etilmaydi.
+
+**🔴 Eng muhim natija — detektor hodisani QAYTA TIKLADI.**
+Lokal dev bazasi (`sherset_v2_dev`) split QILINGAN holatning nusxasi ekan, va
+skript birinchi yugurishdayoq aynan 06:46 nosozligini ko'rsatdi:
+
+```
+Ombor 02 | — | 291 | 4 | 0 | 2949085 | 2949085 | 0 | 0 | kaskadda YO‘Q
+Taqsimlanmagan | — | 0 | 0 | 0 | 49575145.387857 | 0 | ... | 8 | POS SOTADI
+
+🔴 POS YETA OLMAYDIGAN QOLDIQ: 2949085 dona
+   · Ombor 02: 2949085 (kaskadda YO‘Q)
+```
+
+2 949 085 dona — hodisa xronologiyasidagi **2 949 007** bilan bir xil kattalik
+(dev nusxasi biroz boshqa paytda olingan). Ya'ni bu skript 2026-08-23 kuni mavjud
+bo'lganida, split'dan KEYINGI birinchi yugurishda — savdo boshlanishidan oldin —
+qizil bergan bo'lardi va 46 daqiqalik to'xtash bo'lmasdi. Chiqish kodi: **2**
+(tekshirildi), `--no-registry` bilan **0**.
+
+**Testlar:**
+- yangi `apps/api/src/scripts/warehouse-state-core.test.ts` — **24 test**
+  (`warehouse-split-core.test.ts` joylashuv naqshi): prioritet o'qish qoidasi 9 holat;
+  yetuvchanlik — hodisaning aynan shakli, `outside_cascade`, **BRAK istisnosi**,
+  bo'sh ombor shovqin qilmasligi (hozirgi R1 holati), kaskadsiz zaxira yo'l,
+  kaskad tartibi; split 4 holat; yacheykasiz qoldiq va Decimal kasrlari (float yo'q);
+  reyestr parse + OCHIQ yiqilish; drift 8 holat, jumladan «POS ombori kaskad boshi
+  emas» va «yangi ombor faqat ogohlantirish»; **haqiqiy `docs/ops/jonli-holat.md`
+  faylining o'zi parse bo'lishi va POS omborining pp=1 ekani**.
+- TO'LIQ: **api 629 fayl / 8778 passed (2 skipped, 0 xato, RC=0)** — G3 hisobotidagi
+  628/8754 ustiga aynan +1 fayl / +24 test.
+- `packages/db` typecheck yashil; biome yangi 3 faylda xatosiz (formatlash qo'llandi).
+- **Web TEGILMADI** (bu fazada web fayli yo'q) — shuning uchun web vitest
+  yugurtirilmadi; i18n gate'lar ham web/api matnlariga tegilmagani uchun mavzuga
+  aloqasiz. Skript chiqishi — CLI matni, i18n emas (mavjud `warehouse-split.ts`
+  naqshi).
+
+**Deploy holati:** talab qilinmaydi (skript CI/qo'lda yuritiladi, jonliga chiqmaydi).
+
+**Qabul mezoni bo'yicha:**
+- «reyestrdan farq yasalganda qizil beradi» — ✅ lokal yugurishda 4 ta drift +
+  chiqish kodi 2; birlik testlarida har drift turi alohida.
+- «skript jonlida yugurtirilib hozirgi holatni to'g'ri chiqaradi» — ❌ **BAJARILMADI**
+  (jonli baza kirishi yo'q). Shu sabab faza QISMAN.
+
+**Ochiq qolganlar / keyingi fazalarga:**
+- **🔴 Jonli yugurish** — H2 ni yopish uchun yagona qolgan ish. Kerak: VPS'da
+  `cd /var/www/sherset-v2/packages/db && npx tsx scripts/warehouse-state.ts`.
+  Skript FAQAT O'QISH, savdo ustida ham xavfsiz. Natija shu hisobotga qo'shiladi va
+  reyestrdagi raqamlar (900 yacheyka va h.k.) tasdiqlanadi — ular hozircha
+  **parallel sessiyaning jurnalidan** olingan, o'z o'lchovim emas.
+- Reyestrdagi `Ombor 02 → posPriority 2` **ataylab** hozirgi (noto'g'ri) haqiqatni
+  yozadi, chunki reyestr = KUTILAYOTGAN holat va hozir u shunday. **H6/1-band** uni
+  olib tashlagach reyestrda `null` ga o'zgartirilishi SHART, aks holda skript
+  darhol qizil beradi.
+- **BRAK ombori yaratilgach** (G3 deploy'i) reyestrga `brak: true`,
+  `posPriority: null` qatori qo'shiladi — busiz birinchi brak qabuli har deploy'ni
+  bloklaydi.
+- **H3 uchun tayyor ulanish nuqtasi:** `report.unreachableQty` va
+  `report.unreachable[]` — deploy-oldi qo'riqchisi (H3/3-band) aynan shularni
+  o'qiydi; `exitCodeFor` allaqachon 2 beradi.
+- Skript yacheyka ZONASINI ham sanaydi (`zonasiz` ustuni) — R5 (zonasiz yacheykalar)
+  shu ustunda ko'rinadi, H4 dan keyin 0 bo'lishi kutiladi.
+- Reyestr faqat TUZILMANI tekshiradi, qoldiq RAQAMLARINI emas (ular kunlik
+  o'zgaradi). «Soxta 10 000 lar» (R6) H5 ning ishi.
+- **Parallel sessiya ogohlantirishi:** shu sessiya davomida repoda boshqa Claude
+  sessiyasi ishladi (`073e6b52`, Fable 5) va AYNI shu faylga yozdi hamda jonlida
+  490 yacheyka yaratdi. Diffim path-cheklangan, ularning matni saqlandi
+  (CLAUDE.md §6). Reyestrdagi 2026-08-24 ~21:00 qatori — o'sha ish.
 
 ### H1 — Jarayon qoidalari · 2026-08-24
 
