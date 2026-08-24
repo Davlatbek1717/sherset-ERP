@@ -245,6 +245,74 @@ tizim boshqa ombordagi yacheykani ko'rsatadi → **hech qanday tasdiqsiz** chek
 yig'ishga ketadi va post bo'ladi; ledgerda ayirish AYNAN o'sha ombor(lar)dan
 ko'rinadi; 07 dagi qoldiq bo'linish holatida oxirgi bo'lib kamayadi.
 
+**⚠️ KOD BILAN SOLISHTIRILDI (2026-08-24, H1/H2 sessiyasi) — tavsifdagi besh bo'shliq.**
+Quyidagilar yuqoridagi vazifalarni BEKOR QILMAYDI, ularni aniqlashtiradi. Har biri
+kodda tekshirilgan; G4 sessiyasi ularni hisobga olmasa faza yarim yo'lda to'xtaydi.
+
+**E1 — 🔴 Qoldiqning ~94 % i YACHEYKASIZ (eng katta xavf).**
+Jonlida 52,5 mln donadan yacheykalarga biriktirilgani atigi ~2,95 mln
+(`docs/ops/jonli-holat.md`). Ya'ni **faqat `StockByCell` ga tayangan taqsimot
+tovarlarning aksariyati uchun umuman reja qura olmaydi** — kassa to'xtaydi
+(06:46 hodisasining boshqa shakli). Tavsif buni aytmaydi.
+Talab: dvigatel **ikki qatlamli** bo'lsin — (a) yacheyka kesimidagi
+`StockByCell`; (b) yacheykasiz qoldiq (`Stock.qty − ΣStockByCell`) uchun
+**ombor-darajali** ajratma, ekranda «yacheyka ko'rsatilmagan» deb. Yacheykasiz
+qism uchun mavjud «katta-birinchi» avto-ayirish saqlanadi.
+**Qo'shimcha manba:** tovarning uy-yacheykasi `Product.attributes.__yacheyka`
+(picking hozir SHUNDAN foydalanadi) — `StockByCell` bo'sh bo'lsa ham tavsiya
+berish mumkin. Ikki yacheyka qatlami borligini unutmang.
+
+**E2 — Taqsimot natijasini saqlaydigan JOY YO'Q (migratsiya kerak).**
+`RetailSalePosition` da `storeId` ham, `cellId` ham, `attributes` ham YO'Q
+(`packages/db/prisma/schema.prisma` — faqat quantity/price/discount/sum +
+frozen cost). 3-holat (bo'linish) bitta pozitsiyani BIR NECHTA yacheykaga
+bo'ladi — ya'ni bitta ustun ham yetmaydi.
+Talab: **bola-jadval** (masalan `retail_sale_position_allocations`:
+positionId, storeId, cellId?, qty) + idempotent DDL migratsiya (qoida 2.7).
+4-vazifadagi «tanlov chek pozitsiyasida saqlanadi» hozirgi sxemada bajarib
+bo'lmaydi. Bu jadval bir vaqtning o'zida rezerv, picking va post uchun
+YAGONA haqiqat bo'ladi.
+
+**E3 — `post()` deltalari BITTA ombor va yacheykasiz (3-vazifaning og'ir qismi).**
+`apps/api/src/modules/retail-sale/retail-sale.service.ts:1188–1209` — deltalar
+`stockPositions.map` bilan quriladi va HAMMASI bitta `storeId` oladi, `cellId`
+umuman yo'q. F6 buni O'ZGARTIRMAGAN (uning hisoboti: «yacheyka-kesim: mavjud
+katta-birinchi avto-ayirish ombor ichida o'zgarishsiz ishlayveradi»).
+Talab: deltalar **pozitsiyadan emas, AJRATMADAN** qurilsin (har ajratma → o'z
+`storeId` + `cellId`), tannarx har ombor uchun o'sha ombor balansidan hisoblansin
+(hozirgi `computePerUnitCost` bitta ombor balansiga tayanadi — ko'p omborda
+har biriga alohida kerak). `cancel`/refund teskari yo'li ham AJRATMA bo'yicha.
+Rezerv (`sendToPicking` → `StockReservation`) ham ajratma kesimida.
+
+**E4 — BRAK ombori ISTISNO qilinmagan.**
+G3 BRAK ni alohida OMBOR qildi (`Store.attributes.__brakStore`) va u kaskaddan
+`__posPriority` YO'Qligi bilan chiqib turardi. Yangi dvigatel esa kaskad
+tartibidan emas, **yacheykalar kesimidan** ishlaydi — ya'ni BRAK yacheykalarini
+ham «bor» deb sanaydi va brak tovarni mijozga sotib yuboradi.
+Talab: `__brakStore` omborlari taqsimot manbalaridan OCHIQ chiqarilsin + test.
+
+**E5 — H2/H3 bilan kesishma (o'sha fazada yangilanadi).**
+G4 «POS yeta olmaydigan qoldiq» tushunchasini TUBDAN o'zgartiradi: POS endi
+hamma omborga o'zi yetadi, ya'ni `warehouse-state-core.ts` dagi
+`needs_approval` bosqichi ma'nosini yo'qotadi va `outside_cascade` mezoni
+qayta yoziladi (kaskad tartibi endi yagona filtr emas).
+Talab, SHU fazada: (a) `packages/db/scripts/warehouse-state-core.ts` yadrosi va
+testlari yangilansin; (b) `docs/ops/jonli-holat.md` reyestriga yangi
+`__posFrontStore` bayrog'i qo'shilsin; (c) H3 ning deploy-oldi qo'riqchisi
+nimani xato deb sanashi qayta belgilansin. Aks holda G4 dan keyin tekshirgich
+yolg'on qizil bera boshlaydi.
+
+**Qoidalar 10–14 bo'yicha majburiy (F-reja 2-bo'lim):** hisobotda «bu o'zgarish
+qaysi oqimni buzishi mumkin?» savoliga yozma javob (qoida 10); jonli
+o'zgarish/skript bo'lsa teskarisi o'sha sessiyada (12); deploy'dan keyin
+uchma-uch smoke — sinov sotuv (post → tekshir → cancel) + yacheyka sanash +
+ko'chirish, va `warehouse-state.ts` (13); qabul mezonining biror bandi
+bajarilmasa faza «QISMAN» bo'lib qoladi (11).
+
+**Oldshart aniqlashtiruvi:** G1+G2+G3 hali JONLIDA EMAS (kod tayyor, deploy
+kutilmoqda). G4 o'sha delta ustiga qo'shiladi — ya'ni jonli qabul mezonini
+tekshirish uchun avval G1–G3 deploy'i kerak (yoki G4 ham «QISMAN» bo'lib turadi).
+
 **PROMPT:**
 ```
 Ikkala rejani va docs/plans/2026-08-24-split-kassa-hodisasi.md ni to'liq o'qi
