@@ -77,6 +77,9 @@ describe('1-holat — 07 yolg‘iz qoplasa, o‘shandan (yig‘ish kerak emas)',
     expect(r.rules[0]?.rule).toBe('front');
   });
 
+  // 🔷 Egasi (2026-08-25): 07 da bitta tovar FAQAT BITTA yacheykada bo'ladi.
+  // Quyidagi ikki test shu qoida BUZILGAN ma'lumot uchun — kassa to'xtamasligi
+  // va buzilish KO'RINISHI kerak.
   it('07 da bir nechta qoplaydigan yacheyka bo‘lsa ENG KICHIGI', () => {
     const r = allocateForSale(
       input({
@@ -87,6 +90,30 @@ describe('1-holat — 07 yolg‘iz qoplasa, o‘shandan (yig‘ish kerak emas)',
       }),
     );
     expect(r.allocations[0]?.cellName).toBe('kichik');
+  });
+
+  it('🔷 invariant buzilsa OGOHLANTIRISH chiqadi, lekin kassa TO‘XTAMAYDI', () => {
+    const r = allocateForSale(
+      input({
+        cellsByProduct: new Map([[P, [cell(S07, '07-a', '120'), cell(S07, '07-b', '90')]]]),
+        availableByProduct: new Map([[P, avail([S07, '210'])]]),
+      }),
+    );
+    expect(r.warnings).toEqual([
+      { code: 'front-multi-cell', assortmentId: P, storeId: S07, cells: 2 },
+    ]);
+    // Sotuv baribir o'tadi (jimgina emas, lekin to'xtamaydi ham).
+    expect(r.allocations).toHaveLength(1);
+  });
+
+  it('to‘g‘ri ma’lumotda ogohlantirish YO‘Q', () => {
+    const r = allocateForSale(
+      input({
+        cellsByProduct: new Map([[P, [cell(S07, '07-a', '150'), cell(S01, '01-a', '900')]]]),
+        availableByProduct: new Map([[P, avail([S07, '150'], [S01, '900'])]]),
+      }),
+    );
+    expect(r.warnings).toEqual([]);
   });
 
   it('07 ning yacheykasi qoplamasa-yu yacheykasiz qoldig‘i qoplasa — o‘sha', () => {
@@ -166,9 +193,11 @@ describe('2-holat — yolg‘iz qoplaydigan ENG KICHIK manba (bitta yurish)', ()
     expect(r.allocations[0]?.qty).toBe('100');
   });
 
-  it('07 ni bo‘shatmaydi: 07 da yetarli bo‘lsa-yu bitta yacheykasi qoplamasa, boshqa ombordan', () => {
-    // 07 da 60+60=120 bor (yetadi), lekin YOLG'IZ qoplaydigani yo'q ⇒
-    // egasining «07 bo'shab qolmasin» qoidasi bo'yicha boshqa ombordan olinadi.
+  it('invariant buzilgan holatda ham kassa to‘xtamaydi — boshqa ombordan olinadi', () => {
+    // 🔷 TO'G'RI ma'lumotda bu holat YUZ BERMAYDI (07 da bitta tovar bitta
+    // yacheykada — egasi, 2026-08-25). Test buzilgan ma'lumot uchun: 07 da
+    // 60+60=120 bor, lekin yolg'iz qoplaydigani yo'q ⇒ sotuv boshqa ombordan
+    // o'tadi (to'xtamaydi), ustiga `front-multi-cell` ogohlantirishi chiqadi.
     const r = allocateForSale(
       input({
         cellsByProduct: new Map([
@@ -179,6 +208,7 @@ describe('2-holat — yolg‘iz qoplaydigan ENG KICHIK manba (bitta yurish)', ()
     );
     expect(r.allocations).toHaveLength(1);
     expect(r.allocations[0]?.storeId).toBe(S01);
+    expect(r.warnings[0]?.code).toBe('front-multi-cell');
   });
 });
 

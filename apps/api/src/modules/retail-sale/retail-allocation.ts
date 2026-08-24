@@ -31,6 +31,17 @@ import { formatDecimalScaled, parseDecimalScaled } from '../shared/decimal.js';
  * Real yacheyka bilan teng holatda REAL yacheyka afzal: kassir/omborchi
  * ekranda aniq manzilni ko'rsin.
  *
+ * ---------------------------------------------------------------------------
+ * 🔷 DOMEN INVARIANTI (egasi, 2026-08-25): **«Kassa oldidagi ombor» (07) da
+ * bitta tovar FAQAT BITTA yacheykada bo'ladi.** Shuning uchun «07 da yetarli,
+ * lekin bitta yacheykasi yolg'iz qoplamaydi» degan holat TO'G'RI ma'lumotda
+ * UMUMAN YUZ BERMAYDI — 1-holat tekshiruvi 07 uchun to'liq yetarli.
+ *
+ * Invariant BUZILGAN ma'lumotda (07 da bir tovar ikki yacheykada) xulq ataylab
+ * o'zgarmaydi: taqsimot 2/3-holatga tushadi va kassa TO'XTAMAYDI, lekin natijada
+ * `warnings: [{ code: 'front-multi-cell' }]` chiqadi. Jimgina o'tkazib yuborish
+ * IS-5 xatosini (ko'rinmaydigan nosozlik) takrorlardi.
+ *
  * E4 — BRAK ombori (G3, `__brakStore`) manba sifatida QATNASHMAYDI: brak tovar
  * mijozga sotilmaydi. F6 kaskadida u `__posPriority` yo'qligi bilan chiqib
  * turardi; bu dvigatel esa yacheykalardan ishlagani uchun ISTISNO OCHIQ yozilgan.
@@ -121,11 +132,25 @@ export interface Allocation {
 /** Qaysi qoida ishlagani — POS ekranida ham, testlarda ham kerak. */
 export type AllocationRule = 'front' | 'single' | 'split' | 'none';
 
+/**
+ * Ma'lumot INVARIANTI buzilgani signali (hodisa saboqi IS-5: nosozlik ko'rinmasa
+ * 46 daqiqa davom etadi). Taqsimotni TO'XTATMAYDI — faqat ko'rinadi.
+ */
+export interface AllocationWarning {
+  code: 'front-multi-cell';
+  assortmentId: string;
+  /** Qoida buzilgan ombor. */
+  storeId: string;
+  /** Nechta yacheykada topildi (qoida bo'yicha 1 bo'lishi kerak). */
+  cells: number;
+}
+
 export interface AllocationResult {
   allocations: Allocation[];
   /** Butun kaskadda ham topilmagan qism (haqiqiy defitsit). */
   shortfalls: Array<{ assortmentId: string; requested: string; missing: string }>;
   rules: Array<{ assortmentId: string; rule: AllocationRule }>;
+  warnings: AllocationWarning[];
 }
 
 // ---------------------------------------------------------------------------
@@ -269,6 +294,7 @@ export function allocateForSale(input: AllocationInput): AllocationResult {
   const allocations: Allocation[] = [];
   const shortfalls: AllocationResult['shortfalls'] = [];
   const rules: AllocationResult['rules'] = [];
+  const warnings: AllocationWarning[] = [];
 
   // Bir tovar chekda bir necha qatorda kelishi mumkin — jamlab taqsimlanadi
   // (F6 `allocateAcrossStores` naqshi).
@@ -298,6 +324,16 @@ export function allocateForSale(input: AllocationInput): AllocationResult {
 
     // ── 1-holat: kassa oldidagi ombor (07) yolg'iz qoplaydimi ───────────────
     const front = sources.filter((s) => s.isPosFront);
+    // Invariant qo'riqchisi: 07 da bitta tovar bitta yacheykada bo'lishi kerak.
+    const frontCells = front.filter((s) => s.isCell);
+    if (frontCells.length > 1) {
+      warnings.push({
+        code: 'front-multi-cell',
+        assortmentId,
+        storeId: frontCells[0]?.storeId ?? '',
+        cells: frontCells.length,
+      });
+    }
     const frontHit = smallestCovering(front, need);
     if (frontHit) {
       push(frontHit, need);
@@ -336,5 +372,5 @@ export function allocateForSale(input: AllocationInput): AllocationResult {
     });
   }
 
-  return { allocations, shortfalls, rules };
+  return { allocations, shortfalls, rules, warnings };
 }

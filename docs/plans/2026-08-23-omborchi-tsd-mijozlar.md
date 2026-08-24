@@ -491,11 +491,22 @@ simlanmaguncha kassa avvalgidek ishlaydi.
    `warehouse-state-core.ts`, `docs/ops/jonli-holat.md` (+ `__posFrontStore`
    qatori) va H3 qo'riqchisi shu bosqichda qayta yoziladi.
 
-**Ochiq savol (egasiga):** 07 da tovar YETARLI, lekin bitta yacheykasi yolg'iz
-qoplamaydigan holatda hozirgi kod boshqa ombordan oladi (07 ni bo'shatmaslik
-qoidasi bo'yicha). Agar egasi «07 da yetsa, ikki yacheykadan bo'lsa ham 07 dan
-olinsin» desa — 1-holatga qo'shimcha shart kerak (bir qatorlik o'zgarish, testi
-tayyor).
+**✅ Ochiq savol YOPILDI (egasi, 2026-08-25):** «07 da 1 ta mahsulot faqat 1 ta
+yacheykada bo'ladi». Ya'ni «07 da yetarli, lekin bitta yacheykasi yolg'iz
+qoplamaydi» degan holat TO'G'RI ma'lumotda umuman yuz bermaydi — 1-holat
+tekshiruvi 07 uchun to'liq yetarli, taqsimot qoidasi O'ZGARMADI.
+
+**Invariant kodga yozildi (`ca7f0d21` dan keyingi tuzatish).** Faqat izoh bilan
+qoldirilmadi: ma'lumot buzilsa (07 da bir tovar ikki yacheykada) taqsimot
+jimgina 2/3-holatga tushib ketardi va hech kim buni bilmasdi — bu IS-5
+(«nosozlik signali yo'q») xatosining aynan takrori bo'lardi. Endi:
+- natijada yangi `warnings: [{ code: 'front-multi-cell', assortmentId, storeId, cells }]`;
+- **xulq ATAYLAB o'zgarmaydi** — sotuv boshqa ombordan o'tadi, **kassa
+  TO'XTAMAYDI** (buzilgan ma'lumot savdoni to'xtatmasligi kerak);
+- ikki yangi test: invariant buzilganda ogohlantirish chiqishi va sotuv baribir
+  o'tishi; to'g'ri ma'lumotda `warnings` BO'SH bo'lishi.
+2-bosqichda bu ogohlantirish api log'iga va (kerak bo'lsa) `CashierAuditEvent` ga
+ulanadi — H3 ning «ko'rinadigan signal» naqshi bilan bir xil.
 
 ### G3 — Vozvrat qabul ekranlari + vozvrat yorlig'i · 2026-08-24 · `6022e58c` (+ `acdf5ea7` lint)
 
