@@ -1,6 +1,6 @@
 # Ombor restrukturizatsiyasi — 7+ fizik ombor, yacheyka-birinchi hisob
 
-> **Yaratilgan:** 2026-08-23 · **Buyurtmachi:** Ozodbek (egasi) · **Holat:** F1–F6 TUGADI (kaskad dvigateli jonlida 2026-08-24), navbat: F7
+> **Yaratilgan:** 2026-08-23 · **Buyurtmachi:** Ozodbek (egasi) · **Holat:** F1–F6 va F8 TUGADI (F8 jonlida 2026-08-24); F7 kodi `afd27a47` jonlida, lekin F7 HISOBOTI hali yozilmagan (o'z sessiyasi yozsin)
 > **Ijro tartibi:** har faza ALOHIDA sessiyada. Agent shu faylni o'qiydi, O'Z fazasini bajaradi, testlardan o'tkazadi, pastdagi «Hisobotlar»ga yozadi va TO'XTAYDI.
 
 ---
@@ -337,6 +337,77 @@ Faqat F8 vazifalari, testlar, deploy, jonli tekshiruv, hisobot — va TO'XTA.
 > Shablon: **Faza · sana · commit(lar)** — nima qilindi (fayl ro'yxati bilan qisqa),
 > test natijalari (raqamlar), deploy holati (jonli tekshiruv dalili), ochiq qolganlar,
 > keyingi fazaga eslatmalar.
+
+### F8 — Katta omborchi .exe dasturi · 2026-08-24 · `83027bc2`
+
+**Yondashuv:** alohida papka EMAS — mavjud kassa Electron o'ramiga (desktop/)
+**rejim** qo'shildi: bitta jang-sinovidan o'tgan kod bazasi, ikki dastur.
+Rejim manbasi `desktop/mode.js`: paketlangan package.json'dagi `shersetMode`
+(electron-builder `extraMetadata` yozadi) yoki `SHERSET_SHELL_MODE` env (dev);
+preload'ga `additionalArguments` (`--sherset-shell-mode=`) bilan yetadi
+(sandbox package.json o'qiy olmaydi).
+
+**«Sherset Omborchi» qobig'i (kassadan farqlari):**
+- ODDIY ramkali maksimal oyna (kiosk EMAS); Alt+F4/Ctrl+W bloklanmaydi;
+  «X» bilan yopishda tayyor yangilanish o'rnatiladi (quitShell→installOnQuit).
+- Kirish `/omborchi` (sessiya bo'lmasa web /login ga olib boradi va qaytaradi);
+  boot-yangilanish sharti /login yoki /omborchi pathname.
+- Kiosk yordamchilar (chiqish-imosi, suzuvchi uchlik, ekran klaviaturasi,
+  zoom-qulf) O'RNATILMAYDI; avtoyuklanish va powerSaveBlocker ham yo'q.
+- Kamera skaneri uchun media ruxsati FAQAT o'z serverimiz sahifalariga
+  (`setPermissionRequestHandler`); klaviatura-wedge skaner oddiy kiritish.
+- Chop etish ko'prigi (printSheet — yig'ish varag'i/etiketka) SAQLANADI.
+- userData `%APPDATA%/Sherset Omborchi` (kassa `@moysklad/desktop`dan alohida).
+
+**Muhim web tuzatish:** preload endi `shellKind` beradi; `pos-device.ts →
+isShersetShell()` FAQAT kassa qobig'ida true (omborchi .exe ichida ilgari
+/kassa-kirish PIN ekrani + kiosk-ko'rinish ochilib qolardi — (app)/layout:69,752).
+Eski kassa exe'lari (≤1.9.0, shellKind yo'q) kassa deb taniladi — orqaga mos.
+
+**Yig'ish:** `desktop/omborchi.builder.json` (appId `uz.sherset.omborchi`,
+artifact `Sherset-Omborchi-Setup-${version}.exe`, chiqish `dist-omborchi/`,
+publish `/downloads/omborchi/`, per-user NSIS) + `pnpm run dist:omborchi`.
+Versiya extraMetadata'da (hozir **1.0.0**) — kassa versiyasidan mustaqil.
+Ikonka: eski D:\sherset o'chirilishi bilan `build/icon.ico` YO'QOLGAN edi —
+omborchi uchun deterministik generator yozildi
+(`desktop/tools/icon/gen-omborchi-icon.js`, kutubxonasiz, toza klonda tiklanadi);
+kassa ikonkasi hali ham yo'q (keyingi kassa build'idan oldin tiklash kerak!).
+`pnpm.onlyBuiltDependencies=[electron]` — postinstall endi approve-builds'siz.
+
+**Testlar:** yangi `omborchi-installer-config.test.ts` 28 + pos-device shellKind 5;
+kassa qo'riqchilari (installer 34, bridge-contract 89, touch-keyboard 44,
+window-controls 20, kiosk 26) o'zgarishsiz yashil. Web TO'LIQ: 321 fayl /
+4258 passed / 0 failed (i18n gate'lar ichida); turbo typecheck 10/10.
+Paketlangan smoke (win-unpacked, shu mashina): v1.0.0 ishga tushdi, kanal
+`https://erp.sherset.uz/downloads/omborchi/` so'raldi (rejim simlari to'g'ri),
+404 jim yutildi, userData ajralgan. ⚠️ Bash muhitida `ELECTRON_RUN_AS_NODE`
+o'rnatilgan — exe'ni sinashda `env -u ELECTRON_RUN_AS_NODE` shart.
+
+**Deploy (2026-08-24):** VPS ff-merge `0f4bda63` → **`83027bc2`** (F7 `afd27a47`
++ follow-up `8e0d081e` birga ketdi — F5 dagi F1+F2+F3 naqshidek); build:web
+RC=0; pm2 restart web+api; health OK; sahifalar `/`, `/login`, `/omborchi`,
+`/stores`, `/inventories`, `/cell`, `/reports/stock-balance` — hammasi 200;
+`shellKind` markeri jonli chunk'larda (layout, kassa-kirish, sotuv).
+**Kanal:** `/var/www/kassa-downloads/omborchi/` yaratildi (nginx `location
+/downloads/` allaqachon butun katalogni beradi — konfiguratsiya o'zgarmadi);
+exe (81 926 659 bayt) SFTP bilan uzilishsiz yuklandi, remote sha512 == lokal ==
+latest.yml (`1ukUmkar…Zhw==`); HTTPS: latest.yml 200 (`version: 1.0.0`), exe
+HEAD 200 + Accept-Ranges. Yuklash tartibi: exe → blockmap → latest.yml OXIRIDA.
+
+**Ochiq qolganlar / eslatmalar:**
+- **Qurilma-QA egasida** (kassa relizlari naqshidek): katta omborchi PC'siga
+  o'rnatish (SmartScreen → «Подробнее» → «Все равно запустить», UAC yo'q),
+  login, ombor raqamlashtirish + inventarizatsiya sinovi, klaviatura-wedge va
+  kamera skaneri, keyingi versiyada avto-yangilanish o'tishi. Yuklab olish:
+  https://erp.sherset.uz/downloads/omborchi/Sherset-Omborchi-Setup-1.0.0.exe
+- F7 hisoboti yozilmagan (kodi `afd27a47` shu deploy bilan jonliga chiqdi,
+  testlari commit-xabarida yashil) — F7 sessiyasi hisobotini yozsin; jonli
+  F7-tekshiruvlar (joylashtirish oqimi, hovuz-ombor sozlamasi) ham o'sha yerda.
+- Kassa `build/icon.ico` yo'qolgan — keyingi kassa build'idan OLDIN tiklash
+  kerak (kanaldagi 1.9.0 exe'dan ajratib olish yoki yangi ikonka).
+- Omborchi versiyasini ko'tarish retsepti: desktop/README.md «IKKI DASTUR»
+  bo'limi (extraMetadata.version + README artefakt nomi + kanalga tartibli
+  yuklash).
 
 ### F6 — Kassa: kaskadli ayirish + to'lov paytida ayirish · 2026-08-24 · `3ec48ae2` + `9c99bb29` + merge `0f4bda63`
 
