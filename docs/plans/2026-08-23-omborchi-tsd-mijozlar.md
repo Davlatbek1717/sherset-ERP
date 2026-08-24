@@ -306,8 +306,13 @@ Ikkala rejani to'liq o'qi (ayniqsa G5 va F7 hisobotlarini). Sen G6 fazasini baja
   chek qotib qolmaydi.
 - **Ruxsat — yangi entity `retailcontrol`** (`retailsale` EMAS, chunki uning
   view/update'i storekeeper'da ham bor): warehouse_manager view+update ALL;
-  storekeeper/kassir NO (lifecycle-permission testlari qulflaydi; kassir uchun
-  kiosk-allowlist'da ham marshrut yo'q — ikki qulf). Ro'yxatlar: types +
+  storekeeper/kassir NO (lifecycle-permission testlari qulflaydi).
+  **Diqqat — bu yerda qulf BITTA:** kiosk-allowlist'da `/retail-sales` prefiksi
+  `methods: ['*']` bilan ochiq (kassa asosiy ishi), ya'ni marshrut kiosk'ga
+  yetadi va kontrolni FAQAT ruxsat matritsasi to'xtatadi (kassirda
+  `retailcontrol=NO` ⇒ PermissionsGuard 403). Fail-closed va yetarli, lekin
+  «ikkinchi qatlam» yo'q — kim kassir shabloniga `retailcontrol` bersa,
+  marshrut darhol ochiladi. Ro'yxatlar: types +
   PERMISSION_ENTITIES + seedSystemRoles + seed.ts + topup NEW_ENTITIES +
   **TOPUP_ENTITIES (vaqtincha!)** + roles.controller + shablon + snapshot (6).
 - **SSE:** `NotificationKind` + `sale_edited`/`sale_ready`, ikkalasi
@@ -370,6 +375,15 @@ ni birga olib boradi (G1+G2). **Retsept (G1 retsepti + G2 qo'shimchalari):**
 - READ_ONLY_BASE'li boshqa shablonlar (sales_manager, accountant, supplier)
   `retailcontrol.view` oladi (navbatni ko'rish — zarasiz, update YO'Q);
   xohlasa egasi rol matritsasidan yopadi.
+- Kontrol marshrutlari kiosk-allowlist'ning keng `/retail-sales` prefiksi
+  ostida qoladi (yuqoridagi «qulf bitta» izohi) — xohlansa alohida deny-qator
+  qo'shish mumkin, lekin bu allowlist'ning umumiy naqshini o'zgartiradi
+  (G2 doirasidan tashqari deb qoldirildi).
+- Push paytida pre-push guard eslatmasi chiqdi: `label-grounding.test.ts`
+  baseline yozuvi («#18 / #35») endi PASS bo'lib turibdi — sababi bo'sh
+  `visual-captures` korpusi (25 test skip). G2 ga aloqasi yo'q, lekin
+  `scripts/guard-baseline.json` dan o'sha qatorni olib tashlash kerak
+  (kichik tozalash, alohida commit).
 
 ### G1 — Vozvrat pulini kassadan qaytarish · 2026-08-24 · `8b39a083`
 
