@@ -55,13 +55,12 @@ describe('F3 — ombor raqamlashtirish `warehousenumbering` ruxsatida', () => {
   });
 
   /**
-   * Jonli bazadagi MAVJUD shablon rollari yangi entity qatorini seed'dan
-   * olmaydi — faqat topup orqali. Ro'yxatdan tushib qolsa, funksiya kodda
-   * tayyor turadi-yu, jonlida ombor menejeri 403 olaveradi (storecell'da
-   * bir marta bo'lgan xato-klass). Prod topup'idan keyin bu qator
-   * TOPUP_ENTITIES'dan olib tashlanganda bu test ham birga yangilanadi.
+   * Prod topup 2026-08-23 (F5 deploy) da yugurtirilib tasdiqlangan — shundan
+   * keyin `warehousenumbering` TOPUP_ENTITIES'dan OLIB TASHLANDI (template-
+   * topup qoidasi: ro'yxatda qolsa, jonlida qo'lda bekor qilingan qatorni
+   * keyingi run qaytarib tiriltirishi mumkin edi).
    */
-  it("TOPUP_ENTITIES joriy to'lqinida bor (prod rollarini davolash uchun)", () => {
-    expect(TOPUP_ENTITIES).toContain('warehousenumbering');
+  it("TOPUP_ENTITIES'dan chiqarilgan (prod topup 2026-08-23 da o'tgan)", () => {
+    expect(TOPUP_ENTITIES).not.toContain('warehousenumbering');
   });
 });
