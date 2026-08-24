@@ -1,6 +1,6 @@
 # Omborchi va TSD mijozlari — kontrol, vozvrat, TSD APK
 
-> **Yaratilgan:** 2026-08-23 · **Buyurtmachi:** Ozodbek (egasi) · **Holat:** G1 kutilmoqda
+> **Yaratilgan:** 2026-08-23 · **Buyurtmachi:** Ozodbek (egasi) · **Holat:** G1 KOD TAYYOR (deploy kutilmoqda — egasi «keyinroq» dedi)
 > **Ijro tartibi:** har faza ALOHIDA sessiyada. Agent shu faylni va
 > `docs/plans/2026-08-23-ombor-restrukturizatsiya.md` ni (F-reja) TO'LIQ o'qiydi,
 > O'Z fazasini bajaradi, testlardan o'tkazadi, pastdagi «Hisobotlar»ga yozadi va TO'XTAYDI.
@@ -271,6 +271,98 @@ Ikkala rejani to'liq o'qi (ayniqsa G5 va F7 hisobotlarini). Sen G6 fazasini baja
 > Shablon: **Faza · sana · commit(lar)** — nima qilindi (fayl ro'yxati bilan qisqa),
 > test natijalari (raqamlar), deploy holati (jonli tekshiruv dalili), ochiq qolganlar,
 > keyingi fazaga eslatmalar.
+
+### G1 — Vozvrat pulini kassadan qaytarish · 2026-08-24 · `8b39a083`
+
+**Nima qilindi (backend):**
+- **Yangi endpoint `POST /cashier-sessions/:id/customer-payout`** (controller +
+  `CustomerPayoutSchema`): `RetailDrawerCashOut` ustiga yangi `kind='return_payout'`
+  (hujjat raqami `ВВ-YYYY-#####`) + yangi `salesReturnId` ustuni; bitta
+  Prisma-tranzaksiyada TO'RT iz: (1) hujjat; (2) pul daftari — `CashDesk.balanceMinor`
+  kamayadi, overdraft qo'riqchisi 400 bilan orqaga qaytaradi; (3) mijoz balansi
+  `+summa` (yangi docType `returnPayout`) — **muhim qaror:** `SalesReturn.post()`
+  allaqachon `−sumMinor` yozadi (qarz kamayadi), naqd berilganda o'sha kredit
+  yopilmasa mijoz IKKI marta olardi (qarz kamayishi HAM, pul HAM); (4)
+  `RETURN_PAYOUT` `CashierAuditEvent` (+ kutilgan naqddan oshsa `CASH_OVERDRAWN`).
+- **CAP:** `SalesReturn.payedSumMinor` optimistik qulf bilan (`updateMany where
+  payedSumMinor=<o'qilgan>` → count=0 ⇒ 409) — bitta vozvratni ikki marta to'lab
+  bo'lmaydi, **qisman to'lash mumkin** (`sumMinor` ixtiyoriy, default qolgan qaytim).
+  To'liq to'langaniga urinish / qolgandan katta summa → 400.
+- **Kutilgan-naqd (§8.4):** kod o'zgarishsiz o'z-o'zidan qamraydi — hujjat
+  `retailDrawerCashOut` jadvalida, `collectCashInputs.drawerOutMinor` HAMMA
+  posted qatorlarni yig'adi (kind'dan qat'i nazar). **Z-hisobot:** yangi
+  `returnPayoutMinor` qatori (sof `summarizeCashOut` bucket'i — `other`ga
+  aralashmaydi, `totalMinor`ga kiradi; `buildZReport` input + javob + chek).
+- **`GET /cashier-sessions/unpaid-returns?agentId=`** — post bo'lgan,
+  `payedSumMinor < sumMinor` vozvratlar ro'yxati + jami qaytim; valyutalilar
+  ko'rinadi lekin `payable=false` va jamiga kirmaydi.
+- **G1 chegarasi (rejadagi «ikki valyuta ehtiyoti»):** to'lov FAQAT UZS —
+  kassa UZS bo'lishi `loadOpenShiftForDrawer`da tekshiriladi (mavjud qo'riqchi),
+  valyutali `SalesReturn` OCHIQ 400 oladi. Dollar-payout kelajak ishi.
+- **Ruxsat/kiosk (reja 3-band):** endpointlar ATAYLAB `/cashier-sessions` ostida —
+  kassirning mavjud `cashiersession` view/create ruxsati va kiosk-allowlist'dagi
+  `/cashier-sessions` prefiks qoidasi (methods `*`) ikkalasini allaqachon ochadi;
+  YANGI allowlist qatori kerak bo'lmadi (`cash-out-recipients` bilan bir naqsh).
+- **DUP-02 qamrovi:** `cashier-session.service.ts` yangi balans-yozuvchi —
+  `recompute-counterparty-balances.ts`ga `SOURCE: return-payouts` bloki,
+  `counterparty-balance-sources.ts` reyestri, `counterparty-balance-doc-resolver.ts`
+  (ВВ- yorlig'i) va akt `ACT_DOC_TYPES` + i18n doc-type xaritalari yangilandi.
+  (Qamrov qulfi testi buni o'zi ushladi — qo'riqchi ishlayapti.)
+- **Migratsiya `20260824120000_drawer_cash_out_sales_return`** (idempotent DDL):
+  `retail_drawer_cash_out.sales_return_id` UUID + FK RESTRICT (to'langan
+  vozvratni o'chirib bo'lmaydi — pul izi) + indeks. **Lokal dev bazada
+  (`sherset_v2_dev`) 2 marta yugurtirilib isbotlangan** (ikkinchisi no-op).
+
+**Nima qilindi (POS/web):**
+- `customers-panel.tsx`: «To'lanmagan vozvratlar» bloki (jami qaytim + qator
+  kesimi: raqam, sana, qisman to'langani, qolgani), «To'lash» → summa maydoni
+  (default qolgan qaytim; ortiq summa tugmani o'chiradi) → POST → chek chop
+  (`/print/cash-out/:id?auto=1` payout varianti: MIJOZ nomi + VOZVRAT raqami +
+  «Oldim (mijoz)» imzo qatori) → qarz-raqam va blok invalidate. `sessionId`
+  prop `sotuv/page.tsx`dan.
+- Z-hisobot uch renderer + `/retail/sessions/[id]` ekranida «Vozvrat puli» qatori.
+- i18n ru+uz: `pages.pos.unpaid_returns_*` (7), `pages.z_report.return_payout`,
+  doc-type xaritalari (3 joy).
+
+**Testlar:** yangi `customer-payout.test.ts` 13 (to'liq/qisman to'lov, cap 400,
+poyga 409 + hech narsa yozilmasligi, draft/USD 400, overdraft rollback
+payedSumMinor'ni ham qaytarishi, balans-delta argumentlari, unpaidReturns filtri,
+sof modul: bucket/prefiks/audit) + web panel 4 yangi (blok yo'qligi, ro'yxat+jami,
+to'liq to'lov POST+print, qisman va cap-bloklash). TO'LIQ: **api 621 fayl /
+8624 passed (2 skipped, 0 xato — birinchi parallel yugurishdagi 1 xato flake emas,
+DUP-02 qamrov qo'riqchisi edi va tuzatildi); web 321 fayl / 4262 passed
+(26 skipped)**; turbo typecheck api+web+db yashil; i18n gate'lar yashil;
+pre-push guard/lint gate'lari yashil.
+
+**Deploy holati: KUTILMOQDA** — egasi «Deploy keyinroq» dedi (2026-08-24),
+jonli sinov rejimi: «faqat texnik verify». Push qilingan: `mirfayz` remote,
+branch HEAD `8b39a083`. **Deploy retsepti (F-reja 2.8 + shu faza):**
+1) VPS HEAD holatini TEKSHIR (Davlatbek reset tuzog'i — F5 saboqi!) →
+   `git fetch <mirfayz-url> yacheyka-inventarizatsiya:tmp && git merge --ff-only tmp`;
+2) **Migratsiya:** `prisma db execute --file prisma/migrations/20260824120000_drawer_cash_out_sales_return/migration.sql`
+   → `prisma migrate resolve --applied 20260824120000_drawer_cash_out_sales_return`
+   → `prisma generate`;
+3) `build:web` (nohup, RC poll) → `pm2 restart sherset-v2-web` va **API HAM**
+   (`sherset-v2-api` — api'ga tegilgan);
+4) Texnik verify: sahifalar 200, pm2 error loglar toza, DB'da ustun/indeks bor;
+   funksional zanjir (sinov-vozvrat → POS blok → to'lov → expected-cash −summa →
+   ikkinchi to'lov rad) kassir/egasi tomonidan POS'da.
+⚠️ Bu deploy branchdagi F7 (`afd27a47`) va F8 (`83027bc2`) commitlarini ham olib
+boradi — o'sha sessiyalar F-rejaga hisobot YOZMAGAN, deploy oldidan ularning
+holatini aniqlash kerak (F8 exe-build qadamlari bo'lishi mumkin).
+
+**Ochiq qolganlar / keyingi fazalarga:**
+- Valyutali (USD) vozvrat payout'i qurilmagan (ataylab, G1 chegarasi) — ehtiyoj
+  chiqsa dollar-yashiq (§8.4 USD oqimi) bilan birga alohida ish.
+- `SalesReturn.unpost/cancel` `payedSumMinor`ni TEKSHIRMAYDI (to'langan vozvratni
+  cancel qilish balans/pul izini buzishi mumkin) — hozircha to'lov FK RESTRICT
+  hujjatni himoya qiladi, lekin cancel-yo'lga «to'langan bo'lsa taqiqla»
+  qo'riqchisi G3 da qo'shilsin (vozvrat oqimi o'sha fazada quriladi).
+- G3 bilan bog'lanish nuqtasi tayyor: post bo'lgan vozvrat kassirda avtomatik
+  «to'lanmagan» bo'lib chiqadi (`unpaid-returns` mezoni: posted + qisman/to'lanmagan).
+- Akt/statement'da eski `salesReturn` doc-type yorlig'i i18n xaritalarda YO'Q edi
+  (mening ishimdan oldingi bo'shliq) — raqam chiqadi, tur yorlig'i «—»; kichik
+  follow-up sifatida qo'shsa bo'ladi.
 
 ### G0 — Reja tuzildi · 2026-08-23
 Reja shu sessiyada tuzildi (kassa exe'dan keyingi bosqich: omborchi mijozlari).
