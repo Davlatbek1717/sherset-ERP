@@ -86,10 +86,15 @@ export interface ExistingPermissionRow {
 // `retailcontrol` (G2, 2026-08-24) — kontrol oqimi: warehouse_manager
 // view+update oladi. Prod topup yugurtirilib tasdiqlangach DARHOL olib
 // tashlansin (yuqoridagi qoida).
+// `returnacceptance` (G3, 2026-08-24) — vozvrat qabuli: warehouse_manager
+// view+create oladi. YANGI entity ⇒ hech bir rolda qatori yo'q, «tegilmagan
+// entity» qoidasi uni to'liq o'tkazadi. Prod topup'dan keyin DARHOL olib
+// tashlansin.
 export const TOPUP_ENTITIES: readonly PermissionEntity[] = [
   'storecell',
   'customerorder',
   'retailcontrol',
+  'returnacceptance',
 ];
 
 /**

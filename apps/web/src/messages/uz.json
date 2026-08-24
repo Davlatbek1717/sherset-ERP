@@ -5960,7 +5960,9 @@
       "unassigned_source_hint": "Sanash/skanda yacheykaga kiritilgan tovar avval shu ombordagi qoldiqdan avto-ko'chiriladi. Odatda faqat «Taqsimlanmagan»da yoqiladi.",
       "zones": "Zonalar",
       "zones_hint": "Vergul yoki yangi qator bilan ajrating. Misol: Sovuq, Quruq, Muzlatilgan",
-      "zones_placeholder": "Cold, Frozen, Dry"
+      "zones_placeholder": "Cold, Frozen, Dry",
+      "brak_store": "BRAK ombori",
+      "brak_store_hint": "Vozvrat qabulida «brak» deb belgilangan tovar shu omborga tushadi. Bu ombor kassa kaskadida QATNASHMASLIGI kerak (prioritet bo'sh) — shunda brak sotuv qoldig'iga aralashmaydi."
     },
     "stockTraining": {
       "course": {
@@ -7650,7 +7652,8 @@
       "telegram_no_bot": "Avval Sozlamalar → Telegram'da botni ulang",
       "telegram_unlink": "Telegram uzish",
       "telegram_unlinked": "Telegram uzildi",
-      "unarchive": "Arxivdan chiqarish"
+      "unarchive": "Arxivdan chiqarish",
+      "access_entity_returnacceptance": "Vozvrat qabuli (katta omborchi)"
     },
     "company_settings": {
       "country_section": "Asosiy sozlamalar uchun mamlakat",
@@ -9138,6 +9141,39 @@
       "edit_empty_warning": "Chekda kamida bitta tovar qolishi kerak",
       "qty": "Soni",
       "detail_not_loaded": "Chek tafsiloti hali yuklanmadi"
+    },
+    "omborchi_vozvrat": {
+      "title": "Vozvrat qabuli",
+      "subtitle": "Kassa chekidan qaytgan tovarni qabul qiling: holat, yacheyka va yorliq",
+      "back": "Orqaga",
+      "refresh": "Yangilash",
+      "loading": "Yuklanmoqda...",
+      "load_error": "Cheklarni yuklab bo'lmadi",
+      "search": "Qidirish",
+      "search_placeholder": "Chek raqami yoki mijoz nomi",
+      "receipts_empty": "Chek topilmadi — raqam yoki mijoz nomi bilan qidiring",
+      "items_count": "{count} ta tovar",
+      "good_store": "Sifatli tovar ombori",
+      "store_none": "Tanlanmagan",
+      "brak_store": "BRAK ombori",
+      "brak_store_missing": "BRAK ombori sozlanmagan — ombor kartasida belgilang",
+      "remaining": "Qaytarish mumkin: {remaining} (sotilgan {sold})",
+      "qty": "Soni",
+      "quality_good": "Sifatli",
+      "quality_brak": "Brak",
+      "cell_placeholder": "Yacheyka kodi",
+      "cell_not_found": "Yacheyka topilmadi",
+      "ready_count": "{count} ta qator tayyor",
+      "accept": "Qabul qilish",
+      "accept_hint": "Qabuldan so'ng mijozning qaytim summasi kassirda «to'lanmagan vozvratlar»da chiqadi.",
+      "accept_success": "Qabul qilindi: {docs}",
+      "error_no_rows": "Kamida bitta qatorga son va yacheyka kiriting",
+      "brak": "BRAK",
+      "label_title": "Vozvrat yorliqlari",
+      "label_subtitle": "{count} ta yorliq — tovar shtrixi va yacheyka kodi",
+      "label_print": "Chop etish",
+      "label_close": "Yopish",
+      "label_reprint": "Yorliqlarni qayta ochish"
     },
     "pos": {
       "add": "Qo'shish",

@@ -226,3 +226,21 @@ describe('unassignedSource (F7 — joylashtirish manbai)', () => {
     if (r.success) expect(r.data.unassignedSource).toBe(false);
   });
 });
+
+// G3 — BRAK ombori belgisi (`brakStore`, attributes JSON'iga boradi).
+describe('brakStore (G3 — BRAK ombori)', () => {
+  it('boolean qabul qilinadi; yubormaslik ham mumkin', () => {
+    const r = CreateStoreSchema.safeParse({ name: 'Brak ombori', brakStore: true });
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data.brakStore).toBe(true);
+    const r2 = CreateStoreSchema.safeParse({ name: 'X' });
+    expect(r2.success).toBe(true);
+    if (r2.success) expect(r2.data.brakStore).toBeUndefined();
+  });
+
+  it("update'da false — belgini olib tashlash", () => {
+    const r = UpdateStoreSchema.safeParse({ version: 1, brakStore: false });
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data.brakStore).toBe(false);
+  });
+});

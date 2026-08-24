@@ -300,6 +300,15 @@ export const ROLE_TEMPLATES: Record<RoleTemplateSlug, RoleTemplate> = {
       // testi qulflaydi). Chek RO'YXATI/DETALINI ko'rishga READ_ONLY_BASE
       // default'idagi `retailsale.view = ALL` yetadi.
       grant(['retailcontrol'], { view: 'ALL', update: 'ALL' }),
+      // G3 (2026-08-24) — vozvrat QABULI: chekni ochish (`view`) va ВП
+      // hujjatini yaratib o'tkazish (`create`). Oddiy omborchi (`storekeeper`)
+      // ATAYLAB OLMAYDI: qabul mijoz balansiga va (G1 orqali) kassadan pul
+      // chiqishiga olib keladi — bu katta omborchining qarori
+      // (`return-acceptance-permission.test.ts` qulflaydi). Qabul qilingan
+      // hujjatlar RO'YXATINI ko'rishga READ_ONLY_BASE'dagi `salesreturn.view`
+      // yetadi; `salesreturn.create/approve` ATAYLAB berilmaydi — u butun
+      // `/sales-returns` modulini (mass-edit, delete, ixtiyoriy narx) ochardi.
+      grant(['returnacceptance'], { view: 'ALL', create: 'ALL' }),
       grant(['product', 'variant', 'bundle', 'productfolder'], { view: 'ALL', update: 'ALL' }),
       // Yig'ish/jo'natish — realizatsiyani tasdiqlaydi, lekin YARATMAYDI.
       grant(['demand'], { view: 'ALL', update: 'ALL', approve: 'ALL', print: 'ALL' }),
@@ -433,8 +442,18 @@ export const ROLE_TEMPLATES: Record<RoleTemplateSlug, RoleTemplate> = {
         print: 'ALL',
       }),
       grant(['inventory'], { view: 'ALL', create: 'ALL', update: 'ALL', print: 'ALL' }),
-      // Qabulni ko'radi va yopadi, lekin ta'minot hujjatini YARATMAYDI.
-      grant(['supply'], { view: 'ALL', update: 'ALL', print: 'ALL' }),
+      // 🔴 G3 (2026-08-24) — `supply` OLIB TASHLANDI. Egasining qoidasi
+      // (omborchi-tsd-mijozlar rejasi, 1-bo'lim): «Ombor xodimlari narx
+      // ko'rmaydi; KIRIM NARXI faqat katta omborchiga». Ta'minot hujjati
+      // aynan kirim narxini ko'rsatadi, ya'ni `supply.view` shu qoidaning
+      // to'g'ridan-to'g'ri buzilishi edi. Kirim narxi endi FAQAT
+      // `warehouse_manager` da (PURCHASE_DOCS) — `supply-price-visibility.test.ts`
+      // ikkala tomonni ham qulflaydi.
+      //
+      // ⚠️ Bu SHABLON o'zgarishi: jonli rollarga o'z-o'zidan tatbiq
+      // BO'LMAYDI (topup faqat QO'SHADI). Jonli «Omborchi» rolidan
+      // `Ta'minot` qatorlarini egasi rol matritsasidan olib tashlaydi —
+      // G3 hisobotidagi deploy retseptiga qarang.
       grant(['product', 'productfolder', 'variant', 'bundle', 'uom'], { view: 'ALL' }),
       grant(['store'], { view: 'ALL' }),
       // TZ v3 §3: yacheyka amallari (bog'lash/sanash) omborchining asosiy ishi —

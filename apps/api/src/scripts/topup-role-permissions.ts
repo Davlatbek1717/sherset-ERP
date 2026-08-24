@@ -109,6 +109,7 @@ const NEW_ENTITIES = [
   'cashiersession',
   'retailsale',
   'retailcontrol',
+  'returnacceptance',
   'saleschannel',
   'onlineorder',
   'pipeline',

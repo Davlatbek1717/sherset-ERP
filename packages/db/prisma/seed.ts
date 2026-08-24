@@ -126,6 +126,7 @@ async function main(): Promise<void> {
     'cashiersession',
     'retailsale',
     'retailcontrol',
+    'returnacceptance',
     'saleschannel',
     'onlineorder',
     // CRM

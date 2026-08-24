@@ -320,6 +320,7 @@ export class PermissionsService {
       'cashiersession',
       'retailsale',
       'retailcontrol',
+      'returnacceptance',
       'saleschannel',
       'onlineorder',
       'pipeline',

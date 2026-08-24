@@ -67,6 +67,11 @@ export const CreateStoreSchema = z.object({
   // bilan bir naqsh: attributes JSON'ida (`__unassignedSource`) saqlanadi,
   // servis o'qishda top-level maydonga ko'taradi.
   unassignedSource: z.coerce.boolean().optional(),
+  // G3 — «BRAK ombori»: vozvrat qabulida brak deb belgilangan tovar shu
+  // omborga tushadi. Bu ombor kassa kaskadida QATNASHMASLIGI kerak
+  // (`posPriority` = null), shunda brak sotuv qoldig'iga aralashmaydi.
+  // `unassignedSource` bilan bir naqsh (`__brakStore`, migratsiya yo'q).
+  brakStore: z.coerce.boolean().optional(),
   zones: z.array(z.string().min(1).max(100)).max(50).default([]),
   slots: z.array(z.string().min(1).max(100)).max(100).default([]),
   attributes: z.record(z.string(), z.unknown()).optional(),

@@ -6720,6 +6720,12 @@ model SalesReturn {
   projectId             String? @map("project_id") @db.Uuid
   demandId              String? @map("demand_id") @db.Uuid // original shipment (optional)
   customerOrderId       String? @map("customer_order_id") @db.Uuid // original CO (optional)
+  /// G3 (2026-08-24) — «manba hujjat» kassa cheki bo'lgan holat. POS sotuvi
+  /// `Demand` YARATMAYDI (u `RetailSale`), shuning uchun `demandId` bu yo'lni
+  /// ifodalay olmaydi. Faqat ASL chekka (mirror EMAS) bog'lanadi; qaytarish
+  /// cap'i shu chek bo'yicha hisoblanadi: sotilgan − POS mirror qaytarishlari
+  /// − shu chekka bog'langan avvalgi (bekor qilinmagan) vozvratlar.
+  retailSaleId          String? @map("retail_sale_id") @db.Uuid
 
   /// moysklad «Статус» — account-defined custom status (State row,
   /// entityType="salesreturn"), mirroring PurchaseReturn.statusId. Orthogonal
@@ -6773,6 +6779,8 @@ model SalesReturn {
   demand              Demand?               @relation(fields: [demandId], references: [id], onDelete: SetNull)
   customerOrder       CustomerOrder?        @relation(fields: [customerOrderId], references: [id], onDelete: SetNull)
   status              State?                @relation("SalesReturnStatus", fields: [statusId], references: [id], onDelete: SetNull)
+  /// G3 — manba kassa cheki (`retailSaleId`).
+  retailSale          RetailSale?           @relation("SalesReturnFromRetailSale", fields: [retailSaleId], references: [id], onDelete: SetNull)
   positions           SalesReturnPosition[]
   /// G1 — kassadan qaytarilgan pul hujjatlari (`kind='return_payout'`).
   drawerPayouts       RetailDrawerCashOut[] @relation("RetailDrawerOutSalesReturn")
@@ -6783,6 +6791,8 @@ model SalesReturn {
   @@index([accountId, storeId, applicable])
   @@index([accountId, demandId])
   @@index([accountId, customerOrderId])
+  // G3 — chek bo'yicha qaytarish cap'i (har qabul oqimida o'qiladi).
+  @@index([accountId, retailSaleId])
   @@index([accountId, moment(sort: Desc)])
   @@index([accountId, updatedAt(sort: Desc)])
   @@index([accountId, ownerId])
@@ -8492,6 +8502,8 @@ model RetailSale {
   positions           RetailSalePosition[]
   payments            RetailSalePayment[]
   retailSalesReturns  RetailSalesReturn[]  @relation("RetailSalesReturnSource")
+  /// G3 — shu chekdan omborda qabul qilingan vozvratlar (ВП- hujjatlari).
+  salesReturns        SalesReturn[]        @relation("SalesReturnFromRetailSale")
 
   @@unique([accountId, name])
   @@index([accountId, sessionId, state])

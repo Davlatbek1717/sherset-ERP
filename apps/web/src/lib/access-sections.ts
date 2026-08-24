@@ -197,6 +197,8 @@ export const ACCESS_SECTIONS: AccessSection[] = [
       // bo'lmasa admin bu ruxsatni hech qaysi ekrandan bera/ola olmasdi
       // (storecell'dagi I4 saboqlari bilan bir klass).
       dict('retailcontrol', card('access_entity_retailcontrol')),
+      // G3 (2026-08-24): vozvrat qabuli — katta omborchi ekrani.
+      dict('returnacceptance', card('access_entity_returnacceptance')),
     ],
   },
   {

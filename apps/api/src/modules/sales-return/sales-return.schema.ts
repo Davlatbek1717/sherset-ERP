@@ -55,6 +55,9 @@ export const CreateSalesReturnSchema = z.object({
   storeId: z.string().uuid(),
   demandId: z.string().uuid().nullish(),
   customerOrderId: z.string().uuid().nullish(),
+  // G3 — manba KASSA CHEKI (POS sotuvi `Demand` yaratmaydi). Faqat ASL chek
+  // (mirror emas) qabul qilinadi; create() shu shartni tekshiradi.
+  retailSaleId: z.string().uuid().nullish(),
   // moysklad parity — Канал продаж / Договор / Проект (optional FK refs).
   salesChannelId: z.string().uuid().nullish(),
   contractId: z.string().uuid().nullish(),
@@ -108,6 +111,38 @@ export const CreateFromDemandSchema = z.object({
   reason: z.string().max(4000).nullish(),
 });
 export type CreateFromDemandInput = z.infer<typeof CreateFromDemandSchema>;
+
+/**
+ * G3 — vozvrat qabul oqimi (katta omborchi ekrani).
+ *
+ * `cellId` HAR qatorda MAJBURIY: qabulning butun ma'nosi tovarni aniq
+ * yacheykaga qo'yish va unga yorliq bosish. Yacheyka qaysi omborda ekani
+ * hujjatni ham, sifat/brak tasnifini ham belgilaydi (`__brakStore`).
+ */
+export const AcceptReturnSchema = z.object({
+  positions: z
+    .array(
+      z.object({
+        productId: z.string().uuid(),
+        quantity: z.coerce
+          .string()
+          .regex(/^\d+(\.\d{1,6})?$/, 'quantity must be a positive decimal'),
+        cellId: z.string().uuid(),
+      }),
+    )
+    .min(1, 'Kamida 1 ta qator'),
+  reason: z.string().max(4000).nullish(),
+  /** Standart bo'yicha darhol o'tkaziladi — omborchi uchun bitta amal. */
+  post: z.boolean().default(true),
+});
+export type AcceptReturnInput = z.infer<typeof AcceptReturnSchema>;
+
+export const AcceptanceReceiptsFilterSchema = z.object({
+  /** Chek raqami yoki mijoz nomi bo'yicha qidiruv. */
+  q: z.string().max(100).optional(),
+  agentId: z.string().uuid().optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+});
 
 const boolFromString = z
   .union([z.boolean(), z.string()])

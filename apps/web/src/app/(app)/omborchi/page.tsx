@@ -11,6 +11,7 @@ import {
   Clock,
   ExternalLink,
   Package,
+  PackageCheck,
   Printer,
   RefreshCw,
   ScanBarcode,
@@ -352,6 +353,16 @@ export default function OmborchiPage() {
             >
               <ClipboardCheck className="h-3.5 w-3.5" />
               Kontrol
+            </Link>
+          )}
+          {/* G3 — vozvrat qabuli ham faqat katta omborchida (`returnacceptance`). */}
+          {can('returnacceptance', 'view') && (
+            <Link
+              href="/omborchi/vozvrat"
+              className="flex items-center gap-1.5 rounded-lg border border-emerald-300 px-3 py-2 text-xs font-semibold text-emerald-700 hover:bg-emerald-50"
+            >
+              <PackageCheck className="h-3.5 w-3.5" />
+              Vozvrat qabuli
             </Link>
           )}
           <a

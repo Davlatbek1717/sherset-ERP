@@ -457,6 +457,25 @@ export class SalesReturnService {
       }
     }
 
+    // G3 «Manba chek» butunligi: chek SHU tenantniki, o'tkazilgan va ASL
+    // (mirror emas) bo'lishi shart. Mirror chek tovarni qoldiqqa allaqachon
+    // qaytargan — uning ustiga ВП yozish qoldiqni ikki marta oshirardi.
+    if (parsed.retailSaleId) {
+      const receipt = await this.prisma.client.retailSale.findFirst({
+        where: { id: parsed.retailSaleId, accountId, deletedAt: null },
+        select: { state: true, refundedFromId: true },
+      });
+      if (!receipt) throw new BadRequestException('Manba chek topilmadi');
+      if (receipt.refundedFromId) {
+        throw new BadRequestException('Manba chek qaytarish (mirror) cheki bo‘la olmaydi');
+      }
+      if (receipt.state !== 'posted' && receipt.state !== 'refunded') {
+        throw new BadRequestException(
+          `Manba chek '${receipt.state}' holatida — faqat o'tkazilgan chek`,
+        );
+      }
+    }
+
     const name = await this.nextName(accountId);
 
     const attributes = await this.attrs.validateAndNormalize(
@@ -493,6 +512,7 @@ export class SalesReturnService {
           storeId: parsed.storeId,
           demandId: parsed.demandId ?? null,
           customerOrderId: parsed.customerOrderId ?? null,
+          retailSaleId: parsed.retailSaleId ?? null,
           salesChannelId: parsed.salesChannelId ?? null,
           contractId: parsed.contractId ?? null,
           projectId: parsed.projectId ?? null,
@@ -1309,6 +1329,8 @@ export class SalesReturnService {
           );
         }
 
+        await this.assertNotPaid(tx, accountId, id, 'unpost');
+
         const deltas: StockDelta[] = existing.positions.map((p) => {
           // Reverse the WEIGHTED-AVERAGE cost frozen at post-time (p.costMinor),
           // not the sale price — cost zero-sum with post().
@@ -1431,6 +1453,8 @@ export class SalesReturnService {
           throw new ConflictException("Qaytarish holati o'zgargan (allaqachon o'zgartirilgan)");
         }
 
+        await this.assertNotPaid(tx, accountId, id, 'cancel');
+
         const wasApplicable = existing.applicable;
 
         if (wasApplicable) {
@@ -1535,6 +1559,41 @@ export class SalesReturnService {
   // =====================================================================
   // helpers
   // =====================================================================
+
+  /**
+   * G3 (G1 hisobotidagi ochiq band) — TO'LANGAN qaytarishni orqaga qaytarib
+   * bo'lmaydi.
+   *
+   * G1 kassadan naqd chiqishini `SalesReturn.payedSumMinor` bilan cheklaydi,
+   * lekin `unpost`/`cancel` bu ustunga QARAMASDI. Natijada: mijozga pul
+   * berilgan vozvratni bekor qilish qoldiqni ham, mijoz balansini ham
+   * (`−sumMinor` kreditini) qaytarib tashlardi — kassadan chiqqan pul esa
+   * hech qanday hujjat bilan qoplanmay qolardi (pul izi FK RESTRICT bilan
+   * saqlanadi, lekin hisob buziladi). To'lov QAYTARILGACH (chiqim hujjati
+   * bekor qilingach) bekor qilish yana ochiladi.
+   *
+   * Tekshiruv TRANZAKSIYA ICHIDA va holat claim'idan KEYIN — parallel ketayotgan
+   * to'lov (`customer-payout`) bilan poyga bo'lmasin: to'lov ham
+   * `payedSumMinor`ni optimistik qulf bilan yozadi.
+   */
+  private async assertNotPaid(
+    tx: Prisma.TransactionClient,
+    accountId: string,
+    id: string,
+    action: 'unpost' | 'cancel',
+  ): Promise<void> {
+    const row = await tx.salesReturn.findFirst({
+      where: { id, accountId },
+      select: { payedSumMinor: true },
+    });
+    if (row && row.payedSumMinor > 0n) {
+      throw new BadRequestException(
+        action === 'cancel'
+          ? "Bu qaytarish bo'yicha kassadan pul berilgan — avval to'lov hujjatini bekor qiling, keyin qaytarishni bekor qilish mumkin"
+          : "Bu qaytarish bo'yicha kassadan pul berilgan — o'tkazishni bekor qilib bo'lmaydi",
+      );
+    }
+  }
 
   private parseCreate(raw: unknown): CreateSalesReturnInput {
     const r = CreateSalesReturnSchema.safeParse(raw);

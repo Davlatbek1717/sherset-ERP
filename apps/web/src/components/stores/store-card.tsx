@@ -81,6 +81,8 @@ interface StoreDetail {
   posPriority: number | null;
   /** F7 — joylashtirish manbai: sanashda yacheykaga kirgan tovar shu ombordan ko'chadi. */
   unassignedSource: boolean;
+  /** G3 — BRAK ombori (vozvrat qabulida brak tovar shu yerga tushadi). */
+  brakStore: boolean;
   archived: boolean;
   updatedAt: string;
 }
@@ -177,6 +179,7 @@ export function StoreCard({
   const [posPriority, setPosPriority] = useState('');
   // F7 — «Joylashtirish manbai» (Taqsimlanmagan hovuzi) belgisi.
   const [unassignedSource, setUnassignedSource] = useState(false);
+  const [brakStore, setBrakStore] = useState(false);
   // «Владелец» cluster (owner employee / department / Общий доступ) — moysklad
   // shows it top-right and edits it via the owner popover.
   const [ownerAccess, setOwnerAccess] = useState<OwnerAccessValue>({
@@ -248,6 +251,7 @@ export function StoreCard({
     setCellInventory(data.cellInventory);
     setPosPriority(data.posPriority == null ? '' : String(data.posPriority));
     setUnassignedSource(data.unassignedSource === true);
+    setBrakStore(data.brakStore === true);
     setOwnerAccess({
       ownerId: data.owner?.id ?? null,
       ownerLabel: data.owner?.name ?? '',
@@ -282,6 +286,8 @@ export function StoreCard({
       posPriority: Number.isInteger(posPriorityNum) && posPriorityNum > 0 ? posPriorityNum : null,
       // F7: server `false` da `__unassignedSource` kalitini o'chiradi.
       unassignedSource,
+      // G3: server `false` da `__brakStore` kalitini o'chiradi.
+      brakStore,
     };
   };
 
@@ -630,6 +636,18 @@ export function StoreCard({
             <p className="mt-1 text-[11px] text-[var(--ms-text-muted)]">
               {t('unassigned_source_hint')}
             </p>
+          </div>
+
+          <div>
+            <label className="inline-flex cursor-pointer items-center gap-2 text-[#222222] text-[12px]">
+              <Checkbox
+                checked={brakStore}
+                onCheckedChange={(v) => setBrakStore(!!v)}
+                data-test-id="field-brak-store"
+              />
+              <span>{t('brak_store')}</span>
+            </label>
+            <p className="mt-1 text-[11px] text-[var(--ms-text-muted)]">{t('brak_store_hint')}</p>
           </div>
 
           <div>

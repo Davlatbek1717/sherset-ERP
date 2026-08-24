@@ -103,6 +103,11 @@ export type PermissionEntity =
   // slug, chunki `retailsale.view/update` oddiy omborchida (storekeeper) ham
   // bor — kontrol esa FAQAT katta omborchiga ochilishi kerak (egasi qoidasi)
   | 'retailcontrol'
+  // G3 (2026-08-24) — kassa chekidan VOZVRAT QABULI (katta omborchi ekrani).
+  // Alohida slug, chunki oqim ВП hujjatini yaratib O'TKAZADI: umumiy
+  // `salesreturn.create`+`approve` berish butun `/sales-returns` modulini
+  // (mass-edit, delete, ixtiyoriy narxda hujjat) omborchiga ochib yuborardi
+  | 'returnacceptance'
   | 'saleschannel'
   | 'onlineorder'
   // CRM
@@ -237,6 +242,7 @@ export const PERMISSION_ENTITIES: readonly PermissionEntity[] = [
   'cashiersession',
   'retailsale',
   'retailcontrol',
+  'returnacceptance',
   'saleschannel',
   'onlineorder',
   // CRM
