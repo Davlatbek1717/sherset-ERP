@@ -334,192 +334,187 @@ export default function OmborchiVozvratPage() {
         )}
 
         {/* ── 2-qadam: qatorlar, holat, yacheyka ──────────────────────────── */}
-        {saleId && (
-          <>
-            {source.error ? (
-              <div className="rounded-2xl border-2 border-dashed border-red-200 py-12 text-center">
-                <p className="text-sm text-red-500">{(source.error as Error).message}</p>
-              </div>
-            ) : source.isLoading || !source.data ? (
-              <div className="py-8 text-center text-sm text-[var(--ms-text-muted)]">
-                {t('loading')}
-              </div>
-            ) : (
-              <>
-                <div className="rounded-xl border border-[var(--ms-border-default)] bg-[var(--ms-bg-surface)] px-4 py-3">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-bold text-[var(--ms-text-primary)]">
-                      {source.data.sale.name}
-                    </span>
-                    <span className="text-sm tabular-nums text-[var(--ms-text-secondary)]">
-                      {formatMoney(BigInt(source.data.sale.sumMinor))}
-                    </span>
-                    <span className="text-xs text-[var(--ms-text-muted)]">
-                      {fmtDate(source.data.sale.moment)}
-                      {source.data.sale.agent ? ` · ${source.data.sale.agent.name}` : ''}
-                    </span>
-                  </div>
-                  <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
-                    <span className="text-[var(--ms-text-muted)]">{t('good_store')}:</span>
-                    <NativeSelect
-                      value={effectiveGoodStore ?? ''}
-                      onChange={(e) => setGoodStoreId(e.target.value || null)}
-                      aria-label={t('good_store')}
-                      data-test-id="vozvrat-good-store"
-                      className="w-56"
-                      selectClassName="min-h-[44px] text-xs"
-                    >
-                      <option value="">{t('store_none')}</option>
-                      {targets.data?.stores
-                        .filter((s) => !s.brak)
-                        .map((s) => (
-                          <option key={s.id} value={s.id}>
-                            {s.name}
-                          </option>
-                        ))}
-                    </NativeSelect>
-                    {brakStoreId ? (
-                      <span className="rounded-full bg-amber-50 px-2 py-1 font-semibold text-amber-700">
-                        {t('brak_store')}:{' '}
-                        {targets.data?.stores.find((s) => s.id === brakStoreId)?.name}
-                      </span>
-                    ) : (
-                      <span className="rounded-full bg-red-50 px-2 py-1 font-semibold text-red-600">
-                        {t('brak_store_missing')}
-                      </span>
-                    )}
-                  </div>
-                </div>
-
-                <div className="divide-y divide-[var(--ms-border-default)] rounded-xl border border-[var(--ms-border-default)]">
-                  {source.data.lines.map((line) => {
-                    const st = lines[line.productId] ?? {
-                      qty: '',
-                      brak: false,
-                      cellId: null,
-                      cellName: '',
-                      cellInput: '',
-                    };
-                    const exhausted = Number(line.remainingQty) <= 0;
-                    return (
-                      <div
-                        key={line.productId}
-                        data-test-id="vozvrat-line"
-                        className={`space-y-2 px-3 py-3 ${exhausted ? 'opacity-45' : ''}`}
-                      >
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                          <span className="font-medium text-[var(--ms-text-primary)]">
-                            {line.productName}
-                          </span>
-                          <span className="text-xs tabular-nums text-[var(--ms-text-muted)]">
-                            {t('remaining', {
-                              remaining: line.remainingQty,
-                              sold: line.soldQty,
-                            })}
-                          </span>
-                        </div>
-
-                        {!exhausted && (
-                          <div className="flex flex-wrap items-center gap-2">
-                            <Input
-                              type="number"
-                              min="0"
-                              step="any"
-                              value={st.qty}
-                              onChange={(e) => setLine(line.productId, { qty: e.target.value })}
-                              placeholder={t('qty')}
-                              aria-label={t('qty')}
-                              className="h-11 w-24 text-right tabular-nums"
-                              data-test-id="vozvrat-qty"
-                            />
-
-                            <div className="flex overflow-hidden rounded-lg border border-[var(--ms-border-default)]">
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  setLine(line.productId, {
-                                    brak: false,
-                                    cellId: null,
-                                    cellName: '',
-                                    cellInput: '',
-                                  })
-                                }
-                                data-test-id="vozvrat-quality-good"
-                                className={`min-h-[44px] px-3 text-xs font-semibold ${
-                                  st.brak
-                                    ? 'text-[var(--ms-text-muted)] hover:bg-[var(--ms-bg-hover)]'
-                                    : 'bg-emerald-500 text-white'
-                                }`}
-                              >
-                                {t('quality_good')}
-                              </button>
-                              <button
-                                type="button"
-                                disabled={!brakStoreId}
-                                onClick={() =>
-                                  setLine(line.productId, {
-                                    brak: true,
-                                    cellId: null,
-                                    cellName: '',
-                                    cellInput: '',
-                                  })
-                                }
-                                data-test-id="vozvrat-quality-brak"
-                                className={`min-h-[44px] px-3 text-xs font-semibold disabled:opacity-40 ${
-                                  st.brak
-                                    ? 'bg-amber-500 text-white'
-                                    : 'text-[var(--ms-text-muted)] hover:bg-[var(--ms-bg-hover)]'
-                                }`}
-                              >
-                                {t('quality_brak')}
-                              </button>
-                            </div>
-
-                            <Input
-                              value={st.cellInput}
-                              onChange={(e) =>
-                                applyCellCode(line.productId, st.brak, e.target.value)
-                              }
-                              placeholder={t('cell_placeholder')}
-                              aria-label={t('cell_placeholder')}
-                              className="h-11 w-44 tabular-nums"
-                              data-test-id="vozvrat-cell"
-                            />
-                            {st.cellId ? (
-                              <span className="rounded-full bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-700">
-                                {st.cellName}
-                              </span>
-                            ) : st.cellInput ? (
-                              <span className="text-xs text-red-500">{t('cell_not_found')}</span>
-                            ) : null}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-
-                <div className="flex items-center justify-end gap-3">
-                  <span className="text-xs text-[var(--ms-text-muted)]">
-                    {t('ready_count', { count: readyCount })}
+        {saleId &&
+          (source.error ? (
+            <div className="rounded-2xl border-2 border-dashed border-red-200 py-12 text-center">
+              <p className="text-sm text-red-500">{(source.error as Error).message}</p>
+            </div>
+          ) : source.isLoading || !source.data ? (
+            <div className="py-8 text-center text-sm text-[var(--ms-text-muted)]">
+              {t('loading')}
+            </div>
+          ) : (
+            <>
+              <div className="rounded-xl border border-[var(--ms-border-default)] bg-[var(--ms-bg-surface)] px-4 py-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="font-bold text-[var(--ms-text-primary)]">
+                    {source.data.sale.name}
                   </span>
-                  <button
-                    type="button"
-                    onClick={() => acceptMut.mutate()}
-                    disabled={acceptMut.isPending || readyCount === 0}
-                    data-test-id="vozvrat-accept"
-                    className="flex min-h-[44px] items-center gap-1.5 rounded-lg bg-emerald-500 px-5 text-sm font-semibold text-white hover:bg-emerald-600 disabled:opacity-50"
-                  >
-                    <PackageCheck className="h-4 w-4" />
-                    {acceptMut.isPending ? '…' : t('accept')}
-                  </button>
+                  <span className="text-sm tabular-nums text-[var(--ms-text-secondary)]">
+                    {formatMoney(BigInt(source.data.sale.sumMinor))}
+                  </span>
+                  <span className="text-xs text-[var(--ms-text-muted)]">
+                    {fmtDate(source.data.sale.moment)}
+                    {source.data.sale.agent ? ` · ${source.data.sale.agent.name}` : ''}
+                  </span>
                 </div>
+                <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+                  <span className="text-[var(--ms-text-muted)]">{t('good_store')}:</span>
+                  <NativeSelect
+                    value={effectiveGoodStore ?? ''}
+                    onChange={(e) => setGoodStoreId(e.target.value || null)}
+                    aria-label={t('good_store')}
+                    data-test-id="vozvrat-good-store"
+                    className="w-56"
+                    selectClassName="min-h-[44px] text-xs"
+                  >
+                    <option value="">{t('store_none')}</option>
+                    {targets.data?.stores
+                      .filter((s) => !s.brak)
+                      .map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.name}
+                        </option>
+                      ))}
+                  </NativeSelect>
+                  {brakStoreId ? (
+                    <span className="rounded-full bg-amber-50 px-2 py-1 font-semibold text-amber-700">
+                      {t('brak_store')}:{' '}
+                      {targets.data?.stores.find((s) => s.id === brakStoreId)?.name}
+                    </span>
+                  ) : (
+                    <span className="rounded-full bg-red-50 px-2 py-1 font-semibold text-red-600">
+                      {t('brak_store_missing')}
+                    </span>
+                  )}
+                </div>
+              </div>
 
-                <p className="text-right text-xs text-[var(--ms-text-muted)]">{t('accept_hint')}</p>
-              </>
-            )}
-          </>
-        )}
+              <div className="divide-y divide-[var(--ms-border-default)] rounded-xl border border-[var(--ms-border-default)]">
+                {source.data.lines.map((line) => {
+                  const st = lines[line.productId] ?? {
+                    qty: '',
+                    brak: false,
+                    cellId: null,
+                    cellName: '',
+                    cellInput: '',
+                  };
+                  const exhausted = Number(line.remainingQty) <= 0;
+                  return (
+                    <div
+                      key={line.productId}
+                      data-test-id="vozvrat-line"
+                      className={`space-y-2 px-3 py-3 ${exhausted ? 'opacity-45' : ''}`}
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span className="font-medium text-[var(--ms-text-primary)]">
+                          {line.productName}
+                        </span>
+                        <span className="text-xs tabular-nums text-[var(--ms-text-muted)]">
+                          {t('remaining', {
+                            remaining: line.remainingQty,
+                            sold: line.soldQty,
+                          })}
+                        </span>
+                      </div>
+
+                      {!exhausted && (
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Input
+                            type="number"
+                            min="0"
+                            step="any"
+                            value={st.qty}
+                            onChange={(e) => setLine(line.productId, { qty: e.target.value })}
+                            placeholder={t('qty')}
+                            aria-label={t('qty')}
+                            className="h-11 w-24 text-right tabular-nums"
+                            data-test-id="vozvrat-qty"
+                          />
+
+                          <div className="flex overflow-hidden rounded-lg border border-[var(--ms-border-default)]">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setLine(line.productId, {
+                                  brak: false,
+                                  cellId: null,
+                                  cellName: '',
+                                  cellInput: '',
+                                })
+                              }
+                              data-test-id="vozvrat-quality-good"
+                              className={`min-h-[44px] px-3 text-xs font-semibold ${
+                                st.brak
+                                  ? 'text-[var(--ms-text-muted)] hover:bg-[var(--ms-bg-hover)]'
+                                  : 'bg-emerald-500 text-white'
+                              }`}
+                            >
+                              {t('quality_good')}
+                            </button>
+                            <button
+                              type="button"
+                              disabled={!brakStoreId}
+                              onClick={() =>
+                                setLine(line.productId, {
+                                  brak: true,
+                                  cellId: null,
+                                  cellName: '',
+                                  cellInput: '',
+                                })
+                              }
+                              data-test-id="vozvrat-quality-brak"
+                              className={`min-h-[44px] px-3 text-xs font-semibold disabled:opacity-40 ${
+                                st.brak
+                                  ? 'bg-amber-500 text-white'
+                                  : 'text-[var(--ms-text-muted)] hover:bg-[var(--ms-bg-hover)]'
+                              }`}
+                            >
+                              {t('quality_brak')}
+                            </button>
+                          </div>
+
+                          <Input
+                            value={st.cellInput}
+                            onChange={(e) => applyCellCode(line.productId, st.brak, e.target.value)}
+                            placeholder={t('cell_placeholder')}
+                            aria-label={t('cell_placeholder')}
+                            className="h-11 w-44 tabular-nums"
+                            data-test-id="vozvrat-cell"
+                          />
+                          {st.cellId ? (
+                            <span className="rounded-full bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-700">
+                              {st.cellName}
+                            </span>
+                          ) : st.cellInput ? (
+                            <span className="text-xs text-red-500">{t('cell_not_found')}</span>
+                          ) : null}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="flex items-center justify-end gap-3">
+                <span className="text-xs text-[var(--ms-text-muted)]">
+                  {t('ready_count', { count: readyCount })}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => acceptMut.mutate()}
+                  disabled={acceptMut.isPending || readyCount === 0}
+                  data-test-id="vozvrat-accept"
+                  className="flex min-h-[44px] items-center gap-1.5 rounded-lg bg-emerald-500 px-5 text-sm font-semibold text-white hover:bg-emerald-600 disabled:opacity-50"
+                >
+                  <PackageCheck className="h-4 w-4" />
+                  {acceptMut.isPending ? '…' : t('accept')}
+                </button>
+              </div>
+
+              <p className="text-right text-xs text-[var(--ms-text-muted)]">{t('accept_hint')}</p>
+            </>
+          ))}
       </div>
 
       {labels && labels.length > 0 && (
