@@ -1,6 +1,6 @@
 # Omborchi va TSD mijozlari — kontrol, vozvrat, TSD APK
 
-> **Yaratilgan:** 2026-08-23 · **Buyurtmachi:** Ozodbek (egasi) · **Holat:** G1+G2+G3 KOD TAYYOR · **G4 1-BOSQICH TAYYOR** (yadro + migratsiya + 07 bayrog'i; `retail-sale.service` simlari — 2-bosqich) (deploy kutilmoqda — egasi «keyinroq» dedi VA 2026-08-24 hodisasi hal bo'lmagan: `docs/plans/2026-08-24-split-kassa-hodisasi.md`; deploy'da `topup-role-permissions.ts` MAJBURIY — `retailcontrol` + `returnacceptance`; ikkita migratsiya: G1 `…120000_drawer_cash_out_sales_return`, G3 `…170000_sales_return_retail_sale`)
+> **Yaratilgan:** 2026-08-23 · **Buyurtmachi:** Ozodbek (egasi) · **Holat:** G1+G2+G3 KOD TAYYOR · **G4 2-BOSQICH (backend) TAYYOR — kassa endi ko'p ombordan avtomatik sotadi; POS UI qoldi** (yadro + migratsiya + 07 bayrog'i; `retail-sale.service` simlari — 2-bosqich) (deploy kutilmoqda — egasi «keyinroq» dedi VA 2026-08-24 hodisasi hal bo'lmagan: `docs/plans/2026-08-24-split-kassa-hodisasi.md`; deploy'da `topup-role-permissions.ts` MAJBURIY — `retailcontrol` + `returnacceptance`; ikkita migratsiya: G1 `…120000_drawer_cash_out_sales_return`, G3 `…170000_sales_return_retail_sale`)
 > **Ijro tartibi:** har faza ALOHIDA sessiyada. Agent shu faylni va
 > `docs/plans/2026-08-23-ombor-restrukturizatsiya.md` ni (F-reja) TO'LIQ o'qiydi,
 > O'Z fazasini bajaradi, testlardan o'tkazadi, pastdagi «Hisobotlar»ga yozadi va TO'XTAYDI.
@@ -401,6 +401,98 @@ Ikkala rejani va docs/plans/2026-08-24-split-kassa-hodisasi.md ni to'liq o'qi (a
 > test natijalari (raqamlar), deploy holati (jonli tekshiruv dalili), ochiq qolganlar,
 > keyingi fazaga eslatmalar.
 
+### G4 · 2a-bosqich — kassa AJRATMADAN ayiradi (backend TUGADI) · 2026-08-25 · `b4c27d24`
+
+**🔴 Bu deploy JONLI XULQNI O'ZGARTIRADI.** 1-bosqichda hech narsa ulanmagan edi;
+endi kassa haqiqatan ham ko'p ombordan avtomatik sotadi. Deploy'dan oldin
+pastdagi «Jonli sozlash» bandini o'qing.
+
+**Ikki tomonlama bog'liqlik javobi (qoida 10):**
+- **Kassa oqimi** — eng katta o'zgarish: `post()` va `sendToPicking` endi
+  yetarlilikni `assertAvailable` bilan emas, TAQSIMOT bilan hal qiladi.
+  Xavf: taqsimot bo'sh qolsa har sotuv 400 bo'lardi. Yopildi — kaskad
+  sozlanmagan/ombor topilmagan holatda `resolveAllocStores` SINTETIK zaxira
+  ombor qaytaradi, ya'ni eski xulq (smena omboridan sotish) saqlanadi; testi bor.
+- **Sanash ishi (H5)** — endi TUZALDI (pastda, `store-only`).
+- **G2 kontrol / G3 vozvrat** — tegilmadi (testlar yashil).
+- **H2/H3** — «POS yeta olmaydigan qoldiq» modeli endi ma'nosini o'zgartirdi,
+  ular YANGILANMAGAN (E5, pastdagi ochiq bandlar).
+
+**Nima qilindi:**
+
+1. **`post()` deltalari AJRATMADAN quriladi** (E3). Ilgari hamma pozitsiya bitta
+   `storeId` olardi va `cellId` umuman yo'q edi. Endi har ajratma → o'z ombori,
+   o'z yacheykasi, o'z `docPositionId` si. **Tannarx har omborning O'Z o'rtachasidan**
+   (ilgari bitta ombornikiga tayanardi — ko'p omborli ayirishda bu boshqa ombor
+   qiymatini yozardi).
+
+2. **🔴 `cellMode: 'store-only'` yacheykasiz ajratmada — egasining savoli shu bilan
+   yopiladi.** Egasi so'ragan edi: «sotilgan tovar yacheyka sonidan ayriladimi yoki
+   qolgan qiymatdanmi?» Javob edi: yacheykadan, chunki delta `cellId`siz ketardi va
+   `stock.service` chiqimni band yacheykalardan KATTA-BIRINCHI o'zi ayirardi.
+   Endi: ajratma yacheykali bo'lsa — AYNAN o'sha yacheyka siljiydi; yacheykasiz
+   bo'lsa — `store-only`, ya'ni **sanalgan yacheykaga TEGILMAYDI**. Ya'ni
+   omborchining 4–5 kunlik sanash ishi endi sotuvlar tufayli buzilmaydi.
+
+3. **`sendToPicking` rezervi ham ajratma bo'yicha** — hold tovar TURGAN omborda
+   yoziladi (ilgari doim kaskadning birinchisida). Aks holda rezerv bir omborda,
+   yechim boshqasida bo'lib, hech qachon bo'shamaydigan hold paydo bo'lardi.
+   Ajratma o'sha yerda SAQLANADI.
+
+4. **Saqlangan ajratma `post()` da USTUVOR.** `sendToPicking` tovarni aynan shu
+   yacheykada band qilgan va omborchi o'sha yerdan yig'gan — qayta rejalashtirsak
+   jismonan olingan joy bilan hisobdan chiqarilgan joy mos kelmay qolardi.
+   Reja faqat saqlangan qatorlar qoplamasa yoki eskirgan bo'lsa quriladi
+   (miqdor + mavjudlik tekshiruvi bilan); ikkala yo'lga ham test bor.
+
+5. **❌ Tasdiq-to'sig'i OLIB TASHLANDI** — `assertAvailableCascade` metodi
+   o'chirildi (o'rnida sabab yozilgan izoh qoldi). 400 endi FAQAT haqiqiy
+   defitsitda va xabari «tizimdagi hech bir omborda yetarli miqdor yo'q»;
+   «bosh omborchi tasdig'i kerak» matni yo'q. `allowNegativeStock` yoqilgan
+   omborda eski erkinlik saqlanadi (qoplanmagan qism asosiy ombordan).
+
+6. **Qulflash** — taqsimotga kiradigan HAMMA ombor `lockBalances` bilan, **ID
+   bo'yicha saralangan** tartibda (deadlock oldini olish). Reja qulflangan
+   `qty − rezerv` dan o'qiydi, ya'ni ikki kassir bir yacheykani ikki marta
+   sotolmaydi.
+
+**Testlar:** F6 ning uchta wiring testi Q1-v2 ga QAYTA YOZILDI (o'chirilmadi):
+«kaskad birinchisidan ayirish» → «tovar turgan ombordan»; «400 + kaskad-reja» →
+«boshqa ombordan avtomatik» + «hech qayerda yetmasa 400». Yangi: yacheykali
+ajratma (cellId + cellMode), bo'linish (ikki delta + ikki qator), BRAK sotilmasligi,
+saqlangan ajratma ustuvorligi va uning yetmagan holati. `retail-sale` moduli
+**39 fayl / 539 test**; TO'LIQ **api 634 fayl / 8901 passed (2 skipped, 0 xato)**; typecheck yashil.
+
+Mock'larga `stockByCell.findMany` va `retailSalePositionAllocation` qo'shildi
+(24 joy) — post() endi shu ikkalasini o'qiydi/yozadi.
+
+**🔴 Jonli sozlash (deploy'dan keyin, egasi qo'lida):**
+1. **Ombor kartasida «Kassa oldidagi ombor» checkbox'ini 07 ga qo'ying.**
+   Busiz «bo'linishda 07 eng oxirida» qoidasi ISHLAMAYDI — tartibni `posPriority`
+   belgilaydi va pp=1 bo'lgan 07 birinchi bo'lib bo'shab ketadi. Test bu tuzoqni
+   izohda qayd etgan.
+2. Kaskadda qatnashishi kerak bo'lgan HAR omborga `posPriority` qo'yilsin —
+   prioritetsiz ombordagi tovarni kassa hech qachon ko'rmaydi.
+3. BRAK ombori yaratilgach unga prioritet BERILMASIN (u baribir istisno, lekin
+   ikki qavat himoya yaxshiroq).
+
+**Ochiq qolganlar (2b):**
+- **POS UI** — kassir pozitsiya qatorida «qayerdan olinadi» ni ko'rishi va
+  o'zgartira olishi (`manual` ustuni tayyor, backend qabul qilishga tayyor emas).
+- **Yig'ish topshiriqlari** (`createPickingTasksForSale`) hamon yacheyka
+  prefiksidan taxmin qiladi — ajratmadan qurilsin.
+- **E5 — H2/H3:** `warehouse-state-core.ts` dagi `needs_approval` bosqichi endi
+  ma'nosiz (POS hamma kaskad omboriga yetadi); reyestrga `__posFrontStore`
+  qatori; H3 qo'riqchisi qayta belgilansin. **Bu bajarilmaguncha
+  `warehouse-state.ts` yolg'on qizil berishi mumkin.**
+- **`cancel()` ajratma qatorlarini o'chirmaydi** — bekor qilingan chekda eski
+  qatorlar qolib ketadi (zararsiz, lekin `store` FK RESTRICT bo'lgani uchun
+  ombor o'chirishni bloklashi mumkin).
+- `retail-stock-cascade.ts` dagi `allocateAcrossStores` ning ishlab turgan
+  chaqiruvchisi qolmadi — G4 to'liq o'tirgach o'chiriladi.
+- **Jonli tekshiruv qilinmagan** ⇒ faza QISMAN (qoida 11): deploy'dan keyin
+  uchma-uch smoke (sinov sotuv → tekshir → cancel) + `warehouse-state.ts` SHART.
+
 ### G4 — Ko'p omborli avto-taqsimot · ⚠️ 1-BOSQICH (2 dan) · 2026-08-25 · `3ebc9ffe`
 
 **Holat: QISMAN (qoida 11).** Bu sessiya ATAYLAB ikkiga bo'lingan: 1-bosqich
@@ -474,7 +566,7 @@ i18n gate'lar yashil (key-existence 15 779 kalit); biome yangi fayllarda xatosiz
 Jonli xulq 1-bosqichda O'ZGARMAYDI — bayroq qo'yilmaguncha va 2-bosqich
 simlanmaguncha kassa avvalgidek ishlaydi.
 
-**2-BOSQICH (qolgan ish — `retail-sale.service.ts` ga tegadi):**
+**2-BOSQICH REJASI (holati pastdagi 2a hisobotida):**
 1. **E3 — `post()` deltalarini AJRATMADAN qurish.** Hozir
    `retail-sale.service.ts:1188–1209` hamma pozitsiyaga bitta `storeId` beradi va
    `cellId` umuman yo'q. Kerak: har ajratma → o'z `storeId` + `cellId`; tannarx
