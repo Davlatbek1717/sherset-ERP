@@ -483,6 +483,45 @@ H0 (bajarildi)
 > (raqamlar), deploy holati (jonli dalil), ochiq qolganlar, keyingi fazaga
 > eslatmalar.
 
+### JONLI O'ZGARISHLAR JURNALI
+
+> Qoida 14: jonli holatga tegilgan har amal SHU YERGA yoziladi (sana, nima,
+> dalil, qaytarish yo'li). H2 reyestri qurilgach u yerga ko'chadi.
+
+**2026-08-24 · Yacheykalarni bitta omborga yig'ish + yetishmayotganlarini yaratish**
+· skript `packages/db/scripts/create-cells.ts` (`5df1bcb0`) + mavjud
+`warehouse-split-revert.ts`
+
+*Sabab:* omborchi javondagi yorliqni skanerlaganda «Kod topilmadi» chiqardi.
+Tekshiruvda ma'lum bo'ldiki yorliqlar to'g'ri, lekin **yacheykalar tizimda
+yaratilmagan**: 1-omborda faqat `01-04` stelaji bor edi (`01-01`, `01-02`,
+`01-03`, `01-05` YO'Q), `01-04` da faqat 1-qavat, `02-04` da faqat 1–2-qavat.
+240 ta tovar mavjud bo'lmagan yacheykaga ishora qilardi.
+
+*Bajarildi (ikkalasi ham DRY-RUN dan keyin):*
+1. **119 ta `01-04-…` yacheyka «Ombor 01» dan «Taqsimlanmagan» ga ko'chirildi**
+   (qoldiq 0 — ledger yozuvi yo'q, docId `bc15470b`). Sabab: kassa faqat
+   prioritetli ombordan (`Taqsimlanmagan`, pp=1) sotadi; boshqa omborda
+   sanalgan tovar sotilmay qolardi — bu aynan 06:46 hodisasining takrori
+   bo'lardi. Endi HAMMA yacheyka bitta omborda.
+2. **490 ta yacheyka yaratildi** (402 + 18 + 70): `01-01` 3×9, `01-02` 4×44,
+   `01-03` 4×25, `01-05` 3×33, `01-04` 2-qavat, `02-04` 3–4-qavat. O'lchamlar
+   tovarlarning `__yacheyka` yozuvlaridan olingan ENG KAM chegara (egasi:
+   «shunday yarataver, keyin keraklisini qo'shib olamiz»). Zonasiz (hovuzdagi
+   qolgan yacheykalar ham zonasiz).
+
+*Natija (o'lchandi):* jami yacheyka **410 → 900**, hammasi «Taqsimlanmagan» da;
+«Ombor 01» va «Ombor 02» bo'sh. **Mavjud bo'lmagan yacheykaga ishora qiluvchi
+tovar: 240 → 0.** Qoldiqqa TEGILMADI (Σ o'zgarmagan, ledgerga yozuv yo'q).
+
+*Qaytarish yo'li:* `create-cells.ts … --revert --apply` (faqat BO'SH va hech
+qayerda ishlatilmagan yacheykalarni o'chiradi); yacheykalarni omborlarga
+qaytarish — H4 dagi `warehouse-split.ts` (kod prefiksi bo'yicha, idempotent).
+
+*Ochiq:* stelaj o'lchamlari eng kam chegarada — sanash paytida yetmasa
+qo'shiladi (o'sha skript, idempotent). `01-04` (1-qavat o'rin 47–169) va
+`02-04` (1-qavat o'rin 1–93) tarixiy irregular diapazonlar — to'ldirilmadi.
+
 ### H0 — Hodisa hujjatlashtirildi · 2026-08-24
 
 **Nima qilindi:**
