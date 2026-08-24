@@ -3,6 +3,7 @@ import { Prisma } from '@moysklad/db';
 import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { AttributeMetadataService } from '../attribute-metadata/attribute-metadata.service.js';
+import { POS_FRONT_STORE_KEY, readPosFrontStore } from '../retail-sale/retail-allocation.js';
 import { readPosPriority } from '../retail-sale/retail-stock-cascade.js';
 import { BRAK_STORE_KEY, readBrakStore } from '../sales-return/sales-return-acceptance.js';
 import { mapVersionedUpdateError } from '../shared/optimistic-lock.js';
@@ -55,11 +56,13 @@ function serializeStore<T extends StoreRow>(row: T) {
   const posPriority = readPosPriority(attrs);
   const unassignedSource = readUnassignedSource(attrs);
   const brakStore = readBrakStore(attrs);
+  const posFrontStore = readPosFrontStore(attrs);
   const {
     [CELL_INVENTORY_KEY]: cellInventory,
     [POS_PRIORITY_KEY]: _pp,
     [UNASSIGNED_SOURCE_KEY]: _us,
     [BRAK_STORE_KEY]: _bs,
+    [POS_FRONT_STORE_KEY]: _pf,
     ...rest
   } = attrs;
   return {
@@ -69,6 +72,7 @@ function serializeStore<T extends StoreRow>(row: T) {
     posPriority,
     unassignedSource,
     brakStore,
+    posFrontStore,
   };
 }
 
@@ -183,6 +187,10 @@ export class StoreService {
     if (parsed.brakStore === true) {
       validatedAttrs[BRAK_STORE_KEY] = true;
     }
+    // G4: «kassa oldidagi ombor» belgisi — o'sha semantika.
+    if (parsed.posFrontStore === true) {
+      validatedAttrs[POS_FRONT_STORE_KEY] = true;
+    }
 
     const row = await this.prisma.client.store.create({
       data: {
@@ -251,7 +259,8 @@ export class StoreService {
       parsed.cellInventory !== undefined ||
       parsed.posPriority !== undefined ||
       parsed.unassignedSource !== undefined ||
-      parsed.brakStore !== undefined
+      parsed.brakStore !== undefined ||
+      parsed.posFrontStore !== undefined
     ) {
       // Re-validate custom attrs when sent; otherwise start from the stored bag
       // (minus the lifted flags) so a cellInventory-only PATCH can't wipe attrs.
@@ -279,6 +288,11 @@ export class StoreService {
       const brakStore = parsed.brakStore !== undefined ? parsed.brakStore : existing.brakStore;
       if (brakStore === true) base[BRAK_STORE_KEY] = true;
       else delete base[BRAK_STORE_KEY];
+      // G4: o'sha semantika — `false` kalitni O'CHIRADI.
+      const posFrontStore =
+        parsed.posFrontStore !== undefined ? parsed.posFrontStore : existing.posFrontStore;
+      if (posFrontStore === true) base[POS_FRONT_STORE_KEY] = true;
+      else delete base[POS_FRONT_STORE_KEY];
       data.attributes = base as Prisma.InputJsonValue;
     }
     if (parsed.allowNegativeStock !== undefined)

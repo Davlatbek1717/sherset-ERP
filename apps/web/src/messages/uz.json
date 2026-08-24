@@ -5962,7 +5962,9 @@
       "zones_hint": "Vergul yoki yangi qator bilan ajrating. Misol: Sovuq, Quruq, Muzlatilgan",
       "zones_placeholder": "Cold, Frozen, Dry",
       "brak_store": "BRAK ombori",
-      "brak_store_hint": "Vozvrat qabulida «brak» deb belgilangan tovar shu omborga tushadi. Bu ombor kassa kaskadida QATNASHMASLIGI kerak (prioritet bo'sh) — shunda brak sotuv qoldig'iga aralashmaydi."
+      "brak_store_hint": "Vozvrat qabulida «brak» deb belgilangan tovar shu omborga tushadi. Bu ombor kassa kaskadida QATNASHMASLIGI kerak (prioritet bo'sh) — shunda brak sotuv qoldig'iga aralashmaydi.",
+      "pos_front_store": "Kassa oldidagi ombor",
+      "pos_front_store_hint": "Avto-taqsimotda BIRINCHI ko‘riladi: bitta yacheyka butun miqdorni qoplasa — o‘shandan olinadi (yig‘ish kerak emas). Lekin BO‘LINISHDA bu ombor ENG OXIRIDA turadi — u donali savdo uchun va bo‘shab qolmasligi kerak."
     },
     "stockTraining": {
       "course": {

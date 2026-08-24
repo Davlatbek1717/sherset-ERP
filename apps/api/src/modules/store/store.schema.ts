@@ -72,6 +72,11 @@ export const CreateStoreSchema = z.object({
   // (`posPriority` = null), shunda brak sotuv qoldig'iga aralashmaydi.
   // `unassignedSource` bilan bir naqsh (`__brakStore`, migratsiya yo'q).
   brakStore: z.coerce.boolean().optional(),
+  // G4 (Q1-v2) — «Kassa oldidagi ombor» (07): avto-taqsimotda BIRINCHI
+  // ko'riladi (yolg'iz qoplasa o'shandan olinadi, yig'ish kerak emas), lekin
+  // BO'LINISHDA ENG OXIRIDA turadi — donali savdo uchun bo'shab qolmasin.
+  // `brakStore` bilan bir naqsh (`__posFrontStore`, migratsiya yo'q).
+  posFrontStore: z.coerce.boolean().optional(),
   zones: z.array(z.string().min(1).max(100)).max(50).default([]),
   slots: z.array(z.string().min(1).max(100)).max(100).default([]),
   attributes: z.record(z.string(), z.unknown()).optional(),

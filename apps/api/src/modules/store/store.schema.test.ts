@@ -227,6 +227,40 @@ describe('unassignedSource (F7 — joylashtirish manbai)', () => {
   });
 });
 
+// G4 (Q1-v2) — «Kassa oldidagi ombor» belgisi (`posFrontStore`).
+// `brakStore` bilan bir naqsh: attributes JSON'iga boradi, migratsiya yo'q.
+describe('posFrontStore (G4 — kassa oldidagi ombor)', () => {
+  it('create: `true` qabul qilinadi, yuborilmasa undefined qoladi', () => {
+    const r = CreateStoreSchema.safeParse({ name: 'Ombor 07', posFrontStore: true });
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data.posFrontStore).toBe(true);
+    const r2 = CreateStoreSchema.safeParse({ name: 'Ombor 07' });
+    expect(r2.success).toBe(true);
+    if (r2.success) expect(r2.data.posFrontStore).toBeUndefined();
+  });
+
+  it('update: `false` yuborilsa saqlanadi (servis kalitni o‘chiradi)', () => {
+    const r = UpdateStoreSchema.safeParse({ version: 1, posFrontStore: false });
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data.posFrontStore).toBe(false);
+  });
+
+  it('prioritetdan MUSTAQIL — ikkalasi birga yuborilishi mumkin', () => {
+    // 07 odatda pp=1 bo'ladi, lekin bayroq alohida ma'no tashiydi:
+    // bo'linishda 07 ENG OXIRIDA turadi (prioritet buni ifodalay olmaydi).
+    const r = CreateStoreSchema.safeParse({
+      name: 'Ombor 07',
+      posPriority: 1,
+      posFrontStore: true,
+    });
+    expect(r.success).toBe(true);
+    if (r.success) {
+      expect(r.data.posPriority).toBe(1);
+      expect(r.data.posFrontStore).toBe(true);
+    }
+  });
+});
+
 // G3 — BRAK ombori belgisi (`brakStore`, attributes JSON'iga boradi).
 describe('brakStore (G3 — BRAK ombori)', () => {
   it('boolean qabul qilinadi; yubormaslik ham mumkin', () => {

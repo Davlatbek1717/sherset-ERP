@@ -328,10 +328,19 @@ describe('splitEvenly — haftalikni kunlarga bo`lish (JIM taxmin yo`q)', () => 
  * shuning uchun manba matni skanerlanadi (`decision-journal-read-only` uslubi).
  */
 describe('🔴 MK22 — uchinchi plan modeli OCHILMAYDI', () => {
-  it('sxemada kaskad/taqsimot modeli yo`q', () => {
+  it('sxemada KPI/PLAN doirasida kaskad/taqsimot modeli yo`q', () => {
+    // Qo'riqchi 2026-08-25 da TORAYTIRILDI. Ilgari u BUTUN sxemani skanerlab
+    // /cascade|allocation/ ni qidirardi — ya'ni boshqa domendagi istalgan
+    // model uni uyg'otardi. G4 (kassa ko'p omborli taqsimoti) aynan shunday
+    // qildi: `RetailSalePositionAllocation` KPI planiga hech qanday aloqasi
+    // yo'q, lekin nomida «Allocation» bor edi.
+    // Qo'riqchining MAQSADI o'zgarmadi: MK22 mavjud `KpiTargetRow` shakli
+    // ustida ishlaydi, KPI/plan domenida UCHINCHI model ochilmaydi — shuning
+    // uchun endi faqat Kpi*/…Plan* nomlari tekshiriladi.
     const schema = readFileSync(SCHEMA, 'utf8');
     const models = [...schema.matchAll(/^model\s+(\w+)\s*\{/gm)].map((m) => m[1] as string);
-    expect(models.filter((m) => /cascade|allocation/i.test(m))).toEqual([]);
+    const planModels = models.filter((m) => /^Kpi|Plan/.test(m));
+    expect(planModels.filter((m) => /cascade|allocation/i.test(m))).toEqual([]);
   });
 
   it('kaskad qatlami SOF — DB/Prisma/soatga tegmaydi', () => {

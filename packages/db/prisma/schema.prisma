@@ -141,6 +141,7 @@ model Account {
   smenas                         Smena[]
   retailSales                    RetailSale[]
   retailSalePositions            RetailSalePosition[]
+  retailSalePositionAllocations  RetailSalePositionAllocation[]
   salesChannels                  SalesChannel[]
   onlineOrders                   OnlineOrder[]
   appInstalls                    AppInstall[]
@@ -1018,6 +1019,7 @@ model Store {
   addressZones                  StoreZone[]
   cells                         StoreCell[]
   stockByCell                   StockByCell[]
+  retailSalePositionAllocations RetailSalePositionAllocation[]
 
   @@unique([accountId, code])
   @@index([accountId, archived])
@@ -1083,6 +1085,7 @@ model StoreCell {
   demandPositions         DemandPosition[]         @relation("DemandPositionCell")
   inventoryPositions      InventoryPosition[]      @relation("InventoryPositionCell")
   stockByCell             StockByCell[]
+  retailSaleAllocations   RetailSalePositionAllocation[]
   // Multi-bin: products bound to THIS cell (many-to-many with Product, see
   // ProductCellLink).
   productLinks            ProductCellLink[]        @relation("ProductCellLinkCell")
@@ -8605,9 +8608,52 @@ model RetailSalePosition {
   retailSale RetailSale @relation(fields: [retailSaleId], references: [id], onDelete: Cascade)
   product    Product?   @relation("RetailSalePositionProduct", fields: [productId], references: [id], onDelete: Restrict)
 
+  /// G4 — bu qator qaysi ombor(lar)ning qaysi yacheyka(lar)idan olinishi.
+  allocations RetailSalePositionAllocation[]
+
   @@index([retailSaleId, position])
   @@index([accountId, productId])
   @@map("retail_sale_positions")
+}
+
+/// G4 (Q1-v2, 2026-08-24) — chek qatorining KO'P OMBORLI taqsimoti.
+///
+/// Nega alohida jadval, ustun emas: egasining 3-qoidasi bitta pozitsiyani BIR
+/// NECHTA yacheykaga bo'lishi mumkin («hech bir yacheyka yolg'iz qoplamasa —
+/// bo'linadi»), ya'ni `RetailSalePosition.cellId` degan yagona ustun uni
+/// ifodalay olmaydi. Bu jadval rezerv, yig'ish topshirig'i va `post()`
+/// deltalari uchun YAGONA haqiqat manbai bo'ladi.
+///
+/// `cellId` NULL bo'lishi ATAYLAB: jonlida qoldiqning ~94 % i hech bir
+/// yacheykaga biriktirilmagan (E1) — u holda manba «ombor darajasidagi
+/// yacheykasiz qoldiq» bo'ladi va omborchiga aniq manzil ko'rsatilmaydi.
+model RetailSalePositionAllocation {
+  id         String  @id @default(uuid()) @db.Uuid
+  accountId  String  @map("account_id") @db.Uuid
+  positionId String  @map("position_id") @db.Uuid
+  storeId    String  @map("store_id") @db.Uuid
+  /// NULL = ombor darajasidagi yacheykasiz qoldiqdan (E1).
+  cellId     String? @map("cell_id") @db.Uuid
+
+  qty Decimal @db.Decimal(20, 6)
+
+  /// Kassir avto-taqsimotni QO'LDA o'zgartirgan (Q1-v2: «kassir o'zgartira oladi»).
+  /// Qayta hisoblashda qo'lda tanlangan qatorlar saqlanadi.
+  manual Boolean @default(false)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz()
+
+  account  Account            @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  position RetailSalePosition @relation(fields: [positionId], references: [id], onDelete: Cascade)
+  // Restrict: taqsimoti bor ombor jimgina o'chib ketmasin (qoldiq izi).
+  store    Store              @relation(fields: [storeId], references: [id], onDelete: Restrict)
+  // SetNull: yacheyka o'chsa taqsimot qoladi — ombor darajasiga tushadi.
+  cell     StoreCell?         @relation(fields: [cellId], references: [id], onDelete: SetNull)
+
+  @@index([positionId])
+  @@index([accountId, storeId, cellId])
+  @@map("retail_sale_position_allocations")
 }
 
 // =========================================================================

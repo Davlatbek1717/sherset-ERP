@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { LIFECYCLE_STAGE, ONBOARDING_ITEM, PROBATION_STATE } from './onboarding.js';
 import { OnboardingService } from './onboarding.service.js';
 
@@ -57,6 +57,14 @@ describe('OnboardingService', () => {
       { employeeId: null, positionId: 'p1' },
     ] as never);
     deps.prisma.client.employeeOffboarding.findFirst.mockResolvedValue(null as never);
+    // 🔴 VAQT MUZLATILDI (2026-08-25). Fikstura ABSOLYUT sanalarga
+    // bog'langan (sinov 2026-09-01 da tugaydi), holat esa `now` ga qarab
+    // hisoblanadi: 2026-08-25 da daysLeft = 7 = EVALUATION_WARN_DAYS bo'lib
+    // «in_probation» «due_soon» ga aylandi va test o'z-o'zidan yiqildi.
+    // Bu G4 ga aloqasi yo'q — kalendar bombasi edi. Faqat `Date` fake
+    // qilinadi (timer'lar emas), shunda async oqim o'zgarmaydi.
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-08-10T09:00:00.000Z'));
     deps.prisma.client.employeeOnboarding.findFirst.mockResolvedValue({
       id: 'on1',
       probationStartsOn: new Date('2026-08-01T00:00:00.000Z'),
@@ -70,6 +78,10 @@ describe('OnboardingService', () => {
       decidedBy: null,
       items: ALL_MANUAL_DONE,
     } as never);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   // ── status ────────────────────────────────────────────────────────────────
