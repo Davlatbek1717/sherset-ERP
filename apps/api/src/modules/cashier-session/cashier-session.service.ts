@@ -1143,6 +1143,21 @@ export class CashierSessionService {
         // MK31: valyuta ham kesimga kiradi va jamiga `amountBaseMinor`
         // (so'mdagi ekvivalent) qo'shiladi. `amountMinor` bo'yicha jamlash
         // sentni tiyinga qo'shib, tushumni ~12 000 barobar buzardi.
+        //
+        // ⚠️ MAVJUD CHEGARA (A2, 2026-08-25 da O'LCHANDI, TUZATILMADI):
+        // bu yerda `refundedFromId: null` filtri YO'Q, ya'ni VOZVRAT-nusxasiga
+        // yozilgan to'lov qatorlari ham tushumga qo'shiladi. Bu 2026-08-17
+        // dan beri `CASH_USD` uchun shunday (mirror chekka dollar qatori
+        // yoziladi) va A2 ning `PREPAY` mirror qatori AYNI sinfga qo'shiladi:
+        // 100 000 avansdan to'lanib 60 000 qaytarilgan smenada bu kesim
+        // «PREPAY 160 000» ko'rsatadi.
+        //
+        // NEGA SHU FAZADA TUZATILMADI: filtr qo'shilsa jonlida ALLAQACHON
+        // yozilgan dollar-vozvratli smenalarning `revenueMinor` i o'zgarardi —
+        // ya'ni egasi ilgari ko'rgan hisobot raqami boshqacha bo'lib qolardi.
+        // Bu A2 ning vazifalar ro'yxatida YO'Q va alohida qaror talab qiladi.
+        // Qaytarishlar `returnsMinor` da alohida ko'rinadi, avans sarfi esa
+        // `prepaySpentMinor` da — u yerda filtr QO'YILGAN (pastga qarang).
         this.prisma.client.retailSalePayment.groupBy({
           by: ['method', 'currency'],
           where: {
