@@ -1,6 +1,6 @@
 # Kassada mijoz hisob-kitobi — qarzni undirish ro'yxatiga ulash + avans bilan ishlash
 
-> **Yaratilgan:** 2026-08-25 · **Buyurtmachi:** Ozodbek (egasi) · **Holat:** Q1 QISMAN + **Q2 QISMAN** (2026-08-25) — asosiy funksiya kodda va testda tayyor (`7ef30b61`, `af8d3339`), **deploy branch'i `kassa-qarzi-q1-q2` @ `456e53af` TAYYOR (G4siz), push va jonli tasdiq KUTILMOQDA**; `opening` manbasi qarori hamon ochiq; Q3 boshlanmagan
+> **Yaratilgan:** 2026-08-25 · **Buyurtmachi:** Ozodbek (egasi) · **Holat:** Q1 QISMAN + Q2 QISMAN + **Q3 QISMAN** (2026-08-25) — qarz oqimi kodda va testda TO'LIQ (`7ef30b61`, `af8d3339`, **`633e2ebd`**): chekdan reyestrga qator ochiladi va vozvrat/tahrirda balans bilan simmetrik harakatlanadi. **HECH BIRI DEPLOY QILINMAGAN** — deploy branch'i `kassa-qarzi-q1-q2` @ `456e53af` (Q3 unda YO'Q, ko'chirilishi kerak), push va jonli tasdiq KUTILMOQDA; `opening` manbasi qarori hamon ochiq; navbat A1 (yoki Q4)
 > **Ikki shikoyat (egasi, 2026-08-25):**
 > 1. «Qarzdorlikni undirish bo'limiga kassadan qo'shilgan yangi qarzdorliklar
 >    ko'rinmayapti.» → fazalar **Q1…Q6**
@@ -1504,3 +1504,301 @@ kanonik nusxasi — `yacheyka-inventarizatsiya` dagi shu fayl.
 
 **Faza yopilmagan:** qabul mezonining 9–13 bandlari HAMON ochiq. Holat —
 **QISMAN**.
+
+### Q3 — Simmetriya: vozvrat va tahrir · 2026-08-25 · **QISMAN** (jonli tasdiq kutilmoqda)
+
+**Xulq O'ZGARDI.** Q2 dan keyin chekdan tug'ilgan reyestr qatori endi chek
+qaytarilganda va tahrirlanganda BALANS BILAN BIRGA harakatlanadi (invariant 2).
+Ilgari (Q2 dan keyin, Q3 dan oldin) qaytarilgan tovar uchun undirish ro'yxati
+hamon pul talab qilib turardi va 14 kundan keyin mijozga eslatma ketardi.
+
+Commit: **`633e2ebd`** (branch `yacheyka-inventarizatsiya`).
+
+#### Bog'liqlik holati (qoida 11 — ochiq aytiladi)
+
+Q2 «QISMAN» (jonli tasdiq 9–13 bandlari ochiq, deploy qilinmagan). Q3 ular
+tufayli FUNKSIONAL bloklanmaydi — Q3 kodi Q2 KODIGA tayanadi, jonli tasdiqqa
+emas — lekin Q3 ning O'Z jonli mezoni ham AYNAN o'sha deploy'ga bog'liq.
+Egasining ko'rsatmasi bo'yicha Q3 bajarildi; ochiq bandlar pastda takrorlanadi.
+
+#### Nima qilindi
+
+| # | Fayl | Nima |
+|---|---|---|
+| 1 | `apps/api/src/modules/debt/sale-debt-registry.ts` | **YANGI sof funksiya** `saleDebtMoveNoteText()` (harakat izohi matni) + `SaleDebtDeltaPlan` ga `paidMinorAtMove` |
+| 2 | `apps/api/src/modules/retail-sale/retail-sale.service.ts` | **YANGI** `moveSaleDebtRegistryRow()`; `refund()` va `edit()` ga ulash; `edit()` ga balans QULFI; `refundedAt`/`editedAt` yagona instantga keltirildi; `cancel()` ga tekshiruv natijasi izoh bo'lib yozildi |
+| 3 | `apps/api/src/modules/debt/sale-debt-registry.mock.ts` | Q3 uchun kengaytirildi: `debt.update`, `$queryRaw` ning IKKINCHI shakli (`debts … FOR UPDATE`), kontragent kesimidagi balans |
+| 4 | `apps/api/src/modules/retail-sale/retail-sale-debt-registry-symmetry.test.ts` | **YANGI**, 22 test |
+| 5 | `apps/api/src/modules/debt/sale-debt-registry.test.ts` | +7 test (izoh matni 6 + `paidMinorAtMove` 1) |
+| 6 | `apps/api/src/modules/retail-sale/retail-sale-refund-debt.test.ts` | harness'ga reyestr delegatlari (umumiy mock'dan, NUSXA emas) + `registryRow` opsiyasi |
+| 7 | `apps/api/src/scripts/recompute-counterparty-balances.ts` | 🔴 eskirgan da'vo tuzatildi (pastga qarang) |
+| 8 | `apps/api/src/scripts/counterparty-balance-sources.{ts,test.ts}` | reyestr yozuvchisi «balans manbasi EMAS» deb qayd etildi + **+1 qo'riqchi test** |
+
+**Harakatlantiruvchining shakli** (`moveSaleDebtRegistryRow`):
+
+```
+valyuta ≠ UZS            ⇒ 'skipped_currency'  (Q2 qator ochmagan — §2.3)
+qator qulflanadi          SELECT id FROM debts WHERE source_doc_id=… FOR UPDATE
+qator yo'q                ⇒ 'missing'  + ogohlantirish logi (JIM emas)
+plan ← planSaleDebtDelta(totalMinor, paidMinor, eski/yangi qoldiq)
+o'zgarish yo'q            ⇒ 'noop'
+aks holda                 debt.update(totalMinor/status/closedAt/nextContactAt
+                                      [+counterpartyId]) + DebtNote(debt_issue)
+```
+
+🔴 **`applyDelta` bu yerdan CHAQIRILMAYDI** — balansni chekning O'Z yo'li
+harakatlantiradi (`refund()` dagi `−debtReturn`, `edit()` dagi delta).
+Kod-shakl testi buni qulflaydi.
+
+#### 🔴 Rejadan UCHTA ataylab chekinish
+
+**1. Mijoz almashganda «eski qator yopiladi + yangisi ochiladi» EMAS, qator
+KO'CHADI.** Reja Q3 vazifa 2 shunday yozgan edi, lekin **Q1 ning unique
+indeksi buni imkonsiz qiladi**: `@@unique([accountId, sourceDocType, sourceDocId])`
+bitta chekka BITTA qator beradi (soft-delete ham indeksni band qilib turadi —
+Q2 hisobotining `DELETE` izohi). Shuning uchun qator chekning joriy
+qarzdoriga ERGASHADI: `counterpartyId` yangilanadi, summasi §2.2 kesishuv
+qoidasi bilan yangi mijozning balansidan qayta hisoblanadi, `DebtNote` da
+eski mijoz id'si qoladi.
+
+**2. Qatorga TO'LOV tushgan bo'lsa ko'chirish RAD ETILADI.** `DebtPayment`
+qatorlari ESKI mijozning pulini bildiradi va qator bilan birga ko'chardi —
+bir mijozning to'lovi boshqasining tarixiga yozilardi. Bunday holatda qator
+eski mijozda `paidMinor` ga tekislanib YOPILADI, `DebtNote` + ogohlantirish
+logi yoziladi. Yangi mijozning qarzi BALANSDA ko'rinadi va u kassaga to'lov
+qilganda P1 adopsiyasi orqali reyestrga kiradi (mavjud, jonlida sinalgan yo'l).
+**Bu — ochiq chegara, «Ochiq qolganlar» 3-bandida qayd etilgan.**
+
+**3. `edit()` da qator YO'Q bo'lsa Q2 yozuvchisi chaqiriladi.** Reja buni
+faqat mijoz almashgan holat uchun yozgan edi; amalda «avans qoplagani uchun
+qator ochilmagan chek keyin tahrirlanib qarz tug'ildi» holati ham bor va
+usiz yangi qarz yana ko'rinmas bo'lardi — ya'ni egasining shikoyati tahrir
+yo'li orqali qaytardi. §2.2 chek qarzidan OLDINGI balansdan yuradi
+(`balansOldin − shu chekning eski ulushi`), aks holda chek qarzi ikki marta
+sanalardi.
+
+#### `cancel()` — TEKSHIRUV NATIJASI (Q3 vazifa 3)
+
+**O'ZGARISH KERAK EMAS, dalil bilan.** `cancel()` faqat
+`CANCELLABLE = ['draft','picking','ready']` holatlaridan yuradi
+(`retail-sale-fsm.ts`) — ya'ni chek hali POST QILINMAGAN. Qarz esa (balansda
+ham, reyestrda ham) FAQAT `post()` da tug'iladi. Post qilingan chekni «bekor
+qilish» yo'li — `refund()`, va u Q3 da qoplandi.
+
+Premise ikki test bilan QULFLANDI: (a) `allowedFrom('cancel')` da `'posted'`
+yo'q; (b) `cancel()` tanasida reyestr chaqiruvi yo'q. Kimdir `CANCELLABLE` ga
+`'posted'` qo'shsa test qizil bo'lib Q3 ni qayta ko'rishga majbur qiladi.
+
+#### Test natijalari (raqam bilan) — ALOHIDA WORKTREE'da o'lchandi
+
+⚠️ **Nega worktree:** sessiya davomida BOSHQA sessiya (G6 — TSD ish ekranlari)
+`retail-sale.service.ts`, `product-cell-move.service.ts` va `restock-task.*`
+fayllarini ayni paytda tahrirlayotgan edi va ularning tugallanmagan ishi ikkita
+test faylini qizil qilib turardi. Aralashgan daraxtda o'lchangan raqam halol
+bo'lmasdi. Shuning uchun `git worktree add --detach HEAD` bilan alohida checkout
+ochilib, unga FAQAT mening hunk'larim qo'llandi (§6.5 — Q2 sabog'i; bu safar
+`stash` UMUMAN ishlatilmadi).
+
+| O'lchov | Baza (HEAD, toza) | Q3 bilan | Delta |
+|---|---|---|---|
+| `apps/api` to'liq vitest | **641 fayl · 9004 test** | **642 fayl · 9034 test** | **+1 fayl, +30 test** |
+| skip | 1 fayl / 2 test | 1 fayl / 2 test | 0 |
+| typecheck (`tsc --noEmit`) | 0 xato | **0 xato** | — |
+
++30 = 22 (simmetriya fayli) + 7 (sof modul) + 1 (qamrov qo'riqchisi). **Boshqa
+hech bir test o'zgarmadi** — ikkala o'lchov ham AYNI worktree'da, ketma-ket.
+
+Asosiy daraxtda (parallel sessiya ishi bilan aralash):
+- `retail-sale` + `debt` + `scripts` kesimi: **76 fayl · 1043 test YASHIL**;
+- `node scripts/check-lint.mjs`: **mening fayllarimda 0 error** (qolgan 3 format
+  xatosi — parallel sessiyaning tugallanmagan fayllari, TEGILMADI);
+- `pnpm i18n:gate`: **19 test yashil** (Q3 da yangi UI matni YO'Q — server tomoni).
+
+**22 yangi simmetriya testi nimani qulflaydi:**
+
+| Guruh | Testlar |
+|---|---|
+| `refund()` | to'liq vozvrat → qator `paid` + `closedAt` + `nextContactAt: null` · qisman → kamaydi, ochiq qoldi · **invariant 2: balans deltasi = reyestr deltasi** · **invariant 1: `applyDelta` AYNAN 1 marta** · avans qisman qoplagan qator noldan pastga tushmaydi · **NIZO: `paidMinor` dan pastga tushmaydi + DebtNote** · qatorsiz eski chek → vozvrat BUZILMAYDI + warn · qarzsiz chek → reyestrga tegilmaydi · USD yashiq → qulf ham olinmaydi |
+| `edit()` | qarz kamaydi → qator kamaydi · qarz oshdi → qator oshdi · **mijoz almashdi → qator KO'CHDI** · mijoz almashdi + yangi mijozda AVANS → qator YOPILDI (invariant 4) · **to'lov bor → KO'CHIRILMADI, eskida yopildi** · qator yo'q edi + qarz tug'ildi → **Q2 yozuvchisi qator ochdi** · USD yashiq → tegilmaydi |
+| `cancel()` | `CANCELLABLE` da `posted` yo'q · `cancel()` tanasida reyestr yo'q |
+| Kod shakli | harakatlantiruvchi `applyDelta` ni chaqirmaydi · qulf `FOR UPDATE` + `FROM debts` + `ORDER BY id ASC` · `refund()` da harakat balansdan KEYIN · `edit()` da qulf `applyDelta` dan OLDIN |
+
+**Testning o'zi bitta haqiqiy nozik joyni topdi:** izoh matni `debt.update`
+dan KEYIN qurilsa, mock (va ba'zi ORM yo'llari) obyektni joyida
+o'zgartirgani uchun matn «eski mijoz» o'rniga YANGISINI yozib qo'yardi.
+Tuzatildi: `previousTotalMinor` / `previousCounterpartyId` `update` dan OLDIN
+olinadi.
+
+#### 🔴 Eskirgan izoh tuzatildi (Q2 ning 3-eslatmasi bajarildi)
+
+`recompute-counterparty-balances.ts` da «`totalMinor` create'dan keyin
+o'zgarmaydi (Debt'da uni tahrirlaydigan yo'l yo'q)» degan da'vo bor edi.
+**Q3 uni buzdi.** Skript BARIBIR to'g'ri qoladi (Q3 harakatlantiradigan
+qatorlar `balanceAdopted = true`, ya'ni Q1 filtri ularni chiqarib tashlaydi),
+lekin izoh yangilanmasa keyingi o'quvchi «demak filtrni olib tashlasa ham
+bo'ladi» degan xulosaga kelardi — F5 sabog'i. Izoh eski matn tarixi bilan
+qayta yozildi va **qo'riqchi test** qo'shildi
+(`counterparty-balance-sources.test.ts`): harakatlantiruvchi rostdan ham
+`totalMinor: plan.nextTotalMinor` yozishi VA skript izohi buni aytishi
+tekshiriladi.
+
+#### Qoida 10 — «bu o'zgarish qaysi mavjud oqimni buzishi mumkin?»
+
+1. **Balans / pul — TEGILMAYDI (invariant 1).** Harakatlantiruvchi
+   `applyDelta` ni chaqirmaydi (kod-shakl testi). `refund()`/`edit()` dagi
+   mavjud balans chaqiruvlari BAYT ham o'zgarmadi — testlardan biri buni
+   `applyDelta` chaqiruvlari soni va argumentlari bilan tekshiradi.
+2. **Mijozga Telegram xabari — O'ZGARMAYDI.** Xabar `applyDelta` ning
+   `source` argumentidan ketadi; yangi yo'l uni chaqirmaydi ⇒ vozvratda
+   ilgarigidek BITTA «↩️ Qarzingizdan ayirildi» ketadi.
+3. **Vozvrat / tahrir yo'li — MAVJUD XULQ BUZILMAYDI.** Qator topilmasa
+   (Q2 dan oldingi cheklar — jonlida hozircha HAMMASI shunday) yo'l `missing`
+   qaytaradi, `throw` QILMAYDI: eski cheklar avvalgidek qaytariladi.
+   Regressiya qo'riqchisi — `retail-sale-refund-debt.test.ts` ning mavjud
+   testlari (hammasi yashil).
+4. **Undirish ro'yxati / eslatma cron'i — HAJMI KAMAYADI (maqsad).**
+   Qaytarilgan cheklar endi ro'yxatdan chiqadi. Yopilgan qatorda
+   `nextContactAt: null` ⇒ `debt-reminder.service.ts` uni ko'rmaydi.
+5. **POS «Qarz to'lovi» oynasi / FIFO — TEGILMAGAN.** `paidMinor` ga
+   yozilmaydi, `DebtPayment` yaratilmaydi. `payableMinor = max(reyestr, balans)`
+   — ikkalasi ham teng kamaygani uchun son to'g'ri qoladi.
+6. **POS to'lovi bilan POYGA — QULFLANGAN.** Harakatlantiruvchi qatorni
+   `FOR UPDATE` bilan oladi; `pos-debt-payment.service.ts#lockOpenDebts` ham
+   shu jadvalni shu tartibda qulflaydi. Qulf TARTIBI **BALANS → QARZLAR**
+   (P1/Q2 bilan bir xil): `applyDelta` balans qatorini `upsert` bilan
+   qulflab bo'lgandan KEYIN qarz qulfi olinadi ⇒ deadlock yo'q.
+7. **`edit()` da IKKI kontragent qulflanishi mumkin** (mijoz almashgan holat) —
+   tartib id bo'yicha DETERMINISTIK saralangan, aks holda mijozlarni
+   bir-biriga almashtiruvchi ikki tahrir deadlock qilardi.
+8. **Akt-sverka — O'ZGARMAYDI.** `debtRegistryOutstandingMinor` «saldoning
+   TARKIBI» premise'i `balanceAdopted` qatori uchun to'g'ri qoladi.
+9. **`recompute` cross-check'i — shovqin OSHMAYDI** (yuqoridagi band).
+10. **Smena hisobi / kutilgan naqd — TEGILMAGAN.** Reyestr qatori pul emas.
+11. **Ombor / qoldiq / yacheyka — TEGILMAGAN.** Q3 `stock`, `store-cell`,
+    `retail-allocation` fayllariga bir qator ham yozmadi. `refund()` ning
+    ombor kaskadi (`refundStoreId`) o'zgarmadi.
+12. **`cancel()` — TEGILMAGAN** (yuqorida dalil bilan).
+13. ⚠️ **Chegara: mijoz almashgan + qatorga to'lov tushgan holat** — yangi
+    mijozning qarzi reyestrda KO'RINMAYDI (balansda ko'rinadi). Bu JIM emas:
+    `DebtNote` + ogohlantirish logi. Q4/Q5 da ko'rib chiqilsin.
+
+#### Qabul mezoni bo'yicha holat (qoida 11)
+
+| # | Mezon | Holat |
+|---|---|---|
+| 1 | to'liq vozvrat → qator `paid` | ✅ test |
+| 2 | qisman vozvrat → `totalMinor` kamaydi, ochiq qoldi | ✅ test |
+| 3 | to'langan qarzga vozvrat → `paidMinor` dan pastga tushmadi + `DebtNote` | ✅ test |
+| 4 | tahrirda summa o'zgardi | ✅ test |
+| 5 | agent o'zgarganda qator to'g'ri mijozda | ✅ test (**ko'chirish** bilan — chekinish 1) |
+| 6 | qatorsiz eski chek — vozvrat BUZILMADI | ✅ test |
+| 7 | balans deltasi va reyestr deltasi AYNAN teng (invariant 2) | ✅ test |
+| 8 | `cancel()` tekshirildi va yozma javob berildi | ✅ (yuqorida) |
+| 9 | api testlari to'liq yashil | ✅ 9034 (izolyatsiyalangan o'lchov) |
+| 10 | **jonlida: qarzga post → undirish ro'yxatida chiqadi** | ❌ **VPS/deploy kerak** |
+| 11 | **jonlida: to'liq vozvrat → ro'yxatdan yo'qoladi VA balans nolga qaytadi** | ❌ VPS kerak |
+| 12 | **jonlida: qisman vozvratda ikkala daftardagi qoldiq bir xil son** | ❌ VPS kerak |
+
+**Shuning uchun holat «TUGADI» EMAS, «QISMAN».** Yopish sharti: 10–12 bandlari.
+
+#### Deploy holati
+
+**Deploy QILINMADI**, VPS'ga tegilmadi, jonli bazaga tegilmadi.
+Q3 Q1+Q2 ustiga quriladi va ular ham hali jonliga chiqmagan
+(`kassa-qarzi-q1-q2` @ `456e53af` — **push QILINMAGAN**). Ya'ni Q3 ni alohida
+chiqarish mumkin emas: uch faza BITTA deploy oynasida beriladi.
+
+🔴 **Deploy branch'i YANGILANISHI KERAK:** `kassa-qarzi-q1-q2` da Q3 YO'Q.
+Q2 dagi cherry-pick retsepti bilan `633e2ebd` ni ham ko'chirish kerak (yoki
+branch'ni `kassa-qarzi-q1-q3` nomi bilan qayta yig'ish). Bu Q3 sessiyasida
+QILINMADI — buyruq kutilmoqda (Q2 da cherry-pick qarorini egasi o'zi bergan edi).
+
+Migratsiya: yangisi YO'Q. Q1 niki (`20260825120000_debt_source_doc`) hamon
+VPS'da BERILMAGAN va u Q2/Q3 dan OLDIN berilishi SHART.
+
+#### Jonli tekshiruv retsepti (deploy'dan KEYIN)
+
+Deploy oldidan/keyin (qoida 8): `packages/db` da `npx tsx scripts/warehouse-state.ts`.
+
+1. Sinov mijozga (balansi 0) kichik summali chek QARZGA post → `/menejer/undirish`
+   da `upcoming` chelagida chiqadi (Q2 mezoni 9).
+2. **To'liq vozvrat** (`refund`) → mijoz undirish ro'yxatidan YO'QOLADI VA
+   kontragent balansi nolga qaytadi — **ikkalasi birga**.
+3. Yana bir chek qarzga post → **QISMAN vozvrat** (masalan yarmi) →
+   undirish ro'yxatidagi qoldiq va kontragent kartasidagi balans **AYNAN BIR
+   XIL SON** bo'lishi tekshiriladi (invariant 2 ning jonli isboti).
+4. Chek TAHRIRI: qarz ulushini kamaytirish → undirish ro'yxatidagi son ham
+   o'sha zahoti kamayadi.
+5. Uchma-uch smoke (qoida 13): bitta sotuv (post → tekshir → cancel), bitta
+   yacheyka sanash, bitta ko'chirish.
+6. Izni tozalash — **endi QO'LDA KERAK EMAS**: Q3 dan keyin to'liq vozvrat
+   qatorni o'zi yopadi. Qator butunlay ketishi kerak bo'lsa Q2 hisobotidagi
+   `DELETE` retsepti o'z kuchida qoladi.
+
+#### 🔴 SESSIYA HODISALARI (ikkalasi ham qayd etiladi — qoida 14 ruhida)
+
+**1. Skript fayli bir lahza truncate bo'ldi va HEAD'dan tiklandi.**
+`recompute-counterparty-balances.ts` ni python bilan tahrirlashda kodlash
+xatosi (`UnicodeEncodeError`) fayl OCHILGANDAN KEYIN otildi — ya'ni fayl
+truncate bo'lib, yozilmadi (506 → 1 qator). Darhol `git checkout --` bilan
+FAQAT o'sha bitta yo'l bo'yicha tiklandi (fayl toza edi, boshqa sessiyaning
+o'zgarishi yo'q edi — `git status` bilan oldindan tekshirilgan). Keyin tahrir
+`Edit` vositasi bilan qayta qilindi. **Saboq: bu repoda `.ts` fayllarni python
+`io.open(...,'w')` bilan yozish XAVFLI** — kodda surrogate belgilar bor va
+strict encoder yozishdan OLDIN faylni truncate qilib qo'yadi.
+
+**2. 🔴 `rm -rf` worktree junction'lari ichiga kirib `node_modules` va
+Prisma klientini O'CHIRDI.** Worktree'ni tozalashda `node_modules`
+junction'larining bir qismi (`apps/api`, `apps/web`, `apps/marketing`,
+`packages/config`) uzilmagan holda `rm -rf` yugurtirildi; u junction'lar
+ichiga kirib **asosiy reponing** `node_modules` daraxtlarini va
+`packages/db/src/generated` (Prisma klienti) ni o'chirdi.
+
+- **Yo'qotish:** faqat git kuzatmaydigan build artefaktlari.
+  `git status` da BIRORTA ham `D` (o'chirilgan kuzatiladigan fayl) yo'q —
+  tekshirildi. Parallel sessiyaning barcha untracked fayllari (android `.kt`,
+  `client-op.ts`, migratsiya, rollback SQL) joyida.
+- **Tiklash:** `corepack pnpm install --frozen-lockfile` (873 paket,
+  `pnpm-lock.yaml` O'ZGARMADI) + `npx prisma generate`
+  (`packages/db/src/generated`). Keyin typecheck 0 xato, testlar yashil —
+  muhit to'liq tiklandi.
+- **Saboq (keyingi sessiyalarga):** worktree'ni o'chirishdan OLDIN
+  `node_modules` junction'larini BITTALAB uzib chiqing va HAR BIRINI
+  tekshiring; `rm -rf` Windows'da directory junction ICHIGA KIRADI.
+  Xavfsizrog'i: worktree'ga `node_modules` ni junction qilmasdan, o'sha yerda
+  alohida `pnpm install` qilish.
+
+#### Ochiq qolganlar
+
+1. **Q1 dan meros (o'zgarishsiz):** `recompute` cross-check'iga `opening`
+   manbasi qo'shilmagan; jonlida `APPLY=1` yugurtirilgan-yugurtirilmagani
+   tekshirilmagan (VPS kirishi kerak).
+2. **Q2 dan meros:** jonli tasdiq (mezon 9–13), deploy branch'i push
+   qilinmagan.
+3. **Q3 ning O'Z chegarasi:** mijoz almashgan VA qatorga to'lov tushgan
+   holatda yangi mijozning qarzi reyestrda ko'rinmaydi (balansda ko'rinadi,
+   `DebtNote` + log bilan qayd etiladi). Unique indeks bitta chekka bitta
+   qator berganicha bu chegarani faqat «to'lovlarni ajratish» (yangi jadval)
+   olib tashlaydi — bu Q3 hajmidan tashqarida.
+4. **Deploy branch'iga Q3 ni ko'chirish** — buyruq kutilmoqda.
+
+#### Keyingi fazaga (A1/Q4) eslatmalar
+
+1. `moveSaleDebtRegistryRow` ikki rejimli: `delta` (vozvrat — eski/yangi
+   qoldiq) va `absolute` (tahrir — mutlaq summa + ixtiyoriy `retargetToId`).
+   Yangi chaqiruvchi qo'shsangiz REJIMNI ataylab tanlang.
+2. **A2 (`PREPAY` tender) vozvrati** `refund()` ning `debtReturn` blokidan
+   TASHQARIDA qurilsin: avans qaytishi reyestr qatorini harakatlantirmaydi
+   (avans qarz emas — invariant 4). Q3 ning bloki AYNAN
+   `if (debtReturn > 0n && debtorId)` ichida turibdi, ya'ni ular tabiiy
+   ajralgan.
+3. **A2 `recompute` ga `PREPAY` manbasini qo'shishni UNUTMANG** — Q1 §2.1
+   yorig'ining aynan takrori bo'lardi. Q3 shu faylga tegdi, lekin faqat izoh
+   va qo'riqchi darajasida; yangi manba QO'SHILMADI.
+4. `edit()` da endi balans QULFI bor (`lockCounterpartyBalance`, id bo'yicha
+   saralangan tartib). Yangi kontragent qulfi qo'shilsa AYNAN shu ro'yxatga
+   qo'shing, alohida joyda olmang — deadlock tartibi shu yerda.
+5. Q4 undirish ekraniga `source` maydonini qo'shganda chek raqami
+   `Debt.comment` ichida ham bor (`Kassa cheki «CHK-…» bo'yicha qarz`) —
+   lekin unga TAYANMANG, `sourceDocId` orqali `RetailSale` dan o'qing
+   (izoh matni o'zgarishi mumkin).
