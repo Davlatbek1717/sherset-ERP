@@ -163,3 +163,33 @@ describe('computeStatement — tur ro’yxatiga bog’liq EMAS (DUP-08 qulfi)', 
     expect(r.lines).toHaveLength(15);
   });
 });
+
+/**
+ * A3 (2026-08-25) — AVANS TURLARINING YORLIG'I Excel aktida ham bor.
+ *
+ * Bu — reja A3 vazifasi 3 dagi «doc-type xaritalari, 3 joyda» ning uchinchi
+ * joyi: POS kartasi va akt-sverka sahifasi WEB tomonda, bu esa SERVER
+ * tomonda (Excel eksporti `docTypeLabel()` dan yuradi).
+ *
+ * Saldoga aloqasi YO'Q (Faza 10 shartnomasi): xarita faqat yorliq. Lekin
+ * yorliqsiz qator «customerPrepayRefund» degan xom satr bilan chiqardi va
+ * mijozga yuboriladigan aktda shu ko'rinardi.
+ */
+describe('A3 — avans turlarining Excel yorliqlari', () => {
+  it('uchala tur ham o`z yorlig`ini oladi (xom `docType` emas)', () => {
+    expect(docTypeLabel('customerPrepay')).toBe('Avans (kassada qabul qilindi)');
+    expect(docTypeLabel('salePrepay')).toBe("Avansdan to'lov");
+    expect(docTypeLabel('customerPrepayRefund')).toBe('Avans naqd qaytarildi');
+  });
+
+  it('🔴 B2B `prepayment` bilan CHALKASHMAYDI (boshqa modul, boshqa ma`no)', () => {
+    // `prepayment` — zakazga bog'langan B2B avansi; kassa avansi esa mijoz
+    // BALANSIDA erkin turadi (reja §2.3 chegarasi).
+    expect(docTypeLabel('customerPrepay')).not.toBe(docTypeLabel('prepayment'));
+    expect(docTypeLabel('customerPrepayRefund')).not.toBe(docTypeLabel('prepaymentReturn'));
+  });
+
+  it('noma`lum tur HAMON o`zini qaytaradi (qator yo`qolmaydi)', () => {
+    expect(docTypeLabel('yangiTur')).toBe('yangiTur');
+  });
+});

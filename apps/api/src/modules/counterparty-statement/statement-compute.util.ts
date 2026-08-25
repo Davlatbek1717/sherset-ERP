@@ -109,6 +109,14 @@ export const DOC_TYPE_LABEL: Record<string, string> = {
   debt: 'Qarz ochildi',
   debtpayment: "Qarz to'lovi",
   retailsale: 'Chakana (qarzga)',
+  // A1/A2/A3 (2026-08-25) — MIJOZ AVANSINING uch harakati. Uchalasi ham
+  // balans jurnaliga yozadi, ya'ni Excel aktida ALLAQACHON qator bo'lib
+  // chiqardi — faqat yorliqsiz (xom `customerPrepay` satri bilan).
+  // ⚠️ `prepayment` (B2B, zakazga bog'langan avans) BILAN CHALKASHMASIN:
+  // kassa avansi mijoz BALANSIDA erkin turadi (reja §2.3 chegarasi).
+  customerPrepay: 'Avans (kassada qabul qilindi)',
+  salePrepay: "Avansdan to'lov",
+  customerPrepayRefund: 'Avans naqd qaytarildi',
   opening: "Boshlang'ich qoldiq",
 };
 
