@@ -1,6 +1,6 @@
 # Bo'linadigan tovar — bo'lak hisobi (kabel, sim, shlang)
 
-> **Yaratilgan:** 2026-08-25 · **Buyurtmachi:** Ozodbek (egasi) · **Holat:** **K1 ⚠️ QISMAN** (`bc92330a`) + **K2 ⚠️ QISMAN** — poydevor (model, migratsiya, sverka) va bo'lak reyestri boshqaruvi ekrani + yorliq tayyor; K1 migratsiyasi LOKAL dev bazada to'liq isbotlangan (UP×2 → zond → DOWN×2 → UP), K2 esa migratsiya QO'SHMAYDI. **Ikkalasi ham jonli tasdiq kutmoqda** — egasi 2026-08-25 da deploy'ni rad etdi, shu sabab ikkala faza BIRGA, bitta deploy bilan yopiladi. 🔴 **Deploy'da `topup-role-permissions.ts` MAJBURIY** (yangi entity `piecetracking`). Jonli xulq HOZIRCHA o'zgarmaydi: bayroq hech qayerda yoqilmagan, jadval bo'sh. K3…K6 boshlanmagan.
+> **Yaratilgan:** 2026-08-25 · **Buyurtmachi:** Ozodbek (egasi) · **Holat:** **K1 ⚠️ QISMAN** (`bc92330a`) + **K2 ⚠️ QISMAN** + **K3 ⚠️ QISMAN** — poydevor (model, migratsiya, sverka) va bo'lak reyestri boshqaruvi ekrani + yorliq tayyor; K1 migratsiyasi LOKAL dev bazada to'liq isbotlangan (UP×2 → zond → DOWN×2 → UP), K2 esa migratsiya QO'SHMAYDI. **Uchalasi ham jonli tasdiq kutmoqda** — egasi 2026-08-25 da deploy'ni rad etdi, shu sabab uchala faza BIRGA, bitta deploy bilan yopiladi. 🔴 **Deploy'da `topup-role-permissions.ts` MAJBURIY** (yangi entity `piecetracking`). Jonli xulq HOZIRCHA o'zgarmaydi: bayroq hech qayerda yoqilmagan, jadval bo'sh. **K3 (kassir ko‘rinishi + 7.1 avto-taqsimot istisnosi) KOD TAYYOR** — migratsiyasiz, yangi ruxsatsiz, jonli xulq bayroq yoqilmaguncha o‘zgarmaydi; K4…K6 boshlanmagan.
 >
 > **Ijro tartibi:** har faza ALOHIDA sessiyada. Agent shu faylni, F-rejani
 > (`2026-08-23-ombor-restrukturizatsiya.md`), G-rejani
@@ -429,6 +429,249 @@ tizimli farq yo'q; kassirlardan «bo'laklar to'g'ri ko'rinyapti» tasdig'i oling
 ---
 
 ## 10. HISOBOTLAR (har faza o'z hisobotini SHU YERGA yozadi)
+
+### K3 — Kassir ko'rinishi + avto-taqsimot istisnosi · ⚠️ QISMAN (qoida 11) · 2026-08-25
+
+**Holat: QISMAN.** Kod, sirt, i18n va testlar tayyor; qabul mezonining **jonli**
+bandi BAJARILMAGAN (deploy yo'q ⇒ jonli tovarda tekshirilmadi). Faza «TUGADI»
+deb yopilmaydi. K1+K2 bilan BIR deployda yopiladi — K3 **migratsiya
+QO'SHMAYDI** va `topup-role-permissions.ts` ga ham hech narsa qo'shmaydi
+(yangi ruxsat-entity YO'Q).
+
+---
+
+**1. Ikki tomonlama bog'liqlik javobi (qoida 10 — «bu o'zgarish qaysi mavjud
+oqimni buzishi mumkin?»).**
+
+| Oqim | Ta'sir | Dalil |
+|---|---|---|
+| **Kassa sotuvi — TAQSIMOT** | 🔴 **O'ZGARADI, lekin FAQAT bayrog'i yoqilgan tovarda** | `pieceTracked = true` bo'lsa Q1-v2 ning **3-holati (bo'linish) o'chadi**: bitta manba butun miqdorni qoplashi shart, aks holda `no-single-source` sababi bilan 400. Bayroq o'chiq tovarda to'plam BO'SH ⇒ dvigatel bir qadam ham boshqacha yurmaydi (test: «bayroq O'CHIQ: 180 ikki yacheykadan BO'LINADI»). Jonlida bayroq **hech qayerda yoqilmagan** (K1 lokal o'lchovi: 5086 tovarning hammasida `false`) ⇒ deploy kuni jonli xulq O'ZGARMAYDI. |
+| **Kassa — rezerv (`sendToPicking`)** | AYNI qoida | Rezerv ham ajratmadan quriladi. Ataylab: rezerv ikki ombordan tushib `post()` uni rad etsa — hech qachon bo'shamaydigan hold (G4 2a hisobotining 3-bandi bilan bir sabab). Xato mijoz oldida emas, savat bosilgan lahzada chiqadi. |
+| **Yetishmovchilik XABARI** | Matn ikkiga bo'lindi | `insufficient` uchun matn **bir harf ham o'zgarmagan** (test bilan qulflangan); `no-single-source` uchun yangi matn — «yetmaydi» deyish YOLG'ON bo'lardi (tovar BOR, faqat bir bo'lakda emas) va kassir mijozni bekorga qaytarardi. |
+| **Qoldiq (`Stock`/`StockByCell`)** | YO'Q | K3 birorta yozuv yo'lini ochmaydi. Yangi servis faqat `findFirst`/`findMany` qiladi — test bilan qulflangan («yozish metodlarini UMUMAN chaqirmaydi»). |
+| **Bo'lak reyestri (K1/K2)** | YO'Q | K3 `stock_pieces` ga YOZMAYDI, faqat o'qiydi. K2 ekrani va K1 sverkasi tegilmagan. |
+| **Ruxsat matritsasi / rollar** | YO'Q | Yangi entity QO'SHILMADI. Yangi yo'l `product.view` ostida — kassirda (`role-templates.ts` → `cashier`) allaqachon bor ⇒ topup, seed va snapshotlar TEGILMAGAN. |
+| **Kiosk allowlist** | Bitta `exact` qator | `GET /stock-pieces/availability` — AYNAN shu yo'l. Reyestrning qolgani (ro'yxat, qo'shish, tuzatish, «tugadi», bayroq, sverka) kioskka YOPIQ, test bilan (`kiosk-policy.test.ts` +3). Ikki qulf birga: marshrut + ruxsat. |
+| **BRAK ombori (G3/E4)** | ISTISNO qilingan | Brak bo'laklari kassir ekranida «bor» bo'lib ko'rinmaydi (test). Aks holda kassir mijozga sotib bo'lmaydigan tovarni va'da qilardi. |
+| **TSD (G5/G6)** | YO'Q | `tsd-scan.ts`, `tsd-policy.ts` tegilmagan; `/tsd/scan` hamon `supported: false` (K4 to'ldiradi). |
+| **H2/H3 (jonli holat reyestri)** | YO'Q | Ombor TUZILMASIGA (`Store`, `__posPriority`, `__posFrontStore`, `__brakStore`) tegilmadi; yangi JONLI HOLAT yo'q ⇒ `docs/ops/jonli-holat.md` ga qo'shiladigan qator yo'q. |
+| **Eng yomon holat** | Reyestr noto'g'ri yoki bo'sh | Panel JIM turadi va hech narsani to'smaydi; taqsimot esa bayroq yoqilgan tovarda bo'lishni rad etadi — ya'ni eng yomon holat «kassir qatorni qo'lda bo'ladi», savdo to'xtamaydi. |
+
+🔴 **Bitta ochiq xavf, ochiq yozilgan.** Bayroq yoqilgan tovarda qoldiq ko'p
+yacheykaga sochilgan bo'lsa (masalan 2 dona: 07 da 1, 02 da 1) chek **400 oladi**
+va kassir qatorni bo'lishi kerak. Bu ATAYLAB (K-reja 7.1), lekin **savdoni
+sekinlashtiradigan yagona nuqta** — shuning uchun K6 pilotida bayroq FAQAT
+kabel guruhiga yoqiladi va birinchi hafta kuzatiladi. Yumshatuvchi uchta narsa
+kodda: (a) manba = yacheyka YOKI **yacheykasiz hovuz**, ya'ni jonlidagi ~94 %
+qoldiq bitta manba bo'lib qatnashadi; (b) `allowNegativeStock` yoqilgan omborda
+eski erkinlik saqlanadi; (c) xabar kassirga NIMA QILISHNI aytadi (eng katta
+bo'lak qancha).
+
+---
+
+**2. Nima qilindi.**
+
+**Sof yadro `apps/api/src/modules/stock-piece/piece-offer-core.ts`** (Prisma yo'q):
+
+- `buildPieceComposition` — butun rulonlar GURUHLANADI (`250 × 3`), bo'laklar
+  individ qator; `registryQty`, `activePieces`, **`longest` (eng uzun uzluksiz)**.
+  Faqat `status='active'` — K1 sverkasi bilan AYNI qoida.
+- `planPieceOffer` — uch hukm: **`single`** (yolg'iz qoplaydigan ENG KICHIK
+  bo'lak — Q1-v2 falsafasi, lekin K-Q4 bo'yicha faqat TAVSIYA),
+  **`needs-split`** (`150 + 30` taklifi, kattadan kichikka), **`not-enough`**
+  (jami ham yetmaydi).
+- 🔴 **`no-registry` — SUKUT.** Reyestr bo'sh yoki miqdor hali kiritilmagan
+  bo'lsa hukm ham, ogohlantirish ham YO'Q. Bayroq yoqilgan-u reyestr
+  to'ldirilmagan holat K5 gacha NORMAL; o'sha paytda «bo'lak yo'q» deb
+  qichqirish kassirni yo'q muammo bilan to'xtatardi.
+- Teng uzunlikda **kesilgan bo'lak butun rulondan afzal**: butun rulonni kesish
+  javonda yangi qoldiq tug'diradi.
+
+**Servis `stock-piece-availability.service.ts`** (FAQAT O'QISH) +
+**`GET /stock-pieces/availability`** (`assortmentId`, ixtiyoriy `storeId`,
+`quantity`). Bayrog'i O'CHIQ tovarda `stock_pieces` ga **umuman so'rov
+ketmaydi** va javob bo'sh. BRAK omborlari filtrlanadi. Ruxsat —
+**`product.view`**: bu tovar kartochkasining KO'RINISHI, reyestr BOSHQARUVI
+emas (`piecetracking` — yozuv huquqi, K-Q9).
+
+**Taqsimot istisnosi (7.1)** — `retail-sale/retail-allocation.ts`:
+
+- `AllocationInput.pieceTracked?: ReadonlySet<string>`; 3-holat (bo'linish) shu
+  tovarlarda QO'LLANMAYDI;
+- `AllocationShortfall` endi **`reason`** (`insufficient` | `no-single-source`)
+  va `largestSingle` bilan; `buildShortfallMessage` — sabab bo'yicha ikki matn;
+- **`collectPieceTracked`** — bayroq POZITSIYA bilan birga o'qiladi
+  (`product: { select: { pieceTracked } }`), **qo'shimcha so'rov YO'Q** (test:
+  post() da `product.findMany` hamon BITTA marta — narx snapshot'i uchun);
+- `retail-sale.service.ts`: `post()` va `sendToPicking()` to'plamni uzatadi,
+  ikkala 400 ham yangi xabar funksiyasidan quriladi.
+
+**Kiosk** (`kiosk-policy.ts`): `exact` qator `GET /stock-pieces/availability`.
+
+**Web:**
+
+- `components/pos/piece-offer-panel.tsx` — qator oynasida bo'lak tarkibi,
+  «Eng uzun uzluksiz» qatori, hukm bloki (yashil/sariq/qizil), ombor kesimi va
+  **«Shunday bo'lib berish»** tugmasi. Bayroq o'chiq yoki reyestr bo'sh bo'lsa
+  `null` qaytaradi (ekran bir bayt ham o'zgarmaydi).
+- `components/pos/cart-line-edit-modal.tsx` — panel + kassir kelishuvi qatori;
+  `CartLineEditTarget.pieceTracked`, natijada `pieceLengths`. **Miqdorga QO'LDA
+  tegilsa kelishuv BEKOR** (eski tarkib yangi miqdorga yolg'on ko'rsatma
+  bo'lardi).
+- `sotuv/page.tsx` + `_components/pos-types.ts` — `pieceTracked` tovar
+  qatoridan savatga ko'chadi, `pieceLengths` savat qatorida saqlanadi;
+  `_components/sotuv-mode.tsx` — savat qatorida `180 (150 + 30)`.
+- `lib/piece-composition.ts` — tarkib matni **bitta manbadan**: kassa ekrani va
+  tovar kartochkasi bir xil o'qishi shart.
+- `components/product-detail-widget.tsx` — «Qoldiqlar» tabida har ombor ostida
+  bo'lak qatori (`250 × 3 · 200 · 150` + eng uzun uzluksiz), F1 ning yacheyka
+  kesimidan YUQORIDA.
+- `packages/contracts/src/product.ts` — `PosProductRow.pieceTracked`
+  (ixtiyoriy). Tekshirildi: `/products` javobida maydon HAQIQATAN keladi
+  (repository `include` → `...rest` bilan hamma skalyar yoyiladi).
+- i18n **ru+uz**: yangi `pages.pieces` (9 kalit), `pages.sotuv.line_edit_pieces`,
+  `product_detail_widget.stock_pieces` + `stock_pieces_longest`.
+
+---
+
+**3. Rejadan ONGLI CHETLASHISHLAR (uchta).**
+
+1. **🔴 3-vazifa («pozitsiya bir nechta bo'lakdan iborat bo'la olishi») SAVAT
+   darajasida bajarildi, SERVERDA emas.** Kassir uzunliklarni belgilaydi, ular
+   savat qatorida va oynada ko'rinadi — lekin chekka YOZILMAYDI: `RetailSale`
+   pozitsiyasida bunday maydon yo'q va uni qo'shish migratsiya + posting yo'liga
+   tegish demakdir, ya'ni **K4 ning ishi** (kesim oqimi, `sourcePieceId`
+   zanjiri). K3 ning o'z sarlavhasi «FAQAT O'QISH» deydi — chegara shu yerda
+   tortildi. **Ochiq qarz sifatida 9-bandda yozilgan.**
+2. **Taqsimot istisnosi YACHEYKA/hovuz darajasida ishlaydi, BO'LAK darajasida
+   emas.** «Bitta manba qoplasin» sharti bajarilsa sotuv o'tadi, garchi o'sha
+   yacheykada 180 m uzluksiz bo'lak bo'lmasligi mumkin (100 + 80). Sabab
+   ataylab: reyestrni sotuvning SHARTI qilib qo'yish jonlida (reyestr hali
+   bo'sh) har kabel sotuvini to'xtatardi. Bo'lak darajasidagi haqiqat kassirga
+   PANEL orqali ko'rinadi, qaror mijoz bilan kelishiladi (K-Q5). Reyestr
+   to'lgach (K5) shartni qattiqlashtirish mumkin — K6 pilotining qarori.
+3. **Bayroq o'chiq tovarda ham so'rov ketadi** (server bo'sh javob qaytaradi):
+   POS'da panel `line.pieceTracked` bo'yicha chizilgani uchun so'rov
+   YUBORILMAYDI, tovar kartochkasida esa har tovarda bitta yengil so'rov
+   bo'ladi. Alternativa (kartochkada shartli so'rov) `pieceTracked` ni sahifa
+   yuklanishidan oldin bilishni talab qilardi — arzimas foyda uchun ortiqcha sim.
+
+---
+
+**4. Testlar.**
+
+| Gate | Natija |
+|---|---|
+| Yangi `piece-offer-core.test.ts` | **21** (tarkib 8, `single` 5, `needs-split` 4, `not-enough` 1, sukut 3) |
+| Yangi `stock-piece-availability.service.test.ts` | **11** (faqat-o'qish 4, bayroq o'chiq 1, BRAK 1, ombor kesimi 1, kirish 4) |
+| Yangi `retail-sale-piece-alloc-wiring.test.ts` | **6** (post 4, sendToPicking 2) |
+| `retail-allocation.test.ts` | **+9** (istisno 6, xabar 3) → fayl jami 44 |
+| `kiosk-policy.test.ts` | **+3** (yo'l ochiq, qolgani yopiq, faqat GET) → fayl jami 111 |
+| Yangi web `piece-offer-panel.test.tsx` | **11** |
+| Yangi web `cart-line-edit-pieces.test.tsx` | **6** |
+| Yangi web `lib/__tests__/piece-composition.test.ts` | **5** |
+| **Jami yangi** | **+72** |
+| `apps/api` vitest TO'LIQ | 666 fayl (1 skip) · **9600 passed** · 2 skipped · **0 failed** ✅ |
+| `apps/web` vitest TO'LIQ | 334 fayl · **4380 passed** · 26 skipped · **0 failed** ✅ |
+| `turbo typecheck` (api, web, db, contracts) | ✅ 5/5 |
+| i18n gate'lar (`apps/web/src/__tests__` to'liq) | ✅ 92 fayl / 1517 passed |
+| biome — YANGI fayllar | ✅ 0 xato, **0 ogohlantirish** |
+| biome — `cart-line-edit-modal.tsx` | 2 ogohlantirish — **mening ishimdan OLDIN ham AYNI 2 ta** (HEAD nusxasi bilan o'lchab solishtirildi) |
+
+**Ikkita MAVJUD test ATAYLAB yangilandi (o'chirilmadi):**
+`retail-allocation.test.ts` va `retail-sale-cascade-wiring.test.ts` dagi
+`shortfalls` shakli endi `reason` maydonini ham kutadi; sabab izoh bilan
+o'sha yerda yozilgan.
+
+⚠️ **Halol qayd:** K1 va K2 hisobotlarida qayd etilgan yiqilgan web testlari
+(A3/Q4 sessiyalarining i18n va typecheck qarzlari) bu sessiyada **YO'Q** —
+ikkala suite ham 0 failed, ya'ni o'sha qarzlar oradagi commitlarda yopilgan.
+
+---
+
+**5. Deploy holati: ⛔ BAJARILMADI.**
+
+Egasining 2026-08-25 dagi «Deploy YO'Q» qarori kuchda (G1 sessiyasidagi «C
+yo'li», K1 va K2 sessiyalarida takrorlangan). Jonli baza ochilmadi,
+`warehouse-state.ts` yugurtirilmadi, VPS HEAD tekshirilmadi.
+
+**K3 deploy deltasiga hech narsa QO'SHMAYDI:** migratsiya yo'q, yangi
+ruxsat-entity yo'q, topup qadami yo'q, jonli sozlama yo'q. U K1+K2 bilan
+bitta deployda boradi.
+
+**Qaytarish yo'li (qoida 12).** K3 jonli MA'LUMOTGA tegadigan skript ham,
+migratsiya ham qo'shmaydi ⇒ teskari DDL kerak emas. Qaytarish ikki bosqichli:
+(1) kod — `git revert` (panel va yo'l yo'qoladi, `stock_pieces` qolaveradi);
+(2) **jonli xulqni bir soniyada qaytarish** — bayroqni o'chirish
+(`POST /stock-pieces/flag`, K2 ekrani): bayroq o'chgan zahoti taqsimot AVVALGI
+(bo'linadigan) yo'lga qaytadi va panel yo'qoladi. Ya'ni qaytarish uchun deploy
+ham, skript ham shart emas — bu ATAYLAB shunday qurilgan (2026-08-24 saboqi:
+qaytarish yo'li OLDIN tayyor bo'lsin).
+
+---
+
+**6. QABUL MEZONI — bandma-band (qoida 11).**
+
+| # | Mezon | Holat |
+|---|---|---|
+| 1 | bayroq yoqilgan sinov tovarda kassa ekranida **tarkib** va **«eng uzun uzluksiz»** DB dagi haqiqiy bo'laklarga teng (test bilan qulflangan) | ⚠️ QISMAN — TEST darajasida ✅ (yadro egasining `250×3 · 200 · 150 · 70 · 50 = 1220` misolini raqam bilan qulflaydi; servis testi DB→yadro simlarini, web testi ekranga chiqishini), **jonlida ❌** |
+| 2 | bayroq **O'CHIQ** tovarlarda kassa ekrani **mutlaqo o'zgarmagan** | ✅ test bilan: panel chizilmaydi VA so'rov umuman yuborilmaydi; server bo'sh javob qaytaradi va reyestrga bormaydi |
+| 3 | bayroq **O'CHIQ** tovarlarda **taqsimot** mutlaqo o'zgarmagan | ✅ test bilan: sof dvigatel (`split` o'z holicha), wiring (ikki delta), xabar matni baytma-bayt eski |
+| 4 | i18n ru+uz, testlar | ✅ |
+
+**Birinchi band jonli tasdiq kutmoqda ⇒ K3 «QISMAN».** Yopish sharti: deploy +
+7-banddagi smoke (bayroq yoqilgan bitta sinov tovar bilan).
+
+---
+
+**7. Qoida 13 — uchma-uch smoke.** Bajarilmadi (deploy yo'q). Deploy kunida
+bajariladigan minimal ro'yxat (K1/K2 ro'yxatlariga QO'SHIMCHA):
+
+1. sinov tovarga (kabel) bayroq yoqiladi (K2 ekrani) va 3 butun rulon +
+   4 bo'lak kiritiladi;
+2. kassada o'sha tovar savatga qo'shiladi → qator oynasida tarkib
+   `250 × 3 · 200 · 150 · 70 · 50` va «Eng uzun uzluksiz: 250» ko'rinadi;
+3. miqdor 180 → yashil «uzluksiz bor»; 400 → sariq «uzluksiz yo'q» + taklif;
+   5000 → qizil «yetmaydi»;
+4. **bayrog'i O'CHIQ oddiy tovar** bilan bitta sotuv — ekran ham, taqsimot ham
+   avvalgidek (post → tekshir → cancel);
+5. bitta yacheyka **sanash** va bitta **ko'chirish** — avvalgidek;
+6. `packages/db` da `npx tsx scripts/warehouse-state.ts` — chiqish kodi 0.
+
+Javobgar shaxs va vaqt deploy sessiyasida shu yerga yoziladi.
+
+---
+
+**8. ⚠️ Parallel sessiya (CLAUDE.md §6 — HALOL QAYD).**
+Sessiya boshida daraxt SOF EMAS edi: `docs/plans/2026-08-23-ombor-restrukturizatsiya.md`
+(F-reja) o'zgargan, `docs/ops/2026-08-25-deploy-dossieri.md` va uchta rollback
+`.sql` untracked holda turardi — **hech biriga tegilmadi** va commitga
+kiritilmadi (§6.1). Commit aniq pathspec bilan qilindi.
+
+---
+
+**9. Ochiq qolganlar / keyingi fazalarga.**
+
+- **🔴 K1+K2+K3 ni yopish uchun:** bitta deploy + `topup-role-permissions.ts`
+  (K2 uchun) + 7-banddagi smoke.
+- **🔴 K4 uchun ASOSIY qarz:** kassir kelishgan bo'lak tarkibi (`pieceLengths`)
+  hozircha FAQAT savatda yashaydi — serverga ketmaydi va omborchi uni chekda
+  ko'rmaydi. K4 kesim oqimini qurganda uni pozitsiya ajratmasi bilan birga
+  saqlasin, aks holda kassirning mijoz bilan kelishuvi omborga yetib bormaydi.
+- **K4 ga tayyor ulanish nuqtalari:** `planPieceOffer(...).single` — omborchiga
+  ko'rsatiladigan tavsiya manba; `buildPieceComposition` — TSD ekranidagi
+  ro'yxat; `AllocationShortfall.reason === 'no-single-source'` — kesim oqimining
+  kirish signali; `StockPieceAvailabilityService` modulda EXPORT qilingan.
+- **K6 ga:** bayroq siyosati (tovar kartochkasidagi joyi, «m» birligidagi yangi
+  tovarda yoqilgan kelishi, «hal qilinmagan» ro'yxati) hamon K6 da — K3 bayroqni
+  faqat O'QIYDI. Pilotda 1-banddagi «ochiq xavf» kuzatilsin: bayroq yoqilgan
+  tovarda 400 lar soni.
+- **Bo'lak darajasidagi qat'iy tekshiruv** (3-bo'limning 2-chetlashishi) —
+  reyestr to'lgach (K5) qayta ko'riladi.
+- **Egasiga savollar hamon ochiq:** K-S1…K-S4. **K-S3 endi K4 dan OLDIN javob
+  talab qiladi:** bir mijozga 2 bo'lak berilganda chekda 2 qator bo'ladimi yoki
+  1 qator «180 m (150+30)» — hozirgi K3 xulqi ikkinchisiga qurilgan (bitta
+  pozitsiya, tarkib esa izoh sifatida), soliq/chek talabi tekshirilmagan.
 
 ### K2 — Bo'lak reyestri boshqaruvi + yorliq · ⚠️ QISMAN (qoida 11) · 2026-08-25
 
