@@ -53,6 +53,18 @@ export type PaymentCurrency = 'UZS' | 'USD';
  */
 export const RATE_SCALE = 100_000_000;
 
+/**
+ * Q4 (2026-08-25) — qarz QAYERDAN kelgani.
+ *   `registry`   — qo'lda ochilgan `QRZ-…` yoki P1 adopsiya qatori;
+ *   `retailsale` — KASSA CHEKIDAN avtomatik ochilgan qator (Q2).
+ *
+ * Yopiq ro'yxat server bilan AYNAN bir xil
+ * (`manager/collection/debt-collection.ts#CollectionSource`). Undirish
+ * ekrani ham, qarzdorlar ro'yxati ham SHU lug'atdan yuradi — ikki ekran bir
+ * xil belgini ko'rsatishi shundan keladi.
+ */
+export type DebtSourceKind = 'registry' | 'retailsale';
+
 export interface DebtRow {
   id: string;
   name: string;
@@ -79,6 +91,16 @@ export interface DebtRow {
   ownerId: string | null;
   ownerName: string | null;
   issuedByName: string | null;
+  /** Q4 — qarz manbasi (`registry` | `retailsale`). */
+  source: DebtSourceKind;
+  /** Q4 — manba hujjatining id'si (chek) yoki `null`. */
+  sourceDocId: string | null;
+  /**
+   * Q4 — manba hujjatining RAQAMI (`CHK-…`). FAQAT ro'yxat javobida
+   * to'ladi (`/debts`); kartochka/qo'ng'iroq javoblarida `null` — bu
+   * ataylab, server u yerda qo'shimcha so'rov yubormaydi.
+   */
+  sourceDocNumber: string | null;
   closedAt: string | null;
   createdAt: string;
 }

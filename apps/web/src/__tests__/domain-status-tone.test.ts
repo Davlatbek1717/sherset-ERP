@@ -9,6 +9,7 @@ import {
   CALL_DIRECTION_TONE,
   CALL_STATUS_TONE,
   CHANNEL_KIND_TONE,
+  DEBT_SOURCE_TONE,
   DELIVERY_STATUS_TONE,
   HR_MESSAGE_STATUS_TONE,
   HR_TASK_LOG_STATUS_TONE,
@@ -146,6 +147,10 @@ describe('canonical domain maps — values locked', () => {
       { debtor: 'success', creditor: 'destructive', settled: 'neutral' },
     ],
     LEGAL_STATUS_TONE: [LEGAL_STATUS_TONE, { Juridical: 'brand', Natural: 'success' }],
+    // Q4 (2026-08-25) — qarz manbasi. Ikkalasi ham NEYTRAL turkumda: manba
+    // «yomon/yaxshi» emas, u faqat kelib chiqish; ogohlantirish rangi
+    // undirish ekranidagi KECHIKISH belgisiga tegishli, manbaga emas.
+    DEBT_SOURCE_TONE: [DEBT_SOURCE_TONE, { retailsale: 'info', registry: 'neutral' }],
   };
   for (const [name, [actual, expected]] of Object.entries(EXPECT)) {
     it(`${name} matches the canon exactly (no extra/missing keys)`, () => {

@@ -24,12 +24,20 @@ import { CustomerOrderService } from '../customer-order/customer-order.service.j
 // Q3 (2026-08-25) — SIMMETRIYA (invariant 2): balans `−` olganda chekdan
 // tug'ilgan reyestr qatori ham AYNAN shuncha kamayadi, aks holda undirish
 // ro'yxati qaytarilgan tovar uchun pul talab qilib turardi.
+// Q4 (2026-08-25): muddat endi AKKAUNT SOZLAMASIDAN keladi
+// (`CompanySettings.saleDebtTermDays`); sozlanmagan bo'lsa Q1 ning
+// kod-defaulti (14 kun) qoladi — `resolveSaleDebtTermDays`.
 import {
   DEBT_LEDGER_CURRENCY,
+  DEFAULT_SALE_DEBT_TERM_DAYS,
   SALE_DEBT_SOURCE_DOC_TYPE,
+  SALE_DEBT_TERM_DAYS_MAX,
+  SALE_DEBT_TERM_DAYS_MIN,
+  isSaleDebtTermDaysCorrupt,
   planSaleDebtDelta,
   planSaleDebtRow,
   receivablePortion,
+  resolveSaleDebtTermDays,
   saleDebtDueAt,
   saleDebtMoveNoteText,
 } from '../debt/sale-debt-registry.js';
@@ -3044,6 +3052,45 @@ export class RetailSaleService {
   }
 
   /**
+   * Q4 — kassa qarzi muddati (kun) akkaunt sozlamasidan.
+   *
+   * Sozlama yozilmagan bo'lsa (`CompanySettings` qatori YO'Q yoki ustun
+   * `null`) — Q1 ning kod-defaulti (14 kun), ya'ni Q2/Q3 xulqi bir tiyin ham
+   * o'zgarmaydi. Chiqarish qoidasi sof modulda
+   * (`sale-debt-registry.ts#resolveSaleDebtTermDays`), bu yerda faqat I/O.
+   *
+   * ⚠️ **QULF OLINMAYDI va olinmasligi kerak.** Bu — sozlama, pul emas:
+   * u yerdagi qiymat qarz summasini ham, balansni ham belgilamaydi, faqat
+   * yangi qatorning `nextContactAt` sanasini beradi. Qulf olinsa u
+   * BALANS → QARZLAR tartibiga uchinchi ishtirokchi qo'shardi (deadlock
+   * yuzasi), foydasi esa nol (A1 hisobotidagi «chekinish 1» bilan bir xil
+   * dalil).
+   *
+   * ⚠️ Yaroqsiz qiymat (faqat qo'lda SQL bilan yozilishi mumkin — yozuv
+   * yo'li `UpdateCompanySettingsSchema` bilan yopilgan) JIM o'tmaydi:
+   * default olinadi va ogohlantirish logi yoziladi. Chekni 500 bilan
+   * yiqitish — kassani to'xtatish demakdir.
+   */
+  private async readSaleDebtTermDays(
+    tx: Prisma.TransactionClient,
+    accountId: string,
+  ): Promise<number> {
+    const settings = await tx.companySettings.findUnique({
+      where: { accountId },
+      select: { saleDebtTermDays: true },
+    });
+    const raw = settings?.saleDebtTermDays ?? null;
+    if (isSaleDebtTermDaysCorrupt(raw)) {
+      this.logger.warn(
+        `[Q4] company_settings.sale_debt_term_days = ${raw} — YAROQSIZ qiymat ` +
+          `(butun, ${SALE_DEBT_TERM_DAYS_MIN}…${SALE_DEBT_TERM_DAYS_MAX} oralig'ida bo'lishi ` +
+          `kerak). Default ${DEFAULT_SALE_DEBT_TERM_DAYS} kun olindi.`,
+      );
+    }
+    return resolveSaleDebtTermDays(raw);
+  }
+
+  /**
    * Q2 — POS chekidan tug'ilgan `Debt` reyestr qatorini yozadi.
    *
    * Chaqiruvchi `post()` ning qarz bloki, balans deltasidan KEYIN, AYNAN o'sha
@@ -3079,11 +3126,14 @@ export class RetailSaleService {
       postedAt: Date;
     },
   ): Promise<void> {
+    // Q4 — muddat akkaunt sozlamasidan (sozlanmagan bo'lsa 14 kun).
+    const termDays = await this.readSaleDebtTermDays(tx, accountId);
     const plan = planSaleDebtRow(
       {
         saleName: input.saleName,
         debtAmountMinor: input.debtAmountMinor,
         balanceBeforeMinor: input.balanceBeforeMinor,
+        termDays,
       },
       input.postedAt,
     );
@@ -3321,6 +3371,10 @@ export class RetailSaleService {
     // muddatsiz qator undirish ro'yxatida `no_due_date` chelagida qolib,
     // eslatma cron'i uni umuman ko'rmasdi).
     const reopened = !plan.closed && row.nextContactAt === null;
+    // Q4 — qayta ochilgan qatorning muddati ham AKKAUNT SOZLAMASIDAN
+    // (Q2 yozuvchisi bilan bitta manba). Sozlama faqat shu tarmoqda kerak,
+    // shuning uchun o'qish ham faqat shu yerda — har vozvratda emas.
+    const reopenTermDays = reopened ? await this.readSaleDebtTermDays(tx, accountId) : undefined;
     await tx.debt.update({
       where: { id: row.id },
       data: {
@@ -3331,7 +3385,7 @@ export class RetailSaleService {
         ...(plan.closed
           ? { nextContactAt: null }
           : reopened
-            ? { nextContactAt: saleDebtDueAt(input.now) }
+            ? { nextContactAt: saleDebtDueAt(input.now, reopenTermDays) }
             : {}),
         ...(movesCounterparty && retargetToId ? { counterpartyId: retargetToId } : {}),
       },

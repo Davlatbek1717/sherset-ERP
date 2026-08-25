@@ -1,6 +1,10 @@
 'use client';
 
 import { api } from '@/lib/api-client';
+// Q4 — MANBA belgisining rangi UMUMIY lug'atdan (UI Convention 6): AYNAN
+// shu xarita `/debts` ro'yxatida ham ishlatiladi, sahifa-lokal nusxa
+// ikki ekranni bir kun ayirardi.
+import { debtSourceTone } from '@/lib/domain-status-tone';
 import {
   Badge,
   Button,
@@ -34,12 +38,28 @@ import { useState } from 'react';
  *
  * Yangi jo'natgich yo'q: tugma mavjud SMS/Telegram eslatma yo'lini chaqiradi.
  * Qo'ng'iroq esa qarz kartasida qayd etiladi (havola).
+ *
+ * 🔴 **Q4 (2026-08-25) — MANBA.** Har qatorda «bu qarz qayerdan keldi»
+ * belgisi turadi (kassa cheki / reyestr) va kassa qarzida CHEK RAQAMI
+ * havola bo'lib chiqadi. Sarlavhada manba filtri bor; filtr yoqilganda
+ * bo'sh holat matni ham SHU kesimni aytadi — aks holda filtr qarzni
+ * jimgina yashirgandek ko'rinardi.
+ * Reja: `docs/plans/2026-08-25-kassa-qarzi-undirish-reyestri.md` (§Q4).
  */
 
 type CollectionBucket = 'overdue' | 'due_today' | 'upcoming' | 'no_due_date';
 type LastContactKind = 'call' | 'reminder' | 'note';
 type RemindBlockedReason = 'no_phone' | 'reminded_today';
 type Channel = 'sms' | 'telegram';
+/**
+ * Q4 — qator QAYERDAN keldi. Yopiq ro'yxat server bilan AYNAN bir xil
+ * (`manager/collection/debt-collection.ts#CollectionSource`):
+ *   `registry`   — qo'lda ochilgan `QRZ-…` yoki adopsiya qatori;
+ *   `retailsale` — kassa chekidan avtomatik ochilgan qator.
+ */
+type CollectionSource = 'registry' | 'retailsale';
+/** Filtr holati: `all` — kesim yo'q, serverga umuman uzatilmaydi. */
+type SourceFilter = 'all' | CollectionSource;
 
 interface CollectionRow {
   debtId: string;
@@ -62,6 +82,12 @@ interface CollectionRow {
   remindedToday: boolean;
   canRemind: boolean;
   remindBlockedReason: RemindBlockedReason | null;
+  /** Q4 — manba belgisi. */
+  source: CollectionSource;
+  /** Q4 — chek id'si (havola manzili) yoki `null`. */
+  sourceDocId: string | null;
+  /** Q4 — chek raqami (`CHK-…`) yoki `null` (hujjat topilmadi). */
+  sourceDocNumber: string | null;
 }
 
 interface CollectionResponse {
@@ -73,6 +99,10 @@ interface CollectionResponse {
     upcomingCount: number;
     noDueDateCount: number;
     problemCount: number;
+    /** Q4 — kassa chekidan kelgan qatorlar soni. */
+    retailSaleCount: number;
+    /** Q4 — reyestrda qo'lda ochilgan qatorlar soni. */
+    registryCount: number;
   };
   totalCount: number;
   truncated: boolean;
@@ -100,15 +130,21 @@ export default function MenejerUndirishPage() {
 
   const [scope, setScope] = useState<'due' | 'all'>('due');
   const [problemOnly, setProblemOnly] = useState(false);
+  // Q4 — manba kesimi. Default `all`: ekran ochilganda menejer HAMMASINI
+  // ko'radi (filtr hech qachon qarzni jimgina yashirmaydi).
+  const [source, setSource] = useState<SourceFilter>('all');
   const [channel, setChannel] = useState<Channel>('sms');
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [lastResult, setLastResult] = useState<RemindResponse | null>(null);
 
   const { data, isLoading } = useQuery<CollectionResponse>({
-    queryKey: ['manager-collection', scope, problemOnly],
+    queryKey: ['manager-collection', scope, problemOnly, source],
     queryFn: () =>
       api.get<CollectionResponse>(
-        `/manager/collection?scope=${scope}${problemOnly ? '&problemOnly=true' : ''}`,
+        `/manager/collection?scope=${scope}${problemOnly ? '&problemOnly=true' : ''}` +
+          // `all` serverga UZATILMAYDI — «kesim yo'q» degani, sxemada esa
+          // bunday qiymat yo'q (yopiq ro'yxat: registry | retailsale).
+          (source === 'all' ? '' : `&source=${source}`),
       ),
     refetchInterval: 300_000,
   });
@@ -191,6 +227,19 @@ export default function MenejerUndirishPage() {
               <option value="all">{t('scope_all')}</option>
             </NativeSelect>
           </label>
+          {/* Q4 — MANBA kesimi: «bu qarz qayerdan keldi». */}
+          <label className="flex flex-col gap-1 text-xs">
+            <span className="text-muted-foreground">{t('source')}</span>
+            <NativeSelect
+              value={source}
+              onChange={(e) => setSource(e.target.value as SourceFilter)}
+              data-test-id="collection-source"
+            >
+              <option value="all">{t('source_all')}</option>
+              <option value="retailsale">{t('source_retailsale')}</option>
+              <option value="registry">{t('source_registry')}</option>
+            </NativeSelect>
+          </label>
           <label className="flex items-center gap-2 text-xs">
             <Checkbox
               checked={problemOnly}
@@ -237,6 +286,15 @@ export default function MenejerUndirishPage() {
           )}
           {data.summary.problemCount > 0 && (
             <Badge tone="neutral">{t('problem_count', { count: data.summary.problemCount })}</Badge>
+          )}
+          {/* Q4 — «kassadan qancha» soni. Egasining shikoyati aynan shu haqda
+              edi: ro'yxatdagi umumiy son o'sganda menejer bir qarashda
+              «bu yangi qarz emas, ko'rinmagan qarz endi ko'rinmoqda» degan
+              javobni oladi. Nol bo'lsa ko'rsatilmaydi — bo'sh belgi shovqin. */}
+          {data.summary.retailSaleCount > 0 && (
+            <Badge tone="info" data-test-id="collection-retailsale-count">
+              {t('retailsale_count', { count: data.summary.retailSaleCount })}
+            </Badge>
           )}
           {data.truncated && (
             <span className="text-muted-foreground">
@@ -290,7 +348,19 @@ export default function MenejerUndirishPage() {
             <Spinner />
           </div>
         ) : rows.length === 0 ? (
-          <EmptyState title={t('empty_title')} description={t('empty_hint')} />
+          // Q4 — bo'sh holat MANBA kesimini AYTADI. Aks holda menejer
+          // «kassa qarzlari» filtri yoqilganini unutib «umuman qarz yo'q»
+          // deb o'ylardi — filtr qarzni jimgina yashirgan bo'lardi.
+          <EmptyState
+            title={t('empty_title')}
+            description={
+              source === 'retailsale'
+                ? t('empty_hint_retailsale')
+                : source === 'registry'
+                  ? t('empty_hint_registry')
+                  : t('empty_hint')
+            }
+          />
         ) : (
           <Card className="overflow-hidden">
             <ul className="divide-y">
@@ -338,6 +408,29 @@ export default function MenejerUndirishPage() {
                   </div>
 
                   <div className="flex flex-wrap items-center gap-2">
+                    {/* Q4 — MANBA belgisi va chek raqami havolasi.
+                        Raqam `null` bo'lsa (chek topilmadi) faqat belgi
+                        qoladi — xom id chizilmaydi. */}
+                    <Badge
+                      tone={debtSourceTone(r.source)}
+                      data-test-id={`collection-source-${r.source}`}
+                    >
+                      {/* Kalit STATIK yoziladi (dinamik `t(\`…${x}\`)` EMAS):
+                          i18n gate faqat statik kalitni ko'radi va MK25 da
+                          aynan dinamik kalit ekranda xom yo'l bo'lib chiqqan. */}
+                      {r.source === 'retailsale'
+                        ? t('source_badge_retailsale')
+                        : t('source_badge_registry')}
+                    </Badge>
+                    {r.source === 'retailsale' && r.sourceDocId && r.sourceDocNumber && (
+                      <Link
+                        href={`/retail/sales/${r.sourceDocId}`}
+                        className="text-info text-xs hover:underline"
+                        data-test-id="collection-sale-link"
+                      >
+                        {r.sourceDocNumber}
+                      </Link>
+                    )}
                     <Badge tone={BUCKET_TONE[r.bucket]}>
                       {r.overdueDays === null
                         ? t('bucket_no_due_date')

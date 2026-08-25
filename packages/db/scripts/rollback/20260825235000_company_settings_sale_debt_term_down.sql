@@ -1,0 +1,28 @@
+-- QAYTARISH YO'LI (F-reja 2-bo'lim, 12-qoida) — Q4 migratsiyasining TESKARISI.
+--
+-- Reja: `docs/plans/2026-08-25-kassa-qarzi-undirish-reyestri.md` (§Q4, vazifa 4).
+-- Asl migratsiya: `packages/db/prisma/migrations/20260825235000_company_settings_sale_debt_term/`.
+--
+-- Migratsiya `company_settings` ga BITTA nullable ustun qo'shadi
+-- (`sale_debt_term_days`), birorta `UPDATE`/`DELETE` yo'q. Shuning uchun bu
+-- teskari yo'l — sof DDL qaytarish.
+--
+-- 🔴 MA'LUMOT YO'QOLADI: akkaunt sozlagan MUDDAT (kun) o'chadi. Bu PUL emas
+-- va hech qanday qarz qatorini qimirlatmaydi:
+--   · allaqachon ochilgan `Debt` qatorlarining `next_contact_at` i O'ZGARMAYDI
+--     (muddat qator YARATILGANDA bir marta yoziladi va qayta hisoblanmaydi);
+--   · ustun qaytarilgandan keyin kod Q1 ning kod-defaultiga (14 kun) tushadi,
+--     ya'ni yangi cheklar AVVALGIDEK 14 kunlik muddat oladi.
+-- Ya'ni yo'qoladigan yagona narsa — «egasi 14 dan boshqa muddat tanlagan edi»
+-- degan FAKT. Qaytarishdan oldin qiymatni o'qib qo'ying:
+--
+--   SELECT account_id, sale_debt_term_days FROM company_settings
+--    WHERE sale_debt_term_days IS NOT NULL;
+--
+-- ⚠️ KOD BILAN TARTIB: bu skript kod Eski holatga qaytarilgandan KEYIN
+-- yugurtiriladi. Aks holda `readSaleDebtTermDays` mavjud bo'lmagan ustunni
+-- so'rab qarzli chekni yiqitardi.
+--
+-- Idempotent: qayta yugurtirish no-op.
+
+ALTER TABLE "company_settings" DROP COLUMN IF EXISTS "sale_debt_term_days";

@@ -2,12 +2,14 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service.js';
 import type { DebtNoteKind } from '../../debt/debt.schema.js';
 import { type ActorRole, DebtService } from '../../debt/debt.service.js';
+import { SALE_DEBT_SOURCE_DOC_TYPE } from '../../debt/sale-debt-registry.js';
 import {
   type CollectionDebtInput,
   type CollectionResponsible,
   type CollectionRow,
   type CollectionSummary,
   buildCollectionList,
+  filterCollectionRowsBySource,
   isRemindedOn,
   summarizeCollection,
 } from './debt-collection.js';
@@ -23,6 +25,15 @@ import type { CollectionQuery, CollectionRemindInput } from './manager-collectio
  *  · Yangi jo'natgich yo'q — `DebtService.sendBulkReminders` (SMS/Telegram)
  *    chaqiriladi: shablonlar, kontakt ma'lumoti, kanal xatolari o'sha yerda
  *    hal qilinadi va o'sha yerda sinalgan.
+ *
+ * **Q4 (2026-08-25) — MANBA ustuni.** Qator endi «bu qarz qayerdan keldi»
+ * ni ham aytadi (`Debt.sourceDocType` → `registry | retailsale`) va chek
+ * RAQAMI hujjatning o'zidan bitta yig'ma so'rov bilan o'qiladi. Bu **yangi
+ * qarz manbai OCHMAYDI**: ro'yxat hamon FAQAT `Debt` reyestridan yuradi —
+ * kontragent SALDOSI jadvaliga bu faylda bir marta ham murojaat qilinmaydi
+ * (A3 ning qo'riqchi testi buni mexanik qulflaydi, shuning uchun o'sha
+ * delegatning nomi bu izohda ham ATAYLAB yozilmagan), ya'ni avansli mijoz
+ * bu yerga tusha olmaydi.
  *
  * **Idempotentlik jurnali — yangi jadval EMAS:** eslatma mavjud `DebtNote`
  * jurnaliga `kind='reminder'` bilan yoziladi. Shu tanlovning ikki foydasi bor:
@@ -86,6 +97,9 @@ export class DebtCollectionService {
         nextContactAt: true,
         lastCallAt: true,
         lastCallOutcome: true,
+        // Q4 — «bu qarz qayerdan keldi» (Q1 migratsiyasi qo'ygan bog'lam).
+        sourceDocType: true,
+        sourceDocId: true,
         counterparty: { select: { name: true, phone: true } },
         owner: { select: { id: true, name: true } },
         issuedBy: { select: { id: true, name: true } },
@@ -95,9 +109,11 @@ export class DebtCollectionService {
     const debtIds = debts.map((d) => d.id);
     // Ikki alohida yig'ma: (a) har turdagi eng yangi izoh — «oxirgi aloqa»,
     // (b) faqat eslatma yozuvlari — idempotentlik oynasi.
-    const [noteMax, reminderMax] = await Promise.all([
+    const [noteMax, reminderMax, saleNames] = await Promise.all([
       this.latestNoteByDebt(accountId, debtIds, null),
       this.latestNoteByDebt(accountId, debtIds, 'reminder'),
+      // Q4 — chek RAQAMI hujjatning o'zidan (`Debt.comment` matnidan EMAS).
+      this.saleNamesByDebtSource(accountId, debts),
     ]);
 
     const inputs: CollectionDebtInput[] = debts.map((d) => ({
@@ -117,6 +133,11 @@ export class DebtCollectionService {
       lastNoteAt: noteMax.get(d.id) ?? null,
       lastReminderAt: reminderMax.get(d.id) ?? null,
       responsible: resolveResponsible(d.owner, d.issuedBy),
+      sourceDocType: d.sourceDocType,
+      sourceDocId: d.sourceDocId,
+      // Chek o'chirilgan/topilmagan bo'lsa `null` — ekran shunda faqat
+      // manba belgisini ko'rsatadi, xom id chizmaydi.
+      sourceDocNumber: (d.sourceDocId && saleNames.get(d.sourceDocId)) || null,
     }));
 
     let rows = buildCollectionList(inputs, now);
@@ -126,6 +147,10 @@ export class DebtCollectionService {
     if (query.scope === 'due') {
       rows = rows.filter((r) => r.overdueDays === null || r.overdueDays >= 0);
     }
+    // Q4 — MANBA kesimi. Sof qatlamda (`scope` bilan bir joyda) va SQL'da
+    // EMAS: `registry` = «`retailsale` EMAS» va u NULL larni ham qamraydi,
+    // SQL'dagi `<> 'retailsale'` esa NULL larni chiqarib tashlardi.
+    rows = filterCollectionRowsBySource(rows, query.source);
 
     const totalCount = rows.length;
     const truncated = totalCount > query.limit;
@@ -238,6 +263,40 @@ export class DebtCollectionService {
       journaled: sentIds.length,
       skipped,
     };
+  }
+
+  /**
+   * Q4 — kassa chekidan tug'ilgan qatorlar uchun CHEK RAQAMI (`saleId → name`).
+   *
+   * Bitta yig'ma so'rov (N+1 yo'q); chekdan kelmagan qatorlar so'rovga umuman
+   * kirmaydi va ro'yxat butunlay reyestr qatorlaridan iborat bo'lsa so'rov
+   * YUBORILMAYDI ham.
+   *
+   * ⚠️ Raqam `Debt.comment` matnidan O'QILMAYDI (u yerda ham bor —
+   * «Kassa cheki «CHK-…» bo'yicha qarz»): izoh erkin matn va uni operator
+   * tahrirlashi mumkin, hujjat esa yolg'on gapirmaydi (Q3 ning 5-eslatmasi).
+   *
+   * ⚠️ `accountId` filtri MAJBURIY — `sourceDocId` boshqa akkauntning
+   * chekiga ishora qilishi mumkin emas, lekin buni so'rov O'ZI kafolatlaydi,
+   * izoh emas.
+   */
+  private async saleNamesByDebtSource(
+    accountId: string,
+    debts: Array<{ sourceDocType: string | null; sourceDocId: string | null }>,
+  ): Promise<Map<string, string>> {
+    const saleIds = [
+      ...new Set(
+        debts
+          .filter((d) => d.sourceDocType === SALE_DEBT_SOURCE_DOC_TYPE && d.sourceDocId)
+          .map((d) => d.sourceDocId as string),
+      ),
+    ];
+    if (saleIds.length === 0) return new Map();
+    const sales = await this.prisma.client.retailSale.findMany({
+      where: { accountId, id: { in: saleIds } },
+      select: { id: true, name: true },
+    });
+    return new Map(sales.map((s) => [s.id, s.name]));
   }
 
   /**

@@ -49,22 +49,30 @@ function row(over: Record<string, unknown> = {}) {
     remindedToday: false,
     canRemind: true,
     remindBlockedReason: null,
+    // Q4 — default: qo'lda ochilgan reyestr qatori (manba bog'lami yo'q).
+    source: 'registry',
+    sourceDocId: null,
+    sourceDocNumber: null,
     ...over,
   };
 }
 
-function listPayload() {
+function listPayload(rows: Array<Record<string, unknown>> = [row()]) {
+  const retailSaleCount = rows.filter((r) => r.source === 'retailsale').length;
   return {
-    rows: [row()],
+    rows,
     summary: {
-      byCurrency: [{ currency: 'UZS', remainingMinor: '50000', count: 1 }],
-      overdueCount: 1,
+      byCurrency: [{ currency: 'UZS', remainingMinor: '50000', count: rows.length }],
+      overdueCount: rows.length,
       dueTodayCount: 0,
       upcomingCount: 0,
       noDueDateCount: 0,
       problemCount: 0,
+      // Q4 — manba sanoqlari.
+      retailSaleCount,
+      registryCount: rows.length - retailSaleCount,
     },
-    totalCount: 1,
+    totalCount: rows.length,
     truncated: false,
     generatedAt: '2026-08-10T09:00:00.000Z',
   };
@@ -122,5 +130,117 @@ describe('MK16 — undirish: o‘tkazib yuborish sababi', () => {
     // Kanal tanlagichida ham «SMS» bor — shuning uchun aynan natija qatori
     // tekshiriladi, umumiy /SMS/ emas.
     expect(screen.getByText(/Romashka MChJ — SMS sozlanmagan/)).toBeInTheDocument();
+  });
+});
+
+/**
+ * Q4 (2026-08-25) — MANBA: «bu qarz qayerdan keldi».
+ * Reja: `docs/plans/2026-08-25-kassa-qarzi-undirish-reyestri.md` §Q4.
+ *
+ * Egasining birinchi shikoyati («kassadan qo'shilgan qarzdorliklar undirish
+ * bo'limida ko'rinmayapti») Q2 da yopilgan edi; Q4 esa menejerga «ko'ringan
+ * qator QAYERDAN keldi» degan javobni beradi va uni FILTRLASH imkonini
+ * qo'shadi.
+ */
+describe('Q4 — undirish ro`yxatida MANBA belgisi va filtri', () => {
+  beforeEach(() => {
+    vi.mocked(api.get).mockReset();
+    vi.mocked(api.post).mockReset();
+  });
+
+  it('kassa cheki qatorida MANBA belgisi va CHEK RAQAMI havolasi chiqadi', async () => {
+    vi.mocked(api.get).mockImplementation(async () =>
+      listPayload([
+        row({ source: 'retailsale', sourceDocId: 'sale-1', sourceDocNumber: 'CHK-2026-00042' }),
+      ]),
+    );
+    renderWithProviders(<MenejerUndirishPage />);
+    await screen.findByText('Romashka MChJ');
+
+    expect(screen.getByTestId('collection-source-retailsale')).toBeInTheDocument();
+    const link = screen.getByTestId('collection-sale-link');
+    expect(link).toHaveTextContent('CHK-2026-00042');
+    expect(link).toHaveAttribute('href', '/retail/sales/sale-1');
+  });
+
+  it('qo`lda ochilgan qatorda «Reyestr» belgisi, chek havolasi YO`Q', async () => {
+    vi.mocked(api.get).mockImplementation(async () => listPayload());
+    renderWithProviders(<MenejerUndirishPage />);
+    await screen.findByText('Romashka MChJ');
+
+    expect(screen.getByTestId('collection-source-registry')).toBeInTheDocument();
+    expect(screen.queryByTestId('collection-sale-link')).toBeNull();
+  });
+
+  it('chek RAQAMI kelmasa (hujjat topilmadi) — belgi qoladi, xom id chizilmaydi', async () => {
+    vi.mocked(api.get).mockImplementation(async () =>
+      listPayload([row({ source: 'retailsale', sourceDocId: 'sale-1', sourceDocNumber: null })]),
+    );
+    renderWithProviders(<MenejerUndirishPage />);
+    await screen.findByText('Romashka MChJ');
+
+    expect(screen.getByTestId('collection-source-retailsale')).toBeInTheDocument();
+    expect(screen.queryByTestId('collection-sale-link')).toBeNull();
+    expect(screen.queryByText(/sale-1/)).toBeNull();
+  });
+
+  it('«Kassadan: N» sanog`i chiqadi (nol bo`lsa umuman chizilmaydi)', async () => {
+    vi.mocked(api.get).mockImplementation(async () =>
+      listPayload([row({ source: 'retailsale', sourceDocId: 's1', sourceDocNumber: 'CHK-1' })]),
+    );
+    const { unmount } = renderWithProviders(<MenejerUndirishPage />);
+    await screen.findByText('Romashka MChJ');
+    expect(screen.getByTestId('collection-retailsale-count')).toHaveTextContent('1');
+    unmount();
+
+    vi.mocked(api.get).mockImplementation(async () => listPayload());
+    renderWithProviders(<MenejerUndirishPage />);
+    await screen.findByText('Romashka MChJ');
+    expect(screen.queryByTestId('collection-retailsale-count')).toBeNull();
+  });
+
+  it('🔴 filtr SERVERGA uzatiladi; «Hammasi» da `source` parametri YO`Q', async () => {
+    vi.mocked(api.get).mockImplementation(async () => listPayload());
+    renderWithProviders(<MenejerUndirishPage />);
+    await screen.findByText('Romashka MChJ');
+
+    // Boshlang'ich holat — kesim yo'q, ya'ni filtr hech narsani yashirmaydi.
+    expect(String(vi.mocked(api.get).mock.calls[0]?.[0])).not.toContain('source=');
+
+    await userEvent.selectOptions(screen.getByTestId('collection-source'), 'retailsale');
+    await waitFor(() => {
+      const urls = vi.mocked(api.get).mock.calls.map((c) => String(c[0]));
+      expect(urls.some((u) => u.includes('source=retailsale'))).toBe(true);
+    });
+
+    await userEvent.selectOptions(screen.getByTestId('collection-source'), 'registry');
+    await waitFor(() => {
+      const urls = vi.mocked(api.get).mock.calls.map((c) => String(c[0]));
+      expect(urls.some((u) => u.includes('source=registry'))).toBe(true);
+    });
+  });
+
+  it('🔴 filtr yoqilganda BO`SH holat kesimni AYTADI (jimgina yashirmaydi)', async () => {
+    vi.mocked(api.get).mockImplementation(async () => listPayload([]));
+    renderWithProviders(<MenejerUndirishPage />);
+    // Filtrsiz bo'sh holat — umumiy matn.
+    await screen.findByText(/muddati kelgan qarz topilmadi/i);
+
+    await userEvent.selectOptions(screen.getByTestId('collection-source'), 'retailsale');
+    await waitFor(() =>
+      expect(screen.getByText(/KASSA CHEKIDAN kelgan qarz topilmadi/i)).toBeInTheDocument(),
+    );
+  });
+
+  it('manba matnlari xom i18n kaliti bo`lib chizilmaydi', async () => {
+    vi.mocked(api.get).mockImplementation(async () =>
+      listPayload([
+        row({ source: 'retailsale', sourceDocId: 's1', sourceDocNumber: 'CHK-1' }),
+        row({ debtId: 'debt-2', counterparty: 'X' }),
+      ]),
+    );
+    renderWithProviders(<MenejerUndirishPage />);
+    await screen.findByTestId('collection-source-retailsale');
+    expect(screen.queryByText(/pages\.menejerCollection\.source/)).toBeNull();
   });
 });

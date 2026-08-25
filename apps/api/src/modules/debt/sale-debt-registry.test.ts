@@ -2,9 +2,13 @@ import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_SALE_DEBT_TERM_DAYS,
   SALE_DEBT_SOURCE_DOC_TYPE,
+  SALE_DEBT_TERM_DAYS_MAX,
+  SALE_DEBT_TERM_DAYS_MIN,
+  isSaleDebtTermDaysCorrupt,
   planSaleDebtDelta,
   planSaleDebtRow,
   receivablePortion,
+  resolveSaleDebtTermDays,
   saleDebtDueAt,
   saleDebtMoveNoteText,
   tashkentDayKey,
@@ -422,5 +426,90 @@ describe('planSaleDebtDelta — Q3 uchun qo`shilgan `paidMinorAtMove`', () => {
     });
     // Ikkinchi manba bo'lmasin: chaqiruvchi sonni qayta uzatsa bir kun ayrilardi.
     expect(p.paidMinorAtMove).toBe(120_000n);
+  });
+});
+
+/**
+ * Q4 (2026-08-25) — MUDDAT SOZLAMASI (`CompanySettings.saleDebtTermDays`).
+ *
+ * Sof chiqarish qoidasi: sozlanmagan ⇒ Q1 defaulti (14); `0` — HAQIQIY
+ * qiymat, NULL bilan chalkashmaydi; yaroqsiz qiymat `throw` QILMAYDI —
+ * default olinadi (chekni 500 bilan yiqitish kassani to'xtatish demakdir).
+ */
+describe('resolveSaleDebtTermDays — Q4 muddat sozlamasi', () => {
+  it('sozlanmagan (`null`) ⇒ Q1 defaulti (14)', () => {
+    expect(resolveSaleDebtTermDays(null)).toBe(DEFAULT_SALE_DEBT_TERM_DAYS);
+    expect(DEFAULT_SALE_DEBT_TERM_DAYS).toBe(14);
+  });
+
+  it('`undefined` (sozlama qatori umuman yo`q) ⇒ default', () => {
+    expect(resolveSaleDebtTermDays(undefined)).toBe(DEFAULT_SALE_DEBT_TERM_DAYS);
+  });
+
+  it('🔴 NULL ≠ 0 — `0` HAQIQIY qiymat va o`zi qaytadi', () => {
+    expect(resolveSaleDebtTermDays(0)).toBe(0);
+  });
+
+  it('sozlangan qiymat AYNAN qaytadi', () => {
+    expect(resolveSaleDebtTermDays(1)).toBe(1);
+    expect(resolveSaleDebtTermDays(30)).toBe(30);
+    expect(resolveSaleDebtTermDays(SALE_DEBT_TERM_DAYS_MAX)).toBe(SALE_DEBT_TERM_DAYS_MAX);
+  });
+
+  it('chegaradan tashqari / manfiy / kasr / NaN ⇒ default (throw YO`Q)', () => {
+    expect(resolveSaleDebtTermDays(-1)).toBe(DEFAULT_SALE_DEBT_TERM_DAYS);
+    expect(resolveSaleDebtTermDays(SALE_DEBT_TERM_DAYS_MAX + 1)).toBe(DEFAULT_SALE_DEBT_TERM_DAYS);
+    expect(resolveSaleDebtTermDays(7.5)).toBe(DEFAULT_SALE_DEBT_TERM_DAYS);
+    expect(resolveSaleDebtTermDays(Number.NaN)).toBe(DEFAULT_SALE_DEBT_TERM_DAYS);
+    expect(resolveSaleDebtTermDays(Number.POSITIVE_INFINITY)).toBe(DEFAULT_SALE_DEBT_TERM_DAYS);
+  });
+
+  it('`isSaleDebtTermDaysCorrupt` — sozlanmagan holat BUZUQ emas', () => {
+    expect(isSaleDebtTermDaysCorrupt(null)).toBe(false);
+    expect(isSaleDebtTermDaysCorrupt(undefined)).toBe(false);
+    expect(isSaleDebtTermDaysCorrupt(0)).toBe(false);
+    expect(isSaleDebtTermDaysCorrupt(SALE_DEBT_TERM_DAYS_MIN)).toBe(false);
+    expect(isSaleDebtTermDaysCorrupt(SALE_DEBT_TERM_DAYS_MAX)).toBe(false);
+  });
+
+  it('`isSaleDebtTermDaysCorrupt` — yaroqsiz qiymat OSHKORA belgilanadi', () => {
+    expect(isSaleDebtTermDaysCorrupt(-5)).toBe(true);
+    expect(isSaleDebtTermDaysCorrupt(1000)).toBe(true);
+    expect(isSaleDebtTermDaysCorrupt(2.5)).toBe(true);
+  });
+
+  it('chegaralar hujjatlangan qiymatlarda: 0…365', () => {
+    expect(SALE_DEBT_TERM_DAYS_MIN).toBe(0);
+    expect(SALE_DEBT_TERM_DAYS_MAX).toBe(365);
+  });
+});
+
+describe('saleDebtDueAt — sozlangan muddat bilan', () => {
+  const POSTED = new Date('2026-08-25T05:00:00.000Z'); // Toshkentda 10:00
+
+  it('sozlama 0 ⇒ muddat O`SHA KUN 09:00 (Toshkent)', () => {
+    // Post 10:00 da, muddat esa 09:00 da — ya'ni qator DARHOL `overdue`
+    // bo'ladi. Bu ataylab: «o'sha kuniyoq muddati keladi» degan tanlov.
+    expect(saleDebtDueAt(POSTED, 0).toISOString()).toBe('2026-08-25T04:00:00.000Z');
+  });
+
+  it('sozlama 30 ⇒ 30 kalendar kun keyin', () => {
+    expect(saleDebtDueAt(POSTED, 30).toISOString()).toBe('2026-09-24T04:00:00.000Z');
+  });
+
+  it('sozlama berilmasa — Q1 defaulti (14 kun), xulq O`ZGARMAYDI', () => {
+    expect(saleDebtDueAt(POSTED).toISOString()).toBe(
+      saleDebtDueAt(POSTED, DEFAULT_SALE_DEBT_TERM_DAYS).toISOString(),
+    );
+    expect(saleDebtDueAt(POSTED).toISOString()).toBe('2026-09-08T04:00:00.000Z');
+  });
+
+  it('`resolveSaleDebtTermDays` chiqishi `saleDebtDueAt` ni HECH QACHON yiqitmaydi', () => {
+    // Sof qoidalarning bog'lami: chiqarish funksiyasi yaroqsiz qiymatni
+    // default'ga tushirgani uchun `saleDebtDueAt` ning `RangeError` shoxi
+    // sozlama yo'lidan hech qachon ochilmaydi.
+    for (const raw of [null, undefined, -1, 2.5, 1e9, Number.NaN]) {
+      expect(() => saleDebtDueAt(POSTED, resolveSaleDebtTermDays(raw))).not.toThrow();
+    }
   });
 });

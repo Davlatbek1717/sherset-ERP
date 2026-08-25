@@ -14,6 +14,10 @@ import { mockDocumentSequence } from '../../prisma/document-sequence.mock.js';
  * `sourceDocId` bo'yicha qaytaradi — ya'ni IDEMPOTENTLIK yo'li (ikkinchi
  * urinishda qator qo'shilmasligi) haqiqiy shaklda sinaladi.
  *
+ * Q4 (2026-08-25) da yana KENGAYTIRILDI — `companySettings.findUnique`
+ * (kassa qarzi muddati). Default `undefined` ⇒ sozlama qatori YO'Q, ya'ni
+ * mavjud testlarning hammasi 14 kunlik default bilan AVVALGIDEK ishlaydi.
+ *
  * Q3 (2026-08-25) da KENGAYTIRILDI — `refund()`/`edit()` simmetriyasi uchun:
  * `debt.update` (qatorni harakatlantirish), `$queryRaw` ning ikkinchi shakli
  * (`debts … FOR UPDATE` qulfi) va kontragent kesimidagi balans. Bashorat
@@ -33,8 +37,24 @@ export function mockSaleDebtRegistryTx(
    * kontragent uchun `balanceBeforeMinor`.
    */
   balanceByCounterparty?: Map<string, bigint | null>,
+  /**
+   * Q4 — akkauntning `company_settings.sale_debt_term_days` qiymati.
+   *
+   * `undefined` (default) ⇒ **sozlama qatori umuman YO'Q** (`findUnique`
+   * `null` qaytaradi), ya'ni Q1/Q2/Q3 testlari AVVALGIDEK 14 kunlik
+   * default bilan ishlaydi va kutilmalari o'zgarmaydi. `null` ⇒ qator BOR,
+   * lekin ustun sozlanmagan — bu IKKI HAR XIL holat va Q4 testi ikkalasini
+   * ham alohida o'lchaydi.
+   */
+  saleDebtTermDays?: number | null,
 ) {
   const debtRows: Array<Record<string, unknown>> = [];
+
+  // Q4 — muddat sozlamasi. `writeSaleDebtRegistryRow` va Q3 ning «qayta
+  // ochilgan qator» tarmog'i AYNAN shu delegatdan o'qiydi.
+  const companySettings = {
+    findUnique: vi.fn(async () => (saleDebtTermDays === undefined ? null : { saleDebtTermDays })),
+  };
 
   /**
    * `$queryRaw` IKKI xil so'rovga xizmat qiladi (Prisma tagged-template:
@@ -124,11 +144,13 @@ export function mockSaleDebtRegistryTx(
       $queryRaw: queryRaw,
       debt,
       debtNote,
+      companySettings,
       documentSequence: mockDocumentSequence(),
     },
     /** Yozilgan reyestr qatorlari — test AYNAN shularni tekshiradi. */
     debtRows,
     queryRaw,
     debtNote,
+    companySettings,
   };
 }

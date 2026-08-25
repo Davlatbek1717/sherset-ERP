@@ -377,6 +377,26 @@ export const BALANCE_SIDE_TONE: Record<string, StateTone> = {
 export const balanceSideTone = (s: string | null | undefined): StateTone =>
   resolve(BALANCE_SIDE_TONE, s);
 
+/**
+ * Q4 (2026-08-25) — QARZ MANBASI (`retailsale` kassa cheki | `registry`
+ * qo'lda ochilgan reyestr qatori).
+ *
+ * Ikkalasi ham NEYTRAL turkumda: manba «yomon/yaxshi» emas, u faqat kelib
+ * chiqish. Rang ogohlantirish ma'nosini bermasligi kerak — undirish
+ * ekranidagi KECHIKISH belgisi bilan chalkashmasin.
+ *
+ * Xarita shu yerda, sahifada EMAS: belgi IKKI ekranda ko'rinadi
+ * (`/menejer/undirish` va `/debts`) va sahifa-lokal nusxa bir kun ayrilardi —
+ * bu faylning butun mavjudlik sababi (UI Convention 6).
+ * Reja: `docs/plans/2026-08-25-kassa-qarzi-undirish-reyestri.md` §Q4.
+ */
+export const DEBT_SOURCE_TONE: Record<string, StateTone> = {
+  retailsale: 'info',
+  registry: 'neutral',
+};
+export const debtSourceTone = (s: string | null | undefined): StateTone =>
+  resolve(DEBT_SOURCE_TONE, s);
+
 /** Inventory cycle-count priority (`overdue | due_today | due_soon`). */
 export const INVENTORY_PRIORITY_TONE: Record<string, StateTone> = {
   overdue: 'destructive',

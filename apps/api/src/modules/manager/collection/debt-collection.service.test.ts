@@ -33,6 +33,10 @@ interface DebtSeed {
   phone?: string | null;
   ownerName?: string | null;
   issuerName?: string | null;
+  /** Q4 — manba bog'lami (`'retailsale'` yoki NULL/noma'lum tur). */
+  sourceDocType?: string | null;
+  /** Q4 — manba hujjatining id'si (chek). */
+  sourceDocId?: string | null;
 }
 
 function makeService(opts: {
@@ -43,6 +47,8 @@ function makeService(opts: {
   noteMax?: Record<string, Date>;
   /** `sendBulkReminders` javobi. */
   sendResult?: { queued: number; skipped: Array<{ id: string; name: string; reason: string }> };
+  /** Q4 — bazadagi cheklar: `saleId → CHK-…`. Berilmagani = chek topilmadi. */
+  sales?: Record<string, string>;
 }) {
   const rows = opts.debts.map((d) => ({
     id: d.id,
@@ -60,6 +66,8 @@ function makeService(opts: {
     counterparty: { name: `CP ${d.id}`, phone: d.phone === undefined ? '901234567' : d.phone },
     owner: d.ownerName ? { id: `own-${d.id}`, name: d.ownerName } : null,
     issuedBy: d.issuerName ? { id: `iss-${d.id}`, name: d.issuerName } : null,
+    sourceDocType: d.sourceDocType ?? null,
+    sourceDocId: d.sourceDocId ?? null,
   }));
 
   const findMany = vi.fn(async () => rows);
@@ -72,17 +80,27 @@ function makeService(opts: {
     }));
   });
 
+  // Q4 — chek raqamlari YIG'MA so'rov bilan o'qiladi (N+1 yo'q). Mock
+  // haqiqiy shaklda ishlaydi: FAQAT so'ralgan id'lardan bazada BOR
+  // bo'lganlarini qaytaradi, ya'ni «chek topilmadi» holati ham sinaladi.
+  const saleFindMany = vi.fn(async (args: { where: { id: { in: string[] } } }) =>
+    args.where.id.in
+      .filter((id) => opts.sales?.[id] !== undefined)
+      .map((id) => ({ id, name: (opts.sales as Record<string, string>)[id] })),
+  );
+
   const prisma = {
     client: {
       debt: { findMany },
       debtNote: { groupBy, createMany: noteCreateMany },
+      retailSale: { findMany: saleFindMany },
     },
   };
   const sendBulkReminders = vi.fn(async () => opts.sendResult ?? { queued: 0, skipped: [] });
   const debtService = { sendBulkReminders };
 
   const service = new DebtCollectionService(prisma as never, debtService as never);
-  return { service, findMany, groupBy, noteCreateMany, sendBulkReminders };
+  return { service, findMany, groupBy, noteCreateMany, sendBulkReminders, saleFindMany };
 }
 
 describe('DebtCollectionService.list', () => {
@@ -150,6 +168,101 @@ describe('DebtCollectionService.list', () => {
     expect(by.a).toMatchObject({ name: 'Operator O', role: 'owner' });
     expect(by.b).toMatchObject({ name: 'Kassir K', role: 'issuer' });
     expect(by.c).toBeNull(); // javobgarsiz — yashirilmaydi, OSHKORA null
+  });
+
+  /**
+   * Q4 (2026-08-25) — MANBA ustuni va kesimi.
+   * Reja: `docs/plans/2026-08-25-kassa-qarzi-undirish-reyestri.md` §Q4.
+   */
+  it('Q4 — so`rov manba ustunlarini ham O`QIYDI', async () => {
+    const { service, findMany } = makeService({ debts: [{ id: 'a' }] });
+    await service.list('acc', { scope: 'all', limit: 200 }, NOW);
+    const select = findMany.mock.calls[0][0].select;
+    expect(select).toMatchObject({ sourceDocType: true, sourceDocId: true });
+  });
+
+  it('Q4 — kassa qatorida CHEK RAQAMI hujjatdan keladi', async () => {
+    const { service, saleFindMany } = makeService({
+      debts: [{ id: 'a', sourceDocType: 'retailsale', sourceDocId: 'sale-1' }],
+      sales: { 'sale-1': 'CHK-2026-00042' },
+    });
+    const res = await service.list('acc', { scope: 'all', limit: 200 }, NOW);
+    expect(res.rows[0]).toMatchObject({
+      source: 'retailsale',
+      sourceDocId: 'sale-1',
+      sourceDocNumber: 'CHK-2026-00042',
+    });
+    // AYNAN akkaunt kesimida so'raladi — begona akkaunt cheki chiqmasin.
+    expect(saleFindMany.mock.calls[0][0].where).toMatchObject({ accountId: 'acc' });
+  });
+
+  it('Q4 — chek TOPILMASA raqam `null`, belgi esa baribir «kassa cheki»', async () => {
+    const { service } = makeService({
+      debts: [{ id: 'a', sourceDocType: 'retailsale', sourceDocId: 'sale-yoq' }],
+    });
+    const res = await service.list('acc', { scope: 'all', limit: 200 }, NOW);
+    expect(res.rows[0]).toMatchObject({ source: 'retailsale', sourceDocNumber: null });
+  });
+
+  it('🔴 Q4 — chek raqami BITTA yig`ma so`rov bilan (N+1 YO`Q)', async () => {
+    const { service, saleFindMany } = makeService({
+      debts: [
+        { id: 'a', sourceDocType: 'retailsale', sourceDocId: 's1' },
+        { id: 'b', sourceDocType: 'retailsale', sourceDocId: 's2' },
+        { id: 'c', sourceDocType: 'retailsale', sourceDocId: 's3' },
+      ],
+      sales: { s1: 'CHK-1', s2: 'CHK-2', s3: 'CHK-3' },
+    });
+    await service.list('acc', { scope: 'all', limit: 200 }, NOW);
+    expect(saleFindMany).toHaveBeenCalledTimes(1);
+    expect([...saleFindMany.mock.calls[0][0].where.id.in].sort()).toEqual(['s1', 's2', 's3']);
+  });
+
+  it('Q4 — kassa qatori umuman bo`lmasa chek so`rovi YUBORILMAYDI', async () => {
+    const { service, saleFindMany } = makeService({ debts: [{ id: 'a' }, { id: 'b' }] });
+    const res = await service.list('acc', { scope: 'all', limit: 200 }, NOW);
+    expect(saleFindMany).not.toHaveBeenCalled();
+    expect(res.rows.every((r) => r.source === 'registry')).toBe(true);
+  });
+
+  it("Q4 — `source='retailsale'` filtri faqat kassa qatorlarini qoldiradi", async () => {
+    const { service } = makeService({
+      debts: [{ id: 'kassa', sourceDocType: 'retailsale', sourceDocId: 's1' }, { id: 'qolda' }],
+      sales: { s1: 'CHK-1' },
+    });
+    const res = await service.list('acc', { scope: 'all', source: 'retailsale', limit: 200 }, NOW);
+    expect(res.rows.map((r) => r.debtId)).toEqual(['kassa']);
+    // Jam KESILGANDAN KEYINGI qatorlar bo'yicha — ekrandagi son ekrandagi
+    // qatorlar bilan doim mos keladi (mavjud shartnoma).
+    expect(res.totalCount).toBe(1);
+    expect(res.summary.retailSaleCount).toBe(1);
+    expect(res.summary.registryCount).toBe(0);
+  });
+
+  it("🔴 Q4 — `source='registry'` NULL li qatorni ham QOLDIRADI", async () => {
+    // SQL `<> 'retailsale'` bo'lsa NULL lar tushib qolardi — qo'lda ochilgan
+    // barcha `QRZ-` qarzlari jimgina yo'qolgan bo'lardi.
+    const { service } = makeService({
+      debts: [
+        { id: 'kassa', sourceDocType: 'retailsale', sourceDocId: 's1' },
+        { id: 'qolda' },
+        { id: 'boshqa', sourceDocType: 'invoiceout', sourceDocId: 's2' },
+      ],
+      sales: { s1: 'CHK-1' },
+    });
+    const res = await service.list('acc', { scope: 'all', source: 'registry', limit: 200 }, NOW);
+    expect(res.rows.map((r) => r.debtId).sort()).toEqual(['boshqa', 'qolda']);
+  });
+
+  it('Q4 — filtr berilmasa hamma qator qoladi va sanoqlar ajraladi', async () => {
+    const { service } = makeService({
+      debts: [{ id: 'kassa', sourceDocType: 'retailsale', sourceDocId: 's1' }, { id: 'qolda' }],
+      sales: { s1: 'CHK-1' },
+    });
+    const res = await service.list('acc', { scope: 'all', limit: 200 }, NOW);
+    expect(res.rows).toHaveLength(2);
+    expect(res.summary.retailSaleCount).toBe(1);
+    expect(res.summary.registryCount).toBe(1);
   });
 
   it('limitdan oshsa kesilgani OSHKORA aytiladi', async () => {

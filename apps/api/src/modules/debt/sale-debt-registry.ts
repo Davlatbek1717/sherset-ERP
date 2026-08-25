@@ -36,10 +36,61 @@ const HOUR_MS = 60 * 60 * 1000;
 
 /**
  * Kassa qarzining default muddati — **14 kun** (egasi, 2026-08-25:
- * «hozircha shunday qur»). Q4 da akkaunt sozlamasiga chiqadi; sozlama
- * bo'lmasa AYNAN shu qiymat qoladi.
+ * «hozircha shunday qur»).
+ *
+ * 🔴 Q4 (2026-08-25) dan boshlab bu — **ZAXIRA**, yagona haqiqat EMAS:
+ * akkaunt `CompanySettings.saleDebtTermDays` bilan boshqa muddat qo'ya oladi.
+ * Sozlama YOZILMAGAN bo'lsa (`null`) AYNAN shu qiymat qoladi, ya'ni Q1/Q2/Q3
+ * xulqi bir tiyin ham o'zgarmaydi. Chiqarish qoidasi —
+ * {@link resolveSaleDebtTermDays}.
  */
 export const DEFAULT_SALE_DEBT_TERM_DAYS = 14;
+
+/**
+ * Sozlanadigan muddatning chegaralari (Q4).
+ *
+ * `0` ATAYLAB ruxsat etilgan: «chek o'sha kuniyoq muddatli bo'lsin» — naqd
+ * savdo qiladigan nuqtada mantiqiy tanlov. Yuqori chegara bir yil: undan
+ * uzoq muddat undirish ro'yxatining ma'nosini yo'qotadi (qator `upcoming`
+ * chelagida yillab turardi) va bu — sozlama emas, ma'lumot-sifati xatosi.
+ */
+export const SALE_DEBT_TERM_DAYS_MIN = 0;
+export const SALE_DEBT_TERM_DAYS_MAX = 365;
+
+/**
+ * Q4 — akkaunt sozlamasidan muddatni chiqarish (SOF).
+ *
+ * `null`/`undefined` («hech qachon sozlanmagan») ⇒
+ * {@link DEFAULT_SALE_DEBT_TERM_DAYS}. **NULL ≠ 0**: `0` haqiqiy tanlov
+ * (o'sha kuniyoq muddat) va u AYNAN `0` bo'lib qaytadi.
+ *
+ * ⚠️ Yaroqsiz qiymat (butun bo'lmagan, manfiy, chegaradan tashqari, `NaN`)
+ * ham default'ga tushadi va **`throw` QILMAYDI**. Sabab: bu qiymat DB'dan
+ * o'qiladi va yozuv yo'li (`UpdateCompanySettingsSchema`) uni allaqachon
+ * tekshiradi — ya'ni yaroqsiz qiymat faqat qo'lda SQL bilan yozilganda
+ * paydo bo'ladi. Bunday holatda chekni 500 bilan yiqitish — kassani
+ * to'xtatish demakdir (2026-08-24 hodisasining sinfi); to'g'ri xulq —
+ * default bilan davom etish. Chaqiruvchi (Q4 I/O) buni OGOHLANTIRISH LOGI
+ * bilan qayd etadi, ya'ni jim emas.
+ */
+export function resolveSaleDebtTermDays(raw: number | null | undefined): number {
+  if (raw === null || raw === undefined) return DEFAULT_SALE_DEBT_TERM_DAYS;
+  if (!Number.isInteger(raw)) return DEFAULT_SALE_DEBT_TERM_DAYS;
+  if (raw < SALE_DEBT_TERM_DAYS_MIN || raw > SALE_DEBT_TERM_DAYS_MAX) {
+    return DEFAULT_SALE_DEBT_TERM_DAYS;
+  }
+  return raw;
+}
+
+/**
+ * Sozlama qiymati YAROQSIZ (va shuning uchun default'ga tushdi) — chaqiruvchi
+ * shu bilan ogohlantirish logini yozadi. `null`/`undefined` yaroqsiz EMAS:
+ * u «sozlanmagan» degani.
+ */
+export function isSaleDebtTermDaysCorrupt(raw: number | null | undefined): boolean {
+  if (raw === null || raw === undefined) return false;
+  return resolveSaleDebtTermDays(raw) !== raw;
+}
 
 /**
  * Muddat soati (Toshkent) — mavjud `todayAt9InputValue` odati bilan bir xil

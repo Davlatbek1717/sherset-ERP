@@ -3165,6 +3165,19 @@ model CompanySettings {
   /// Kassir cheki chiqadigan printer nomi (omborchi agenti o'qiydi).
   /// climart adoption o'chirgan; /sotuv «Rasmiylashtirish» oqimi bilan qaytdi.
   receiptPrinterName       String?  @map("receipt_printer_name") @db.VarChar(255)
+  /// Q4 (2026-08-25) — KASSA CHEKIDAN tug'ilgan qarz qatorining muddati (kun).
+  /// Yozuvchi: `retail-sale.service.ts#writeSaleDebtRegistryRow` →
+  /// `sale-debt-registry.ts#saleDebtDueAt(postedAt, termDays)`.
+  ///
+  /// ⚠️ NULL ≠ 0. NULL = «akkaunt hech qachon sozlamagan» ⇒ kod Q1 ning
+  /// `DEFAULT_SALE_DEBT_TERM_DAYS` (14) ni oladi; 0 = «o'sha kuniyoq muddati
+  /// keladi» degan HAQIQIY tanlov. Shuning uchun ustunda DB-DEFAULT ATAYLAB
+  /// YO'Q — default kodda turadi va u o'zgarsa jonlidagi qatorlar eski
+  /// qiymatda muzlab qolmaydi.
+  ///
+  /// Faqat YANGI cheklarga ta'sir qiladi: allaqachon ochilgan `Debt`
+  /// qatorlarining `nextContactAt` i qayta hisoblanmaydi.
+  saleDebtTermDays         Int?     @map("sale_debt_term_days")
 
   account         Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
   defaultCurrency Currency? @relation(fields: [defaultCurrencyId], references: [id], onDelete: SetNull)

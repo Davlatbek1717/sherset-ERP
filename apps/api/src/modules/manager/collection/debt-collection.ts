@@ -26,10 +26,34 @@
  *     emas, **1 kun** kechikkan bo'ladi.
  */
 
+import { SALE_DEBT_SOURCE_DOC_TYPE } from '../../debt/sale-debt-registry.js';
+
 /** Toshkent = UTC+5, yil bo'yi (DST yo'q). */
 export const TASHKENT_OFFSET_MS = 5 * 60 * 60 * 1000;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Q4 — qator QAYERDAN kelgani (menejerning «bu qarz qayerdan keldi?» savoli).
+ *
+ *   `registry`   — qo'lda ochilgan `QRZ-…` qarzi yoki P1 adopsiya qatori
+ *                  (`Debt.sourceDocType` = NULL yoki noma'lum tur);
+ *   `retailsale` — KASSA CHEKIDAN avtomatik ochilgan qator (Q2).
+ *
+ * ⚠️ Ro'yxat YOPIQ va **fallback `registry`**: kelajakda yangi hujjat-manba
+ * qo'shilsa (masalan `InvoiceOut`) u ekranda «reyestr» bo'lib ko'rinadi —
+ * yolg'on emas, chunki u rostdan ham reyestr qatori; noma'lum tur uchun xom
+ * satr chizish esa MK25 dagi «xom kalit ekranda» xatosining takrori bo'lardi.
+ */
+export type CollectionSource = 'registry' | 'retailsale';
+
+/**
+ * `Debt.sourceDocType` → ekran manbasi. **SOF** — bitta joyda, chunki bu
+ * xarita server javobida ham, filtrda ham, ikki web ekranida ham ishlatiladi.
+ */
+export function collectionSourceOf(sourceDocType: string | null | undefined): CollectionSource {
+  return sourceDocType === SALE_DEBT_SOURCE_DOC_TYPE ? 'retailsale' : 'registry';
+}
 
 /**
  * Qaysi ish guruhiga tushadi. Tartib ham shu ma'noda: `overdue` → `due_today`
@@ -75,6 +99,19 @@ export interface CollectionDebtInput {
   /** Eng yangi `kind='reminder'` jurnal yozuvi — idempotentlik manbai. */
   lastReminderAt: Date | null;
   responsible: CollectionResponsible | null;
+  /** Q4 — `Debt.sourceDocType` (`'retailsale'` yoki NULL). */
+  sourceDocType: string | null;
+  /** Q4 — `Debt.sourceDocId` (chek id'si) — ekranda havola manzili. */
+  sourceDocId: string | null;
+  /**
+   * Q4 — manba hujjatining RAQAMI (chek `CHK-…`). I/O qatlami uni
+   * `RetailSale` dan o'qiydi; topilmasa `null` (chek o'chirilgan yoki qator
+   * boshqa manbadan) va ekran shunda faqat belgi ko'rsatadi.
+   *
+   * ⚠️ `Debt.comment` ichida ham chek raqami bor, lekin unga TAYANILMAYDI:
+   * u erkin matn va o'zgarishi mumkin (Q3 ning 5-eslatmasi).
+   */
+  sourceDocNumber: string | null;
 }
 
 /** Ekranga chiqadigan qator. */
@@ -102,6 +139,12 @@ export interface CollectionRow {
   remindedToday: boolean;
   canRemind: boolean;
   remindBlockedReason: RemindBlockedReason | null;
+  /** Q4 — qator qayerdan keldi ({@link collectionSourceOf}). */
+  source: CollectionSource;
+  /** Q4 — manba hujjatining id'si (chek) yoki `null`. */
+  sourceDocId: string | null;
+  /** Q4 — manba hujjatining raqami (`CHK-…`) yoki `null`. */
+  sourceDocNumber: string | null;
 }
 
 /** Bir sanani Toshkent kalendar kuniga (`YYYY-MM-DD`) aylantiradi. */
@@ -210,6 +253,9 @@ export function buildCollectionRow(input: CollectionDebtInput, now: Date): Colle
     remindedToday,
     canRemind: remindBlockedReason === null,
     remindBlockedReason,
+    source: collectionSourceOf(input.sourceDocType),
+    sourceDocId: input.sourceDocId,
+    sourceDocNumber: input.sourceDocNumber,
   };
 }
 
@@ -246,6 +292,28 @@ export function buildCollectionList(inputs: CollectionDebtInput[], now: Date): C
   return rows.sort(compareCollectionRows);
 }
 
+/**
+ * Q4 — MANBA bo'yicha kesim (SOF).
+ *
+ * ⚠️ Filtr ATAYLAB sof qatlamda, Prisma `where` ida EMAS. Ikki sabab:
+ *  1. `scope='due'` filtri ham AYNAN shu yerda (mavjud naqsh) — ikki filtr
+ *     ikki qatlamga bo'linsa «nechta qator kesildi» hisobi ikki manbadan
+ *     yig'ilardi;
+ *  2. `registry` = «`retailsale` EMAS», ya'ni NULL larni ham o'z ichiga
+ *     oladi. SQL'da `source_doc_type <> 'retailsale'` NULL larni CHIQARIB
+ *     TASHLAYDI (`NULL <> 'x'` — UNKNOWN), ya'ni qo'lda ochilgan barcha
+ *     `QRZ-` qarzlari jimgina yo'qolardi. Sof qatlamda bunday tuzoq yo'q.
+ *
+ * `undefined` ⇒ filtr yo'q (hamma qator qoladi).
+ */
+export function filterCollectionRowsBySource(
+  rows: CollectionRow[],
+  source: CollectionSource | undefined,
+): CollectionRow[] {
+  if (!source) return rows;
+  return rows.filter((r) => r.source === source);
+}
+
 export interface CollectionCurrencyTotal {
   currency: string;
   remainingMinor: bigint;
@@ -261,6 +329,15 @@ export interface CollectionSummary {
   /** Muddat umuman qo'yilmagan qarzlar — ma'lumot-sifati signali. */
   noDueDateCount: number;
   problemCount: number;
+  /**
+   * Q4 — KASSA CHEKIDAN kelgan qatorlar soni. Egasiga aynan shu son kerak
+   * («kassadan qo'shilgan qarzdorliklar ko'rinmayapti»): ro'yxatdagi umumiy
+   * son o'sganda menejer «bu yangi qarz emas, ko'rinmagan qarz endi
+   * ko'rinmoqda» degan javobni bir qarashda oladi.
+   */
+  retailSaleCount: number;
+  /** Q4 — reyestrda qo'lda ochilgan (yoki adopsiya) qatorlar soni. */
+  registryCount: number;
 }
 
 /**
@@ -275,6 +352,8 @@ export function summarizeCollection(rows: CollectionRow[]): CollectionSummary {
   let upcomingCount = 0;
   let noDueDateCount = 0;
   let problemCount = 0;
+  let retailSaleCount = 0;
+  let registryCount = 0;
 
   for (const r of rows) {
     const t = totals.get(r.currency) ?? { currency: r.currency, remainingMinor: 0n, count: 0 };
@@ -288,6 +367,9 @@ export function summarizeCollection(rows: CollectionRow[]): CollectionSummary {
     else noDueDateCount += 1;
 
     if (r.problem) problemCount += 1;
+
+    if (r.source === 'retailsale') retailSaleCount += 1;
+    else registryCount += 1;
   }
 
   return {
@@ -297,5 +379,7 @@ export function summarizeCollection(rows: CollectionRow[]): CollectionSummary {
     upcomingCount,
     noDueDateCount,
     problemCount,
+    retailSaleCount,
+    registryCount,
   };
 }

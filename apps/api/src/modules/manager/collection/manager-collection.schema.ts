@@ -21,6 +21,16 @@ export const CollectionQuerySchema = z.object({
   responsibleId: z.string().uuid().optional(),
   /** Faqat «muammoli» deb belgilanganlar. */
   problemOnly: z.coerce.boolean().optional(),
+  /**
+   * Q4 — MANBA bo'yicha kesim: `retailsale` (kassa chekidan avtomatik
+   * ochilgan qator) yoki `registry` (qo'lda ochilgan / adopsiya qatori).
+   * Berilmasa — hammasi.
+   *
+   * Qiymatlar `debt-collection.ts#CollectionSource` bilan AYNAN bir xil
+   * (yopiq ro'yxat) — server, filtr va ikkala web ekrani bitta lug'atdan
+   * yuradi.
+   */
+  source: z.enum(['registry', 'retailsale']).optional(),
   limit: z.coerce.number().int().min(1).max(COLLECTION_ROW_CAP).default(200),
 });
 export type CollectionQuery = z.infer<typeof CollectionQuerySchema>;

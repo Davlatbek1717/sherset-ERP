@@ -2453,7 +2453,8 @@
       "type_individual": "Физическое лицо",
       "type_individualUZ": "Физическое лицо",
       "type_legal": "Юридическое лицо (RU)",
-      "type_legalUZ": "Юридическое лицо (UZ)"
+      "type_legalUZ": "Юридическое лицо (UZ)",
+      "balance_prepaid_hint": "Отрицательное сальдо — это АВАНС клиента: мы должны ему"
     },
     "counterparty_new": {
       "account_hint": "Банковский счёт (20–26 цифр)",
@@ -3743,7 +3744,10 @@
           "debtpayment": "Оплата долга",
           "retailsale": "Розничная продажа (в долг)",
           "returnPayout": "Возврат денег (из кассы)",
-          "opening": "Входящий остаток"
+          "opening": "Входящий остаток",
+          "customerPrepay": "Аванс (принят в кассе)",
+          "salePrepay": "Оплата из аванса",
+          "customerPrepayRefund": "Аванс возвращён наличными"
         }
       },
       "amount_label": "Сумма ({currency})",
@@ -6246,7 +6250,8 @@
       "total_returns": "Возвраты",
       "total_sales": "Продажи",
       "variance_acts": "Акты расхождения",
-      "prepay_spent": "Оплачено из аванса"
+      "prepay_spent": "Оплачено из аванса",
+      "prepay_refund": "Аванс возвращён"
     },
     "ecommerce": {
       "channels_card_description": "Telegram, Instagram, сайт и другие платформы",
@@ -7692,7 +7697,10 @@
       "reply_section": "Обратный адрес в письмах",
       "save": "Сохранить",
       "saved": "Сохранено",
-      "title": "Настройки компании"
+      "title": "Настройки компании",
+      "sale_debt_section": "Долг с кассы",
+      "label_saleDebtTermDays": "Срок долга с кассы (дней)",
+      "sale_debt_hint": "Чек, проданный в долг на кассе, появляется в списке взыскания с этим сроком. 0 — срок наступает в тот же день. Настройка действует ТОЛЬКО на новые чеки: срок уже открытых долгов не меняется."
     },
     "counterparty_message": {
       "button": "Сообщение",
@@ -7956,7 +7964,10 @@
       "tg_reminder_sent": "Напоминание отправлено в Telegram",
       "tg_reminder_title": "Отправить напоминание о долге в Telegram",
       "title": "Взыскание долгов",
-      "view_screenshot": "Посмотреть чек"
+      "view_screenshot": "Посмотреть чек",
+      "col_debt_source": "Источник долга",
+      "source_retailsale": "Чек кассы",
+      "source_registry": "Реестр"
     },
     "sms_settings": {
       "contact_card": "Номер карты",
@@ -9286,7 +9297,10 @@
         "cashOut": "Расход (касса)",
         "prepayment": "Аванс",
         "prepaymentReturn": "Возврат аванса",
-        "adjustment": "Корректировка"
+        "adjustment": "Корректировка",
+        "customerPrepay": "Аванс принят",
+        "salePrepay": "Оплата из аванса",
+        "customerPrepayRefund": "Аванс возвращён"
       },
       "customer_card_edit": "Изменить данные",
       "customer_card_history": "История долга",
@@ -9402,7 +9416,13 @@
       "field_prepay": "Сумма из аванса",
       "prepay_available": "Доступно: {sum}",
       "prepay_over_available": "У клиента аванса только {sum} — уменьшите сумму",
-      "prepay_no_change": "С аванса сдача не выдаётся — остаток чека {sum}"
+      "prepay_no_change": "С аванса сдача не выдаётся — остаток чека {sum}",
+      "customer_card_prepaid": "Аванс клиента",
+      "customer_card_prepaid_hint": "Деньги клиента у нас — следующая покупка оплатится из них",
+      "prepay_refund_btn": "Вернуть аванс",
+      "prepay_refund_hint": "Аванс к возврату: {amount}. Сумма выйдет из кассы наличными, печатается РКО.",
+      "prepay_refund_confirm": "Вернуть",
+      "prepay_refunded": "{name} — аванс возвращён"
     },
     "shiftAcceptance": {
       "accept": "Принять",
@@ -9879,13 +9899,22 @@
       "scope": "Охват",
       "scope_all": "Все",
       "scope_due": "Срок наступил",
-      "scope_note": "Источник — книга долгов (Debt). Сроком считается согласованная дата следующего контакта; валюты между собой не суммируются.",
+      "scope_note": "Источник — реестр долгов (Debt): в нём и долги, открытые вручную, и строки, автоматически открытые из чека кассы (разделяются фильтром источника). Сроком считается согласованная дата следующего контакта; валюты между собой не суммируются.",
       "selected_count": "Выбрано: {count}",
       "send_reminder": "Отправить напоминание",
       "sending": "Отправка…",
       "subtitle": "С кого сколько взыскать: срок, ответственный, последний контакт и действие — на одном экране.",
       "title": "Взыскание долгов",
-      "truncated": "Показано {shown} из {total}"
+      "truncated": "Показано {shown} из {total}",
+      "source": "Источник",
+      "source_all": "Все",
+      "source_retailsale": "Чек кассы",
+      "source_registry": "Реестр (вручную)",
+      "source_badge_retailsale": "Чек кассы",
+      "source_badge_registry": "Реестр",
+      "retailsale_count": "Из кассы: {count}",
+      "empty_hint_retailsale": "В выбранном срезе долгов ИЗ ЧЕКОВ КАССЫ не найдено. Переключите фильтр источника на «Все» — другие долги могут быть.",
+      "empty_hint_registry": "В выбранном срезе долгов, открытых вручную в реестре, не найдено. Переключите фильтр источника на «Все» — долги из кассы могут быть."
     },
     "report_piece_reconciliation": {
       "all_stores": "Все склады",

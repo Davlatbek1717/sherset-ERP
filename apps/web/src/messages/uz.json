@@ -2453,7 +2453,8 @@
       "type_individual": "Jismoniy shaxs",
       "type_individualUZ": "Jismoniy shaxs",
       "type_legal": "Yuridik shaxs (RU)",
-      "type_legalUZ": "Yuridik shaxs"
+      "type_legalUZ": "Yuridik shaxs",
+      "balance_prepaid_hint": "Manfiy saldo — bu mijozning AVANSI: biz unga qarzdormiz"
     },
     "counterparty_new": {
       "account_hint": "Bank hisob raqami (20-26 raqam)",
@@ -3743,7 +3744,10 @@
           "debtpayment": "Qarz to'lovi",
           "retailsale": "Chakana savdo (qarzga)",
           "returnPayout": "Vozvrat puli (kassadan)",
-          "opening": "Boshlang'ich qoldiq"
+          "opening": "Boshlang'ich qoldiq",
+          "customerPrepay": "Avans (kassada qabul qilindi)",
+          "salePrepay": "Avansdan to‘lov",
+          "customerPrepayRefund": "Avans naqd qaytarildi"
         }
       },
       "amount_label": "Summa ({currency})",
@@ -6246,7 +6250,8 @@
       "total_returns": "Qaytarishlar",
       "total_sales": "Sotuvlar",
       "variance_acts": "Farq aktlari",
-      "prepay_spent": "Avansdan to‘landi"
+      "prepay_spent": "Avansdan to‘landi",
+      "prepay_refund": "Avans qaytarildi"
     },
     "ecommerce": {
       "channels_card_description": "Telegram, Instagram, veb-sayt va boshqa platformalar",
@@ -7692,7 +7697,10 @@
       "reply_section": "Xatlardagi javob manzili",
       "save": "Saqlash",
       "saved": "Saqlandi",
-      "title": "Kompaniya sozlamalari"
+      "title": "Kompaniya sozlamalari",
+      "sale_debt_section": "Kassa qarzi",
+      "label_saleDebtTermDays": "Kassa qarzining muddati (kun)",
+      "sale_debt_hint": "Kassadan qarzga sotilgan chek undirish ro'yxatida shu muddat bilan chiqadi. 0 — o'sha kuniyoq muddati keladi. Sozlama FAQAT yangi cheklarga ta'sir qiladi: allaqachon ochilgan qarzlarning muddati o'zgarmaydi."
     },
     "counterparty_message": {
       "button": "Xabar",
@@ -7956,7 +7964,10 @@
       "tg_reminder_sent": "Eslatma Telegram orqali yuborildi",
       "tg_reminder_title": "Telegram orqali qarz eslatmasini yuborish",
       "title": "Qarz undirish",
-      "view_screenshot": "Chekni ko'rish"
+      "view_screenshot": "Chekni ko'rish",
+      "col_debt_source": "Qarz manbasi",
+      "source_retailsale": "Kassa cheki",
+      "source_registry": "Reyestr"
     },
     "sms_settings": {
       "contact_card": "Karta raqami",
@@ -9286,7 +9297,10 @@
         "cashOut": "Chiqim (kassa)",
         "prepayment": "Avans",
         "prepaymentReturn": "Avans qaytarish",
-        "adjustment": "Korrektirovka"
+        "adjustment": "Korrektirovka",
+        "customerPrepay": "Avans qabul qilindi",
+        "salePrepay": "Avansdan to‘lov",
+        "customerPrepayRefund": "Avans qaytarildi"
       },
       "customer_card_edit": "Tahrirlash",
       "customer_card_history": "Qarz tarixi",
@@ -9402,7 +9416,13 @@
       "field_prepay": "Avansdan summa",
       "prepay_available": "Mavjud: {sum}",
       "prepay_over_available": "Mijozning avansi atigi {sum} — summani kamaytiring",
-      "prepay_no_change": "Avansdan qaytim berilmaydi — chek qoldig‘i {sum}"
+      "prepay_no_change": "Avansdan qaytim berilmaydi — chek qoldig‘i {sum}",
+      "customer_card_prepaid": "Mijozning avansi",
+      "customer_card_prepaid_hint": "Mijozning puli bizda turibdi — keyingi xaridida shundan to'lanadi",
+      "prepay_refund_btn": "Avansni qaytarish",
+      "prepay_refund_hint": "Qaytariladigan avans: {amount}. Summa kassa yashig'idan naqd chiqadi va RKO cheki bosiladi.",
+      "prepay_refund_confirm": "Qaytarish",
+      "prepay_refunded": "{name} — avans qaytarildi"
     },
     "shiftAcceptance": {
       "accept": "Qabul qilish",
@@ -9879,13 +9899,22 @@
       "scope": "Qamrov",
       "scope_all": "Hammasi",
       "scope_due": "Muddati kelgan",
-      "scope_note": "Manba — qarz daftari (Debt). Muddat sifatida kelishilgan keyingi aloqa sanasi olinadi; valyutalar bir-biriga qo‘shilmaydi.",
+      "scope_note": "Manba — qarz daftari (Debt): unda ham qo'lda ochilgan qarzlar, ham kassa chekidan avtomatik ochilgan qatorlar bor (manba filtri bilan ajratiladi). Muddat sifatida kelishilgan keyingi aloqa sanasi olinadi; valyutalar bir-biriga qo'shilmaydi.",
       "selected_count": "Tanlangan: {count}",
       "send_reminder": "Eslatma yuborish",
       "sending": "Yuborilmoqda…",
       "subtitle": "Kimdan qancha undirish kerak: muddat, javobgar, oxirgi aloqa va harakat — bir ekranda.",
       "title": "Qarz undirish",
-      "truncated": "{total} tadan {shown} tasi ko'rsatildi"
+      "truncated": "{total} tadan {shown} tasi ko'rsatildi",
+      "source": "Manba",
+      "source_all": "Hammasi",
+      "source_retailsale": "Kassa cheki",
+      "source_registry": "Reyestr (qo'lda)",
+      "source_badge_retailsale": "Kassa cheki",
+      "source_badge_registry": "Reyestr",
+      "retailsale_count": "Kassadan: {count}",
+      "empty_hint_retailsale": "Tanlangan qamrovda KASSA CHEKIDAN kelgan qarz topilmadi. Manba filtrini «Hammasi» ga o'zgartiring — boshqa qarzlar bo'lishi mumkin.",
+      "empty_hint_registry": "Tanlangan qamrovda qo'lda ochilgan reyestr qarzi topilmadi. Manba filtrini «Hammasi» ga o'zgartiring — kassa qarzlari bo'lishi mumkin."
     },
     "report_piece_reconciliation": {
       "all_stores": "Barcha omborlar",

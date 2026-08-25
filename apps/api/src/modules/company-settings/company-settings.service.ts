@@ -1,6 +1,7 @@
 import type { Prisma } from '@moysklad/db';
 import { Inject, Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service.js';
+import { resolveSaleDebtTermDays } from '../debt/sale-debt-registry.js';
 import {
   COMPANY_SETTINGS_DEFAULTS,
   type UpdateCompanySettingsInput,
@@ -42,6 +43,11 @@ export class CompanySettingsService {
       useConsignments: row.useConsignments,
       showPositionAttributes: row.showPositionAttributes,
       accountCountry: row.accountCountry,
+      // Q4 — NULL ≠ 0. Ustun `null` bo'lsa akkaunt hech qachon sozlamagan
+      // ⇒ Q1 ning kod-defaulti (14); `0` esa HAQIQIY tanlov bo'lib qaytadi.
+      // Yaroqsiz qiymat (faqat qo'lda SQL bilan yozilishi mumkin) ham
+      // default'ga tushadi — sof qoida `sale-debt-registry.ts` da.
+      saleDebtTermDays: resolveSaleDebtTermDays(row.saleDebtTermDays),
       exists: true,
       updatedAt: row.updatedAt.toISOString(),
     };

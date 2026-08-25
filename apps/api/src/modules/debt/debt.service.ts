@@ -11,6 +11,10 @@ import { allocateDocumentNumber } from '../../prisma/document-number.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { AttachmentService } from '../attachment/attachment.service.js';
 import { CounterpartyBalanceService } from '../counterparty-balance/counterparty-balance.service.js';
+// Q4 — «bu qarz qayerdan keldi» xaritasi SOF modulda (undirish ro'yxati
+// bilan BITTA manba): qarzdorlar ro'yxati va undirish ekrani bir xil
+// belgini ko'rsatishi shundan keladi.
+import { collectionSourceOf } from '../manager/collection/debt-collection.js';
 import { MoneyService } from '../money/money.service.js';
 import { HtmlPdfService } from '../print-template/html-pdf.service.js';
 import { TASHKENT_OFFSET_MS, tashkentRangeBounds } from '../report/report-date-bounds.util.js';
@@ -56,6 +60,7 @@ import {
   SetProblemSchema,
   usdCentsToSomTiyin,
 } from './debt.schema.js';
+import { SALE_DEBT_SOURCE_DOC_TYPE } from './sale-debt-registry.js';
 import { renderReminderText } from './telegram-template-render.util.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -141,28 +146,79 @@ export class DebtService {
     return deriveDebtStatus(totalMinor, paidMinor);
   }
 
-  /** Ro'yxat/detalga chiqariladigan shakl — qoldiq har doim server hisoblaydi. */
-  private toDto(d: {
-    id: string;
-    name: string;
-    totalMinor: bigint;
-    paidMinor: bigint;
-    currency: string;
-    status: string;
-    nextContactAt: Date | null;
-    lastCallAt?: Date | null;
-    lastCallOutcome?: string | null;
-    problem?: boolean;
-    problemReason?: string | null;
-    problemAt?: Date | null;
-    comment: string | null;
-    closedAt: Date | null;
-    createdAt: Date;
-    counterparty?: { id: string; name: string; phone: string | null } | null;
-    owner?: { id: string; name: string } | null;
-    issuedBy?: { id: string; name: string } | null;
-    notes?: { text: string; createdAt: Date }[];
-  }) {
+  /**
+   * Q4 — kassa chekidan tug'ilgan qarzlar uchun CHEK RAQAMI (`saleId → name`).
+   *
+   * `debt-collection.service.ts#saleNamesByDebtSource` bilan AYNAN bir xil
+   * naqsh: bitta yig'ma so'rov, `accountId` filtri bilan; chekdan kelmagan
+   * qatorlar so'rovga kirmaydi va ro'yxatda bunday qator bo'lmasa so'rov
+   * YUBORILMAYDI ham.
+   *
+   * ⚠️ Raqam `Debt.comment` matnidan O'QILMAYDI (u yerda ham bor, lekin
+   * erkin matn — Q3 ning 5-eslatmasi).
+   */
+  private async saleNamesForDebts(
+    accountId: string,
+    rows: Array<{ sourceDocType: string | null; sourceDocId: string | null }>,
+  ): Promise<Map<string, string>> {
+    const saleIds = [
+      ...new Set(
+        rows
+          .filter((r) => r.sourceDocType === SALE_DEBT_SOURCE_DOC_TYPE && r.sourceDocId)
+          .map((r) => r.sourceDocId as string),
+      ),
+    ];
+    if (saleIds.length === 0) return new Map();
+    const sales = await this.prisma.client.retailSale.findMany({
+      where: { accountId, id: { in: saleIds } },
+      select: { id: true, name: true },
+    });
+    return new Map(sales.map((s) => [s.id, s.name]));
+  }
+
+  /**
+   * Ro'yxat/detalga chiqariladigan shakl — qoldiq har doim server hisoblaydi.
+   *
+   * Q4 (2026-08-25) — javobga MANBA qo'shildi (`source`, `sourceDocId`,
+   * `sourceDocNumber`): menejer qarzdorlar ro'yxatida ham, undirish
+   * ekranida ham AYNAN bir xil haqiqatni ko'radi. Xarita sof modulda
+   * (`manager/collection/debt-collection.ts#collectionSourceOf`) — ikkinchi
+   * nusxa yozilsa ikki ekran bir kun ayrilardi.
+   *
+   * `saleNames` — `saleId → CHK-…` xaritasi; FAQAT `list()` uni to'ldiradi
+   * (bitta yig'ma so'rov, N+1 yo'q). Boshqa chaqiruvchilarda `undefined` ⇒
+   * `sourceDocNumber = null`. Bu **jimgina bo'shlik emas, ataylab chegara**:
+   * kartochka/qo'ng'iroq ekranlariga chek raqami kerak emas va har javobga
+   * qo'shimcha so'rov osib qo'yish o'sha ekranlarni sekinlashtirardi.
+   */
+  private toDto(
+    d: {
+      id: string;
+      name: string;
+      totalMinor: bigint;
+      paidMinor: bigint;
+      currency: string;
+      status: string;
+      nextContactAt: Date | null;
+      lastCallAt?: Date | null;
+      lastCallOutcome?: string | null;
+      problem?: boolean;
+      problemReason?: string | null;
+      problemAt?: Date | null;
+      comment: string | null;
+      closedAt: Date | null;
+      createdAt: Date;
+      /** Q1 migratsiyasi — `'retailsale'` yoki NULL (qo'lda ochilgan qarz). */
+      sourceDocType?: string | null;
+      /** Q1 migratsiyasi — manba hujjatining id'si (chek). */
+      sourceDocId?: string | null;
+      counterparty?: { id: string; name: string; phone: string | null } | null;
+      owner?: { id: string; name: string } | null;
+      issuedBy?: { id: string; name: string } | null;
+      notes?: { text: string; createdAt: Date }[];
+    },
+    saleNames?: Map<string, string>,
+  ) {
     const remaining = d.totalMinor - d.paidMinor;
     const now = Date.now();
     return {
@@ -191,6 +247,13 @@ export class DebtService {
       ownerId: d.owner?.id ?? null,
       ownerName: d.owner?.name ?? null,
       issuedByName: d.issuedBy?.name ?? null,
+      /**
+       * Q4 — «bu qarz qayerdan keldi»: `registry` (qo'lda ochilgan yoki P1
+       * adopsiya qatori) yoki `retailsale` (kassa chekidan, Q2).
+       */
+      source: collectionSourceOf(d.sourceDocType ?? null),
+      sourceDocId: d.sourceDocId ?? null,
+      sourceDocNumber: (d.sourceDocId && saleNames?.get(d.sourceDocId)) || null,
       closedAt: d.closedAt,
       createdAt: d.createdAt,
     };
@@ -662,7 +725,11 @@ export class DebtService {
       this.prisma.client.debt.count({ where }),
     ]);
 
-    let items = rows.map((r) => this.toDto(r));
+    // Q4 — kassa chekidan tug'ilgan qatorlarning CHEK RAQAMI (bitta yig'ma
+    // so'rov). Ro'yxatda bunday qator bo'lmasa so'rov umuman yuborilmaydi.
+    const saleNames = await this.saleNamesForDebts(accountId, rows);
+
+    let items = rows.map((r) => this.toDto(r, saleNames));
     if (inMemorySort) {
       items.sort((a, b) => {
         const d = BigInt(a.remainingMinor) - BigInt(b.remainingMinor);

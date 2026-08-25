@@ -21,6 +21,7 @@ import {
   Checkbox,
   Drawer,
   HistoryTimeline,
+  Input,
   NativeSelect,
   RadioGroup,
   formatDate,
@@ -38,6 +39,12 @@ interface CompanySettings {
   useConsignments: boolean;
   showPositionAttributes: boolean;
   accountCountry: string;
+  /**
+   * Q4 (2026-08-25) — Sherset: kassa chekidan tug'ilgan qarzning muddati
+   * (kun). Server sozlanmagan akkauntga Q1 ning defaultini (14) qaytaradi,
+   * ya'ni maydon hech qachon bo'sh turmaydi.
+   */
+  saleDebtTermDays: number;
   exists: boolean;
   updatedAt: string | null;
 }
@@ -92,8 +99,14 @@ export default function CompanySettingsPage() {
   const [historyOpen, setHistoryOpen] = useState(false);
 
   const [form, setForm] = useState<CompanySettings | null>(null);
+  // Q4 — «Kassa qarzining muddati» maydonining QORALAMASI (satr). Nega
+  // alohida: pastdagi `<input type="number">` izohiga qarang (tozalash).
+  const [termDraft, setTermDraft] = useState('');
   useEffect(() => {
-    if (settingsQuery.data) setForm(settingsQuery.data);
+    if (settingsQuery.data) {
+      setForm(settingsQuery.data);
+      setTermDraft(String(settingsQuery.data.saleDebtTermDays));
+    }
   }, [settingsQuery.data]);
 
   const saveMutation = useApiMutation<CompanySettings, Error, void>({
@@ -248,6 +261,53 @@ export default function CompanySettingsPage() {
               </option>
             ))}
           </NativeSelect>
+        </section>
+
+        {/*
+          🔴 Q4 (2026-08-25) — SHERSET qo'shimchasi, moysklad'da bunday bo'lim
+          YO'Q. Kassadan qarzga sotilgan chek `Debt` reyestrida shu muddat
+          bilan ochiladi; sozlama bo'lmasa Q1 ning kod-defaulti (14 kun).
+          Reja: docs/plans/2026-08-25-kassa-qarzi-undirish-reyestri.md (§Q4).
+        */}
+        <section className="flex flex-col gap-3">
+          <SectionHeading>{t('sale_debt_section')}</SectionHeading>
+          <label className="flex w-fit flex-col gap-1 text-[14px] text-[var(--ms-text-primary)]">
+            <span>{t('label_saleDebtTermDays')}</span>
+            {/* Dizayn-tizimning `Input` i — xom `<input>` EMAS
+                (`raw-element-conventions` konvensiyasi). */}
+            <Input
+              type="number"
+              min={0}
+              max={365}
+              step={1}
+              // 🔴 Maydon O'Z QORALAMASINI (satr) ushlaydi, `form` ni EMAS.
+              // Sabab o'lchangan: son-maydonni to'g'ridan-to'g'ri `form` ga
+              // bog'lasak, tozalash (`''`) `NaN` beradi va uni «e'tiborsiz
+              // qoldirish» eski sonni QAYTA chizadi — keyin kiritilgan raqam
+              // uning ORTIDAN qo'shilib «14» + «30» = «1430» bo'lardi.
+              // Qoralama bilan tozalash ishlaydi, `form` esa faqat YAROQLI
+              // butun songa yangilanadi (0 — haqiqiy qiymat, tozalash emas).
+              value={termDraft}
+              onChange={(e) => {
+                setTermDraft(e.target.value);
+                const next = Number.parseInt(e.target.value, 10);
+                if (Number.isInteger(next)) set('saleDebtTermDays', next);
+              }}
+              onBlur={() => {
+                // Bo'sh/buzuq qoralama saqlanmaydi — maydon oxirgi YAROQLI
+                // qiymatga qaytadi (jimgina 0 ga tushib qolmaydi).
+                setTermDraft(String(form.saleDebtTermDays));
+              }}
+              className="w-[300px]"
+              // ⚠️ `data-test-id` (chiziqcha bilan) — sahifaning qolgan
+              // maydonlaridagi `data-testid` EMAS: vitest sozlamasi
+              // (`test-setup.ts`) aynan `data-test-id` ni o'qiydi, ya'ni
+              // eski atribut testdan umuman ko'rinmaydi.
+              data-test-id="company-settings-sale-debt-term-days"
+            />
+          </label>
+          {/* Chegara OSHKORA: sozlama faqat YANGI cheklarga ta'sir qiladi. */}
+          <p className="text-[13px] text-[var(--ms-text-muted)]">{t('sale_debt_hint')}</p>
         </section>
       </div>
 

@@ -26,7 +26,7 @@ import {
 } from '@/lib/debt-api';
 // MASTER-TODO #10: was a page-local OUTCOME_TONE map — moved to the shared
 // module so the debt-call vocabulary can't drift from the rest of the app.
-import { debtCallOutcomeTone, debtStatusTone } from '@/lib/domain-status-tone';
+import { debtCallOutcomeTone, debtSourceTone, debtStatusTone } from '@/lib/domain-status-tone';
 import {
   Badge,
   Button,
@@ -399,6 +399,41 @@ export default function DebtsPage() {
       header: t('col_owner'),
       cell: (r) => r.ownerName ?? '—',
       cellText: (r) => r.ownerName ?? '',
+    },
+    {
+      /**
+       * Q4 (2026-08-25) — MANBA: «bu qarz qayerdan keldi».
+       *
+       * Undirish ekrani (`/menejer/undirish`) bilan AYNAN bir xil belgi va
+       * bir xil yopiq lug'at (`DebtSourceKind`) — menejer ikki ekranda bir
+       * xil haqiqatni ko'radi. Kassa qarzida chek RAQAMI havola bo'ladi;
+       * raqam faqat RO'YXAT javobida to'ladi, yo'q bo'lsa faqat belgi
+       * qoladi (xom id chizilmaydi).
+       */
+      key: 'source',
+      // ⚠️ `col_source` EMAS: u allaqachon band va BOSHQA ma'noda —
+      // to'lovlar/hisobot ekranlarida «pul qayerdan qabul qilindi» (kassa
+      // nomi). Bu ustun esa QARZNING kelib chiqishi haqida.
+      header: t('col_debt_source'),
+      cell: (r) => (
+        <div className="flex items-center gap-1.5">
+          <Badge tone={debtSourceTone(r.source)}>
+            {r.source === 'retailsale' ? t('source_retailsale') : t('source_registry')}
+          </Badge>
+          {r.source === 'retailsale' && r.sourceDocId && r.sourceDocNumber && (
+            // biome-ignore lint/a11y/useKeyWithClickEvents: havola o'zi klaviaturaga ega; wrapper faqat qator-klik navigatsiyasini to'xtatadi
+            <span onClick={(e) => e.stopPropagation()}>
+              <Link
+                href={`/retail/sales/${r.sourceDocId}`}
+                className="text-[var(--ms-text-brand)] text-xs hover:underline"
+              >
+                {r.sourceDocNumber}
+              </Link>
+            </span>
+          )}
+        </div>
+      ),
+      cellText: (r) => (r.source === 'retailsale' ? (r.sourceDocNumber ?? 'retailsale') : ''),
     },
     {
       key: 'status',

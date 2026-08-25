@@ -3,7 +3,11 @@ import { join } from 'node:path';
 import { BadRequestException } from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
 import { mockDocumentSequence } from '../../prisma/document-sequence.mock.js';
-import { SALE_DEBT_SOURCE_DOC_TYPE } from '../debt/sale-debt-registry.js';
+import {
+  DEFAULT_SALE_DEBT_TERM_DAYS,
+  SALE_DEBT_SOURCE_DOC_TYPE,
+  tashkentDayKey,
+} from '../debt/sale-debt-registry.js';
 import { mockSaleDebtRegistryTx } from '../debt/sale-debt-registry.mock.js';
 import { DebtCollectionService } from '../manager/collection/debt-collection.service.js';
 import { RetailSaleService } from './retail-sale.service.js';
@@ -38,11 +42,18 @@ interface HarnessOpts {
   agentId?: string | null;
   /** Reyestrda ALLAQACHON mavjud qator (idempotentlik testi). */
   seedExistingRow?: boolean;
+  /**
+   * Q4 — akkauntning `company_settings.sale_debt_term_days` i.
+   * `undefined` ⇒ sozlama qatori umuman YO'Q (Q1/Q2 ning default xulqi).
+   */
+  saleDebtTermDays?: number | null;
 }
 
 function makeHarness(opts: HarnessOpts = {}) {
   const registry = mockSaleDebtRegistryTx(
     opts.balanceBefore === undefined ? 0n : opts.balanceBefore,
+    undefined,
+    opts.saleDebtTermDays,
   );
   if (opts.seedExistingRow) {
     registry.debtRows.push({
@@ -382,10 +393,21 @@ describe('Q2 — kod shakli: balans QULFI `applyDelta` dan OLDIN (P1 tartibi)', 
  * yozilgan qator shakli bilan yugurtiradi — «yozdik» bilan «ko'rindi» orasida
  * yana bir yashirin filtr qolmasin.
  */
-function makeCollection(debtRow: Record<string, unknown>) {
+function makeCollection(
+  debtRow: Record<string, unknown>,
+  /** Q4 — bazadagi cheklar (`saleId → CHK-…`). Berilmasa chek topilmaydi. */
+  sales: Record<string, string> = {},
+) {
   const client = {
     debt: { findMany: vi.fn().mockResolvedValue([debtRow]) },
     debtNote: { groupBy: vi.fn().mockResolvedValue([]) },
+    retailSale: {
+      findMany: vi.fn(async (args: { where: { id: { in: string[] } } }) =>
+        args.where.id.in
+          .filter((id) => sales[id] !== undefined)
+          .map((id) => ({ id, name: sales[id] })),
+      ),
+    },
   };
   return new DebtCollectionService({ client } as never, {} as never);
 }
@@ -421,5 +443,138 @@ describe('Q2 — yozilgan qator undirish ro`yxatida CHIQADI', () => {
     // Muddat 14 kun keyin ⇒ hali kelmagan, ya'ni «kechikkan» EMAS.
     expect(res.rows[0]?.overdueDays).toBeLessThan(0);
     expect(res.rows[0]?.responsible?.id).toBe(USER_ID);
+  });
+});
+
+// ───────────────────── Q4 — MUDDAT SOZLAMASI + MANBA ─────────────────────
+
+/**
+ * Q4 (2026-08-25) — kassa qarzining muddati akkaunt sozlamasidan
+ * (`CompanySettings.saleDebtTermDays`), va yozilgan qator undirish
+ * ro'yxatida MANBA belgisi bilan chiqadi.
+ * Reja: `docs/plans/2026-08-25-kassa-qarzi-undirish-reyestri.md` §Q4.
+ */
+describe('Q4 — muddat AKKAUNT SOZLAMASIDAN olinadi', () => {
+  /** Toshkent kalendar kuni bo'yicha muddat kuni (`YYYY-MM-DD`). */
+  const dueDay = (row: Record<string, unknown>) => tashkentDayKey(row.nextContactAt as Date);
+
+  it('sozlama YO`Q (qator umuman yo`q) ⇒ Q1 defaulti — 14 kun, xulq O`ZGARMAYDI', async () => {
+    const { svc, registry, tx } = makeHarness({ balanceBefore: 0n });
+    await svc.post(ACCOUNT, USER_ID, SALE_ID, DEBT_PAY);
+
+    const row = saleRows(registry)[0] as Record<string, unknown>;
+    const posted = tashkentDayKey(new Date());
+    const expected = tashkentDayKey(
+      new Date(Date.parse(`${posted}T00:00:00.000Z`) + DEFAULT_SALE_DEBT_TERM_DAYS * 86_400_000),
+    );
+    expect(dueDay(row)).toBe(expected);
+    // Sozlama AYNAN akkaunt kesimida o'qiladi.
+    expect(tx.companySettings.findUnique).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { accountId: ACCOUNT } }),
+    );
+  });
+
+  it('sozlama qatori BOR, lekin ustun `null` ⇒ ham default (NULL = sozlanmagan)', async () => {
+    const { svc, registry } = makeHarness({ balanceBefore: 0n, saleDebtTermDays: null });
+    await svc.post(ACCOUNT, USER_ID, SALE_ID, DEBT_PAY);
+
+    const row = saleRows(registry)[0] as Record<string, unknown>;
+    const posted = tashkentDayKey(new Date());
+    const expected = tashkentDayKey(
+      new Date(Date.parse(`${posted}T00:00:00.000Z`) + DEFAULT_SALE_DEBT_TERM_DAYS * 86_400_000),
+    );
+    expect(dueDay(row)).toBe(expected);
+  });
+
+  it('sozlangan 3 kun ⇒ qator AYNAN 3 kunlik muddat bilan ochiladi', async () => {
+    const { svc, registry } = makeHarness({ balanceBefore: 0n, saleDebtTermDays: 3 });
+    await svc.post(ACCOUNT, USER_ID, SALE_ID, DEBT_PAY);
+
+    const row = saleRows(registry)[0] as Record<string, unknown>;
+    const posted = tashkentDayKey(new Date());
+    const expected = tashkentDayKey(
+      new Date(Date.parse(`${posted}T00:00:00.000Z`) + 3 * 86_400_000),
+    );
+    expect(dueDay(row)).toBe(expected);
+  });
+
+  it('🔴 sozlama `0` ⇒ muddat O`SHA KUN (NULL bilan chalkashmaydi)', async () => {
+    const { svc, registry } = makeHarness({ balanceBefore: 0n, saleDebtTermDays: 0 });
+    await svc.post(ACCOUNT, USER_ID, SALE_ID, DEBT_PAY);
+
+    const row = saleRows(registry)[0] as Record<string, unknown>;
+    expect(dueDay(row)).toBe(tashkentDayKey(new Date()));
+    // Muddat baribir NULL EMAS — Q1 ning 2-shartnomasi buzilmaydi.
+    expect(row.nextContactAt).toBeInstanceOf(Date);
+  });
+
+  it('🔴 YAROQSIZ sozlama chekni YIQITMAYDI — default olinadi', async () => {
+    // Kassani 500 bilan to'xtatish 2026-08-24 hodisasining sinfi bo'lardi.
+    const { svc, registry } = makeHarness({ balanceBefore: 0n, saleDebtTermDays: -5 });
+    await svc.post(ACCOUNT, USER_ID, SALE_ID, DEBT_PAY);
+
+    const row = saleRows(registry)[0] as Record<string, unknown>;
+    const posted = tashkentDayKey(new Date());
+    const expected = tashkentDayKey(
+      new Date(Date.parse(`${posted}T00:00:00.000Z`) + DEFAULT_SALE_DEBT_TERM_DAYS * 86_400_000),
+    );
+    expect(dueDay(row)).toBe(expected);
+  });
+
+  it('sozlama SOF qoidadan yuradi — servisda ikkinchi formula yozilmagan', () => {
+    const src = readFileSync(join(import.meta.dirname, 'retail-sale.service.ts'), 'utf8').replace(
+      /\/\*[\s\S]*?\*\/|\/\/.*$/gm,
+      '',
+    );
+    // Muddat sof moduldan (`resolveSaleDebtTermDays`) chiqariladi…
+    expect(src).toMatch(/resolveSaleDebtTermDays\(/);
+    // …va sozlama AYNAN `companySettings` dan o'qiladi (qulf OLINMAYDI:
+    // bu sozlama, pul emas — deadlock yuzasiga uchinchi ishtirokchi
+    // qo'shilmaydi).
+    expect(src).toMatch(/companySettings\.findUnique/);
+    expect(src).not.toMatch(/company_settings[\s\S]{0,80}FOR UPDATE/);
+  });
+});
+
+describe('Q4 — chekdan tug`ilgan qator undirish ro`yxatida MANBA bilan chiqadi', () => {
+  it('qator `retailsale` manbasi va CHEK RAQAMI bilan ko`rinadi', async () => {
+    const { svc, registry } = makeHarness({ balanceBefore: 0n });
+    const now = new Date('2026-08-25T10:00:00.000Z');
+    await svc.post(ACCOUNT, USER_ID, SALE_ID, DEBT_PAY);
+
+    const written = saleRows(registry)[0] as Record<string, unknown>;
+    const collection = makeCollection(
+      {
+        id: 'debt-1',
+        name: written.name,
+        counterpartyId: AGENT_ID,
+        totalMinor: written.totalMinor,
+        paidMinor: written.paidMinor,
+        currency: written.currency,
+        status: written.status,
+        problem: false,
+        nextContactAt: written.nextContactAt,
+        lastCallAt: null,
+        lastCallOutcome: null,
+        // 🔴 AYNAN Q2 yozgan bog'lam — test uni qo'ldan to'ldirmaydi.
+        sourceDocType: written.sourceDocType,
+        sourceDocId: written.sourceDocId,
+        counterparty: { name: 'Sinov mijoz', phone: null },
+        owner: null,
+        issuedBy: { id: USER_ID, name: 'Kassir' },
+      },
+      { [SALE_ID]: 'CHK-Q2-1' },
+    );
+
+    const res = await collection.list(ACCOUNT, { scope: 'all', limit: 50 } as never, now);
+
+    expect(res.rows).toHaveLength(1);
+    expect(res.rows[0]).toMatchObject({
+      source: 'retailsale',
+      sourceDocId: SALE_ID,
+      sourceDocNumber: 'CHK-Q2-1',
+    });
+    expect(res.summary.retailSaleCount).toBe(1);
+    expect(res.summary.registryCount).toBe(0);
   });
 });

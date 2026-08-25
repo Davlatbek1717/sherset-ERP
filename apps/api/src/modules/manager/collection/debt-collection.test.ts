@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest';
+import { SALE_DEBT_SOURCE_DOC_TYPE } from '../../debt/sale-debt-registry.js';
 import {
   type CollectionDebtInput,
   buildCollectionList,
   buildCollectionRow,
+  collectionSourceOf,
+  filterCollectionRowsBySource,
   isRemindedOn,
   overdueDaysBetween,
   summarizeCollection,
@@ -36,6 +39,10 @@ function input(over: Partial<CollectionDebtInput> = {}): CollectionDebtInput {
     lastNoteAt: null,
     lastReminderAt: null,
     responsible: null,
+    // Q4 — default: qo'lda ochilgan reyestr qatori (hujjat-manba bog'lami yo'q).
+    sourceDocType: null,
+    sourceDocId: null,
+    sourceDocNumber: null,
     ...over,
   };
 }
@@ -235,5 +242,125 @@ describe('isRemindedOn', () => {
     expect(isRemindedOn(new Date('2026-08-08T20:00:00.000Z'), NOW)).toBe(true);
     // 2026-08-08T18:00Z = Toshkentda 2026-08-08 23:00 → boshqa kun.
     expect(isRemindedOn(new Date('2026-08-08T18:00:00.000Z'), NOW)).toBe(false);
+  });
+});
+
+/**
+ * Q4 (2026-08-25) — MANBA: «bu qarz qayerdan keldi».
+ *
+ * Reja: `docs/plans/2026-08-25-kassa-qarzi-undirish-reyestri.md` §Q4.
+ * Xarita SOF va BITTA: server javobi, filtr, undirish ekrani va qarzdorlar
+ * ro'yxati AYNAN shundan yuradi. Ikkinchi nusxa yozilsa ikki ekran bir kun
+ * ayrilardi.
+ */
+describe('collectionSourceOf — Q4 manba xaritasi', () => {
+  it("`'retailsale'` ⇒ kassa cheki", () => {
+    expect(collectionSourceOf(SALE_DEBT_SOURCE_DOC_TYPE)).toBe('retailsale');
+    expect(SALE_DEBT_SOURCE_DOC_TYPE).toBe('retailsale');
+  });
+
+  it('NULL / `undefined` ⇒ reyestr (qo`lda ochilgan yoki adopsiya qatori)', () => {
+    expect(collectionSourceOf(null)).toBe('registry');
+    expect(collectionSourceOf(undefined)).toBe('registry');
+  });
+
+  it('🔴 NOMA`LUM tur ⇒ `registry` (xom satr EKRANGA chiqmaydi)', () => {
+    // Kelajakda yangi manba qo'shilsa (masalan `invoiceout`) ekran uni
+    // «reyestr» deb ko'rsatadi — bu yolg'on emas (u rostdan reyestr qatori),
+    // xom `docType` satrini chizish esa MK25 dagi xatoning takrori bo'lardi.
+    expect(collectionSourceOf('invoiceout')).toBe('registry');
+    expect(collectionSourceOf('')).toBe('registry');
+  });
+});
+
+describe('buildCollectionRow — Q4 manba maydonlari qatorga ko`chadi', () => {
+  it('kassa cheki qatori: `source`, `sourceDocId`, `sourceDocNumber`', () => {
+    const row = buildCollectionRow(
+      input({
+        sourceDocType: 'retailsale',
+        sourceDocId: 'sale-1',
+        sourceDocNumber: 'CHK-2026-00042',
+      }),
+      NOW,
+    );
+    expect(row?.source).toBe('retailsale');
+    expect(row?.sourceDocId).toBe('sale-1');
+    expect(row?.sourceDocNumber).toBe('CHK-2026-00042');
+  });
+
+  it('qo`lda ochilgan qator: `registry` va ikkala manba maydoni `null`', () => {
+    const row = buildCollectionRow(input(), NOW);
+    expect(row?.source).toBe('registry');
+    expect(row?.sourceDocId).toBeNull();
+    expect(row?.sourceDocNumber).toBeNull();
+  });
+
+  it('chek TOPILMASA raqam `null` qoladi, belgi esa baribir «kassa cheki»', () => {
+    // Hujjat o'chirilgan/ko'chirilgan holat: manba YOLG'ON aytmaydi, faqat
+    // raqam yo'q. Ekran shunda xom id chizmaydi (Q4 web qoidasi).
+    const row = buildCollectionRow(
+      input({ sourceDocType: 'retailsale', sourceDocId: 'sale-1', sourceDocNumber: null }),
+      NOW,
+    );
+    expect(row?.source).toBe('retailsale');
+    expect(row?.sourceDocNumber).toBeNull();
+  });
+});
+
+describe('filterCollectionRowsBySource — Q4 kesimi', () => {
+  const rows = buildCollectionList(
+    [
+      input({ id: 'kassa', sourceDocType: 'retailsale', sourceDocId: 's1' }),
+      input({ id: 'qolda' }),
+      input({ id: 'boshqa', sourceDocType: 'invoiceout', sourceDocId: 's2' }),
+    ],
+    NOW,
+  );
+
+  it('filtr berilmasa (undefined) — HAMMA qator qoladi', () => {
+    expect(filterCollectionRowsBySource(rows, undefined)).toHaveLength(3);
+  });
+
+  it('`retailsale` — faqat kassa cheki qatori', () => {
+    const out = filterCollectionRowsBySource(rows, 'retailsale');
+    expect(out.map((r) => r.debtId)).toEqual(['kassa']);
+  });
+
+  it('🔴 `registry` — NULL li qator ham, noma`lum turli qator ham QOLADI', () => {
+    // Bu — SQL `source_doc_type <> \'retailsale\'` tuzog'ining sof qatlamdagi
+    // qo'riqchisi: u NULL larni chiqarib tashlardi va qo'lda ochilgan barcha
+    // `QRZ-` qarzlari jimgina yo'qolardi.
+    const out = filterCollectionRowsBySource(rows, 'registry');
+    expect(out.map((r) => r.debtId).sort()).toEqual(['boshqa', 'qolda']);
+  });
+
+  it('filtr qatorlarni O`ZGARTIRMAYDI (faqat tanlaydi)', () => {
+    const out = filterCollectionRowsBySource(rows, 'retailsale');
+    expect(out[0]).toBe(rows.find((r) => r.debtId === 'kassa'));
+  });
+});
+
+describe('summarizeCollection — Q4 manba sanoqlari', () => {
+  it('kassa va reyestr qatorlari ALOHIDA sanaladi, jami esa o`sha', () => {
+    const rows = buildCollectionList(
+      [
+        input({ id: 'a', sourceDocType: 'retailsale', sourceDocId: 's1' }),
+        input({ id: 'b', sourceDocType: 'retailsale', sourceDocId: 's2' }),
+        input({ id: 'c' }),
+      ],
+      NOW,
+    );
+    const s = summarizeCollection(rows);
+    expect(s.retailSaleCount).toBe(2);
+    expect(s.registryCount).toBe(1);
+    // Ikkala sanoq YIG'INDISI qatorlar soniga TENG — hech bir qator
+    // ikki chelakka tushmaydi va hech biri chetda qolmaydi.
+    expect(s.retailSaleCount + s.registryCount).toBe(rows.length);
+  });
+
+  it('bo`sh ro`yxatda ikkala sanoq ham 0', () => {
+    const s = summarizeCollection([]);
+    expect(s.retailSaleCount).toBe(0);
+    expect(s.registryCount).toBe(0);
   });
 });
