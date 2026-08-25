@@ -1,6 +1,6 @@
 # Bo'linadigan tovar — bo'lak hisobi (kabel, sim, shlang)
 
-> **Yaratilgan:** 2026-08-25 · **Buyurtmachi:** Ozodbek (egasi) · **Holat:** **K1 ⚠️ QISMAN** (`bc92330a`) — model, migratsiya, sverka servisi va hisobot sahifasi tayyor, migratsiya LOKAL dev bazada to'liq isbotlangan (UP×2 → zond → DOWN×2 → UP); **jonli tasdiq kutilmoqda** — egasi 2026-08-25 da deploy'ni rad etdi, shu sabab **K2 BOSHLANMAYDI** (qoida 11). Jonli xulq K1 dan O'ZGARMAYDI: bayroq hech qayerda yoqilmagan, jadval bo'sh. K2…K6 boshlanmagan.
+> **Yaratilgan:** 2026-08-25 · **Buyurtmachi:** Ozodbek (egasi) · **Holat:** **K1 ⚠️ QISMAN** (`bc92330a`) + **K2 ⚠️ QISMAN** — poydevor (model, migratsiya, sverka) va bo'lak reyestri boshqaruvi ekrani + yorliq tayyor; K1 migratsiyasi LOKAL dev bazada to'liq isbotlangan (UP×2 → zond → DOWN×2 → UP), K2 esa migratsiya QO'SHMAYDI. **Ikkalasi ham jonli tasdiq kutmoqda** — egasi 2026-08-25 da deploy'ni rad etdi, shu sabab ikkala faza BIRGA, bitta deploy bilan yopiladi. 🔴 **Deploy'da `topup-role-permissions.ts` MAJBURIY** (yangi entity `piecetracking`). Jonli xulq HOZIRCHA o'zgarmaydi: bayroq hech qayerda yoqilmagan, jadval bo'sh. K3…K6 boshlanmagan.
 >
 > **Ijro tartibi:** har faza ALOHIDA sessiyada. Agent shu faylni, F-rejani
 > (`2026-08-23-ombor-restrukturizatsiya.md`), G-rejani
@@ -429,6 +429,289 @@ tizimli farq yo'q; kassirlardan «bo'laklar to'g'ri ko'rinyapti» tasdig'i oling
 ---
 
 ## 10. HISOBOTLAR (har faza o'z hisobotini SHU YERGA yozadi)
+
+### K2 — Bo'lak reyestri boshqaruvi + yorliq · ⚠️ QISMAN (qoida 11) · 2026-08-25
+
+**Holat: QISMAN.** Ekran, API, ruxsat entity'si, yorliq va testlar tayyor;
+qabul mezonining **jonli** bandlari BAJARILMAGAN (deploy yo'q ⇒ jonli printer
+va jonli skaner sinovi ham yo'q). Faza «TUGADI» deb yopilmaydi.
+
+🔴 **Qoida 11 dan CHETLASHISH — egasining ko'rsatmasi bilan.** K1 hisoboti
+«K2 BOSHLANMAYDI» deb yozgan edi (K1 ning jonli tasdig'i yo'qligi uchun).
+Egasi shu sessiyada K2 ni bajarishni ANIQ so'radi. Shuning uchun K2 kodi
+yozildi, lekin **ikkala faza ham QISMAN bo'lib qoladi** va ikkalasi
+BIR VAQTDA, bitta deploy bilan yopiladi (K2 K1 ning jadvalisiz umuman
+ishlamaydi). Yopish sharti pastda, 6-bandda.
+
+---
+
+**1. Ikki tomonlama bog'liqlik javobi (qoida 10 — «bu o'zgarish qaysi mavjud
+oqimni buzishi mumkin?»).**
+
+| Oqim | Ta'sir | Dalil |
+|---|---|---|
+| **Kassa sotuvi** (`retail-sale.service`, taqsimot, rezerv, post/cancel) | YO'Q | K2 `retail-sale` moduliga bir bayt ham tegmaydi. Yangi yo'llar `/stock-pieces` ostida va faqat `stock_pieces` + `products.piece_tracked` ga yozadi. |
+| **Qoldiq ayirish** (`stock.service`, `StockByCell`) | YO'Q | 🔴 Test bilan qulflangan: `stock-piece-registry.service.test.ts` → «K2 servisi qoldiqqa YOZMAYDI» (fake klientda `stock`/`stockByCell` da faqat `findFirst`/`findMany` bor; servis manbasida `stock*.create/update/delete/upsert` va `executeRaw` YO'Q). Kesim/yopish STOK-NEYTRAL. |
+| **Inventarizatsiya** | YO'Q | Tegilmagan (bo'lak kiritish inventarizatsiyaga K5 da qo'shiladi). |
+| **TSD skan (G5/G6)** | YO'Q | `tsd-scan.ts` ga tegilmagan; `/tsd/scan` hamon `supported: false` (K4 to'ldiradi). Yangi `GET /stock-pieces/lookup` — ALOHIDA yo'l va u `BLK-` makonidan tashqaridagi kodni UMUMAN qidirmaydi (400 qaytaradi) ⇒ tovar multi-hit tanlovi bilan to'qnashmaydi (7.3). |
+| **Ruxsat matritsasi / rollar** | 🔴 **O'ZGARADI** | Yangi entity `piecetracking`. `warehouse_manager` view+create+update oladi; `storekeeper`/`cashier` yozish OLMAYDI. Boshqa rollarda faqat `READ_ONLY_BASE` ning umumiy `view/print` i (har yangi entity kabi — `warehousenumbering` bilan bir naqsh). **Deploy'da `topup-role-permissions.ts` MAJBURIY qadam** (G2/G3 naqshi) — K1 dan farqi shu. |
+| **Sverka hisoboti (K1)** | YO'Q | `report.view` ostida qolaveradi; K2 unga tegmadi. Ekrandagi sverka va hisobotdagi sverka BIR XIL son berishi test bilan qulflangan. |
+| **H2/H3 (jonli holat reyestri)** | YO'Q | Ombor TUZILMASIGA (`Store`, `StoreCell`, `__posPriority`, `__brakStore`) tegilmaydi. |
+| **Q/A rejalari (kassa qarzi, avans)** | YO'Q | Kesishmaydigan modullar (parallel sessiya bilan fayl to'qnashuvi — 8-band). |
+| **Eng yomon holat** | Reyestr noto'g'ri to'ldiriladi | Kassa avvalgidek ishlayveradi: reyestr qoldiqning YONIDA turadi, uning O'RNIDA emas. Sverka farqni ko'rsatadi, hech nima to'xtamaydi. |
+
+---
+
+**2. Nima qilindi.**
+
+**Sof yadro `apps/api/src/modules/stock-piece/stock-piece-registry-core.ts`**
+(Prisma yo'q, SQL yo'q):
+
+- `parseLengthInput` — omborchi kiritgan qiymatni `Decimal(20,6)` satriga
+  keltiradi. 🔴 **Vergul nuqtaga o'giriladi** (`250,5` → `250.5`): uz/ru
+  klaviaturasi vergul beradi va u jimgina yiqilsa kesim yo'qotishi aynan
+  shunday yo'qolardi. Kasr 6 xonagacha, butun qismi 14 xonagacha.
+- `parsePieceLabelSeq` / `nextPieceSeq` / `issuePieceLabels` — **yorliq
+  ketma-ketligi** (K1 «`seq` ni kim beradi — K2 hal qiladi» deb qoldirgan edi).
+- `planPieceCreation` — «qo'shish» rejasi: butun rulon ⇒ YORLIQSIZ qatorlar
+  (K-Q3), bo'lak ⇒ ketma-ket yorliq; 1 m dan kalta RAD (K-Q6); bir bosishda
+  ko'pi bilan 200 qator. Har qator K1 ning `validatePiece` guardidan o'tadi.
+- `buildRegistryView` — ekran ko'rinishi: butun rulonlar GURUHLANADI
+  (`250 m × 3`), bo'laklar alohida qator; har yacheyka uchun sverka;
+  «eng uzun uzluksiz» (K3 shu sondan foydalanadi).
+
+**🔴 Yorliq raqami — QANDAY berilishi (K1 ning ochiq savoli).** Hisoblagich
+JADVALI qo'yilmadi: u yangi migratsiya bo'lardi va deploy deltasiga to'qqizinchi
+migratsiyani qo'shardi. O'rniga `label DESC` bo'yicha BITTA qator o'qiladi
+(yorliqlar 6 xonaga to'ldirilgan ⇒ leksikografik tartib 9 999 999 gacha raqamli
+tartib bilan bir xil), poyga esa `P2002` da **qayta urinish** bilan yopiladi
+(`analitika/order.service` naqshi, 5 urinish). DB unikal indeksi (K1,
+`@@unique([accountId, label])`) oxirgi to'siq bo'lib qoladi — ya'ni poyga
+«yashirin dublikat» emas, ochiq xato beradi.
+
+**Servis `stock-piece-registry.service.ts`** — `list`, `lookup`, `create`,
+`update`, `close`, `setFlag`. Har mutatsiya javobida (ombor × tovar) kesimidagi
+YANGILANGAN sverka qaytadi (K2/4-vazifa: «har o'zgarish sverkani buzsa —
+ekranda darhol ko'rinadi»). Doira tekshiruvi: ombor va tovar akkauntniki,
+**yacheyka SHU omborniki** (aks holda bo'lak begona joyga «yopishib» qolardi va
+sverka abadiy farq berardi).
+
+**API (`stock-piece.controller.ts`):**
+
+| Yo'l | Ruxsat |
+|---|---|
+| `GET /stock-pieces/reconciliation` (K1) | `report.view` — **o'zgarmadi** |
+| `GET /stock-pieces?storeId=&assortmentId=` | `piecetracking.view` |
+| `GET /stock-pieces/lookup?code=BLK-…` | `piecetracking.view` |
+| `POST /stock-pieces` | `piecetracking.create` |
+| `PATCH /stock-pieces/:id` | `piecetracking.update` |
+| `POST /stock-pieces/:id/close` | `piecetracking.update` |
+| `POST /stock-pieces/flag` | `piecetracking.update` |
+
+**`DELETE` ATAYLAB YO'Q:** «tugadi» = `status='consumed'`, o'chirish emas —
+`sourcePieceId` tarix zanjiri uzilmasin (K4 kesim zanjiri shunga tayanadi).
+Test buni qulflaydi (`piecetracking.delete` hech bir rolda yo'q).
+
+**Ruxsat `piecetracking`** — 8 joyga ulandi: `permissions.types.ts` (union +
+runtime nusxa), `role-templates.ts` (warehouse_manager grant),
+`template-topup.ts` (`TOPUP_ENTITIES`), `topup-role-permissions.ts`,
+`permissions.service.ts`, `roles.controller.ts` (ro'yxat + guruh),
+`packages/db/prisma/seed.ts`, `apps/web/src/lib/access-sections.ts`
+(admin ekranda bera/ola olishi uchun — `storecell` dagi I4 sabog'i).
+Rol shabloni snapshotlari yangilandi (6 ta).
+
+**Web:**
+- `/omborchi/bolaklar` — ombor + tovar tanlash, yorliq skaneri, sverka satri
+  (Qoldiq · Reyestr · Farq · Faol bo'laklar · Eng uzun uzluksiz), butun
+  rulon/bo'lak qo'shish, uzunlikni tuzatish, yacheykaga ko'chirish, «tugadi»,
+  yorliq bosish/qayta bosish;
+- `components/omborchi/piece-label-print.tsx` — bo'lak yorlig'i (58×40 mm):
+  **UZUNLIK eng katta element** + `BLK-` Code128 shtrixi + kod matni + tovar
+  nomi va yacheyka kodi;
+- `/omborchi` panelida «Bo'laklar» havolasi (`piecetracking.view` bilan);
+- i18n **ru+uz** (50 kalit + `access_entity_piecetracking`).
+
+---
+
+**3. Rejadan UCHTA ONGLI CHETLASHISH.**
+
+1. **🔴 Bayroq tugmasi K2 ekraniga qo'yildi** (reja bo'yicha bayroq siyosati —
+   K6). Sabab: sverka mezoni FAQAT `pieceTracked = true` tovarlar
+   (`buildPieceReconciliation`), bayroqni yoqadigan birorta sirt esa hali yo'q
+   edi ⇒ K2 ning qabul mezonini — «reyestr `StockByCell.qty` bilan mos kelgani
+   KO'RSATILGAN» — bajarib bo'lmasdi. Bu yerda faqat **shu ekrandagi tugma**
+   bor; tovar kartochkasidagi joyi, «m» birligidagi yangi tovarda yoqilgan
+   kelishi va «hal qilinmagan» ro'yxati — hamon K6 da. Ruxsat K-Q9 ga mos:
+   `piecetracking.update` (katta omborchi + egasi/menejer).
+2. **Yorliq `window.print()` bilan bosiladi, print-agent (17777) orqali EMAS**
+   (reja «label moduli + print-agent» degan edi). Sabab G3 vozvrat yorlig'i
+   bilan AYNI: `POST /labels/render` tovar × nusxa sonini template
+   geometriyasi bilan qaytaradi va javobida na yacheyka, na bo'lak tushunchasi
+   bor; print-agent esa ESC/POS matn bosadi. Repodagi UCHALA yorliq sirti ham
+   (`cell-label-print`, `qr-price-tag-print`, `return-label-print`) mijoz
+   tomonda SVG chizib `window.print()` ga beradi — o'sha naqsh olindi.
+   Printerga yo'naltirish brauzer/Electron chop dialogida qoladi.
+3. **Bo'lakni boshqa OMBORGA ko'chirish YO'Q** — faqat ombor ICHIDA yacheyka
+   almashadi. Omborlararo ko'chirish qoldiqni ham ko'chirishni talab qiladi
+   (`Move` hujjati), ya'ni STOK-NEYTRALLIK buziladi. Reja «boshqa yacheykaga
+   ko'chirish» deydi — aynan shu bajarildi.
+
+**Yana bir ONGLI xulq (nuqson emas):** «tugadi» bosilganda reyestr kamayadi,
+qoldiq esa joyida qoladi ⇒ sverka DARHOL farq ko'rsatadi. Bu K2/4-vazifaning
+o'zi: ekran «endi qoldiqni ham tuzatish kerak» deb aytadi. Qoldiqning o'zini
+tuzatish — inventarizatsiya/hisobdan chiqarish ishi (K4/K5). Test buni
+qulflaydi (`«tugadi» bosilgach sverka DARHOL farqni ko'rsatadi`).
+
+---
+
+**4. Testlar.**
+
+| Gate | Natija |
+|---|---|
+| Yangi `stock-piece-registry-core.test.ts` | **43** (uzunlik kiritish 12, yorliq 11, kiritish rejasi 9, ekran ko'rinishi 8, **ekran ↔ K1 hisoboti mosligi 2**) |
+| Yangi `stock-piece-registry.service.test.ts` | **31** (qoldiqqa yozmaslik 2, create 10, update/close 8, lookup 4, bayroq 2, list 4, boshqalar) |
+| Yangi `piece-tracking-permission.test.ts` | **23** (entity/amal shartnomasi, rollar, tor entity ma'nosi, topup) |
+| Yangi web `omborchi/bolaklar/page.test.tsx` | **14** |
+| `stock-piece` moduli JAMI | **152** (K1 ning 55 tasi ham yashil, bir qatori ham o'zgartirilmagan) |
+| `apps/api` vitest TO'LIQ | 662 fayl · **9492 passed** · 2 skipped · **0 failed** |
+| `apps/web` vitest TO'LIQ | 331 fayl · **4354 passed** · 26 skipped · **3 failed** (pastda — meniki EMAS) |
+| `turbo typecheck` api + db | ✅ |
+| `apps/web` typecheck | 1 xato — **meniki emas** (pastda) |
+| biome (yangi/tegilgan fayllar) | ✅ 0 xato |
+| i18n `key-existence` (ru+uz) va `no-hardcoded` | ✅ yashil |
+
+> ⚠️ **HALOL QAYD — yiqilgan 3 test va 1 typecheck xatosi MENING ISHIMDAN
+> EMAS.** Uchalasi ham parallel sessiyaning (Q4 — kassa qarzi muddati)
+> COMMIT QILINMAGAN fayllaridan:
+> - `domain-status-tone.test.ts` → aybdor fayl `app/(app)/menejer/undirish/page.tsx`;
+> - `raw-element-conventions.test.ts` → aybdor fayl `app/(app)/settings/company/page.tsx`;
+> - `pos/__tests__/customer-card-panel.test.tsx` → A3 avans tarixi yorlig'i;
+> - typecheck TS2532 → `app/(app)/menejer/undirish/page.test.tsx:210`.
+>
+> Hech birida mening fayllarim yoki kalitlarim uchramaydi. §6.1 bo'yicha
+> ularga TEGILMADI.
+>
+> ✅ **K1 hisoboti ogohlantirgan A3 i18n qarzi YOPILGAN** — `pages.pos.prepay_*`
+> va `customer_card_prepaid*` kalitlarini shu sessiya davomida parallel sessiya
+> ru+uz ga qo'shdi; web i18n gate endi YASHIL. (K1 hisobotining 8-bandidagi
+> «deploy'dan oldin yopilsin» talabi bajarilgan.)
+
+---
+
+**5. Deploy holati: ⛔ BAJARILMADI.**
+
+Egasining 2026-08-25 dagi «Deploy YO'Q» qarori kuchda (G1 sessiyasidagi «C
+yo'li», K1 sessiyasida takrorlangan). Jonli baza ochilmadi,
+`warehouse-state.ts` yugurtirilmadi, VPS HEAD tekshirilmadi.
+
+**K2 MIGRATSIYA QO'SHMAYDI** — jadval va ustun K1 da (`20260825230000_
+stock_piece_registry`). Deploy deltasi shu sababdan o'smaydi. **Lekin K2
+YANGI DEPLOY QADAMI qo'shadi:**
+
+```
+# migratsiyalardan keyin, pm2 restart'dan OLDIN:
+cd apps/api && npx tsx src/scripts/topup-role-permissions.ts
+```
+
+Usiz `piecetracking` hech bir jonli rolda bo'lmaydi va ekran HECH KIMDA
+ochilmaydi (G2/G3 da aynan shu tuzoqqa tushilgan). Prod topup yugurtirilgach
+`TOPUP_ENTITIES` dan `piecetracking` **DARHOL olib tashlanadi** va
+`piece-tracking-permission.test.ts` dagi tegishli assert ham (test izohida
+yozib qo'yilgan).
+
+**Qaytarish yo'li (qoida 12).** K2 jonli MA'LUMOTNI o'zgartiradigan skript
+ham, migratsiya ham qo'shmaydi ⇒ alohida teskari DDL kerak emas. Qaytarish
+uch bosqichli va hammasi mavjud vositalar bilan:
+1. kod — `git revert` (ekran va yo'llar yo'qoladi, jadval qolaveradi);
+2. ruxsat qatorlari — `RolePermission` dan `entity='piecetracking'` ni
+   o'chirish (yozuvchi sirt yo'qolgach ular ta'sirsiz qoladi);
+3. kiritilgan bo'laklar — K1 ning rollback skripti
+   (`packages/db/scripts/rollback/20260825230000_stock_piece_registry_down.sql`,
+   K1 sessiyasida lokal bazada sinalgan) jadvalning o'zini tushiradi.
+   Faqat bo'laklarni tozalash kerak bo'lsa:
+   `DELETE FROM stock_pieces WHERE account_id = $1;` — qoldiqqa ta'sir
+   qilmaydi, chunki `stock_pieces` hech qayerga ulanmagan.
+
+---
+
+**6. QABUL MEZONI — bandma-band (qoida 11).**
+
+| # | Mezon | Holat |
+|---|---|---|
+| 1 | sinov tovarda **3 butun rulon + 4 bo'lak** kiritilib, sverka `StockByCell.qty` bilan to'liq mos kelgani ko'rsatilgan | ⚠️ QISMAN — TEST darajasida ✅ (`stock-piece-registry-core.test.ts` aynan shu ssenariyni — `250×3` yacheykada + `250·200·150·70·50` yacheykasiz = 1220 — qulflaydi va K1 hisoboti bilan bir xil son berishini isbotlaydi), **jonlida ❌** |
+| 2 | yorliq **jonli printerda** bosilgan | ❌ deploy yo'q |
+| 3 | yorliq **skanerlanganda AYNAN o'sha bo'lak** ochilgan (multi-hit YO'Q) | ⚠️ QISMAN — API darajasida ✅ (`lookup` massiv emas, BITTA obyekt qaytaradi; `BLK-` makonidan tashqaridagi kodni umuman qidirmaydi — test bilan qulflangan), **jonli skaner bilan ❌** |
+| 4 | ruxsat, i18n ru+uz, testlar | ✅ |
+
+**To'rttadan bittasi bajarilmagan, ikkitasi qisman ⇒ K2 «QISMAN».**
+Yopish sharti: deploy + `topup-role-permissions.ts` + jonli 1–3 bandlar.
+
+---
+
+**7. Qoida 13 — uchma-uch smoke.** Bajarilmadi (deploy yo'q). Deploy kunida
+bajariladigan minimal ro'yxat (K1 ning ro'yxatiga QO'SHIMCHA):
+1. `topup-role-permissions.ts` yugurtirilgan va katta omborchida
+   «Bo'laklar» havolasi KO'RINADI, oddiy omborchida yozish tugmalari YO'Q;
+2. sinov tovarda 3 butun rulon + 4 bo'lak kiritilib, ekrandagi «Farq yo'q»
+   va `/reports/piece-reconciliation` dagi «Farq yo'q» BIR XIL bo'lgani;
+3. bitta yorliq bosilgan va SKANER bilan o'qilganda aynan o'sha bo'lak
+   ochilgani (tovar multi-hit tanlovi OCHILMAGANI);
+4. bitta sinov **SOTUV** (post → tekshir → cancel), bitta yacheyka **sanash**,
+   bitta **ko'chirish** — avvalgidek o'tishi SHART;
+5. `packages/db` da `npx tsx scripts/warehouse-state.ts` — chiqish kodi 0.
+Javobgar shaxs va vaqt deploy sessiyasida shu yerga yoziladi.
+
+---
+
+**8. ⚠️ Parallel sessiya bilan to'qnashuv (CLAUDE.md §6.7 — HALOL QAYD).**
+
+Sessiya davomida repoda boshqa Claude sessiyasi (Q4 — kassa qarzi muddati)
+ishladi. **`apps/web/src/messages/{ru,uz}.json` IKKALAMIZ ham tahrirladik**:
+mening 50 + 1 kalitim va ularning `settings.company` / `menejer_undirish` /
+A3 avans kalitlari bitta ishchi nusxada turibdi. Commit'ga faqat MENING
+kalitlarim kirishi uchun bu ikki fayl `git hash-object` + `git update-index
+--cacheinfo` bilan aniq mazmun sifatida indeksga qo'yildi (ishchi daraxtga
+TEGILMADI, ularning kalitlari joyida qoldi va o'z commitlariga tushadi).
+Shu sabab commit hook'siz qilindi (§6.7 B — lint-staged butun daraxtni stash
+qilib, tayyorlangan indeksni buzardi); gate'lar QO'LDA to'liq yugurtirildi
+(4-band).
+
+Mening boshqa fayllarim aniq pathspec bilan stage qilindi va commitdan keyin
+`git show --stat` bilan tekshirildi.
+
+---
+
+**9. Ochiq qolganlar / keyingi fazalarga.**
+
+- **🔴 K1 va K2 ni yopish uchun:** bitta deploy + `topup-role-permissions.ts`
+  + 7-banddagi smoke.
+- **Lokal DB isboti YO'Q** (K1 da bor edi): bu sessiyada `packages/db/.env`
+  mavjud emas va `psql` PATH'da yo'q ⇒ dev bazaga ulanib bo'lmadi. K2
+  migratsiya QO'SHMAGANI uchun isbotlanadigan DDL ham yo'q; isbot darajasi —
+  sof yadro + servis wiring testlari. Deploy sessiyasi 7-banddagi ro'yxat
+  bilan shu bo'shliqni yopadi.
+- **K3 ga tayyor ulanish nuqtalari:** `buildRegistryView(...).totals.longest`
+  — «eng uzun uzluksiz» (K3/1-vazifa) shu yerdan olinadi;
+  `RegistryCellGroup.wholeGroups` — `3 × 250 · 200 · 150 · 70 · 50` tarkibini
+  chizish uchun tayyor shakl. `StockPieceRegistryService` modulda EXPORT
+  qilingan.
+- **K4 ga:** kesim `sourcePieceId` bilan zanjir quradi — `close` DELETE emas,
+  `consumed` qilgani shuning uchun. `MAX_LABEL_RETRIES` va `nextSeq` kesim
+  paytida ham ishlaydi (yangi qoldiq bo'lagi yorliq oladi).
+- **K6 ga:** bayroq tugmasi hozircha FAQAT `/omborchi/bolaklar` da. K6 uni
+  tovar kartochkasiga ko'chiradi, «m» birligidagi yangi tovarda yoqilgan
+  keladigan qiladi va «hal qilinmagan» ro'yxatini quradi. `POST
+  /stock-pieces/flag` yo'li o'zgarishsiz ishlatiladi.
+- **Yorliq raqami 9 999 999 dan oshsa** `label DESC` leksikografik tartibi
+  raqamli tartibdan chetlashadi — raqam «sakraydi», unikallik buzilmaydi.
+  Jonli omborda erishib bo'lmaydigan chegara, lekin qayd etib qo'yildi.
+- **Bo'lakni omborlararo ko'chirish** — 3-bo'limdagi 3-chetlashish. Kerak
+  bo'lsa `Move` hujjati bilan birga alohida ish.
+- **Egasiga savollar hamon ochiq:** K-S1…K-S4. K-S4 (nechta kabel
+  nomenklaturasi, taxminan nechta bo'lak) endi K5 dan oldin JAVOB TALAB
+  QILADI — reyestrni qo'lda to'ldirish hajmi shundan bilinadi.
+
+---
 
 ### K1 — Poydevor: model + sverka · ⚠️ QISMAN (qoida 11) · 2026-08-25 · `bc92330a`
 
