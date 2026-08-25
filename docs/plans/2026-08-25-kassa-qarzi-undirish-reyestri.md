@@ -1,6 +1,6 @@
 # Kassada mijoz hisob-kitobi — qarzni undirish ro'yxatiga ulash + avans bilan ishlash
 
-> **Yaratilgan:** 2026-08-25 · **Buyurtmachi:** Ozodbek (egasi) · **Holat:** Q1 QISMAN + **Q2 QISMAN** (2026-08-25) — asosiy funksiya kodda va testda tayyor (`7ef30b61`, `af8d3339`), **jonli tasdiq va deploy KUTILMOQDA**; `opening` manbasi qarori hamon ochiq; Q3 boshlanmagan
+> **Yaratilgan:** 2026-08-25 · **Buyurtmachi:** Ozodbek (egasi) · **Holat:** Q1 QISMAN + **Q2 QISMAN** (2026-08-25) — asosiy funksiya kodda va testda tayyor (`7ef30b61`, `af8d3339`), **deploy branch'i `kassa-qarzi-q1-q2` @ `456e53af` TAYYOR (G4siz), push va jonli tasdiq KUTILMOQDA**; `opening` manbasi qarori hamon ochiq; Q3 boshlanmagan
 > **Ikki shikoyat (egasi, 2026-08-25):**
 > 1. «Qarzdorlikni undirish bo'limiga kassadan qo'shilgan yangi qarzdorliklar
 >    ko'rinmayapti.» → fazalar **Q1…Q6**
@@ -1418,3 +1418,69 @@ butunlay ketishi kerak.
    beradi va bu XATO emas.
 6. `git stash@{0}` da G4-2 ning eski nusxasi turibdi — Q3 sessiyasi uni
    ko'r-ko'rona `pop` QILMASIN (yuqoridagi operatsion hodisaga qarang).
+
+#### 🟢 DEPLOY BRANCH'i TAYYOR — `kassa-qarzi-q1-q2` (egasining qarori, 2026-08-25)
+
+Yuqoridagi «deploy oldidan hal qilinishi SHART» bandi **HAL QILINDI**: egasi
+Q1+Q2 ni alohida branch'ga cherry-pick qilishni tanladi, ya'ni **ombor
+o'zgarishlari (G4) jonliga CHIQMAYDI**.
+
+**Branch:** `kassa-qarzi-q1-q2` @ **`456e53af`**
+
+```
+456e53af test(hr): onboarding kalendar bombasini muzlatish (3ebc9ffe dan ko'chirildi)
+ac1c5317 docs(reja): q2 hisoboti
+207b9e3f test(qarz): q2 zondi — lokal dev bazada HAQIQIY unique indeks bilan
+9d89746c feat(qarz): q2 — kassa cheki undirish reyestriga qator ochadi
+038076d8 feat(qarz): q1 — Debt hujjat-manba bog'lami, sof modul, recompute filtri
+4f5c1750 feat(ombor): h5 ← ASOS: G4 KODIDAN OLDINGI oxirgi commit
+```
+
+**Nega asos aynan `4f5c1750`:** G4 ning kodi `3ebc9ffe` dan boshlanadi, ya'ni
+`4f5c1750` — G4 ga tegishli bir qator ham bo'lmagan oxirgi nuqta. Undan
+oldingi H2/H5 commitlari faqat skript va hujjat (POS xulqiga tegmaydi).
+
+**Tekshirilgan (shu branch ustida, ALOHIDA worktree'da, to'liq qayta o'lchov):**
+
+| Tekshiruv | Natija |
+|---|---|
+| G4 kodi bormi (`resolveAllocStores`/`readBrakStore`/`retailSalePositionAllocation`/`readPosPriority`) | **0 ta** — YO'Q |
+| Q2 kodi joyidami (`lockCounterpartyBalance`/`writeSaleDebtRegistryRow`/`SALE_DEBT_SOURCE_DOC_TYPE`) | 8 ta — BOR |
+| Q1 migratsiyasi | `20260825120000_debt_source_doc` BOR, mazmuni AYNAN o'sha |
+| Q1 sxema ustunlari | `sourceDocType`/`sourceDocId` BOR |
+| G4 migratsiyasi va sxema ustunlari | YO'Q (114 qator kam — ataylab) |
+| `apps/api` to'liq vitest | **632 fayl · 8865 test YASHIL**, 1 fayl / 2 test skip |
+| typecheck | 0 xato |
+| lint gate | 0 error (1176 warning) |
+
+**Cherry-pick'da bitta konflikt bo'ldi va u ahamiyatsiz:** `docs/progress.json`
+dagi `generatedAt` vaqt tamg'asi (generatsiya qilingan fayl) — Q1 niki olindi.
+
+**Bitta QO'SHIMCHA commit (`456e53af`) — nima uchun:** `3ebc9ffe` (G4-1)
+ichida G4 ga aloqasi YO'Q bitta tuzatish ham bor edi —
+`onboarding.service.test.ts` dagi **kalendar bombasi** (2026-08-25 da
+`daysLeft` aynan 7 = `EVALUATION_WARN_DAYS` bo'lib `in_probation` → `due_soon`
+ga o'tadi). G4 kodisiz branch bu test bilan qizil bo'lardi, shuning uchun
+**faqat o'sha bitta test fayli** ko'chirildi — G4 mantig'idan bir qator ham
+emas (yuqoridagi «G4 kodi bormi» qatori buni tasdiqlaydi).
+
+⚠️ **Bu qo'shimcha shu branch'dagi hisobot nusxasida YO'Q** (u `ac1c5317` da
+muzlagan). Deploy branch'i ataylab KOD-MUZLATILGAN holda qoldirildi; hujjatning
+kanonik nusxasi — `yacheyka-inventarizatsiya` dagi shu fayl.
+
+**Qolgan qadamlar (hech biri bajarilmagan):**
+
+1. `git push mirfayz kassa-qarzi-q1-q2` — **buyruq kutilmoqda**.
+2. VPS deploy (qoida 8 retsepti) — **parol kutilmoqda**:
+   fetch + `merge --ff-only` → **migratsiya** (`prisma db execute --file
+   .../20260825120000_debt_source_doc/migration.sql` + `migrate resolve
+   --applied 20260825120000_debt_source_doc` + `prisma generate`) →
+   `build:web` → `pm2 restart sherset-v2-api` (**api SHART** — o'zgarish api'da)
+   va web.
+3. Deploy oldidan/keyin `packages/db` da `npx tsx scripts/warehouse-state.ts`
+   (qoida 8) — Q2 ombor holatiga tegmasa ham, deploy KASSAGA tegadi.
+4. Yuqoridagi «Jonli tekshiruv retsepti» (mezon 9–13) + qoida 13 uchma-uch
+   smoke.
+
+**Faza yopilmagan:** qabul mezonining 9–13 bandlari HAMON ochiq. Holat —
+**QISMAN**.
