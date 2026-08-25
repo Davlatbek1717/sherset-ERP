@@ -44,6 +44,8 @@ export const SCRIPT_SOURCES = [
   'retail-credit-refund',
   'return-payouts',
   'customer-prepays',
+  'sale-prepay',
+  'sale-prepay-refund',
 ] as const;
 
 export type ScriptSource = (typeof SCRIPT_SOURCES)[number];
@@ -140,13 +142,18 @@ export const DECLARED_BALANCE_WRITERS: readonly BalanceWriter[] = [
   },
   {
     file: 'modules/retail-sale/retail-sale.service.ts',
-    sources: ['retail-credit', 'retail-credit-refund'],
+    sources: ['retail-credit', 'retail-credit-refund', 'sale-prepay', 'sale-prepay-refund'],
     note:
       'post() +debtAmount (DEBT tender qatori), refund() −debtReturnMinor (SALES-04). ' +
       'Kontragent SOLD_ON_CREDIT audit hodisasidan aniqlanadi. ' +
       '🔴 Q2/Q3 (2026-08-25): shu fayl UNDIRISH REYESTRIGA ham yozadi ' +
       '(writeSaleDebtRegistryRow / moveSaleDebtRegistryRow), LEKIN o`sha qatorlar ' +
-      "balansga TEGMAYDI (balanceAdopted=true) — ya'ni bu yerda yangi manba YO'Q.",
+      "balansga TEGMAYDI (balanceAdopted=true) — ya'ni bu yerda yangi manba YO'Q. " +
+      '🔴 A2 (2026-08-25): post() +prepayAmount va refund() −prepayReturn — AVANSDAN ' +
+      "to'lov (PREPAY tender qatori, docType='salePrepay'). Kontragent PAID_FROM_PREPAY " +
+      'audit hodisasidan aniqlanadi (SOLD_ON_CREDIT bilan bir xil fallback). ' +
+      'Bu manba UNUTILSA `APPLY=1` mijozlarning avanslarini YO`Q QILARDI — reja §2.1 ' +
+      'yorig`ining aynan takrori (A1 hisobotining 1-eslatmasi).',
   },
   {
     file: 'modules/cashier-session/cashier-session.service.ts',

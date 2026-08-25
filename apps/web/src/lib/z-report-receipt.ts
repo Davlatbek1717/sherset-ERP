@@ -64,6 +64,8 @@ export interface ZReportPayload {
    * qator qiymat bo'lmaganda UMUMAN chizilmaydi.
    */
   prepayMinor?: string;
+  /** A2 — avansdan to'langan summa (naqd EMAS). */
+  prepaySpentMinor?: string;
   expenseByItem: Array<{ id: string | null; name: string | null; sumMinor: string }>;
   openingCashMinor: string;
   expectedCashMinor: string;
@@ -109,6 +111,7 @@ export interface ZReceiptLabels {
   returnPayout: string;
   /** A1 — «Avans (mijozlardan)» qatori. */
   prepay: string;
+  prepaySpent: string;
   expenseByItem: string;
   expenseNoItem: string;
   cashBlockUzs: string;
@@ -312,6 +315,14 @@ export function buildZReceipt(z: ZReportPayload, opts: BuildZReceiptOptions): ZR
       ...(z.prepayMinor == null
         ? []
         : [{ key: 'prepay', label: L.prepay, value: bare(z.prepayMinor) }]),
+      // A2 — avansdan TO'LANGAN summa. ⚠️ Yuqoridagi `prepay` qatorining
+      // ko'zgusi EMAS va u bilan qo'shilmaydi: biri yashiqqa BUGUN kirgan
+      // mijoz puli, ikkinchisi allaqachon (ehtimol boshqa kuni) kirgan
+      // pulning bugun sarflanishi. Kutilgan naqdga UMUMAN kirmaydi —
+      // `credit_sold` (qarzga sotildi) bilan bir xil turkum.
+      ...(z.prepaySpentMinor == null
+        ? []
+        : [{ key: 'prepay-spent', label: L.prepaySpent, value: bare(z.prepaySpentMinor) }]),
     ],
   });
 

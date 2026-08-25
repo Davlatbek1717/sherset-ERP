@@ -35,7 +35,12 @@ import {
   PosDebtPaymentSchema,
   usdCentsToSomTiyin,
 } from './debt.schema.js';
-import { debtPayable, planAdoption, splitDebtSources } from './pos-customer-debt.js';
+import {
+  debtPayable,
+  planAdoption,
+  prepayAvailable,
+  splitDebtSources,
+} from './pos-customer-debt.js';
 import { type PosHistoryLabel, foldPosHistory } from './pos-debt-history.js';
 import { DEBT_LEDGER_CURRENCY } from './sale-debt-registry.js';
 
@@ -124,6 +129,17 @@ export class PosDebtPaymentService {
       payableMinor: payable.payableMinor.toString(),
       /** Shundan reyestrda YO'Q, to'lov paytida adopsiya qilinadigan qism. */
       adoptableMinor: payable.adoptableMinor.toString(),
+      /**
+       * 🔴 A2 — MIJOZNING AVANSI (`payableMinor` ning ko'zgusi). POS to'lov
+       * oynasidagi «Avansdan» tugmasi AYNAN shu songa qaraydi.
+       *
+       * Nega mavjud maydonlar yetmadi: `payableMinor` manfiy balansda `0`
+       * qaytaradi (`debtPayable` — qarzdan avans olinmaydi), `balanceMinor`
+       * esa ishorasi bilan xom son va uni ekranda `-1` ga ko'paytirish
+       * formulaning IKKINCHI nusxasi bo'lardi. Server ham, ekran ham AYNAN
+       * `prepayAvailable` dan yuradi.
+       */
+      prepayAvailableMinor: prepayAvailable(split.balanceMinor).toString(),
       /** `Debt` reyestri — FIFO taqsimoti AYNAN shundan boshlanadi. */
       outstandingMinor: s.outstandingMinor.toString(),
       openCount: s.openCount,

@@ -36,6 +36,13 @@ export const CASHIER_EVENT = {
   refund: 'REFUND',
   shiftOutOfSchedule: 'SHIFT_OUT_OF_SCHEDULE',
   soldOnCredit: 'SOLD_ON_CREDIT',
+  /**
+   * A2 (2026-08-25) — chek mijozning AVANSIDAN to'landi. Kassa yashig'iga
+   * pul kirmagani uchun bu amal `MoneyOperation` lentasida KO'RINMAYDI:
+   * yagona izi shu hodisa va `RetailSalePayment` ning `PREPAY` qatori.
+   * A1 ning kirim tomonidagi `CUSTOMER_PREPAY` hodisasi bilan juftlik.
+   */
+  paidFromPrepay: 'PAID_FROM_PREPAY',
   // G2 (2026-08-24) — kontrol oqimi: katta omborchi yig'ilgan chekni ko'z
   // bilan tekshirib «To'liq» dedi yoki tarkibini o'zgartirdi. `employeeId`
   // ustuni «KIM tekshirgani chek tarixida qolsin» talabini beradi.
@@ -248,6 +255,42 @@ export function planCreditSaleAuditEvent(
       saleName: args.saleName,
       debtMinor: args.debtMinor.toString(),
       totalMinor: args.totalMinor.toString(),
+      newBalanceMinor: args.newBalanceMinor == null ? null : args.newBalanceMinor.toString(),
+    },
+  };
+}
+
+/**
+ * A2 — avansdan to'lov (kassa TZ §9 ruhida: yashiqqa tegmaydigan, lekin
+ * mijozning puliga tegadigan har amal izga tushadi).
+ *
+ * Payload'da avansning OLDINGI va YANGI qoldig'i ham bor: «mijozning avansi
+ * qayerga ketdi» degan savolga keyin faqat shu hodisalar zanjiri javob
+ * beradi — pul daftarida (`/money`) bu amal umuman ko'rinmaydi.
+ */
+export function planPrepaySaleAuditEvent(
+  saleId: string,
+  args: {
+    agentId: string;
+    saleName: string;
+    prepayMinor: bigint;
+    totalMinor: bigint;
+    /** Avans yeyilishidan OLDINGI balans; `null` = o'lchanmagan (qator yo'q). */
+    balanceBeforeMinor: bigint | null;
+    /** Avans yeyilgandan KEYINGI balans; noma'lum bo'lsa null. */
+    newBalanceMinor: bigint | null;
+  },
+): CashierAuditEventInput {
+  return {
+    type: CASHIER_EVENT.paidFromPrepay,
+    docId: saleId,
+    payload: {
+      agentId: args.agentId,
+      saleName: args.saleName,
+      prepayMinor: args.prepayMinor.toString(),
+      totalMinor: args.totalMinor.toString(),
+      balanceBeforeMinor:
+        args.balanceBeforeMinor == null ? null : args.balanceBeforeMinor.toString(),
       newBalanceMinor: args.newBalanceMinor == null ? null : args.newBalanceMinor.toString(),
     },
   };

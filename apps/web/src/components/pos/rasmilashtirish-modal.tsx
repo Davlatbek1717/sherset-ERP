@@ -9,7 +9,7 @@ import type { CurrencyCode } from '@moysklad/money/currencies';
 import { Input, formatMoney, noAccidentalClose } from '@moysklad/ui';
 import * as Dialog from '@radix-ui/react-dialog';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { Banknote, CreditCard, DollarSign, Monitor, X } from 'lucide-react';
+import { Banknote, CreditCard, DollarSign, Monitor, Wallet, X } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useCallback, useEffect, useState } from 'react';
 
@@ -37,6 +37,12 @@ interface ConfirmParams {
   debtAmountMinor: bigint;
   /** MK31 — mijoz bergan dollar naqd, SENTDA. */
   cashUsdAmountMinor: bigint;
+  /**
+   * A2 — mijozning AVANSIDAN qoplanadigan ulush (kassa valyutasi, minor).
+   * Pul yashiqqa kirmaydi: u allaqachon kirgan va mijozning balansida
+   * manfiy bo'lib turibdi.
+   */
+  prepayAmountMinor: bigint;
   /**
    * Chekka MUZLATILADIGAN kurs — kanonik ×10^8, SERVERDAN olingan satr
    * (`GET /exchange-rates/rate`). Dollar berilmagan bo'lsa `null`.
@@ -67,7 +73,13 @@ interface Props {
 
 const NUMPAD_KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '000', '0', '⌫'];
 
-type ActiveField = 'cash' | 'cashUsd' | 'card' | 'terminal';
+type ActiveField = 'cash' | 'cashUsd' | 'card' | 'terminal' | 'prepay';
+
+/** `GET /debts/pos/summary/:id` javobining bu oyna o'qiydigan qismi. */
+interface PosDebtSummaryRow {
+  /** A2 — mijozning ISHLATSA BO'LADIGAN avansi (server formulasi). */
+  prepayAvailableMinor?: string | null;
+}
 
 const FIELD_COLORS: Record<ActiveField, { border: string; bg: string; icon: string; dot: string }> =
   {
@@ -92,6 +104,14 @@ const FIELD_COLORS: Record<ActiveField, { border: string; bg: string; icon: stri
       bg: 'bg-purple-50',
       icon: 'bg-purple-500',
       dot: 'bg-purple-500',
+    },
+    // A2 — avans ATAYLAB amber: kassir bir qarashda «bu pul emas, mijozning
+    // bizdagi krediti» ekanini ajratsin (naqd — yashil, bank — ko'k/binafsha).
+    prepay: {
+      border: 'border-amber-400',
+      bg: 'bg-amber-50',
+      icon: 'bg-amber-500',
+      dot: 'bg-amber-500',
     },
   };
 
@@ -148,7 +168,35 @@ export function RasmiyashtirishModal({
   const [cashUsdInput, setCashUsdInput] = useState('');
   const [cardInput, setCardInput] = useState('');
   const [terminalInput, setTerminalInput] = useState('');
+  const [prepayInput, setPrepayInput] = useState('');
   const [activeField, setActiveField] = useState<ActiveField>('cash');
+
+  /**
+   * A2 — tanlangan mijozning avansi. `enabled: agent != null` — mijoz
+   * tanlanmaguncha so'rov UMUMAN ketmaydi (oyna har ochilganda kassa
+   * serverga bekorga urmasin).
+   *
+   * 🔴 Son SERVERNIKI (`prepayAvailable` sof funksiyasi). Ekranda
+   * `-balanceMinor` deb qayta hisoblash formulaning ikkinchi nusxasi
+   * bo'lardi va bir kun server bilan ayrilardi.
+   */
+  const { data: prepaySummary } = useQuery<PosDebtSummaryRow>({
+    queryKey: ['pos-prepay-summary', agent?.id, currency],
+    queryFn: () => api.get(`/debts/pos/summary/${agent?.id}?currency=${currency}`),
+    enabled: open && agent != null,
+    staleTime: 0,
+  });
+  const prepayAvailableMinor = (() => {
+    const raw = prepaySummary?.prepayAvailableMinor;
+    if (raw == null || raw === '') return 0n;
+    try {
+      return BigInt(raw);
+    } catch {
+      return 0n;
+    }
+  })();
+  /** Avans yo'q (yoki mijoz tanlanmagan) ⇒ maydon o'chiq. */
+  const prepayBlocked = agent == null || prepayAvailableMinor <= 0n;
 
   /**
    * MK31 — kunlik dollar kursi SERVERDAN. 🔴 Kassir uni QO'LDA kiritmaydi
@@ -185,9 +233,26 @@ export function RasmiyashtirishModal({
     usdRateE8 != null && cashUsdMinor > 0n ? convertByRateE8(cashUsdMinor, usdRateE8) : 0n;
   const cardMinor = parseAmountToMinor(cardInput, currency);
   const terminalMinor = parseAmountToMinor(terminalInput, currency);
-  const totalPaid = cashMinor + cashUsdBaseMinor + cardMinor + terminalMinor;
+  // A2 — avans maydoni bloklangan bo'lsa qiymat 0 (dollar bilan AYNI naqsh):
+  // mijozni almashtirgan kassir eski summani jimgina yuborib qo'ymasin.
+  const prepayMinor = prepayBlocked ? 0n : parseAmountToMinor(prepayInput, currency);
+  const totalPaid = cashMinor + cashUsdBaseMinor + cardMinor + terminalMinor + prepayMinor;
   const debtMinor = totalPaid < sumMinor ? sumMinor - totalPaid : 0n;
   const change = totalPaid > sumMinor ? totalPaid - sumMinor : 0n;
+
+  // A2 — IKKI to'siq, ikkalasi ham server qoidasining ko'zgusi. Ekranda
+  // to'sish kassirni xatoni BOSGANDAN KEYIN emas, oldin ogohlantiradi
+  // (`changeExceedsCash` bilan AYNI falsafa).
+  //
+  //  1. avansdan ortiq — server `post()` da 400 beradi;
+  //  2. chek qoldig'idan ortiq — avans QAYTIM BERMAYDI
+  //     (`retail-tenders.ts` → `prepay-overpaid`).
+  const prepayExceedsAvailable = prepayMinor > prepayAvailableMinor;
+  const prepayRoomMinor = (() => {
+    const others = cashMinor + cashUsdBaseMinor + cardMinor + terminalMinor;
+    return sumMinor > others ? sumMinor - others : 0n;
+  })();
+  const prepayExceedsRoom = prepayMinor > prepayRoomMinor;
 
   // Qaytim FAQAT naqddan (kassa TZ §6.2). Karta/terminal ortiqcha o'tkazilsa
   // kassa uni naqd bilan qaytarib bera olmaydi — server buni rad etadi, shu
@@ -221,6 +286,9 @@ export function RasmiyashtirishModal({
     !loading &&
     hasSomethingToSettle &&
     !changeExceedsCash &&
+    // A2 — ikkala avans to'sig'i ham tugmani o'chiradi (yuqoridagi izoh).
+    !prepayExceedsAvailable &&
+    !prepayExceedsRoom &&
     (totalPaid >= sumMinor || (debtMinor > 0n && agent !== null));
 
   // ── Reset on close ────────────────────────────────────────────────────────
@@ -235,8 +303,21 @@ export function RasmiyashtirishModal({
     setCashUsdInput('');
     setCardInput('');
     setTerminalInput('');
+    setPrepayInput('');
     setActiveField('cash');
   }, []);
+
+  // A2 — mijoz ALMASHSA yoki olib tashlansa avans maydoni tozalanadi va
+  // fokus naqdga qaytadi. Aks holda A mijozning avansiga yozilgan summa B
+  // mijozning chekida qolib ketardi (`prepayBlocked` uni 0 qiladi, lekin
+  // ekranda TURGAN raqam kassirni chalg'itardi).
+  // biome-ignore lint/correctness/useExhaustiveDependencies: ataylab FAQAT
+  // mijoz o'zgarganda yuguradi — `activeField` ni bog'lash har bosishda
+  // fokusni naqdga qaytarardi.
+  useEffect(() => {
+    setPrepayInput('');
+    setActiveField((f) => (f === 'prepay' ? 'cash' : f));
+  }, [agent?.id]);
 
   useEffect(() => {
     if (!open) reset();
@@ -248,6 +329,7 @@ export function RasmiyashtirishModal({
     cashUsd: setCashUsdInput,
     card: setCardInput,
     terminal: setTerminalInput,
+    prepay: setPrepayInput,
   };
   const setActive = SETTERS[activeField];
   const INPUTS: Record<ActiveField, string> = {
@@ -255,6 +337,7 @@ export function RasmiyashtirishModal({
     cashUsd: cashUsdInput,
     card: cardInput,
     terminal: terminalInput,
+    prepay: prepayInput,
   };
 
   const handleDigit = useCallback(
@@ -276,8 +359,18 @@ export function RasmiyashtirishModal({
       (activeField === 'cash' ? 0n : cashMinor) +
       (activeField === 'cashUsd' ? 0n : cashUsdBaseMinor) +
       (activeField === 'card' ? 0n : cardMinor) +
-      (activeField === 'terminal' ? 0n : terminalMinor);
+      (activeField === 'terminal' ? 0n : terminalMinor) +
+      (activeField === 'prepay' ? 0n : prepayMinor);
     const left = sumMinor > others ? sumMinor - others : 0n;
+    // A2 — avansda «Aniq» = min(chek qoldig'i, mavjud avans). Faqat
+    // qoldiqni yozsa kassir server 400 sini olardi; faqat avansni yozsa
+    // ortiqcha to'lov bo'lib qaytim talab qilardi. Ikkala chegara ham shu
+    // yerda, YAGONA joyda.
+    if (activeField === 'prepay') {
+      const usable = left < prepayAvailableMinor ? left : prepayAvailableMinor;
+      setActive(formatAmountInput(usable, currency));
+      return;
+    }
     if (activeField === 'cashUsd') {
       if (usdRateE8 == null || usdRateE8 <= 0n) return;
       // So'm qoldig'ini dollarga teskari o'girish — YUQORIGA yaxlitlanadi.
@@ -300,6 +393,7 @@ export function RasmiyashtirishModal({
       terminalAmountMinor: terminalMinor,
       debtAmountMinor: debtMinor,
       cashUsdAmountMinor: cashUsdMinor,
+      prepayAmountMinor: prepayMinor,
       // Kurs FAQAT dollar berilganda ketadi — server sxemasi ham shuni
       // kutadi (`cashUsdAmountMinor === 0 || usdRateMinor != null`).
       usdRateMinor: cashUsdMinor > 0n && usdRate ? usdRate.rateMinor : null,
@@ -314,6 +408,7 @@ export function RasmiyashtirishModal({
     cashUsd: t('field_cash_usd'),
     card: t('field_card'),
     terminal: t('field_terminal'),
+    prepay: t('field_prepay'),
   };
 
   return (
@@ -696,6 +791,52 @@ export function RasmiyashtirishModal({
                       <div className="h-2 w-2 shrink-0 rounded-full bg-purple-500" />
                     )}
                   </button>
+
+                  {/* A2 — Avansdan. Faqat MIJOZ tanlangan VA avansi bor
+                      bo'lganda faol: avanssiz mijozda tugma bosilsa server
+                      baribir 400 berardi, kassir esa sababini bilmasdi. */}
+                  <button
+                    type="button"
+                    data-test-id="pos-tender-prepay"
+                    disabled={prepayBlocked}
+                    onClick={() => setActiveField('prepay')}
+                    className={`flex items-center gap-3 rounded-xl border-2 p-3 text-left transition-all disabled:cursor-not-allowed disabled:opacity-50 ${
+                      activeField === 'prepay'
+                        ? 'border-amber-400 bg-amber-50'
+                        : 'border-[var(--ms-border)] bg-[var(--ms-bg-app)] hover:border-amber-200'
+                    }`}
+                  >
+                    <div
+                      className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${activeField === 'prepay' ? 'bg-amber-500' : 'bg-[var(--ms-bg-input)]'}`}
+                    >
+                      <Wallet
+                        className={`h-4 w-4 ${activeField === 'prepay' ? 'text-white' : 'text-[var(--ms-text-muted)]'}`}
+                      />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="text-[10px] font-semibold uppercase tracking-wide text-[var(--ms-text-muted)]">
+                        {t('prepay')}
+                      </div>
+                      <div
+                        className={`font-bold tabular-nums leading-tight text-sm ${prepayMinor > 0n ? 'text-[var(--ms-text-primary)]' : 'text-[var(--ms-text-muted)]'}`}
+                      >
+                        {prepayMinor > 0n ? formatMoney(prepayMinor) : '—'}
+                      </div>
+                      {/* Mavjud avans — kassir «qancha bor» ni tugmaning
+                          O'ZIDA ko'rsin, boshqa ekranga chiqmasdan. */}
+                      {!prepayBlocked && (
+                        <div
+                          data-test-id="pos-prepay-available"
+                          className="text-[10px] tabular-nums text-[var(--ms-text-muted)]"
+                        >
+                          {t('prepay_available', { sum: formatMoney(prepayAvailableMinor) })}
+                        </div>
+                      )}
+                    </div>
+                    {activeField === 'prepay' && (
+                      <div className="h-2 w-2 shrink-0 rounded-full bg-amber-500" />
+                    )}
+                  </button>
                 </div>
 
                 {/* Remaining / Change — pushed to bottom */}
@@ -749,6 +890,25 @@ export function RasmiyashtirishModal({
                 {changeExceedsCash && !loading && (
                   <p className="mb-2 text-center text-[10px] font-medium text-red-500">
                     {t('change_cash_only')}
+                  </p>
+                )}
+                {/* A2 — nima uchun tugma o'chiq. Ikki sabab ikki xil matn:
+                    «avansi yetmaydi» va «avansdan qaytim yo'q» kassir uchun
+                    butunlay boshqa harakat talab qiladi. */}
+                {prepayExceedsAvailable && !loading && (
+                  <p
+                    data-test-id="pos-prepay-over-available"
+                    className="mb-2 text-center text-[10px] font-medium text-red-500"
+                  >
+                    {t('prepay_over_available', { sum: formatMoney(prepayAvailableMinor) })}
+                  </p>
+                )}
+                {!prepayExceedsAvailable && prepayExceedsRoom && !loading && (
+                  <p
+                    data-test-id="pos-prepay-over-room"
+                    className="mb-2 text-center text-[10px] font-medium text-red-500"
+                  >
+                    {t('prepay_no_change', { sum: formatMoney(prepayRoomMinor) })}
                   </p>
                 )}
                 {/* `!canConfirm` bilan bog'landi: to'liq qarz holatida tugma

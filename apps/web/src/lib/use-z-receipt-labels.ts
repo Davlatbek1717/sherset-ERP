@@ -44,6 +44,7 @@ export function useZReceiptLabels(): ZReceiptLabels {
       collection: t('collection'),
       returnPayout: t('return_payout'),
       prepay: t('prepay'),
+      prepaySpent: t('prepay_spent'),
       expenseByItem: t('expense_by_item'),
       expenseNoItem: t('expense_no_item'),
       cashBlockUzs: tp('cash_block_uzs'),

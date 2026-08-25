@@ -816,3 +816,156 @@ describe('refund() — DOLLAR dollarda qaytadi (2026-08-17)', () => {
     ).rejects.toThrow(/Dollar qaytarish/);
   });
 });
+
+/**
+ * A2 (2026-08-25) — AVANSDAN to'langan chekning QAYTARILISHI.
+ *
+ * NEGA SHU FAYLDA: qaytarish jihozi (`makeHarness`) shu yerda va u aynan
+ * kerakli yuzani beradi (`payments` qatorlari, `priorRefunds`, mirror
+ * `create`, balans/pul dublyorlari). Ikkinchi nusxa yozilsa biri bir kun
+ * eskirardi — repoda takrorlangan saboq.
+ *
+ * Qoida `DEBT` bilan bir xil SINFDA: pul kassaga bu chek orqali KIRMAGAN,
+ * demak undan CHIQMAYDI ham. Farqi — qayerga qaytishida: qarz mijozning
+ * qarzini kamaytiradi, avans esa mijozning avansini TIKLAYDI.
+ */
+describe('A2 — refund(): avans mijozning BALANSIGA qaytadi, naqd berilmaydi', () => {
+  it('100% avansdan to`langan chek: balans −summa, kassadan bir tiyin ham chiqmaydi', async () => {
+    const { svc, balance, money, tx } = makeHarness({
+      positions: TEN,
+      payments: [{ method: 'PREPAY', amountMinor: 100_000n }],
+      agentId: AGENT_ID,
+    });
+
+    await svc.refund(ACCOUNT, USER_ID, SALE_ID, refundReq('10'));
+
+    expect(balance.applyDelta).toHaveBeenCalledTimes(1);
+    const [, acc, cp, cur, delta, meta] = balance.applyDelta.mock.calls[0];
+    expect({ acc, cp, cur, delta }).toEqual({
+      acc: ACCOUNT,
+      cp: AGENT_ID,
+      cur: 'UZS',
+      delta: -100_000n,
+    });
+    // Alohida hujjat turi — kassa tarixida «qarz» bilan aralashmaydi.
+    expect((meta as { docType?: string })?.docType).toBe('salePrepay');
+    // 🔴 `source` YO'Q: manfiy delta mijozga «Qarzingizdan ayirildi» xabarini
+    // tanlardi, mijoz esa qarzdor emas edi.
+    expect((meta as { source?: string })?.source).toBeUndefined();
+
+    expect(money.applyDeltas).not.toHaveBeenCalled();
+    // Mirror chekka PREPAY qatori — kümülativ cap AYNAN shundan o'qiladi.
+    expect(tx.retailSalePayment.create).toHaveBeenCalledTimes(1);
+    const row = tx.retailSalePayment.create.mock.calls[0]?.[0]?.data as Record<string, unknown>;
+    expect(row.method).toBe('PREPAY');
+    expect(row.amountMinor).toBe(100_000n);
+  });
+
+  it('🔴 avansdan to`langan chekni NAQD qaytarib bo`lmaydi (R1 sinfi)', async () => {
+    const { svc } = makeHarness({
+      positions: TEN,
+      payments: [{ method: 'PREPAY', amountMinor: 100_000n }],
+      agentId: AGENT_ID,
+    });
+
+    // Avans puli yashiqqa BU chek orqali kirmagan — naqd qaytarish yashiqdan
+    // hech qachon kirmagan pulni chiqarardi (100% karta chekining aynan
+    // takrori, prodda o'lchangan R1 hodisasi).
+    await expect(
+      svc.refund(ACCOUNT, USER_ID, SALE_ID, refundReq('10', { cashAmountMinor: '100000' })),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('qisman qaytarish: avans ulushi PROPORSIONAL qaytadi', async () => {
+    const { svc, balance, created } = makeHarness({
+      positions: TEN,
+      payments: [{ method: 'PREPAY', amountMinor: 100_000n }],
+      agentId: AGENT_ID,
+    });
+
+    await svc.refund(ACCOUNT, USER_ID, SALE_ID, refundReq('4'));
+
+    expect((balance.applyDelta.mock.calls[0] ?? [])[4]).toBe(-40_000n);
+    // Mirror «to'liq yopilgan» bo'lib yoziladi: mijozning puli unga qaytdi.
+    expect(created[0]?.data.payedSumMinor).toBe(40_000n);
+  });
+
+  it('aralash chek (avans + naqd): har ulush O`Z kanaliga qaytadi', async () => {
+    const { svc, balance, money } = makeHarness({
+      positions: TEN,
+      payments: [
+        { method: 'CASH_UZS', amountMinor: 60_000n },
+        { method: 'PREPAY', amountMinor: 40_000n },
+      ],
+      agentId: AGENT_ID,
+    });
+
+    await svc.refund(ACCOUNT, USER_ID, SALE_ID, refundReq('10', { cashAmountMinor: '60000' }));
+
+    // Naqd ulushi yashiqdan, avans ulushi balansdan.
+    expect((balance.applyDelta.mock.calls[0] ?? [])[4]).toBe(-40_000n);
+    expect(money.applyDeltas).toHaveBeenCalledTimes(1);
+    const deltas = (money.applyDeltas.mock.calls[0] ?? [])[2] as Array<{ deltaMinor: bigint }>;
+    expect(deltas[0]?.deltaMinor).toBe(-60_000n);
+  });
+
+  it('🔴 INVARIANT 4 — avans vozvrati UNDIRISH REYESTRIGA tegmaydi', async () => {
+    const { svc, registry } = makeHarness({
+      positions: TEN,
+      payments: [{ method: 'PREPAY', amountMinor: 100_000n }],
+      agentId: AGENT_ID,
+    });
+
+    await svc.refund(ACCOUNT, USER_ID, SALE_ID, refundReq('10'));
+
+    // Avansdan hech qachon `Debt` qatori tug'ilmagan — harakatlantiradigan
+    // qator ham yo'q. Q3 ning bloki `debtReturn > 0n` ichida turibdi.
+    expect(registry.debtRows).toHaveLength(0);
+    expect(registry.debtNote.create).not.toHaveBeenCalled();
+  });
+
+  it('kümülativ cap: avval qaytarilgan avans IKKINCHI marta qaytmaydi', async () => {
+    const { svc } = makeHarness({
+      positions: TEN,
+      payments: [{ method: 'PREPAY', amountMinor: 100_000n }],
+      agentId: AGENT_ID,
+      priorRefunds: [
+        {
+          sumMinor: 60_000n,
+          cashAmountMinor: 0n,
+          cardAmountMinor: 0n,
+          debtReturnMinor: 0n,
+          positions: [{ productId: PRODUCT_ID, quantity: '6' }],
+          // Mirror chekdagi PREPAY qatori — server kümülativ ulushni aynan
+          // shundan o'qiydi (`priorTotals.prepayMinor`).
+          payments: [{ method: 'PREPAY', amountMinor: 60_000n }],
+        } as never,
+      ],
+    });
+
+    // Qolgan 4 dona uchun eng ko'pi 40 000; 41 000 so'rasa rad etiladi.
+    await expect(
+      svc.refund(ACCOUNT, USER_ID, SALE_ID, refundReq('4', { prepayReturnMinor: '41000' })),
+    ).rejects.toThrow(/Avansga qaytarish/);
+  });
+
+  it('uch kanalli chek (naqd + avans + qarz) — uchala cap ham to`g`ri bo`linadi', async () => {
+    const { svc, balance, created } = makeHarness({
+      positions: TEN,
+      payments: [
+        { method: 'CASH_UZS', amountMinor: 30_000n },
+        { method: 'PREPAY', amountMinor: 40_000n },
+        { method: 'DEBT', amountMinor: 30_000n },
+      ],
+      agentId: AGENT_ID,
+    });
+
+    // Yarmi qaytariladi: naqd 15 000, avans 20 000, qarz 15 000.
+    await svc.refund(ACCOUNT, USER_ID, SALE_ID, refundReq('5', { cashAmountMinor: '15000' }));
+
+    const deltas = balance.applyDelta.mock.calls.map((c) => c[4] as bigint);
+    // Avans BIRINCHI (qulf tartibi: BALANS → QARZLAR), keyin qarz.
+    expect(deltas).toEqual([-20_000n, -15_000n]);
+    expect(created[0]?.data.debtReturnMinor).toBe(15_000n);
+  });
+});

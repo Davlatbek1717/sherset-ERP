@@ -6242,7 +6242,8 @@
       "total_cash": "Наличные итого",
       "total_returns": "Возвраты",
       "total_sales": "Продажи",
-      "variance_acts": "Акты расхождения"
+      "variance_acts": "Акты расхождения",
+      "prepay_spent": "Оплачено из аванса"
     },
     "ecommerce": {
       "channels_card_description": "Telegram, Instagram, сайт и другие платформы",
@@ -9339,7 +9340,12 @@
       "usd_rate_missing": "Курс доллара не найден — оплата в долларах недоступна",
       "win_close": "Выход",
       "win_minimize": "Свернуть",
-      "win_toggle": "Оконный режим"
+      "win_toggle": "Оконный режим",
+      "prepay": "Аванс",
+      "field_prepay": "Сумма из аванса",
+      "prepay_available": "Доступно: {sum}",
+      "prepay_over_available": "У клиента аванса только {sum} — уменьшите сумму",
+      "prepay_no_change": "С аванса сдача не выдаётся — остаток чека {sum}"
     },
     "shiftAcceptance": {
       "accept": "Принять",

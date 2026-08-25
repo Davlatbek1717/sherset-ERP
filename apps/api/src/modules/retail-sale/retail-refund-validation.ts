@@ -278,6 +278,26 @@ export interface RefundSettlementInput {
   originalUsdBaseMinor?: bigint;
   /** Σ SENT — bu chekdan avvalgi qaytarishlar allaqachon bergan dollar. */
   priorUsdReturnedMinor?: bigint;
+  /**
+   * A2 (2026-08-25) — Σ `PREPAY` to'lov qatorlari: chekning mijoz AVANSIDAN
+   * qoplangan ulushi.
+   *
+   * 🔴 NEGA U SO'M PUL ULUSHIDAN CHIQARILADI: avans puli kassa yashig'iga
+   * bu chek orqali KIRMAGAN (u A1 yo'li bilan, boshqa hujjat va ehtimol
+   * boshqa smena bilan kirgan). Bu qismni `moneyMax` ichida qoldirsak,
+   * avansdan to'langan chek NAQD qaytarilib, yashiqdan hech qachon shu chek
+   * uchun kirmagan pul chiqib ketardi — bu R1 (100% karta cheki naqd
+   * qaytarildi, prodda o'lchangan) va 2026-08-17 (dollar cheki so'mda
+   * qaytarildi) hodisalarining AYNAN uchinchi nusxasi bo'lardi.
+   *
+   * Avans ulushi o'z bucket'ida qaytadi: `prepayMaxMinor` → mijozning
+   * BALANSIGA (`−prepayReturn`), naqd emas.
+   *
+   * Ixtiyoriy ⇒ uzatmagan chaqiruvchilar uchun 0 (mavjud xulq o'zgarmaydi).
+   */
+  originalPrepayMinor?: bigint;
+  /** Σ — bu chekdan avvalgi qaytarishlar allaqachon balansga qaytargan avans. */
+  priorPrepayReturnedMinor?: bigint;
   /** Σ value of the refunds already mirrored from this receipt. */
   priorRefundedSumMinor: bigint;
   /** Σ cash+card those earlier refunds already paid back. */
@@ -308,6 +328,11 @@ export interface RefundSettlementCaps {
    * bilan bir xil sabab). O'lchanmagan chekda 0.
    */
   usdMaxMinor: bigint;
+  /**
+   * A2 — bu qaytarish mijozning BALANSIGA qaytara oladigan eng katta avans
+   * ulushi. `moneyMaxMinor` ga QO'SHILMAYDI: pul yashiqdan chiqmaydi.
+   */
+  prepayMaxMinor: bigint;
 }
 
 const clamp = (v: bigint, lo: bigint, hi: bigint): bigint => (v < lo ? lo : v > hi ? hi : v);
@@ -339,7 +364,9 @@ export function computeRefundSettlementCaps(i: RefundSettlementInput): RefundSet
   // bucket'ida (`usdMaxMinor`, sent) qaytariladi. Clamp: buzuq ma'lumot
   // (dollar bazasi chek jamidan katta) manfiy pul ulushi yasamasin.
   const usdBase = clamp(i.originalUsdBaseMinor ?? 0n, 0n, originalSum - debt);
-  const money = originalSum - debt - usdBase;
+  // A2 — avans ulushi ham pul ulushidan chiqariladi (yuqoridagi izoh).
+  const prepay = clamp(i.originalPrepayMinor ?? 0n, 0n, originalSum - debt - usdBase);
+  const money = originalSum - debt - usdBase - prepay;
 
   const refundedTotal = clamp(
     (i.priorRefundedSumMinor > 0n ? i.priorRefundedSumMinor : 0n) +
@@ -349,7 +376,20 @@ export function computeRefundSettlementCaps(i: RefundSettlementInput): RefundSet
   );
 
   const moneyCapTotal = originalSum === 0n ? 0n : (money * refundedTotal) / originalSum;
-  const debtCapTotal = clamp(refundedTotal - moneyCapTotal, 0n, debt);
+  // A2 — avans ulushi PROPORSIONAL hisoblanadi (pul ulushi bilan bir xil
+  // formula), qarz esa ATAYLAB qoldiqni oladi.
+  //
+  // 🔴 Nega avans ham proporsional, qarz esa qoldiq: bo'lish tiyin
+  // yaxlitlashi beradi va uchta chelakdan BITTASI yaxlitlash qoldig'ini
+  // yutishi kerak — aks holda uch cap'ning yig'indisi qaytarilgan qiymatdan
+  // kam bo'lib, har qisman qaytarishda bir tiyin osilib qolardi. Qoldiqni
+  // qarz oladi, chunki uning cap'i (`debt`) bilan baribir kesiladi.
+  //
+  // ⚠️ ORQAGA MOSLIK: avanssiz chekda `prepayCapTotal = 0` ⇒ formula
+  // avvalgisi bilan AYNAN bir xil qoladi (mavjud testlar buni qulflaydi).
+  const prepayCapTotal =
+    originalSum === 0n ? 0n : clamp((prepay * refundedTotal) / originalSum, 0n, prepay);
+  const debtCapTotal = clamp(refundedTotal - moneyCapTotal - prepayCapTotal, 0n, debt);
 
   // P5 — the drawer's own ceiling, on the SAME cumulative base so split
   // refunds cannot drift past it. Clamped into [0, money] first: corrupt data
@@ -377,11 +417,13 @@ export function computeRefundSettlementCaps(i: RefundSettlementInput): RefundSet
     i.originalCashLikeMinor == null ? moneyMaxMinor : cashCapTotal - i.priorCashReturnedMinor;
   const debtMaxMinor = debtCapTotal - i.priorDebtReturnedMinor;
   const usdMaxMinor = usdCapTotal - (i.priorUsdReturnedMinor ?? 0n);
+  const prepayMaxMinor = prepayCapTotal - (i.priorPrepayReturnedMinor ?? 0n);
   return {
     moneyMaxMinor: moneyMaxMinor > 0n ? moneyMaxMinor : 0n,
     cashMaxMinor: cashMaxMinor > 0n ? cashMaxMinor : 0n,
     debtMaxMinor: debtMaxMinor > 0n ? debtMaxMinor : 0n,
     usdMaxMinor: usdMaxMinor > 0n ? usdMaxMinor : 0n,
+    prepayMaxMinor: prepayMaxMinor > 0n ? prepayMaxMinor : 0n,
   };
 }
 
@@ -398,11 +440,22 @@ export function validateRefundSettlement(
   debtReturnMinor: bigint,
   /** Dollar qaytarish — SENTDA. Uzatilmasa 0 (eski chaqiruvchilar). */
   usdReturnMinor = 0n,
+  /** A2 — mijozning balansiga qaytariladigan avans ulushi. Uzatilmasa 0. */
+  prepayReturnMinor = 0n,
 ): string | null {
   if (cashReturnMinor < 0n || cardReturnMinor < 0n || debtReturnMinor < 0n) {
     return 'Refund cash/card/debt amounts must be non-negative';
   }
   if (usdReturnMinor < 0n) return 'Refund USD amount must be non-negative';
+  if (prepayReturnMinor < 0n) return 'Refund prepay amount must be non-negative';
+  // A2 — chek qancha avansdan to'langan bo'lsa, shuncha avans qaytadi.
+  // Ortiqchasi mijozga «yo'qdan avans» yasab berardi.
+  if (prepayReturnMinor > caps.prepayMaxMinor) {
+    return (
+      `Avansga qaytarish ${(prepayReturnMinor / 100n).toString()} so'm — bu chekning ` +
+      `atigi ${(caps.prepayMaxMinor / 100n).toString()} so'mi avansdan to'langan.`
+    );
+  }
   // 🔴 Dollar cap'i (2026-08-17, prodda o'lchangan yo'qotish): kassa bu chek
   // uchun olgan dollardan ko'p dollar chiqarib bo'lmaydi. Xabar kassirga
   // ko'rinadi — nima qilish kerakligi bilan.

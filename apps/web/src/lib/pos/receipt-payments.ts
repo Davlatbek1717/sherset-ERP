@@ -46,6 +46,7 @@ export type ReceiptLineKind =
   | 'card'
   | 'terminal'
   | 'debt'
+  | 'prepay'
   | 'other'
   | 'change';
 
@@ -64,13 +65,17 @@ export interface ReceiptPaymentLine {
 }
 
 /** To'lov turlarining chekdagi tartibi — kassir odatlangan ketma-ketlik. */
-const ORDER = ['CASH_UZS', 'CASH_USD', 'CARD', 'TERMINAL', 'DEBT'] as const;
+const ORDER = ['CASH_UZS', 'CASH_USD', 'CARD', 'TERMINAL', 'PREPAY', 'DEBT'] as const;
 
 const KIND_OF: Record<string, Exclude<ReceiptLineKind, 'other'>> = {
   CASH_UZS: 'cash',
   CASH_USD: 'cashUsd',
   CARD: 'card',
   TERMINAL: 'terminal',
+  // A2 (2026-08-25) — avansdan to'lov. Bu XARITAGA qo'shilmasa qator
+  // `other` bo'lib chekning OXIRIDA, xom `PREPAY` so'zi bilan bosilardi
+  // (mijozga beriladigan qog'ozda inglizcha texnik kalit).
+  PREPAY: 'prepay',
   DEBT: 'debt',
 };
 
@@ -85,6 +90,8 @@ export const RECEIPT_PAYMENT_LABELS: Record<Exclude<ReceiptLineKind, 'other'>, s
   card: 'Karta',
   terminal: 'Terminal',
   debt: 'Qarz',
+  // A2 — mijoz uchun matn: pul bugun berilmadi, avvalgi avansdan yechildi.
+  prepay: 'Avansdan',
   change: 'Qaytim',
 };
 

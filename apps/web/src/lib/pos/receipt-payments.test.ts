@@ -159,6 +159,37 @@ describe('receiptPaymentLines', () => {
   });
 });
 
+/**
+ * A2 (2026-08-25) — «Avansdan» qatori. Xaritaga qo'shilmasa qator `other`
+ * bo'lib chekning OXIRIDA, mijozga beriladigan qog'ozda xom `PREPAY` so'zi
+ * bilan bosilardi.
+ */
+describe('receiptPaymentLines — A2 «Avansdan»', () => {
+  it('PREPAY qatori o`z yorlig`i bilan va QARZDAN OLDIN chiqadi', () => {
+    const lines = receiptPaymentLines({
+      changeMinor: '0',
+      payments: [
+        P({ method: 'DEBT', amountMinor: '30000', amountBaseMinor: '30000' }),
+        P({ method: 'PREPAY', amountMinor: '40000', amountBaseMinor: '40000' }),
+        P({ method: 'CASH_UZS', amountMinor: '30000', amountBaseMinor: '30000' }),
+      ],
+    });
+    expect(lines.map((l) => l.kind)).toEqual(['cash', 'prepay', 'debt']);
+    expect(lines.find((l) => l.kind === 'prepay')?.label).toBe('Avansdan');
+    expect(lines.find((l) => l.kind === 'prepay')?.baseMinor).toBe(40_000n);
+  });
+
+  it('PREPAY `other` chelagiga TUSHMAYDI (xom kalit bosilmaydi)', () => {
+    const lines = receiptPaymentLines({
+      changeMinor: '0',
+      payments: [P({ method: 'PREPAY', amountMinor: '40000', amountBaseMinor: '40000' })],
+    });
+    expect(lines).toHaveLength(1);
+    expect(lines[0]?.kind).toBe('prepay');
+    expect(lines[0]?.label).not.toBe('PREPAY');
+  });
+});
+
 describe('formatForeignMajor', () => {
   it('sentni ikki kasrli major ko‘rinishga o‘giradi', () => {
     expect(formatForeignMajor(1250n, 'USD')).toBe('$12.50');

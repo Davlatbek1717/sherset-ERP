@@ -102,6 +102,8 @@ interface ZFull {
    * avans bo'lmagan» degan ishonarli yolg'on bo'lardi.
    */
   prepayMinor?: string;
+  /** A2 — avansdan to'langan summa (naqd EMAS, `credit_sold` turkumi). */
+  prepaySpentMinor?: string;
   expenseByItem: Array<{ id: string | null; name: string | null; sumMinor: string }>;
   expectedCashMinor: string;
   /**
@@ -342,6 +344,14 @@ export default function SessionDetailPage() {
               <MetaRow
                 label={tZ('prepay')}
                 value={formatMoney(BigInt(zFull.prepayMinor), currency)}
+              />
+            )}
+            {/* A2 — avansdan TO'LANGAN summa. Yuqoridagi qator bilan
+                qo'shilmaydi: biri kirim, ikkinchisi sarf. */}
+            {zFull.prepaySpentMinor != null && (
+              <MetaRow
+                label={tZ('prepay_spent')}
+                value={formatMoney(BigInt(zFull.prepaySpentMinor), currency)}
               />
             )}
           </div>

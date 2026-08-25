@@ -42,6 +42,22 @@ export const TENDER = {
    * Kassir interfeysining lug'atini o'zgartirmadik.
    */
   terminal: 'TERMINAL',
+  /**
+   * A2 (2026-08-25) — MIJOZNING AVANSIDAN to'lov. Pul kassa yashig'iga
+   * KIRMAYDI: u allaqachon kirgan (A1 — `RetailDrawerCashIn`,
+   * `kind='customer_prepay'`) va mijozning balansida MANFIY bo'lib turibdi.
+   *
+   * 🔴 `DEBT` dan IKKI joyda farq qiladi, boshqa hamma narsada bir xil:
+   *  1. balans deltasi AYNAN bir xil (`+summa`), lekin natija ishorasi
+   *     boshqa — avans yeyiladi (−1 000k → −700k), qarz tug'ilmaydi;
+   *  2. chek TO'LANGAN sanaladi (`payedSumMinor` ga KIRADI) — tovar puli
+   *     rostdan olingan, faqat oldinroq.
+   *
+   * ⚠️ NAQD EMAS: `legacyTotals` ga tushmaydi ⇒ smenaning kutilgan naqdiga
+   * (`collectCashInputs`) va Z-hisobotning naqd qatoriga KIRMAYDI —
+   * `DEBT` bilan AYNAN bir xil munosabat.
+   */
+  prepay: 'PREPAY',
   debt: 'DEBT',
 } as const;
 
@@ -53,6 +69,16 @@ export interface TenderInput {
   terminalMinor: bigint;
   /** Qarzga qoldirilgan qism — pul EMAS, mijoz balansiga yoziladi. */
   debtMinor: bigint;
+  /**
+   * A2 — mijozning AVANSIDAN qoplanadigan qism (kassa valyutasi, minor).
+   * Ixtiyoriy: uzatmagan chaqiruvchi uchun 0, ya'ni mavjud xulq bir bayt
+   * ham o'zgarmaydi.
+   *
+   * 🔴 Bu yerda avans YETARLILIGI tekshirilMAYDI — u balansdan o'qiladi va
+   * bu modul DB ni bilmaydi. Cap (`prepay ≤ −balansOldin`) `post()` da,
+   * balans `FOR UPDATE` bilan qulflangan holda tekshiriladi.
+   */
+  prepayMinor?: bigint;
   totalMinor: bigint;
   /**
    * Dollar naqd — mijoz bergan summa SENTDA (MK31). Ixtiyoriy: uzatmagan
@@ -118,22 +144,36 @@ export type TenderResult =
       changeMinor: bigint;
       /** `RetailSalePayment` ga yoziladigan qatorlar (nol summalar tushmaydi). */
       lines: TenderLine[];
+      /**
+       * A2 — avansdan qoplangan ulush. `paidMinor` ga QO'SHILMAYDI (u
+       * «yashiqqa/bankka kelgan pul» ma'nosini saqlaydi), lekin chek
+       * TO'LANGAN sanalishida hisobga olinadi.
+       */
+      prepayMinor: bigint;
     }
   | { ok: false; reason: 'negative-input' }
   | { ok: false; reason: 'insufficient'; paidMinor: bigint; totalMinor: bigint }
   | { ok: false; reason: 'debt-overpaid'; paidMinor: bigint; totalMinor: bigint }
   | { ok: false; reason: 'change-exceeds-cash'; changeMinor: bigint; cashMinor: bigint }
+  /**
+   * A2 — avansdan chek qoldig'idan KO'P to'lanmoqchi. Qaytim BERILMAYDI:
+   * avans pul emas, u mijozning bizdagi krediti — undan naqd qaytim berish
+   * A3 ning RKO yo'lini (hujjat + iz) chetlab o'tish yo'li bo'lardi.
+   */
+  | { ok: false; reason: 'prepay-overpaid'; prepayMinor: bigint; allowedMinor: bigint }
   | { ok: false; reason: 'usd-rate-missing' };
 
 export function computeTenders(i: TenderInput): TenderResult {
   const cashUsdMinor = i.cashUsdMinor ?? 0n;
+  const prepayMinor = i.prepayMinor ?? 0n;
   if (
     i.cashMinor < 0n ||
     i.cardMinor < 0n ||
     i.terminalMinor < 0n ||
     i.debtMinor < 0n ||
     i.totalMinor < 0n ||
-    cashUsdMinor < 0n
+    cashUsdMinor < 0n ||
+    prepayMinor < 0n
   ) {
     return { ok: false, reason: 'negative-input' };
   }
@@ -150,26 +190,54 @@ export function computeTenders(i: TenderInput): TenderResult {
 
   const paidMinor = i.cashMinor + usdBase + i.cardMinor + i.terminalMinor;
 
+  // 🔴 A2 — AVANS QAYTIM BERMAYDI (invariant 5 ning tender tomondagi shakli).
+  //
+  // Ruxsat etilgan avans ulushi = chekning boshqa hamma tender'dan KEYINGI
+  // qoldig'i. Ya'ni avans hech qachon `changeMinor` ga hissa qo'sha olmaydi.
+  //
+  // NEGA shunchaki `changeMinor > cashLike` tekshiruvi YETARLI EMAS: naqd ham
+  // aralashgan chekda (naqd 50k + avans 30k, jami 60k) qaytim 20k bo'lib
+  // `cashLike = 50k` chegarasidan O'TIB KETARDI — natijada mijozning avansi
+  // yashiqdan NAQD bo'lib chiqib ketardi, hujjatsiz va izsiz. Avansni naqdga
+  // aylantirishning YAGONA yo'li — A3 ning RKO (`customer-prepay-refund`)
+  // hujjati.
+  //
+  // Qoida tartibdan MUSTAQIL: kassir avansni oldin kiritsa ham, keyin
+  // kiritsa ham AYNI natija chiqadi.
+  const prepayAllowedMinor =
+    i.totalMinor - i.debtMinor - paidMinor > 0n ? i.totalMinor - i.debtMinor - paidMinor : 0n;
+  if (prepayMinor > prepayAllowedMinor) {
+    return { ok: false, reason: 'prepay-overpaid', prepayMinor, allowedMinor: prepayAllowedMinor };
+  }
+
   if (i.debtMinor > 0n) {
     // Qarzli chekda ARIFMETIKA ANIQ bo'lishi shart: to'langan + qarz = jami.
     // «Ko'proq to'lab, qolganini qarzga yozish» ma'nosiz — va agar ruxsat
     // berilsa, qarz summasi bilan haqiqiy qoldiq bir-biriga mos kelmay
     // qoladi, ya'ni mijoz balansiga noto'g'ri raqam tushadi.
-    const covered = paidMinor + i.debtMinor;
+    // A2: avans ulushi ham QOPLAMA — u tovar puli (faqat oldinroq olingan).
+    const covered = paidMinor + prepayMinor + i.debtMinor;
     if (covered < i.totalMinor) {
       return { ok: false, reason: 'insufficient', paidMinor: covered, totalMinor: i.totalMinor };
     }
     if (covered > i.totalMinor) {
       return { ok: false, reason: 'debt-overpaid', paidMinor: covered, totalMinor: i.totalMinor };
     }
-    return { ok: true, paidMinor, changeMinor: 0n, lines: linesOf(i, usdBase) };
+    return { ok: true, paidMinor, changeMinor: 0n, lines: linesOf(i, usdBase), prepayMinor };
   }
 
-  if (paidMinor < i.totalMinor) {
-    return { ok: false, reason: 'insufficient', paidMinor, totalMinor: i.totalMinor };
+  if (paidMinor + prepayMinor < i.totalMinor) {
+    return {
+      ok: false,
+      reason: 'insufficient',
+      paidMinor: paidMinor + prepayMinor,
+      totalMinor: i.totalMinor,
+    };
   }
 
-  const changeMinor = paidMinor - i.totalMinor;
+  // Yuqoridagi `prepayAllowedMinor` qo'riqchisi tufayli avans bu ayirmaga
+  // hissa QO'SHA OLMAYDI: qaytim faqat naqd/karta ortiqchasidan tug'iladi.
+  const changeMinor = paidMinor + prepayMinor - i.totalMinor;
   // TZ §6.2: qaytim faqat naqddan. Karta/terminal ortiqcha o'tkazilgan bo'lsa
   // kassa uni naqd pul bilan qaytarib bera olmaydi — bu kassadan pul yo'qotish
   // yo'li. Shuning uchun bloklaymiz, jim qabul qilmaymiz.
@@ -183,7 +251,7 @@ export function computeTenders(i: TenderInput): TenderResult {
     return { ok: false, reason: 'change-exceeds-cash', changeMinor, cashMinor: cashLikeMinor };
   }
 
-  return { ok: true, paidMinor, changeMinor, lines: linesOf(i, usdBase) };
+  return { ok: true, paidMinor, changeMinor, lines: linesOf(i, usdBase), prepayMinor };
 }
 
 function linesOf(i: TenderInput, usdBase: bigint): TenderLine[] {
@@ -201,6 +269,10 @@ function linesOf(i: TenderInput, usdBase: bigint): TenderLine[] {
   }
   if (i.cardMinor > 0n) out.push({ method: TENDER.card, amountMinor: i.cardMinor });
   if (i.terminalMinor > 0n) out.push({ method: TENDER.terminal, amountMinor: i.terminalMinor });
+  // A2 — avans qatori QARZDAN OLDIN: chekda «avansdan» to'langan qism
+  // to'lovlar orasida, qarz esa doim oxirida (kassir odatlangan tartib).
+  if ((i.prepayMinor ?? 0n) > 0n)
+    out.push({ method: TENDER.prepay, amountMinor: i.prepayMinor as bigint });
   if (i.debtMinor > 0n) out.push({ method: TENDER.debt, amountMinor: i.debtMinor });
   return out;
 }
@@ -232,6 +304,12 @@ export function legacyTotals(lines: ReadonlyArray<TenderLine>): {
     else if (l.method === TENDER.card || l.method === TENDER.terminal) {
       cardAmountMinor += l.amountMinor;
     }
+    // ⚠️ A2 — `PREPAY` bu yerga TUSHMAYDI va tushmasligi SHART. Bu ikki ustunni
+    // jonli o'quvchilar PUL deb o'qiydi (`collectCashInputs` kutilgan naqdi,
+    // Z-hisobot, `computeRefundSettlementCaps` ning naqd cap'i). Avansni
+    // ularga qo'shsak smenaning kutilgan naqdi hech kim bermagan pulga oshib,
+    // kassirga SOXTA KAMOMAD yozilardi — `CASH_USD` ning yuqoridagi sabog'i
+    // bilan AYNAN bir sinf. `DEBT` ham shu sababdan bu yerda yo'q.
   }
   return { cashAmountMinor, cardAmountMinor };
 }

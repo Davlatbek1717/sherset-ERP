@@ -372,8 +372,12 @@ export async function resolveBalanceDocs(
     );
   }
 
-  const saleIds = byType.get('retailsale');
-  if (saleIds?.size) {
+  // A2 — `salePrepay` (avansdan to'lov) AYNI jadvaldan o'qiladi: hujjat o'sha
+  // chek. Turlar esa ATAYLAB ajratilgan (qarz ≠ avans sarfi) — shuning uchun
+  // bu yerda ikkala tur uchun ham qator yoziladi, so'rov esa BITTA.
+  for (const saleDocType of ['retailsale', 'salePrepay'] as const) {
+    const saleIds = byType.get(saleDocType);
+    if (!saleIds?.size) continue;
     jobs.push(
       client.retailSale
         .findMany({
@@ -382,7 +386,7 @@ export async function resolveBalanceDocs(
         })
         .then((rows) => {
           for (const d of rows) {
-            out.set(docKey('retailsale', d.id), {
+            out.set(docKey(saleDocType, d.id), {
               number: d.name,
               moment: d.moment,
               contractId: null,

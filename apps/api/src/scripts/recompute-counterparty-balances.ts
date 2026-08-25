@@ -33,6 +33,7 @@
  *   −DebtPayment  +Debt(QRZ- reyestr, `balanceAdopted=false`)
  *   +RetailSale(qarz tender) −RetailSale(qarz qaytarish)
  *   +RetailDrawerCashOut(return_payout)  −RetailDrawerCashIn(customer_prepay)
+ *   +RetailSale(PREPAY tender) −RetailSale(PREPAY vozvrat qatori)
  * `applicable: true` is the precise predicate applyDelta gates on (cancel clears it).
  *
  * ⚠️ QAMROV — Faza 8 dan qolgan guard SAQLANADI. Endi u nishonni emas,
@@ -98,11 +99,14 @@ function readEventAgentId(payload: unknown): string | null {
  * yozilgan, chek qatorida esa eskisi qolgan. Hodisadan o'qish shu farqni
  * to'g'ri qayta quradi (chek qatori — zaxira yo'l).
  */
-async function loadCreditEventAgents(saleIds: readonly string[]): Promise<Map<string, string>> {
+async function loadEventAgents(
+  eventType: string,
+  saleIds: readonly string[],
+): Promise<Map<string, string>> {
   const out = new Map<string, string>();
   for (const chunk of chunked([...new Set(saleIds)], 500)) {
     const events = await prisma.cashierAuditEvent.findMany({
-      where: { type: CASHIER_EVENT.soldOnCredit, docId: { in: chunk } },
+      where: { type: eventType, docId: { in: chunk } },
       // O'sish tartibi ⇒ oxirgi (eng yangi) hodisa yozib ketadi. Bu
       // `resolveCreditDebtorId` dagi `orderBy desc` + `findFirst` bilan bir xil.
       orderBy: { createdAt: 'asc' },
@@ -115,6 +119,18 @@ async function loadCreditEventAgents(saleIds: readonly string[]): Promise<Map<st
   }
   return out;
 }
+
+const loadCreditEventAgents = (saleIds: readonly string[]) =>
+  loadEventAgents(CASHIER_EVENT.soldOnCredit, saleIds);
+
+/**
+ * A2 — avansdan to'langan chekda AVANS KIMNIKI ekanini `PAID_FROM_PREPAY`
+ * hodisasidan o'qiydi. Sabab `loadCreditEventAgents` bilan AYNAN bir xil
+ * (yuqoridagi izoh): `RetailSale.agentId` chekda allaqachon boshqa
+ * kontragent turgan holatda daftarga yozilgani bilan farq qilishi mumkin.
+ */
+const loadPrepayEventAgents = (saleIds: readonly string[]) =>
+  loadEventAgents(CASHIER_EVENT.paidFromPrepay, saleIds);
 
 async function main() {
   // Birinchi so'rovdan ham oldin: qamrovsiz yozuvchi bo'lsa bu skript
@@ -435,6 +451,104 @@ async function main() {
   });
   for (const r of customerPrepays) {
     if (r.agentId) add(r.accountId, r.agentId, r.currency, -(r._sum.sumMinor ?? 0n));
+  }
+
+  // SOURCE: sale-prepay — AVANSDAN TO'LOV (A2, 2026-08-25).
+  //
+  // `RetailSale.post()` `PREPAY` tender qatorini yozadi va o'sha
+  // tranzaksiyada `applyDelta(+amountMinor, docType:'salePrepay')` —
+  // mijozning avansi yeyiladi (−1 000k → −700k). `retail-credit` ning aynan
+  // ko'zgusi: bir xil ishora, bir xil manba-jadval, faqat tender boshqa.
+  //
+  // 🔴 BU BLOK UNUTILGAN BO'LSA nima bo'lardi: hujjat-rekonstruksiyasi
+  // avansning SARFLANISHINI ko'rmasdi, ya'ni har avansli mijozda cross-check
+  // yolg'on farq ko'rsatardi — va Faza 10 dan OLDINGI (hujjatlarga yozadigan)
+  // versiyada `APPLY=1` mijozlarning avanslarini tiklab yuborardi. Bu reja
+  // §2.1 dagi yoriqning uchinchi takrori bo'lardi (A1 hisobotining
+  // 1-eslatmasi aynan shu haqda ogohlantirgan).
+  //
+  // ⚠️ `refundedFromId: null` — VOZVRAT-nusxalari bu blokdan CHIQARILADI va
+  // pastdagi `sale-prepay-refund` blokida MANFIY ishora bilan sanaladi.
+  // Ikkalasi bir yerda qolsa qaytarilgan avans `+` bo'lib qo'shilib,
+  // hisobni ikki barobar buzardi.
+  const prepayLines = await prisma.retailSalePayment.findMany({
+    where: {
+      method: TENDER.prepay,
+      sale: { state: { in: [...POSTED_SALE_STATES] }, refundedFromId: null },
+    },
+    select: {
+      accountId: true,
+      amountMinor: true,
+      currency: true,
+      saleId: true,
+      sale: { select: { name: true, agentId: true } },
+    },
+  });
+  const prepayAgents = await loadPrepayEventAgents(prepayLines.map((l) => l.saleId));
+  const orphanPrepay: string[] = [];
+  for (const l of prepayLines) {
+    const counterpartyId = prepayAgents.get(l.saleId) ?? l.sale.agentId;
+    if (!counterpartyId) {
+      // `post()` mijozsiz avans-to'lovni rad etadi, ya'ni bu holat
+      // bo'lmasligi kerak. Bo'lsa — rekonstruksiya kimningdir avansini
+      // yo'qotadi: jimgina davom etish mumkin emas (`retail-credit` naqshi).
+      orphanPrepay.push(`${l.sale.name} (${l.saleId})`);
+      continue;
+    }
+    add(l.accountId, counterpartyId, l.currency, l.amountMinor);
+  }
+  if (orphanPrepay.length > 0) {
+    throw new Error(
+      [
+        "Avansdan to'langan, lekin mijozi aniqlanmagan chek(lar) topildi — rekonstruksiya",
+        "ularning avansini yo'qotadi, shuning uchun skript to'xtadi:",
+        ...orphanPrepay.map((s) => `  · ${s}`),
+        'Chekka mijozni biriktiring (RetailSale.agentId).',
+      ].join('\n'),
+    );
+  }
+
+  // SOURCE: sale-prepay-refund — avansdan to'langan chekning QAYTARILISHI (A2).
+  //
+  // `refund()` mirror chekka `PREPAY` qatorini yozadi va o'sha tranzaksiyada
+  // `applyDelta(−prepayReturn, docType:'salePrepay')` — avans mijozning
+  // balansiga qaytadi. Manba AYNAN o'sha mirror qatori (`refundedFromId`
+  // to'ldirilgan cheklar), ya'ni yuqoridagi blok bilan kesishmaydi.
+  const prepayRefundLines = await prisma.retailSalePayment.findMany({
+    where: {
+      method: TENDER.prepay,
+      sale: { state: { in: [...POSTED_SALE_STATES] }, refundedFromId: { not: null } },
+    },
+    select: {
+      accountId: true,
+      amountMinor: true,
+      currency: true,
+      sale: { select: { name: true, agentId: true, refundedFromId: true } },
+    },
+  });
+  const prepayRefundFallback = await loadPrepayEventAgents(
+    prepayRefundLines
+      .filter((l) => !l.sale.agentId && l.sale.refundedFromId)
+      .map((l) => l.sale.refundedFromId as string),
+  );
+  const orphanPrepayRefund: string[] = [];
+  for (const l of prepayRefundLines) {
+    const counterpartyId =
+      l.sale.agentId ??
+      (l.sale.refundedFromId ? (prepayRefundFallback.get(l.sale.refundedFromId) ?? null) : null);
+    if (!counterpartyId) {
+      orphanPrepayRefund.push(`${l.sale.name}`);
+      continue;
+    }
+    add(l.accountId, counterpartyId, l.currency, -l.amountMinor);
+  }
+  if (orphanPrepayRefund.length > 0) {
+    throw new Error(
+      [
+        "Avans-qaytarish qatori bor, lekin mijozi aniqlanmagan chek(lar) — skript to'xtadi:",
+        ...orphanPrepayRefund.map((s) => `  · ${s}`),
+      ].join('\n'),
+    );
   }
 
   // ══ NISHON — BALANS JURNALI (Faza 10). Hujjat-hisobi yuqorida `target` da

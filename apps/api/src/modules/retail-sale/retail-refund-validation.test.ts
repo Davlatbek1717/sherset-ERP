@@ -317,7 +317,13 @@ describe('computeRefundSettlementCaps — payout bounded by what was actually ta
         originalCashLikeMinor: 0n,
         refundSumMinor: 100_000n,
       }),
-    ).toEqual({ moneyMaxMinor: 0n, cashMaxMinor: 0n, debtMaxMinor: 100_000n, usdMaxMinor: 0n });
+    ).toEqual({
+      moneyMaxMinor: 0n,
+      cashMaxMinor: 0n,
+      debtMaxMinor: 100_000n,
+      usdMaxMinor: 0n,
+      prepayMaxMinor: 0n,
+    });
   });
 
   it('a cash receipt pays the full refund value back in money', () => {
@@ -334,6 +340,7 @@ describe('computeRefundSettlementCaps — payout bounded by what was actually ta
       cashMaxMinor: 100_000n,
       debtMaxMinor: 0n,
       usdMaxMinor: 0n,
+      prepayMaxMinor: 0n,
     });
   });
 
@@ -352,6 +359,7 @@ describe('computeRefundSettlementCaps — payout bounded by what was actually ta
       cashMaxMinor: 20_000n,
       debtMaxMinor: 30_000n,
       usdMaxMinor: 0n,
+      prepayMaxMinor: 0n,
     });
   });
 
@@ -372,6 +380,7 @@ describe('computeRefundSettlementCaps — payout bounded by what was actually ta
       cashMaxMinor: 20_000n,
       debtMaxMinor: 30_000n,
       usdMaxMinor: 0n,
+      prepayMaxMinor: 0n,
     });
   });
 
@@ -428,7 +437,13 @@ describe('computeRefundSettlementCaps — payout bounded by what was actually ta
         priorDebtReturnedMinor: 0n,
         refundSumMinor: 0n,
       }),
-    ).toEqual({ moneyMaxMinor: 0n, cashMaxMinor: 0n, debtMaxMinor: 0n, usdMaxMinor: 0n });
+    ).toEqual({
+      moneyMaxMinor: 0n,
+      cashMaxMinor: 0n,
+      debtMaxMinor: 0n,
+      usdMaxMinor: 0n,
+      prepayMaxMinor: 0n,
+    });
   });
 
   it('a zero-value receipt yields zero caps (no division by zero)', () => {
@@ -440,7 +455,13 @@ describe('computeRefundSettlementCaps — payout bounded by what was actually ta
         originalCashLikeMinor: 0n,
         refundSumMinor: 0n,
       }),
-    ).toEqual({ moneyMaxMinor: 0n, cashMaxMinor: 0n, debtMaxMinor: 0n, usdMaxMinor: 0n });
+    ).toEqual({
+      moneyMaxMinor: 0n,
+      cashMaxMinor: 0n,
+      debtMaxMinor: 0n,
+      usdMaxMinor: 0n,
+      prepayMaxMinor: 0n,
+    });
   });
 
   it('a debt bigger than the receipt (corrupt data) cannot mint a money cap', () => {

@@ -299,4 +299,60 @@ describe('skript manbalari yozuvchilar semantikasiga mos (DUP-02 fix)', () => {
     expect(block).not.toMatch(/kind:\s*'topup'/);
     expect(block).toMatch(/agentId:\s*ONLY_CP\s*\?\s*ONLY_CP\s*:\s*\{\s*not:\s*null\s*\}/);
   });
+
+  /**
+   * 🔴 A2 (2026-08-25, reja A2 vazifasi 7) — AVANSDAN TO'LOV YANGI BALANS
+   * MANBASI. A1 hisobotining 1-eslatmasi aynan shu haqda ogohlantirgan edi:
+   * «`recompute-counterparty-balances.ts` ga `PREPAY` tender manbasini
+   * QO'SHISHNI UNUTMANG — unutilsa `APPLY=1` avanslarni yo'q qiladi».
+   *
+   * A1 dagi bilan AYNI uch tomonlama qulf: yozuvchi ↔ reyestr ↔ skript
+   * blokining TANASI (izoh emas).
+   */
+  it('A2: avansdan to`lov ↔ `sale-prepay` manbasi birga yuradi', () => {
+    // (a) Yozuvchi: MUSBAT delta + `salePrepay` docType, `retail-sale` da.
+    const svcSrc = readFileSync(
+      join(API_SRC_ROOT, 'modules', 'retail-sale', 'retail-sale.service.ts'),
+      'utf8',
+    );
+    expect(svcSrc).toMatch(/docType:\s*'salePrepay'/);
+
+    // (b) Reyestrda e'lon qilingan — IKKALA yo'nalish ham (sarf va vozvrat).
+    const writer = DECLARED_BALANCE_WRITERS.find(
+      (w) => w.file === 'modules/retail-sale/retail-sale.service.ts',
+    );
+    expect(writer?.sources).toContain('sale-prepay');
+    expect(writer?.sources).toContain('sale-prepay-refund');
+
+    // (c) Skript bloklari — filtr `PREPAY` tenderi bo'yicha va ishoralar
+    // QARAMA-QARSHI (sarf `+`, vozvrat `−`). Ikkalasi bir ishorada bo'lsa
+    // qaytarilgan avans ikki marta qo'shilib hisobni buzardi.
+    const spendStart = SCRIPT_SRC.indexOf('SOURCE: sale-prepay —');
+    expect(spendStart).toBeGreaterThan(0);
+    const refundStart = SCRIPT_SRC.indexOf('SOURCE: sale-prepay-refund');
+    expect(refundStart).toBeGreaterThan(spendStart);
+
+    const spendBlock = SCRIPT_SRC.slice(spendStart, refundStart);
+    expect(spendBlock).toMatch(/method:\s*TENDER\.prepay/);
+    // Mirror (vozvrat) cheklari sarf blokidan CHIQARILADI.
+    expect(spendBlock).toMatch(/refundedFromId:\s*null/);
+    expect(spendBlock).toMatch(/add\([^)]*l\.amountMinor\)/);
+
+    const refundBlock = SCRIPT_SRC.slice(refundStart, SCRIPT_SRC.indexOf('NISHON', refundStart));
+    expect(refundBlock).toMatch(/method:\s*TENDER\.prepay/);
+    expect(refundBlock).toMatch(/refundedFromId:\s*\{\s*not:\s*null\s*\}/);
+    expect(refundBlock).toMatch(/add\([^)]*-l\.amountMinor\)/);
+  });
+
+  /**
+   * Kontragenti aniqlanmagan avans qatori JIMGINA o'tmaydi — skript to'xtaydi.
+   * `retail-credit` dagi AYNI qaror: rekonstruksiya kimningdir avansini
+   * yo'qotib, saldosini kamaytirib yozardi.
+   */
+  it('A2: mijozi aniqlanmagan avans qatori skriptni TO`XTATADI', () => {
+    const spendStart = SCRIPT_SRC.indexOf('SOURCE: sale-prepay —');
+    const block = SCRIPT_SRC.slice(spendStart, SCRIPT_SRC.indexOf('NISHON', spendStart));
+    expect(block).toMatch(/orphanPrepay/);
+    expect(block).toMatch(/throw new Error\(/);
+  });
 });

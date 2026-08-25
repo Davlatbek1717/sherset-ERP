@@ -24,6 +24,7 @@ function makeClient(): { client: BalanceDocClient; asked: Record<string, string[
   const asked: Record<string, string[]> = {};
   const rows: Record<string, Array<{ id: string; name: string; moment: Date }>> = {
     retailDrawerCashIn: [D('in-1', 'АВ-2026-00001')],
+    retailSale: [D('sale-1', 'ЧК-2026-00123')],
     retailDrawerCashOut: [D('out-1', 'ВВ-2026-00007')],
     cashIn: [D('pko-1', 'ПКО-2026-00042')],
   };
@@ -41,6 +42,7 @@ function makeClient(): { client: BalanceDocClient; asked: Record<string, string[
     retailDrawerCashIn: delegate('retailDrawerCashIn'),
     retailDrawerCashOut: delegate('retailDrawerCashOut'),
     cashIn: delegate('cashIn'),
+    retailSale: delegate('retailSale'),
   } as unknown as BalanceDocClient;
   return { client, asked };
 }
@@ -86,5 +88,40 @@ describe('resolveBalanceDocs — A1 `customerPrepay`', () => {
       { docType: BALANCE_DOC_TYPE.returnPayout, docId: 'out-1' },
     ]);
     expect(asked.retailDrawerCashIn).toBeUndefined();
+  });
+
+  /**
+   * A2 (2026-08-25) — `salePrepay` (avansdan to'lov) yorlig'i CHEK
+   * jadvalidan keladi, `RetailDrawerCashIn` dan EMAS.
+   *
+   * A1 dagi chalkashlik xavfining ko'zgusi: ikkala tur ham «avans» so'zini
+   * o'z ichiga oladi, lekin biri kassa hujjati (АВ-), ikkinchisi chek (ЧК-).
+   * Chalkashsa POS tarixida avans sarfi raqamsiz chiqardi.
+   */
+  it('A2: avansdan to`lov qatori CHEK raqami bilan `RetailSale` dan keladi', async () => {
+    const { client, asked } = makeClient();
+    const out = await resolveBalanceDocs(client, ACC, [
+      { docType: BALANCE_DOC_TYPE.salePrepay, docId: 'sale-1' },
+    ]);
+    expect(out.get(docKey('salePrepay', 'sale-1'))).toMatchObject({
+      number: 'ЧК-2026-00123',
+      contractId: null,
+    });
+    expect(asked.retailSale).toEqual(['sale-1']);
+    // 🔴 Kassa kirim hujjati jadvaliga UMUMAN tegilmadi.
+    expect(asked.retailDrawerCashIn).toBeUndefined();
+  });
+
+  it('A2: `retailsale` (qarz) va `salePrepay` (avans) BITTA so`rovda keladi', async () => {
+    // Ikkala tur ham AYNI jadvaldan o'qiladi — resolver ularni bitta
+    // `findMany` bilan yig'adi, lekin kalitlarni ALOHIDA yozadi.
+    const { client, asked } = makeClient();
+    const out = await resolveBalanceDocs(client, ACC, [
+      { docType: BALANCE_DOC_TYPE.retailsale, docId: 'sale-1' },
+      { docType: BALANCE_DOC_TYPE.salePrepay, docId: 'sale-1' },
+    ]);
+    expect(out.get(docKey('retailsale', 'sale-1'))?.number).toBe('ЧК-2026-00123');
+    expect(out.get(docKey('salePrepay', 'sale-1'))?.number).toBe('ЧК-2026-00123');
+    expect(asked.retailSale).toEqual(['sale-1']);
   });
 });

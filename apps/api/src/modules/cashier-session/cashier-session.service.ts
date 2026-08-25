@@ -1243,6 +1243,30 @@ export class CashierSessionService {
       _sum: { amountMinor: true },
     });
 
+    // A2 — smenada AVANSDAN to'langan summa. Filtri `creditAgg` bilan AYNAN
+    // bir xil (tender konstantadan, holat ro'yxati bir xil), chunki ikkalasi
+    // ham «pul yashiqqa tushmagan, lekin chek yopilgan» turkumidagi qator.
+    //
+    // ⚠️ `refundedFromId` filtri ATAYLAB YO'Q — `creditSoldMinor` da ham
+    // yo'q. Vozvrat-nusxasidagi `PREPAY` qatori mijozga QAYTGAN avansni
+    // bildiradi va u shu yerda jamiga qo'shilib ketmasligi kerak edi...
+    // shuning uchun pastdagi `sale.refundedFromId: null` sharti QO'YILDI:
+    // qaytarish o'z qatorida (`returnsMinor`) hisobga olinadi, aks holda
+    // «bugun avansdan 60 000 to'landi» qatori vozvratdan keyin 120 000
+    // ko'rsatardi (ikkalasini qo'shib).
+    const prepaySpentAgg = await this.prisma.client.retailSalePayment.aggregate({
+      where: {
+        method: TENDER.prepay,
+        sale: {
+          accountId,
+          sessionId,
+          state: { in: ['posted', 'refunded'] },
+          refundedFromId: null,
+        },
+      },
+      _sum: { amountMinor: true },
+    });
+
     const cashInputs = await this.collectCashInputs(
       this.prisma.client,
       accountId,
@@ -1316,6 +1340,9 @@ export class CashierSessionService {
       // mijoz puli edi» savoliga javob beradi, jamiga IKKINCHI marta
       // qo'shilmaydi.
       prepayMinor: BigInt(cashIn.customerPrepayMinor),
+      // A2 — avansdan to'langan summa. KUTILGAN NAQDGA KIRMAYDI (`DEBT`
+      // bilan bir xil): bu chek uchun yashiqqa bugun pul tushmagan.
+      prepaySpentMinor: prepaySpentAgg._sum.amountMinor ?? 0n,
       // `varianceMinor` ni sof modul AYNAN shu qiymatdan hisoblaydi — aks
       // holda farq ikki avlod raqam aralashmasi bo'lib qolardi.
       expectedCashMinor: expectedCash,
@@ -1363,6 +1390,8 @@ export class CashierSessionService {
       returnPayoutMinor: z.returnPayoutMinor.toString(),
       /** A1 — smenada mijozlardan qabul qilingan avans (naqdning tarkibi). */
       prepayMinor: z.prepayMinor.toString(),
+      /** A2 — smenada mijozlarning avansidan to'langan summa (naqd EMAS). */
+      prepaySpentMinor: z.prepaySpentMinor.toString(),
       expenseByItem: cashOut.byExpenseItem,
       // Kutilgan naqd/farq qaysi avloddan — `'frozen'` = yopishda muzlatilgan
       // (kassir imzolagan hujjat), `'live'` = shu so'rovda qayta hisoblangan

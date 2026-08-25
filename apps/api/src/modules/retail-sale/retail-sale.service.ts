@@ -68,6 +68,7 @@ import {
   planControlApproveAuditEvent,
   planControlEditAuditEvent,
   planCreditSaleAuditEvent,
+  planPrepaySaleAuditEvent,
   planRefundAuditEvent,
   planSaleAuditEvents,
 } from './cashier-audit.js';
@@ -343,10 +344,17 @@ export class RetailSaleService {
   private async resolveCreditDebtorId(
     accountId: string,
     original: { id: string; agentId: string | null },
+    /**
+     * A2 — AYNI qidiruv avans uchun ham kerak (`PAID_FROM_PREPAY`). Hodisa
+     * turi parametr bo'ldi, chunki fallback mantig'i (chek qatori → audit
+     * payload) ikkalasida ham AYNAN bir xil; nusxa yozilsa biri bir kun
+     * eskirardi.
+     */
+    eventType: string = CASHIER_EVENT.soldOnCredit,
   ): Promise<string | null> {
     if (original.agentId) return original.agentId;
     const event = await this.prisma.client.cashierAuditEvent.findFirst({
-      where: { accountId, docId: original.id, type: CASHIER_EVENT.soldOnCredit },
+      where: { accountId, docId: original.id, type: eventType },
       orderBy: { createdAt: 'desc' },
       select: { payload: true },
     });
@@ -800,6 +808,9 @@ export class RetailSaleService {
     // ertaga o'zgarsa bugungi chek qayta baholanmasin).
     const cashUsdAmount = BigInt(parsed.cashUsdAmountMinor);
     const usdRateE8 = parsed.usdRateMinor != null ? BigInt(parsed.usdRateMinor) : null;
+    // A2 — mijozning AVANSIDAN qoplanadigan ulush. Pul yashiqqa KIRMAYDI:
+    // u A1 yo'li bilan allaqachon kirgan va balansda manfiy bo'lib turibdi.
+    const prepayAmount = BigInt(parsed.prepayAmountMinor);
 
     const pay = computeTenders({
       cashMinor: cashAmount,
@@ -809,6 +820,7 @@ export class RetailSaleService {
       totalMinor: total,
       cashUsdMinor: cashUsdAmount,
       usdRateE8,
+      prepayMinor: prepayAmount,
     });
     if (!pay.ok) {
       if (pay.reason === 'insufficient') {
@@ -827,6 +839,15 @@ export class RetailSaleService {
         // biriga «to'liq to'langan» qilib yopardi.
         throw new BadRequestException(
           "Dollar to'lovi uchun kunlik kurs kerak (kurssiz to'lov qabul qilinmaydi)",
+        );
+      }
+      if (pay.reason === 'prepay-overpaid') {
+        // A2 / invariant 5 — avans QAYTIM BERMAYDI. Xabar kassirga AYNIQ son
+        // bilan: nechta ortiqcha kiritgani va nechtasi sig'ishi.
+        throw new BadRequestException(
+          `Avansdan ${(pay.prepayMinor / 100n).toString()} so'm kiritildi, chekning qoldig'i esa ` +
+            `atigi ${(pay.allowedMinor / 100n).toString()} so'm. Avansdan qaytim berilmaydi — ` +
+            'summani kamaytiring.',
         );
       }
       if (pay.reason === 'change-exceeds-cash') {
@@ -878,6 +899,21 @@ export class RetailSaleService {
     const debtAgentId = parsed.agentId ?? sale.agentId ?? null;
     if (debtAmount > 0n && !debtAgentId) {
       throw new BadRequestException('Qarzga sotish uchun mijoz tanlanishi shart');
+    }
+    // A2 — avans MIJOZNIKI. Mijozsiz «avansdan to'lov» hech kimning
+    // balansidan yechilmagan bo'lardi, ya'ni chek bepulga yopilardi.
+    if (prepayAmount > 0n && !debtAgentId) {
+      throw new BadRequestException("Avansdan to'lash uchun mijoz tanlanishi shart");
+    }
+    // A2 / §2.3 chegarasi — USD avans bu rejada QURILMAGAN. A1 dollar
+    // kassasida avans QABUL QILMAYDI, ya'ni dollar avansi tug'ilmaydi ham;
+    // shunga qaramay bu yerda JIM o'tmaydi (400), aks holda kelajakda dollar
+    // yashiq ochilganda avans so'm-daftariga jimgina aralashib ketardi.
+    if (prepayAmount > 0n && sale.session.cashDesk.currency !== DEBT_LEDGER_CURRENCY) {
+      throw new BadRequestException(
+        `Avansdan to'lash faqat ${DEBT_LEDGER_CURRENCY} kassasida ishlaydi ` +
+          `(bu kassa: ${sale.session.cashDesk.currency}).`,
+      );
     }
 
     const change = pay.changeMinor;
@@ -970,6 +1006,17 @@ export class RetailSaleService {
           // ichida). 32 000 so'mlik tovarga $2 bergan chek (prod ТРН-2026-00016,
           // qaytim 104.10 so'm) unda 32 104.10 «to'langan» bo'lib yozilardi va
           // hujjat o'z summasidan ko'p to'langan bo'lib ko'rinardi.
+          //
+          // 🔴 A2 (2026-08-25) — REJADAN ATAYLAB CHEKINISH: bu formula
+          // AVANS uchun O'ZGARTIRILMADI, chunki u ALLAQACHON to'g'ri.
+          // Reja «`total − debtAmount` formulasi shuni hisobga oladigan qilib
+          // yangilanadi» degan edi; o'lchandi:
+          //     total = naqd + dollar + karta + terminal + AVANS + qarz
+          //   ⇒ total − qarz = to'langan HAMMA narsa, avans ham ichida.
+          // Ya'ni avansdan to'langan chek o'z-o'zidan «TO'LIQ TO'LANGAN»
+          // bo'lib yoziladi (A2 ning `DEBT` dan asosiy farqi). Formulaga
+          // yangi a'zo qo'shilsa u IKKI MARTA sanalardi. Qo'riqchi test:
+          // `retail-sale-prepay-tender.test.ts` → «payedSumMinor».
           payedSumMinor: total - debtAmount,
         },
       });
@@ -1429,6 +1476,92 @@ export class RetailSaleService {
         await this.money.applyDeltas(tx, accountId, moneyDeltas);
       }
 
+      // ── A2 (2026-08-25) — AVANSDAN TO'LOV ──────────────────────────────
+      //
+      // 🔴 TARTIB MUHIM: bu blok QARZ blokidan OLDIN turadi va bu ATAYLAB.
+      //
+      // Q2 ning §2.2 KESISHUV QOIDASI reyestr qatorini «balansOldin» dan
+      // hisoblaydi. Avansi 40k bo'lgan mijoz 100k lik chekni 40k avans + 60k
+      // qarz bilan olsa, qarz reyestriga tushishi kerak bo'lgan summa AYNAN
+      // 60k — chunki avans allaqachon SHU chekda yeyildi. Agar qarz bloki
+      // avval yugursa, u balansni hamon −40k deb ko'rib qatorni 20k qilib
+      // ochardi va 40k qarz undirish ro'yxatida KO'RINMAY qolardi (egasining
+      // birinchi shikoyatining aynan qaytishi). Avans deltasi oldin
+      // qo'llansa balans 0 ga keladi va §2.2 to'g'ri 60k beradi.
+      //
+      // 🔴 BALANS QULFI BU YERDA MAJBURIY (A1 dan farqi — A1 hisobotidagi
+      // «chekinish 1»): u yerda hech qanday qaror balansga bog'liq emas edi,
+      // bu yerda esa CAP bor (`prepay ≤ −balansOldin`). Qulfsiz ikki parallel
+      // chek bir xil «avansim bor» ni ko'rib bitta avansni IKKI MARTA
+      // sarflardi va mijozning balansi jimgina musbat — ya'ni QARZ — bo'lib
+      // qolardi. Qulf tartibi P1/Q2/Q3 bilan AYNAN bir xil: BALANS → QARZLAR.
+      // Pastdagi qarz bloki AYNI qatorni qayta qulflaydi — bir tranzaksiya
+      // ichida bu no-op, deadlock yuzasi ochilmaydi.
+      if (prepayAmount > 0n && debtAgentId) {
+        const prepayBalanceBefore = await this.lockCounterpartyBalance(
+          tx,
+          accountId,
+          debtAgentId,
+          sale.session.cashDesk.currency,
+        );
+        // 🔴 `null` = O'LCHANMAGAN (balans qatori yo'q), «0» EMAS — lekin
+        // AVANS uchun ikkalasi ham AYNI natija beradi: qatori yo'q mijozda
+        // avans ham yo'q. Bu ehtiyotkor tomon: yo'q pulni sarflatmaymiz.
+        const availableMinor =
+          prepayBalanceBefore != null && prepayBalanceBefore < 0n ? -prepayBalanceBefore : 0n;
+        if (prepayAmount > availableMinor) {
+          // Invariant 5 — ortig'i JIMGINA QARZGA AYLANMAYDI. Xabar kassirga
+          // aniq son bilan: mijozda nechta avans borligini o'sha zahoti aytadi.
+          throw new BadRequestException(
+            `Mijozning avansi atigi ${(availableMinor / 100n).toString()} so'm, ` +
+              `${(prepayAmount / 100n).toString()} so'm ishlatib bo'lmaydi. ` +
+              'Qolgan qismini naqd/karta bilan oling yoki qarzga yozing.',
+          );
+        }
+
+        await this.counterpartyBalance.applyDelta(
+          tx,
+          accountId,
+          debtAgentId,
+          sale.session.cashDesk.currency,
+          // Delta MUSBAT — `DEBT` tenderiniki bilan AYNAN bir xil. Farq faqat
+          // natijaning ishorasida: bu yerda balans manfiy hududdan nolga
+          // qarab suriladi (avans yeyiladi), qarz TUG'ILMAYDI.
+          prepayAmount,
+          {
+            docType: 'salePrepay',
+            docId: id,
+            organizationId: sale.organizationId,
+            // 🔴 `source` ATAYLAB BERILMAYDI (A1 bilan bir xil qaror).
+            // Mijozga xabar `source` orqali ketadi va musbat delta
+            // «🛒 Qarzga qo'shildi» matnini tanlardi — avansini sarflagan
+            // mijozga «qarzingiz oshdi» deb yozish OCHIQ YOLG'ON bo'lardi
+            // (u qarzdor emas, o'z pulini ishlatdi). Avans harakati mijozga
+            // xabar sifatida A3 da ko'rib chiqiladi; hozircha JIM, va bu
+            // jimlik shu yerda YOZMA qayd etilgan.
+          },
+        );
+
+        const prepayBal = await tx.counterpartyBalance.findFirst({
+          where: {
+            accountId,
+            counterpartyId: debtAgentId,
+            currency: sale.session.cashDesk.currency,
+          },
+          select: { balanceMinor: true },
+        });
+        await this.writeAuditEvents(tx, accountId, sale.sessionId, userId, [
+          planPrepaySaleAuditEvent(id, {
+            agentId: debtAgentId,
+            saleName: sale.name,
+            prepayMinor: prepayAmount,
+            totalMinor: total,
+            balanceBeforeMinor: prepayBalanceBefore,
+            newBalanceMinor: prepayBal?.balanceMinor ?? null,
+          }),
+        ]);
+      }
+
       // Kassa TZ §7.1 — qarzga sotilgan qism MIJOZNING UMUMIY BALANSIGA
       // yoziladi. Ishora konventsiyasi moysklad «Баланс» bilan bir xil:
       // musbat = mijoz bizga qarzdor (`InvoiceOut.post` bilan bir xil yo'nalish).
@@ -1819,6 +1952,8 @@ export class RetailSaleService {
         payedSumMinor: true,
         refundedFromId: true,
         positions: { select: { productId: true, quantity: true, sumMinor: true } },
+        // A2 — tahrir qo'riqchisi uchun (pastdagi izoh).
+        payments: { select: { method: true } },
       },
     });
     if (!sale) throw new NotFoundException(`RetailSale ${saleId} not found`);
@@ -1830,6 +1965,30 @@ export class RetailSaleService {
     if (sale.refundedFromId) {
       throw new BadRequestException(
         `${sale.name} — vozvrat cheki. Vozvrat chekini tahrirlab bo'lmaydi — asl chekni tahrirlang.`,
+      );
+    }
+
+    // 🔴 A2 QO'RIQCHISI — AVANSDAN to'langan chek tahrirlanmaydi.
+    //
+    // `planReceiptEdit` ning butun pul mantig'i BITTA soddalashtirishga
+    // tayanadi: `cashDeltaMinor = yangi payed − eski payed`, ya'ni «to'langan
+    // hamma narsa NAQD» deb qaraladi va farq kassa yashig'iga yoziladi.
+    // Avansdan to'langan chekda bu yashiqqa hech qachon KIRMAGAN pulni
+    // chiqarib yuborardi (R1 hodisasining aynan sinfi) — mijozning balansi
+    // esa joyida qolardi.
+    //
+    // Tahrirni TO'G'RI qilish uchun `planReceiptEdit` ga kanal-kesimi kerak
+    // (naqd/karta/avans/qarz alohida) — bu A2 hajmidan tashqarida va ochiq
+    // chegara sifatida hisobotda qayd etilgan. Shu sababdan JIM emas, 400:
+    // kassir tuzatishni vozvrat orqali qiladi.
+    //
+    // ⚠️ Bu chegara faqat A2 dan KEYIN yozilgan cheklarga tegadi — eski
+    // cheklarda `PREPAY` qatori umuman yo'q, ya'ni mavjud tahrir oqimi bir
+    // bayt ham o'zgarmaydi.
+    if (sale.payments.some((p) => p.method === TENDER.prepay)) {
+      throw new BadRequestException(
+        `${sale.name} — chek mijozning avansidan to'langan, uni tahrirlab bo'lmaydi. ` +
+          'Tovarni qaytaring (vozvrat) va yangi chek rasmiylashtiring.',
       );
     }
 
@@ -2185,8 +2344,18 @@ export class RetailSaleService {
           (r.payments ?? [])
             .filter((p) => p.method === TENDER.cashUsd)
             .reduce((a, p) => a + p.amountMinor, 0n),
+        // A2 — avvalgi qaytarishlar mijozning balansiga allaqachon
+        // qaytargan avans. Manba `PREPAY` qatori (dollar bilan AYNI naqsh):
+        // mirror chekda alohida USTUN ochilmadi, chunki `RetailSalePayment`
+        // allaqachon «bu chek qanday hisob-kitob qilingan» daftari va
+        // migratsiyasiz kengayadi.
+        prepayMinor:
+          acc.prepayMinor +
+          (r.payments ?? [])
+            .filter((p) => p.method === TENDER.prepay)
+            .reduce((a, p) => a + p.amountMinor, 0n),
       }),
-      { sumMinor: 0n, moneyMinor: 0n, cashMinor: 0n, debtMinor: 0n, usdMinor: 0n },
+      { sumMinor: 0n, moneyMinor: 0n, cashMinor: 0n, debtMinor: 0n, usdMinor: 0n, prepayMinor: 0n },
     );
 
     // §105 over-refund guard: refunded products/qty must be a subset of
@@ -2301,9 +2470,16 @@ export class RetailSaleService {
     const originalUsdBaseMinor = original.payments
       .filter((p) => p.method === TENDER.cashUsd)
       .reduce((a, p) => a + p.amountBaseMinor, 0n);
+    // A2 — chekning AVANSDAN qoplangan ulushi. `originalDebtMinor` bilan
+    // AYNI naqsh: to'lov qatorlaridan o'qiladi, qayta hisoblanmaydi.
+    const originalPrepayMinor = original.payments
+      .filter((p) => p.method === TENDER.prepay)
+      .reduce((a, p) => a + p.amountMinor, 0n);
     const caps = computeRefundSettlementCaps({
       originalSumMinor: original.sumMinor,
       originalDebtMinor,
+      originalPrepayMinor,
+      priorPrepayReturnedMinor: priorTotals.prepayMinor,
       originalCashLikeMinor,
       originalCashUsdMinor,
       originalUsdBaseMinor,
@@ -2319,12 +2495,20 @@ export class RetailSaleService {
     // bug being fixed. An explicit value is still capped.
     const debtReturn =
       parsed.debtReturnMinor === undefined ? caps.debtMaxMinor : BigInt(parsed.debtReturnMinor);
+    // A2 — `debtReturnMinor` bilan AYNI qoida: berilmasa server o'zi to'liq
+    // ulushni qaytaradi. POS bu maydonni yubormaydi, «tovar qaytdi-yu avans
+    // sarflangan bo'lib qolaverdi» esa aynan tuzatilayotgan yo'qotish.
+    const prepayReturn =
+      parsed.prepayReturnMinor === undefined
+        ? caps.prepayMaxMinor
+        : BigInt(parsed.prepayReturnMinor);
     const settleError = validateRefundSettlement(
       caps,
       cashReturn,
       cardReturn,
       debtReturn,
       usdReturn,
+      prepayReturn,
     );
     if (settleError) throw new BadRequestException(settleError);
     // Cap o'tdi, ya'ni chekda dollar HAQIQATAN olingan — lekin kursi
@@ -2342,6 +2526,17 @@ export class RetailSaleService {
     // audit event, written in the same transaction as the balance delta. Without
     // this every credit receipt already in the database would be unrefundable.
     const debtorId = debtReturn > 0n ? await this.resolveCreditDebtorId(accountId, original) : null;
+    // A2 — avansni KIMGA qaytaramiz. Chek qatoridagi mijoz, u bo'sh bo'lsa
+    // `PAID_FROM_PREPAY` hodisasidan (qarz yo'li bilan AYNI naqsh).
+    const prepayPayerId =
+      prepayReturn > 0n
+        ? await this.resolveCreditDebtorId(accountId, original, CASHIER_EVENT.paidFromPrepay)
+        : null;
+    if (prepayReturn > 0n && !prepayPayerId) {
+      throw new BadRequestException(
+        `Chek avansdan to'langan, lekin mijoz biriktirilmagan — avansni qaytarib bo'lmaydi (${original.name}). Qaytarishni davom ettirish uchun prepayReturnMinor=0 yuboring.`,
+      );
+    }
     if (debtReturn > 0n && !debtorId) {
       throw new BadRequestException(
         `Chek qarzga sotilgan, lekin mijoz biriktirilmagan — qarzni qaytarib bo'lmaydi (${original.name}). Qaytarishni davom ettirish uchun debtReturnMinor=0 yuboring va qarzni qo'lda tuzating.`,
@@ -2432,7 +2627,11 @@ export class RetailSaleService {
           // Dollar ulushi ham «yopilgan» hisoblanadi: uning so'm ekvivalenti
           // (asl chekning MUZLATILGAN kursi bilan) qo'shiladi — aks holda
           // dollar qaytarilgan chek abadiy «to'liq yopilmagan» ko'rinardi.
-          payedSumMinor: cashReturn + cardReturn + debtReturn + usdReturnBaseMinor,
+          // A2: avansga qaytarilgan ulush ham «yopilgan» — mijozning puli
+          // unga (balansiga) qaytdi. Qo'shilmasa avansdan to'langan chekning
+          // vozvrati abadiy «to'liq yopilmagan» bo'lib ko'rinardi (dollar
+          // ulushi bilan AYNI sabab).
+          payedSumMinor: cashReturn + cardReturn + debtReturn + usdReturnBaseMinor + prepayReturn,
           // SALES-04: the credit share this return wrote off. Persisted (not
           // recomputed) because the cumulative caps of every LATER partial
           // refund are measured against it.
@@ -2472,6 +2671,30 @@ export class RetailSaleService {
             currency: 'USD',
             rateMinor: usdRateMinor,
             amountBaseMinor: usdReturnBaseMinor,
+          },
+        });
+      }
+
+      // A2 — AVANS qaytarish qatori. Dollar qatori bilan AYNI sabab:
+      // KÜMÜLATIV cap (`priorPrepayReturnedMinor`) aynan shu qatorlardan
+      // o'qiladi, ya'ni qator bo'lmasa chekni bo'lib-bo'lib qaytarish yo'li
+      // bilan bitta avansni bir necha marta qaytarib olish mumkin bo'lardi.
+      // Mirror chekda alohida USTUN ochilmadi — migratsiyasiz kengayadigan
+      // yagona daftar `RetailSalePayment` (Q1/A1 dagi «yangi jadval EMAS»
+      // qarori bilan bir intizom).
+      if (prepayReturn > 0n) {
+        await tx.retailSalePayment.create({
+          data: {
+            accountId,
+            saleId: refundSale.id,
+            method: TENDER.prepay,
+            amountMinor: prepayReturn,
+            // ⚠️ ASL chek kassasining valyutasi, JORIY smenaniki EMAS: avans
+            // balansi o'sha valyutada yozilgan va pastdagi `applyDelta` ham
+            // aynan o'shani ishlatadi. Ikkisi ajralsa qaytarish boshqa
+            // valyutadagi balansga tushib, avans jimgina yo'qolardi.
+            currency: original.session.cashDesk.currency,
+            amountBaseMinor: prepayReturn,
           },
         });
       }
@@ -2577,6 +2800,40 @@ export class RetailSaleService {
           },
         ];
         await this.money.applyDeltas(tx, accountId, refundDeltas);
+      }
+
+      // ── A2 — AVANSGA QAYTARISH ─────────────────────────────────────────
+      //
+      // Pul KASSADAN CHIQMAYDI: mijozning avansi tiklanadi (−700k → −1 000k).
+      // `post()` dagi `+prepayAmount` ning AYNAN teskarisi.
+      //
+      // 🔴 QARZ BLOKIDAN OLDIN — qulf tartibi uchun. Qarz bloki avval
+      // balansni (`applyDelta` upsert), so'ng `debts` qatorini
+      // (`moveSaleDebtRegistryRow` → `FOR UPDATE`) qulflaydi. Agar avans
+      // deltasi undan KEYIN tursa, biz QARZLAR → BALANS tartibida qulf
+      // olgan bo'lardik va ikki parallel vozvrat bir-birini deadlock
+      // qilardi. Tartib butun repoda BITTA: **BALANS → QARZLAR**.
+      //
+      // 🔴 Reyestrga TEGILMAYDI (invariant 4): avans qarz emas, undan
+      // hech qachon `Debt` qatori tug'ilmagan — demak harakatlantiradigan
+      // qator ham yo'q. Q3 ning bloki ataylab `if (debtReturn > 0n && …)`
+      // ichida turibdi, ya'ni ikki yo'l tabiiy ajralgan.
+      if (prepayReturn > 0n && prepayPayerId) {
+        await this.counterpartyBalance.applyDelta(
+          tx,
+          accountId,
+          prepayPayerId,
+          original.session.cashDesk.currency,
+          -prepayReturn,
+          {
+            docType: 'salePrepay',
+            docId: refundSale.id,
+            organizationId: original.organizationId,
+            // `source` YO'Q — `post()` dagi bilan AYNI sabab: manfiy delta
+            // «↩️ Qarzingizdan ayirildi» xabarini tanlardi, mijoz esa
+            // qarzdor emas edi (u o'z avansini qaytarib oldi).
+          },
+        );
       }
 
       // SALES-04 — qarz hisobidan yopilgan ulush: pul kassadan chiqmaydi,

@@ -122,6 +122,21 @@ export const PostRetailSaleSchema = z
       .string()
       .regex(/^\d+$/, 'debtAmountMinor must be a non-negative integer')
       .default('0'),
+    /**
+     * A2 (2026-08-25) — mijozning AVANSIDAN qoplanadigan ulush (kassa
+     * valyutasi, minor). `.default('0')` ⇒ avansdan foydalanmaydigan
+     * chaqiruvchilar (moysklad-compat, eski POS, testlar) buzilmaydi.
+     *
+     * Server ikki qo'riqchi qo'yadi va IKKALASI ham 400 beradi (jimgina
+     * qarzga aylantirish YO'Q — invariant 5):
+     *  1. `prepay ≤ chek qoldig'i` — avans qaytim bermaydi (`retail-tenders.ts`);
+     *  2. `prepay ≤ −balansOldin` — mavjud avansdan ortiq sarflanmaydi
+     *     (`post()`, balans `FOR UPDATE` bilan qulflangan holda).
+     */
+    prepayAmountMinor: z.coerce
+      .string()
+      .regex(/^\d+$/, 'prepayAmountMinor must be a non-negative integer')
+      .default('0'),
     /** Qarzga sotishda MAJBURIY — qarz kimning balansiga yozilishi (TZ §7.1). */
     agentId: z.string().uuid().optional(),
     /**
@@ -209,6 +224,21 @@ export const RefundRetailSaleSchema = z.object({
   debtReturnMinor: z.coerce
     .string()
     .regex(/^\d+$/, 'debtReturnMinor must be a non-negative integer')
+    .optional(),
+  /**
+   * A2 — avansdan to'langan chek qaytarilganda mijozning BALANSIGA qaytariladigan
+   * ulush. **Berilmasa** server o'zi hisoblaydi (`debtReturnMinor` bilan AYNAN
+   * bir xil sabab: POS hech narsa yubormaydi, «tovar qaytdi-yu avans sarflangan
+   * bo'lib qolaverdi» esa aynan tuzatilayotgan yo'qotish).
+   *
+   * 🔴 Pul KASSADAN CHIQMAYDI — avans naqd bo'lib qaytmaydi, u mijozning
+   * balansiga qaytadi va u yerdan yo keyingi chekka ishlatiladi, yo A3 ning
+   * RKO hujjati bilan naqd olinadi. Aks holda vozvrat avansni hujjatsiz
+   * naqdga aylantirish yo'li bo'lardi.
+   */
+  prepayReturnMinor: z.coerce
+    .string()
+    .regex(/^\d+$/, 'prepayReturnMinor must be a non-negative integer')
     .optional(),
   description: z.string().max(4000).nullish(),
 });

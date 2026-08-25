@@ -32,6 +32,7 @@ export const Z_RECEIPT_LABELS_FIXTURE: ZReceiptLabels = {
   collection: 'Inkassatsiya',
   returnPayout: 'Vozvrat puli',
   prepay: 'Mijozlardan avans',
+  prepaySpent: "Avansdan to'landi",
   expenseByItem: 'Xarajat moddalari',
   expenseNoItem: '(moddasiz)',
   cashBlockUzs: 'NAQD (UZS)',

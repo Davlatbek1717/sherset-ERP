@@ -64,6 +64,24 @@ export const BALANCE_DOC_TYPE = {
    * har avans qatorini raqamsiz ko'rsatardi.
    */
   customerPrepay: 'customerPrepay',
+  /**
+   * A2 (2026-08-25): AVANSDAN TO'LOV — POS chekining `PREPAY` tenderi.
+   * `+amountMinor` — mijozning avansi yeyiladi (−1 000k → −700k), ya'ni
+   * `customerPrepay` (qabul) deltasining teskarisi. `docId` = `RetailSale.id`.
+   *
+   * ⚠️ NEGA `customerPrepay` QAYTA ISHLATILMADI: u `RetailDrawerCashIn`
+   * hujjatiga ishora qiladi (АВ- raqami), bu esa `RetailSale` ga (ЧК-/ТРН-).
+   * Bitta turga ikki jadval berilsa hujjat-resolveri noto'g'ri jadvaldan
+   * qidirib har qatorni raqamsiz ko'rsatardi (A1 dagi AYNI sabab).
+   *
+   * ⚠️ NEGA `retailsale` HAM QAYTA ISHLATILMADI (garchi jadval o'sha bo'lsa
+   * ham): `retailsale` — QARZ deltasi (`+debtAmount` / `−debtReturn`) va
+   * mijozga «🛒 Qarzga qo'shildi» Telegram xabari AYNAN shu tur bilan
+   * yuritiladi. Avansdan to'lov qarz EMAS; ikkalasini bir turga qo'shsak
+   * kassa tarixida «qarz» va «avans sarfi» ajralmas bo'lib qolardi va A3
+   * ning tarix yorliqlari ikkisini bir xil nomlab ko'rsatardi.
+   */
+  salePrepay: 'salePrepay',
   paymentIn: 'paymentIn',
   paymentOut: 'paymentOut',
   cashIn: 'cashIn',

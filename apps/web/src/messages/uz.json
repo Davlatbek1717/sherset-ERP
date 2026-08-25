@@ -6242,7 +6242,8 @@
       "total_cash": "Naqd jami",
       "total_returns": "Qaytarishlar",
       "total_sales": "Sotuvlar",
-      "variance_acts": "Farq aktlari"
+      "variance_acts": "Farq aktlari",
+      "prepay_spent": "Avansdan to‘landi"
     },
     "ecommerce": {
       "channels_card_description": "Telegram, Instagram, veb-sayt va boshqa platformalar",
@@ -9339,7 +9340,12 @@
       "usd_rate_missing": "Dollar kursi topilmadi — dollar qabul qilib bo'lmaydi",
       "win_close": "Chiqish",
       "win_minimize": "Ish stoliga yig'ish",
-      "win_toggle": "Oynali rejim"
+      "win_toggle": "Oynali rejim",
+      "prepay": "Avansdan",
+      "field_prepay": "Avansdan summa",
+      "prepay_available": "Mavjud: {sum}",
+      "prepay_over_available": "Mijozning avansi atigi {sum} — summani kamaytiring",
+      "prepay_no_change": "Avansdan qaytim berilmaydi — chek qoldig‘i {sum}"
     },
     "shiftAcceptance": {
       "accept": "Qabul qilish",

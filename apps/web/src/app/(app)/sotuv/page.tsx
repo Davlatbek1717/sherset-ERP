@@ -1396,6 +1396,8 @@ function SalesScreen({
       terminalAmountMinor: bigint;
       debtAmountMinor: bigint;
       cashUsdAmountMinor: bigint;
+      /** A2 — mijozning avansidan qoplanadigan ulush. */
+      prepayAmountMinor: bigint;
       usdRateMinor: string | null;
       agentId?: string;
     }) => {
@@ -1405,6 +1407,12 @@ function SalesScreen({
         cardAmountMinor: payment.cardAmountMinor.toString(),
         terminalAmountMinor: payment.terminalAmountMinor.toString(),
         debtAmountMinor: payment.debtAmountMinor.toString(),
+        // A2 — avans ulushi FAQAT noldan katta bo'lganda qo'shiladi. Sxemada
+        // `.default('0')`, ya'ni payload shakli eski klientlar uchun
+        // o'zgarmaydi (dollar maydonlaridagi bilan AYNI qaror).
+        ...(payment.prepayAmountMinor > 0n
+          ? { prepayAmountMinor: payment.prepayAmountMinor.toString() }
+          : {}),
         // MK31 — dollar naqd SENTDA, kurs esa KANONIK ×10^8 satr (oynada
         // serverdan olingan, qayta hisoblanmagan). Ikkalasi FAQAT dollar
         // berilganda qo'shiladi: sxemada ikkisi ham `.default('0')` /

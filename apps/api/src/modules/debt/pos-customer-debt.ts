@@ -178,6 +178,31 @@ export function debtPayable(
   return { payableMinor: balanceMinor, adoptableMinor: balanceMinor - registry };
 }
 
+/**
+ * A2 (2026-08-25) — mijozning ISHLATSA BO'LADIGAN avansi (kassa valyutasi).
+ *
+ * Manfiy balans «biz mijozga qarzdormiz» degani (`counterparty-settlement.util.ts`
+ * sarlavhasidagi rasmiy ta'rif), ya'ni avans AYNAN `−balanceMinor`.
+ *
+ * 🔴 `debtPayable` NING KO'ZGUSI, va ikkalasi bir-birini INKOR qiladi: bir
+ * paytda ikkalasi ham noldan katta bo'lolmaydi (bitta ustunning ikki tomoni).
+ * Shu sababdan kassir ekranida ham ikkisidan FAQAT BITTASI ko'rsatiladi.
+ *
+ * `null` = O'LCHANMAGAN (balans qatori yo'q), «0» EMAS — lekin AVANS uchun
+ * ikkalasi ham 0 beradi: qatori yo'q mijozda avans ham yo'q. Bu ehtiyotkor
+ * tomon (yo'q pulni sarflatmaymiz); `debtPayable` da esa aynan bu farq QAROR
+ * o'zgartiradi, shuning uchun u yerda `null` alohida shox.
+ *
+ * ⚠️ Bu — A3 ning to'liq `customerStanding` sof moduli EMAS (u to'rt holatni
+ * — qarz / avans / nol / o'lchanmagan — va ekran yorliqlarini beradi). A2 ga
+ * kerak bo'lgan MINIMUM shu yerda qurildi; A3 uni shu funksiya ustiga
+ * quradi, ikkinchi formula yozmasdan.
+ */
+export function prepayAvailable(balanceMinor: bigint | null): bigint {
+  if (balanceMinor === null || balanceMinor >= 0n) return 0n;
+  return -balanceMinor;
+}
+
 export interface AdoptionPlanInput {
   /** Kelgan to'lov, QARZ valyutasiga keltirilgan (USD → so'm) minor. */
   amountMinor: bigint;

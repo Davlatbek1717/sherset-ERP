@@ -171,6 +171,33 @@ describe('buildZReport — §8.5 raqamlari', () => {
     expect(buildZReport(base).revenueMinor).toBe(800_000n);
   });
 
+  /**
+   * A2 (2026-08-25) — AVANSDAN TO'LANGAN summa Z-hisobotning alohida qatori.
+   *
+   * 🔴 Ikki avans raqami ARALASHTIRILMASIN (`shift-variance.ts` izohi):
+   *   · `prepayMinor`      — yashiqqa BUGUN kirgan mijoz puli (A1, KIRIM);
+   *   · `prepaySpentMinor` — allaqachon kirgan pulning bugun SARFLANISHI.
+   * Ularni qo'shish bir pulni ikki marta sanardi.
+   */
+  it('A2: `prepaySpentMinor` kutilgan naqdga ham, farqqa ham TEGMAYDI', () => {
+    const withPrepay = buildZReport({ ...base, prepaySpentMinor: 60_000n });
+    const without = buildZReport(base);
+    expect(withPrepay.prepaySpentMinor).toBe(60_000n);
+    // `DEBT` bilan AYNI munosabat: yashiqqa bugun pul tushmagan.
+    expect(withPrepay.expectedCashMinor).toBe(without.expectedCashMinor);
+    expect(withPrepay.varianceMinor).toBe(without.varianceMinor);
+  });
+
+  it('A2: berilmasa `0n` — «noma`lum» emas, HAQIQATAN nol', () => {
+    expect(buildZReport(base).prepaySpentMinor).toBe(0n);
+  });
+
+  it('A2: kirim va sarf raqamlari MUSTAQIL (biri ikkinchisini bosmaydi)', () => {
+    const z = buildZReport({ ...base, prepayMinor: 100_000n, prepaySpentMinor: 60_000n });
+    expect(z.prepayMinor).toBe(100_000n);
+    expect(z.prepaySpentMinor).toBe(60_000n);
+  });
+
   it('o`rtacha chek = tushum / chek soni', () => {
     expect(buildZReport(base).averageReceiptMinor).toBe(200_000n);
   });

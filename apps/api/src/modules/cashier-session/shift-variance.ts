@@ -158,6 +158,23 @@ export interface ZReportInput {
    * puli edi». Uni jamiga qo'shish avansni IKKI MARTA sanardi.
    */
   prepayMinor?: bigint;
+  /**
+   * A2 — smenada mijozlarning AVANSIDAN to'langan summa (`PREPAY` tenderi).
+   * Berilmasa 0.
+   *
+   * 🔴 `prepayMinor` (A1, KIRIM) BILAN ARALASHTIRMANG. Ikkalasi butunlay
+   * boshqa raqam:
+   *   · `prepayMinor`      — yashiqqa BUGUN kirgan mijoz puli
+   *     (`RetailDrawerCashIn`, kutilgan naqdning TARKIBI);
+   *   · `prepaySpentMinor` — allaqachon (ehtimol boshqa kuni, boshqa
+   *     smenada) kirgan pulning bugun SARFLANISHI
+   *     (`RetailSalePayment.PREPAY`).
+   * Ularni qo'shish bir pulni ikki marta sanardi.
+   *
+   * ⚠️ Kutilgan naqdga UMUMAN KIRMAYDI — `DEBT` bilan AYNI munosabat:
+   * bugun yashiqqa bu chek uchun hech qanday pul tushmagan.
+   */
+  prepaySpentMinor?: bigint;
   expectedCashMinor: bigint;
   countedCashMinor: bigint | null;
   /** Dollar yashiq — sentda (MK31 · §8.4). Berilmasa 0. */
@@ -180,6 +197,8 @@ export interface ZReport extends ZReportInput {
   varianceMinor: bigint | null;
   /** A1 — avans qatori; kirishda berilmasa `0n` (noma'lum emas — nol). */
   prepayMinor: bigint;
+  /** A2 — avansdan to'langan summa; kirishda berilmasa `0n`. */
+  prepaySpentMinor: bigint;
   expectedUsdCashMinor: bigint;
   countedUsdCashMinor: bigint | null;
   /** Dollar farqi — SENTDA, so'mga o'girilmaydi (§8.4). */
@@ -228,6 +247,9 @@ export function buildZReport(input: ZReportInput): ZReport {
     // A1: `expectedCashMinor` ga TEGMAYDI (avans `drawerInMinor` ichida) —
     // faqat hisobot qatori.
     prepayMinor: input.prepayMinor ?? 0n,
+    // A2: bu ham `expectedCashMinor` ga TEGMAYDI (`DEBT` bilan bir xil) —
+    // yashiqqa bugun pul tushmagan, faqat mijozning krediti sarflangan.
+    prepaySpentMinor: input.prepaySpentMinor ?? 0n,
     expectedUsdCashMinor,
     countedUsdCashMinor,
     varianceUsdMinor:
