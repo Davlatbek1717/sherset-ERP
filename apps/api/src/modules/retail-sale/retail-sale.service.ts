@@ -21,10 +21,17 @@ import { CustomerOrderService } from '../customer-order/customer-order.service.j
 // yozilgan (`docs/plans/2026-08-25-kassa-qarzi-undirish-reyestri.md` §2.2/§3):
 // qator summasi chekning qarz ulushi EMAS, balki chek balansni musbat hududga
 // qanchaga olib kirgani — ya'ni AVANSI bor mijozga qator umuman ochilmaydi.
+// Q3 (2026-08-25) — SIMMETRIYA (invariant 2): balans `−` olganda chekdan
+// tug'ilgan reyestr qatori ham AYNAN shuncha kamayadi, aks holda undirish
+// ro'yxati qaytarilgan tovar uchun pul talab qilib turardi.
 import {
   DEBT_LEDGER_CURRENCY,
   SALE_DEBT_SOURCE_DOC_TYPE,
+  planSaleDebtDelta,
   planSaleDebtRow,
+  receivablePortion,
+  saleDebtDueAt,
+  saleDebtMoveNoteText,
 } from '../debt/sale-debt-registry.js';
 // §109: loyalty accrual/reversal on POS sale/refund. Only loyalty's
 // existing public API is called (computeEarnedPoints + createOperation);
@@ -1577,6 +1584,23 @@ export class RetailSaleService {
     return posted;
   }
 
+  /**
+   * 🔴 Q3 — TEKSHIRILDI: `cancel()` UNDIRISH REYESTRIGA TEGMAYDI, va TEGMASLIGI
+   * KERAK (reja `2026-08-25-kassa-qarzi-undirish-reyestri.md`, Q3 vazifa 3).
+   *
+   * DALIL: bekor qilish faqat `CANCELLABLE = ['draft','picking','ready']`
+   * holatlaridan yuradi (`retail-sale-fsm.ts`) — ya'ni chek hali POST
+   * QILINMAGAN. Qarz esa (balansda ham, reyestrda ham) FAQAT `post()` da
+   * tug'iladi: `if (debtAmount > 0n && debtAgentId)` bloki. Post qilinmagan
+   * chekda `debtAmount` yozilmagan, `Debt` qatori yo'q ⇒ harakatlantiradigan
+   * narsa yo'q. Post qilingan chekni «bekor qilish» yo'li — `refund()`.
+   *
+   * ⚠️ Agar kelajakda `CANCELLABLE` ga `'posted'` qo'shilsa bu premise
+   * BUZILADI va bu yerga reyestr qatorini yopish kerak bo'ladi. Shuning
+   * uchun u qo'riqchi test bilan qulflangan
+   * (`retail-sale-debt-registry-symmetry.test.ts` — «cancel posted'ga
+   * tegmaydi»).
+   */
   async cancel(accountId: string, userId: string, id: string) {
     const sale = await this.prisma.client.retailSale.findFirst({
       where: { id, accountId },
@@ -1871,6 +1895,9 @@ export class RetailSaleService {
       );
     }
 
+    // Q3 — «hozir» bir marta (Q2 ning `postedAt` qarori bilan bir xil sabab).
+    const editedAt = new Date();
+
     await this.prisma.client.$transaction(async (tx) => {
       const flip = await tx.retailSale.updateMany({
         where: { id: saleId, accountId, version: sale.version, state: 'posted' },
@@ -1904,6 +1931,28 @@ export class RetailSaleService {
       // yangisiga to'liq yozamiz, aks holda qarz noto'g'ri odamda qolardi.
       const currency = currentSession?.cashDesk.currency ?? 'UZS';
       const oldDebt = sale.sumMinor - sale.payedSumMinor;
+
+      // 🔴 Q3 — BALANS QULFI `applyDelta` DAN OLDIN (Q2/P1 bilan AYNAN bir
+      // tartib: BALANS → QARZLAR). Reyestr qatorining yangi summasi §2.2
+      // kesishuv qoidasi bo'yicha «balansOldin» dan hisoblanadi, ya'ni uni
+      // qulfsiz o'qish ikki parallel tahrirda ikki xil qarorga olib kelardi.
+      //
+      // Ikki kontragent qulflanishi mumkin (mijoz almashgan holat) —
+      // shuning uchun tartib DETERMINISTIK (id bo'yicha saralangan), aks
+      // holda mijozlarni bir-biriga almashtiruvchi ikki tahrir deadlock
+      // qilardi. Bu `lockOpenDebts` ning `ORDER BY` sabog'i.
+      const registryCurrencyOk = currency === DEBT_LEDGER_CURRENCY;
+      const balanceBefore = new Map<string, bigint | null>();
+      if (registryCurrencyOk) {
+        const lockIds = [...new Set([sale.agentId, newAgentId].filter((v) => v !== null))].sort();
+        for (const cpId of lockIds) {
+          balanceBefore.set(
+            cpId,
+            await this.lockCounterpartyBalance(tx, accountId, cpId, currency),
+          );
+        }
+      }
+
       if (plan.agentChanged) {
         if (sale.agentId && oldDebt !== 0n) {
           await this.counterpartyBalance.applyDelta(
@@ -1944,6 +1993,52 @@ export class RetailSaleService {
           plan.balanceDeltaMinor,
           { docType: 'retailsale', docId: saleId, organizationId: null, source: 'retailsale' },
         );
+      }
+
+      // 🔴 Q3 — REYESTR QATORI BALANS BILAN BIRGA (invariant 2), balans
+      // deltalaridan KEYIN va AYNAN shu tranzaksiyada.
+      if (registryCurrencyOk) {
+        // §2.2 kesishuv qoidasi QAYTA qo'llanadi: mijozning avansi bo'lsa
+        // tahrirdan keyin ham qarz tug'ilmasligi kerak. Qoida chekning O'Z
+        // ulushidan OLDINGI balansdan yuradi — ya'ni shu chekning qarzi
+        // balansdan chiqarib tashlanadi (aks holda u ikki marta sanalardi).
+        const preReceiptBalance = (cpId: string, receiptShare: bigint): bigint | null => {
+          const b = balanceBefore.get(cpId);
+          return b === undefined || b === null ? null : b - receiptShare;
+        };
+        const nextTotal = newAgentId
+          ? receivablePortion(
+              // Mijoz almashgan bo'lsa yangi mijozda bu chekdan qarz YO'Q edi.
+              preReceiptBalance(newAgentId, plan.agentChanged ? 0n : oldDebt),
+              debtMinor,
+            )
+          : 0n;
+
+        const outcome = await this.moveSaleDebtRegistryRow(tx, accountId, userId, {
+          saleId,
+          saleName: sale.name,
+          currency,
+          now: editedAt,
+          reason: 'edit',
+          mode: 'absolute',
+          totalMinor: nextTotal,
+          ...(plan.agentChanged ? { retargetToId: newAgentId } : {}),
+        });
+
+        // Qator YO'Q edi (Q2 dan oldingi chek, yoki avans qoplagani uchun
+        // ochilmagan), tahrirdan keyin esa qarz BOR — Q2 yozuvchisi qayta
+        // ishlatiladi. Usiz tahrirdan tug'ilgan qarz yana ko'rinmas bo'lardi,
+        // ya'ni egasining shikoyati tahrir yo'li orqali qaytardi.
+        if (outcome === 'missing' && newAgentId && nextTotal > 0n) {
+          await this.writeSaleDebtRegistryRow(tx, accountId, userId, {
+            saleId,
+            saleName: sale.name,
+            counterpartyId: newAgentId,
+            debtAmountMinor: debtMinor,
+            balanceBeforeMinor: preReceiptBalance(newAgentId, plan.agentChanged ? 0n : oldDebt),
+            postedAt: editedAt,
+          });
+        }
       }
     });
 
@@ -2285,6 +2380,13 @@ export class RetailSaleService {
       ],
     );
 
+    // Q3 — «hozir» TRANZAKSIYADAN OLDIN bir marta olinadi (Q2 ning `postedAt`
+    // qarori bilan bir xil sabab): bu bitta instant mirror chekning sanasi
+    // ham, reyestr qatorining `closedAt` i ham bo'ladi. Ikki alohida
+    // `new Date()` yarim tunda ikki xil kalendar kuni berib, chek sanasi bilan
+    // qarz yozuvini bir-biriga zid qilib qo'yishi mumkin edi.
+    const refundedAt = new Date();
+
     const refunded = await this.prisma.client.$transaction(async (tx) => {
       // Atomic state guard. The old guard was `state: 'posted' → 'refunded'`:
       // the flip itself served as the mutex, so a second concurrent refund got
@@ -2311,10 +2413,10 @@ export class RetailSaleService {
           sessionId: currentSession.id,
           name,
           agentId: original.agentId ?? null,
-          moment: new Date(),
+          moment: refundedAt,
           description: parsed.description ?? `Refund for ${original.name}`,
           state: 'posted',
-          postedAt: new Date(),
+          postedAt: refundedAt,
           sumMinor: refundPositions.totalMinor,
           cashAmountMinor: cashReturn,
           cardAmountMinor: cardReturn,
@@ -2498,6 +2600,27 @@ export class RetailSaleService {
             source: 'retailsale',
           },
         );
+
+        // 🔴 Q3 — REYESTR QATORI BALANS BILAN BIRGA HARAKATLANADI (invariant 2).
+        //
+        // Balans yuqorida `−debtReturn` oldi; qator joyida qolsa undirish
+        // ro'yxati QAYTARILGAN tovar uchun pul talab qilib turardi va mijozga
+        // eslatma ketardi. Delta AYNAN teng: chek qarz ulushining qoldig'i
+        // `debtReturn` ga kamayadi (`oldRemaining → newRemaining`).
+        //
+        // Qulf tartibi BALANS → QARZLAR: yuqoridagi `applyDelta` balans
+        // qatorini `upsert` bilan allaqachon qulflab bo'ldi.
+        const debtRemainingBefore = originalDebtMinor - priorTotals.debtMinor;
+        await this.moveSaleDebtRegistryRow(tx, accountId, userId, {
+          saleId: original.id,
+          saleName: original.name,
+          currency: original.session.cashDesk.currency,
+          now: refundedAt,
+          reason: 'refund',
+          mode: 'delta',
+          oldRemainingMinor: debtRemainingBefore,
+          newRemainingMinor: debtRemainingBefore - debtReturn,
+        });
       }
 
       // SMENA CLAIM'i — post() dagi SALES-07 bilan bir naqsh, F6'dan keyin
@@ -2802,6 +2925,188 @@ export class RetailSaleService {
         kind: 'debt_issue',
       },
     });
+  }
+
+  /**
+   * Q3 — chekdan tug'ilgan reyestr qatorini BALANS BILAN SIMMETRIK
+   * harakatlantirish (`refund()` / `edit()`), invariant 2.
+   *
+   * MUAMMO: Q2 dan keyin qarzga sotilgan chek `Debt` reyestriga qator ochadi.
+   * Tovar qaytarilsa balansdan `−debtReturn` yoziladi, lekin qator joyida
+   * qolsa undirish ro'yxati QAYTARILGAN tovar uchun pul talab qilib turardi
+   * (va mijozga eslatma ketardi). Ya'ni ikki daftar bir-biridan uzilardi.
+   *
+   * 🔴 BU YERDAN `applyDelta` CHAQIRILMAYDI. Qator `balanceAdopted = true` —
+   * balansni chekning O'Z yo'li (`refund()` dagi `−debtReturn`,
+   * `edit()` dagi delta) harakatlantiradi. Ikkalasi ham yozsa qarz IKKI
+   * MARTA kamayardi. Bu Q2 yozuvchisining aynan ko'zgusi va kod-shakl testi
+   * bilan qulflangan.
+   *
+   * ⚠️ QULF TARTIBI **BALANS → QARZLAR** (P1/Q2 bilan bir xil): chaqiruvchi
+   * avval `applyDelta` (u balans qatorini `upsert` bilan qulflaydi), keyin
+   * bu metod `debts … FOR UPDATE` oladi. Teskari tartibda POS FIFO to'lovi
+   * bilan deadlock bo'lardi.
+   *
+   * ⚠️ Qator TOPILMASA (Q2 dan OLDIN post qilingan eski chek, yoki avans
+   * qoplagani uchun umuman ochilmagan chek) — bu XATO EMAS: balans baribir
+   * o'z deltasini oladi, mavjud xulq buzilmaydi. Lekin JIM ham qolmaydi:
+   * ogohlantirish logi + chaqiruvchiga qaytadigan natija (`missing`).
+   */
+  private async moveSaleDebtRegistryRow(
+    tx: Prisma.TransactionClient,
+    accountId: string,
+    userId: string,
+    input: {
+      saleId: string;
+      saleName: string;
+      /** Balans yozilgan valyuta — reyestr faqat `DEBT_LEDGER_CURRENCY` da. */
+      currency: string;
+      /** «Hozir» — muddat va yopilish sanasi uchun (sof modul argumenti). */
+      now: Date;
+      reason: 'refund' | 'edit';
+    } & (
+      | {
+          /** NISBIY harakat: chek qarz ulushining eski va yangi qoldig'i. */
+          mode: 'delta';
+          oldRemainingMinor: bigint;
+          newRemainingMinor: bigint;
+        }
+      | {
+          /** MUTLAQ summa: tahrirdan keyingi qator qiymati (§2.2 qo'llangan). */
+          mode: 'absolute';
+          totalMinor: bigint;
+          /**
+           * Qator SHU mijozga ko'chirilsin (`edit()` da mijoz almashganda).
+           * `undefined` ⇒ mijoz o'zgarmagan.
+           */
+          retargetToId?: string | null;
+        }
+    ),
+  ): Promise<'skipped_currency' | 'missing' | 'noop' | 'moved' | 'retarget_blocked'> {
+    // §2.3 chegarasi — USD yashiq chekida Q2 qator OCHMAGAN, demak
+    // harakatlantiradigan narsa ham yo'q (bu kutilgan holat, xato emas).
+    if (input.currency !== DEBT_LEDGER_CURRENCY) return 'skipped_currency';
+
+    // Qatorni QULFLAB olamiz: POS FIFO to'lovi (`pos-debt-payment`) shu
+    // tranzaksiya bilan poyga qilsa `paidMinor` oramizda o'zgarib ketardi va
+    // «to'langandan pastga tushmasin» chegarasi eskirgan songa qo'llanardi.
+    // `ORDER BY id` — barqaror qulflash tartibi (`lockOpenDebts` odati).
+    const locked = await tx.$queryRaw<Array<{ id: string }>>`
+      SELECT id
+      FROM debts
+      WHERE account_id = ${accountId}::uuid
+        AND source_doc_type = ${SALE_DEBT_SOURCE_DOC_TYPE}
+        AND source_doc_id = ${input.saleId}::uuid
+        AND deleted_at IS NULL
+      ORDER BY id ASC
+      FOR UPDATE
+    `;
+    const lockedId = locked[0]?.id;
+    if (lockedId === undefined) {
+      this.logger.warn(
+        `[Q3] ${input.saleName}: chekdan tug\`ilgan reyestr qatori TOPILMADI ` +
+          `(${input.reason}) — balans o\`z deltasini oldi, reyestrda harakat yo\`q. ` +
+          'Sabab: chek Q2 dan OLDIN post qilingan yoki qarzni AVANS qoplagan.',
+      );
+      return 'missing';
+    }
+
+    const row = await tx.debt.findFirstOrThrow({
+      where: { id: lockedId, accountId },
+      select: {
+        id: true,
+        name: true,
+        totalMinor: true,
+        paidMinor: true,
+        status: true,
+        counterpartyId: true,
+        nextContactAt: true,
+      },
+    });
+
+    // Mijoz almashishi — FAQAT `absolute` rejimida (tahrir).
+    const retargetToId = input.mode === 'absolute' ? input.retargetToId : undefined;
+    const wantsRetarget =
+      retargetToId !== undefined && (retargetToId ?? null) !== row.counterpartyId;
+    // 🔴 To'lov tushgan qatorni KO'CHIRIB bo'lmaydi: `DebtPayment` qatorlari
+    // ESKI mijozning pulini bildiradi va ular qator bilan birga ko'chardi —
+    // ya'ni bir mijozning to'lovi boshqasining tarixiga yozilardi. Bunday
+    // qator eski mijozda YOPILADI, yangi mijozning qarzi esa balansda
+    // ko'rinadi va u kassaga to'lov qilganda P1 adopsiyasi orqali reyestrga
+    // kiradi (mavjud, jonlida sinalgan yo'l).
+    const retargetBlocked = wantsRetarget && row.paidMinor > 0n;
+
+    const plan = planSaleDebtDelta({
+      totalMinor: row.totalMinor,
+      paidMinor: row.paidMinor,
+      oldRemainingMinor: input.mode === 'delta' ? input.oldRemainingMinor : row.totalMinor,
+      newRemainingMinor:
+        input.mode === 'delta'
+          ? input.newRemainingMinor
+          : retargetBlocked
+            ? 0n // eski mijozda yopiladi (yuqoridagi izoh)
+            : input.totalMinor,
+    });
+
+    const movesCounterparty = wantsRetarget && !retargetBlocked;
+    if (plan.deltaMinor === 0n && plan.status === row.status && !movesCounterparty) {
+      return 'noop';
+    }
+
+    // ⚠️ ESKI QIYMATLAR `update` DAN OLDIN OLINADI. Prisma `findFirstOrThrow`
+    // yangi obyekt qaytaradi, lekin bunga TAYANMAYMIZ: izoh matni «qatorning
+    // OLDINGI holati» haqida gapiradi va yozuv tartibi o'zgarsa u jimgina
+    // yangi holatni aytib qo'yardi (testda aynan shu tutildi).
+    const previousTotalMinor = row.totalMinor;
+    const previousCounterpartyId = row.counterpartyId;
+
+    // Qayta OCHILGAN qator muddatsiz qolmasin (Q1 ning 2-shartnomasi:
+    // muddatsiz qator undirish ro'yxatida `no_due_date` chelagida qolib,
+    // eslatma cron'i uni umuman ko'rmasdi).
+    const reopened = !plan.closed && row.nextContactAt === null;
+    await tx.debt.update({
+      where: { id: row.id },
+      data: {
+        totalMinor: plan.nextTotalMinor,
+        status: plan.status,
+        // §3.6 — `debt-recalc.ts` bilan AYNAN bir xil odat.
+        closedAt: plan.closed ? input.now : null,
+        ...(plan.closed
+          ? { nextContactAt: null }
+          : reopened
+            ? { nextContactAt: saleDebtDueAt(input.now) }
+            : {}),
+        ...(movesCounterparty && retargetToId ? { counterpartyId: retargetToId } : {}),
+      },
+    });
+
+    await tx.debtNote.create({
+      data: {
+        accountId,
+        debtId: row.id,
+        // AYNAN sof modulning matni — Q2 ning `plan.noteText` odati.
+        text: saleDebtMoveNoteText({
+          saleName: input.saleName,
+          reason: input.reason,
+          previousTotalMinor,
+          plan,
+          retargetedFromId: wantsRetarget ? previousCounterpartyId : undefined,
+          retargetBlocked,
+        }),
+        authorId: userId,
+        authorRole: 'cashier',
+        kind: 'debt_issue',
+      },
+    });
+
+    if (retargetBlocked) {
+      this.logger.warn(
+        `[Q3] ${input.saleName}: chek mijozi almashtirildi, lekin reyestr qatori ` +
+          `${row.name} da to\`lov bor — qator KO\`CHIRILMADI, eski mijozda yopildi.`,
+      );
+      return 'retarget_blocked';
+    }
+    return 'moved';
   }
 
   /**

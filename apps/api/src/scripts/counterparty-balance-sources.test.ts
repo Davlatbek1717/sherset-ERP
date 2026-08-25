@@ -202,6 +202,36 @@ describe('skript manbalari yozuvchilar semantikasiga mos (DUP-02 fix)', () => {
   });
 
   /**
+   * 🔴 Q3 (2026-08-25) — «`totalMinor` create'dan keyin O'ZGARMAYDI»
+   * DA'VOSI ENDI YOLG'ON, va izoh shuni aytishi SHART.
+   *
+   * Q3 dan beri `retail-sale.service.ts#moveSaleDebtRegistryRow` chekdan
+   * tug'ilgan qatorning `totalMinor` ini vozvrat/tahrirda o'zgartiradi.
+   * Skript baribir to'g'ri qoladi — o'sha qatorlar `balanceAdopted = true`,
+   * ya'ni `groupBy` filtri ularni chiqarib tashlaydi — LEKIN eskirgan izoh
+   * keyingi o'quvchini «demak filtrni olib tashlasa ham bo'ladi» degan
+   * noto'g'ri xulosaga olib borardi (F5 sabog'i).
+   */
+  it("Q3: `totalMinor` o'zgarmas degan eskirgan da'vo izohda TUZATILGAN", () => {
+    // (a) Harakatlantiruvchi rostdan ham `totalMinor` ni yozadi.
+    const saleSrc = readFileSync(
+      join(API_SRC_ROOT, 'modules', 'retail-sale', 'retail-sale.service.ts'),
+      'utf8',
+    );
+    const moveStart = saleSrc.indexOf('private async moveSaleDebtRegistryRow');
+    expect(moveStart).toBeGreaterThan(0);
+    const moveBody = saleSrc.slice(moveStart, saleSrc.indexOf('\n  /**', moveStart));
+    expect(moveBody).toMatch(/totalMinor:\s*plan\.nextTotalMinor/);
+
+    // (b) Demak skriptning izohi bu haqiqatni AYTISHI kerak — aks holda
+    // filtrning nega majburiyligi ko'rinmay qoladi.
+    const callStart = SCRIPT_SRC.indexOf('prisma.debt.groupBy');
+    const commentBlock = SCRIPT_SRC.slice(Math.max(0, callStart - 2000), callStart);
+    expect(commentBlock).toContain('Q3');
+    expect(commentBlock).toMatch(/refund\(\)|moveSaleDebtRegistryRow/);
+  });
+
+  /**
    * Non-vakuum: filtr rostdan ham `debt-issue` blokida turibdi, boshqa
    * manbaga tasodifan tushib qolmagan.
    */

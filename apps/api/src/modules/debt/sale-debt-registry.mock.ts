@@ -14,18 +14,57 @@ import { mockDocumentSequence } from '../../prisma/document-sequence.mock.js';
  * `sourceDocId` bo'yicha qaytaradi — ya'ni IDEMPOTENTLIK yo'li (ikkinchi
  * urinishda qator qo'shilmasligi) haqiqiy shaklda sinaladi.
  *
+ * Q3 (2026-08-25) da KENGAYTIRILDI — `refund()`/`edit()` simmetriyasi uchun:
+ * `debt.update` (qatorni harakatlantirish), `$queryRaw` ning ikkinchi shakli
+ * (`debts … FOR UPDATE` qulfi) va kontragent kesimidagi balans. Bashorat
+ * to'g'ri chiqdi: Q2 bu faylni ochmaganda Q3 oltita harness'ga nusxa
+ * yozardi.
+ *
  * @param balanceBeforeMinor `FOR UPDATE` bilan o'qiladigan «balansOldin».
  *   `null` ⇒ balans qatori YO'Q (o'lchanmagan) — `$queryRaw` bo'sh massiv
  *   qaytaradi, bu §2.2 jadvalining 5-qatori.
  */
-export function mockSaleDebtRegistryTx(balanceBeforeMinor: bigint | null = 0n) {
+export function mockSaleDebtRegistryTx(
+  balanceBeforeMinor: bigint | null = 0n,
+  /**
+   * Q3 — KONTRAGENT KESIMIDA balans. Chek tahrirlanganda bitta chekda IKKI
+   * mijoz qatnashishi mumkin (mijoz almashtirilgan tahrir) va ularning
+   * balansi har xil bo'ladi, ya'ni bitta son yetmaydi. Berilmasa — hamma
+   * kontragent uchun `balanceBeforeMinor`.
+   */
+  balanceByCounterparty?: Map<string, bigint | null>,
+) {
   const debtRows: Array<Record<string, unknown>> = [];
 
-  const queryRaw = vi.fn(async () =>
-    balanceBeforeMinor === null ? [] : [{ balance_minor: balanceBeforeMinor }],
+  /**
+   * `$queryRaw` IKKI xil so'rovga xizmat qiladi (Prisma tagged-template:
+   * birinchi argument — matn bo'laklari, qolganlari — qiymatlar):
+   *   · Q2 — `SELECT balance_minor FROM counterparty_balances … FOR UPDATE`;
+   *   · Q3 — `SELECT id FROM debts WHERE source_doc_id = … FOR UPDATE`.
+   * Ajratish SQL matni bo'yicha — haqiqiy chaqiruv ham aynan shu shaklda.
+   */
+  const queryRaw = vi.fn(
+    async (strings: TemplateStringsArray | readonly string[], ...values: unknown[]) => {
+      const sql = Array.isArray(strings) ? strings.join(' ') : String(strings);
+      if (sql.includes('FROM debts')) {
+        // Q3 qulfi — chek id'si `values` ichida keladi.
+        return debtRows
+          .filter((r) => r.sourceDocId !== undefined && values.some((v) => v === r.sourceDocId))
+          .map((r) => ({ id: r.id }));
+      }
+      // Q2 balans qulfi — `values` = [accountId, counterpartyId, currency].
+      const cpId = values[1];
+      const scoped =
+        balanceByCounterparty !== undefined && typeof cpId === 'string'
+          ? balanceByCounterparty.get(cpId)
+          : undefined;
+      const balance = scoped === undefined ? balanceBeforeMinor : scoped;
+      return balance === null ? [] : [{ balance_minor: balance }];
+    },
   );
 
   const matches = (where: Record<string, unknown>, row: Record<string, unknown>): boolean => {
+    if (where.id !== undefined && row.id !== where.id) return false;
     if (where.sourceDocId !== undefined && row.sourceDocId !== where.sourceDocId) return false;
     if (where.sourceDocType !== undefined && row.sourceDocType !== where.sourceDocType) {
       return false;
@@ -64,6 +103,16 @@ export function mockSaleDebtRegistryTx(balanceBeforeMinor: bigint | null = 0n) {
         count += 1;
       }
       return { count };
+    }),
+    // Q3 — qatorni HARAKATLANTIRISH (`totalMinor`/`status`/`closedAt`/
+    // `counterpartyId`). Mock holatli bo'lgani uchun test yozilgan qiymatni
+    // AYNAN o'sha qatorda ko'radi — «yozdik» bilan «o'zgardi» orasida yana
+    // bir taxmin qolmaydi.
+    update: vi.fn(async (args: { where: { id: string }; data: Record<string, unknown> }) => {
+      const row = debtRows.find((r) => r.id === args.where.id);
+      if (!row) throw new Error(`Debt ${args.where.id} topilmadi (mock)`);
+      Object.assign(row, args.data);
+      return row;
     }),
   };
 

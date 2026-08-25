@@ -6,6 +6,7 @@ import {
   planSaleDebtRow,
   receivablePortion,
   saleDebtDueAt,
+  saleDebtMoveNoteText,
   tashkentDayKey,
 } from './sale-debt-registry.js';
 
@@ -311,5 +312,115 @@ describe('planSaleDebtDelta — invariant 2 (SIMMETRIYA), Q3 uchun qoida', () =>
     });
     expect(plan.deltaMinor).toBe(0n);
     expect(plan.nextTotalMinor).toBe(300_000n);
+  });
+});
+
+/**
+ * Q3 — qator HARAKATLANGANDA yoziladigan izoh matni (sof).
+ *
+ * NEGA TESTDA: bu matn undirish ekranidagi menejer uchun YAGONA tushuntirish —
+ * «nega qarz kamaydi?» savoliga javob. U servisda yozilsa hech qachon
+ * qulflanmasdi va ikki yo'l (qaytarish/tahrir) darhol ikki xil gapirardi.
+ */
+describe('saleDebtMoveNoteText — Q3 harakat izohi', () => {
+  const plan = (over: Partial<Parameters<typeof planSaleDebtDelta>[0]> = {}) =>
+    planSaleDebtDelta({
+      totalMinor: 300_000n,
+      paidMinor: 0n,
+      oldRemainingMinor: 300_000n,
+      newRemainingMinor: 100_000n,
+      ...over,
+    });
+
+  it('oddiy kamayish: sabab, eski va yangi summa matnda ko`rinadi', () => {
+    const text = saleDebtMoveNoteText({
+      saleName: 'ТРН-2026-00042',
+      reason: 'refund',
+      previousTotalMinor: 300_000n,
+      plan: plan(),
+    });
+    expect(text).toContain('ТРН-2026-00042');
+    expect(text).toContain('QAYTARISH');
+    expect(text).toContain('300000');
+    expect(text).toContain('100000');
+    // Invariant 1 — o'quvchi «balansga ham yozildimi?» deb o'ylamasin.
+    expect(text).toContain('balanceAdopted');
+  });
+
+  it('tahrir sababi qaytarishdan FARQ qiladi', () => {
+    const text = saleDebtMoveNoteText({
+      saleName: 'ТРН-2026-00042',
+      reason: 'edit',
+      previousTotalMinor: 300_000n,
+      plan: plan(),
+    });
+    expect(text).toContain('CHEK TAHRIRI');
+    expect(text).not.toContain('QAYTARISH');
+  });
+
+  it('🔴 NIZO — to`langan summadan pastga tushmagan qism matnda OCHIQ aytiladi', () => {
+    const p = plan({ paidMinor: 120_000n, newRemainingMinor: 0n });
+    expect(p.clampedByPaidMinor).toBe(120_000n);
+    const text = saleDebtMoveNoteText({
+      saleName: 'ТРН-2026-00042',
+      reason: 'refund',
+      previousTotalMinor: 300_000n,
+      plan: p,
+    });
+    expect(text).toContain('NIZO');
+    // Ikkala son ham: qancha tushira olmadik va mijoz qancha to'lagan.
+    expect(text).toContain('120000');
+    expect(text).toContain('Tekshirib chiqing');
+  });
+
+  it('mijoz ko`chirilganda eski kontragent id yoziladi', () => {
+    const text = saleDebtMoveNoteText({
+      saleName: 'ТРН-2026-00042',
+      reason: 'edit',
+      previousTotalMinor: 300_000n,
+      plan: plan(),
+      retargetedFromId: 'cp-eski',
+    });
+    expect(text).toContain('cp-eski');
+    expect(text).toContain('ko`chirildi');
+  });
+
+  it('ko`chirish RAD ETILGANDA sabab ham, oqibat ham yoziladi', () => {
+    const text = saleDebtMoveNoteText({
+      saleName: 'ТРН-2026-00042',
+      reason: 'edit',
+      previousTotalMinor: 300_000n,
+      plan: plan({ paidMinor: 50_000n, newRemainingMinor: 0n }),
+      retargetedFromId: 'cp-eski',
+      retargetBlocked: true,
+    });
+    expect(text).toContain('KO`CHIRILMADI');
+    // Yangi mijozning qarzi YO'QOLMAGANI aytiladi (balansda turibdi).
+    expect(text).toContain('BALANSDA');
+    // Ko'chirildi degan zid gap CHIQMAYDI.
+    expect(text).not.toContain('boshqa mijozga ko`chirildi');
+  });
+
+  it('qator yopilganda «undirish ro`yxatidan chiqadi» deyiladi', () => {
+    const text = saleDebtMoveNoteText({
+      saleName: 'ТРН-2026-00042',
+      reason: 'refund',
+      previousTotalMinor: 300_000n,
+      plan: plan({ newRemainingMinor: 0n }),
+    });
+    expect(text).toContain('YOPILDI');
+  });
+});
+
+describe('planSaleDebtDelta — Q3 uchun qo`shilgan `paidMinorAtMove`', () => {
+  it('kirishdagi `paidMinor` o`zgarishsiz qaytadi (izoh matni shundan yuradi)', () => {
+    const p = planSaleDebtDelta({
+      totalMinor: 300_000n,
+      paidMinor: 120_000n,
+      oldRemainingMinor: 300_000n,
+      newRemainingMinor: 0n,
+    });
+    // Ikkinchi manba bo'lmasin: chaqiruvchi sonni qayta uzatsa bir kun ayrilardi.
+    expect(p.paidMinorAtMove).toBe(120_000n);
   });
 });

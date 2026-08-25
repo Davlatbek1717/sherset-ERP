@@ -272,8 +272,21 @@ async function main() {
   // ham daftarga tegmaydi — filtr aynan shu haqiqatning ko'zgusi. Ikkovi
   // `counterparty-balance-sources.test.ts` da birga qulflangan.
   //
-  // `totalMinor` create'dan keyin o'zgarmaydi (Debt'da uni tahrirlaydigan yo'l
-  // yo'q), shuning uchun qolgan qatorlar uchun Σ totalMinor = Σ yozilgan delta.
+  // 🔴 2026-08-25 (Q3) — ESKI DA'VO TUZATILDI. Bu yerda ilgari «`totalMinor`
+  // create'dan keyin o'zgarmaydi (Debt'da uni tahrirlaydigan yo'l yo'q)»
+  // deyilardi. Q3 dan beri bu YOLG'ON: `retail-sale.service.ts` ning
+  // `refund()` va `edit()` yo'llari chekdan tug'ilgan qatorning `totalMinor`
+  // ini KAMAYTIRADI (tahrirda oshiradi ham) — invariant 2, simmetriya.
+  //
+  // Skript baribir TO'G'RI qoladi: Q3 harakatlantiradigan qatorlarning
+  // HAMMASI `balanceAdopted = true`, ya'ni yuqoridagi filtr ularni bu
+  // hisobdan CHIQARIB tashlaydi. Qolgan (`balanceAdopted = false`) qatorlar
+  // uchun da'vo hamon o'z kuchida — ularning `totalMinor` ini o'zgartiradigan
+  // yo'l yo'q, demak Σ totalMinor = Σ yozilgan delta.
+  //
+  // ⚠️ Eski matn ATAYLAB shu izohda qoldirildi: premise yangilanmasa keyingi
+  // o'quvchi «totalMinor o'zgarmas» degan noto'g'ri asosda qaror qabul
+  // qilardi (F5 sabog'i — eskirgan izoh keyingi agentni adashtiradi).
   const debts = await prisma.debt.groupBy({
     by: ['accountId', 'counterpartyId', 'currency'],
     where: {

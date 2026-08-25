@@ -1,6 +1,8 @@
 import { BadRequestException } from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
 import { mockDocumentSequence } from '../../prisma/document-sequence.mock.js';
+import { SALE_DEBT_SOURCE_DOC_TYPE } from '../debt/sale-debt-registry.js';
+import { mockSaleDebtRegistryTx } from '../debt/sale-debt-registry.mock.js';
 import { RetailSaleService } from './retail-sale.service.js';
 
 /**
@@ -65,11 +67,36 @@ function makeHarness(opts: {
   creditEventAgentId?: string;
   /** The original sale's recorded EARNING bonus op, if any. */
   earnedPoints?: number;
+  /**
+   * Q3 — chekdan tug'ilgan UNDIRISH REYESTRI qatori (bo'lmasa: chek Q2 dan
+   * OLDIN post qilingan yoki qarzni avans qoplagan).
+   */
+  registryRow?: { totalMinor: bigint; paidMinor?: bigint; status?: string };
 }) {
   const created: { data: Record<string, unknown> }[] = [];
   const sumMinor = opts.positions.reduce((a, p) => a + p.sumMinor, 0n);
 
+  // Q3 — `refund()` endi reyestr qatorini ham harakatlantiradi, ya'ni bu
+  // harness'ga uchta yangi delegat kerak (`$queryRaw` qulfi · `debt` ·
+  // `debtNote`). NUSXA YOZILMAYDI — umumiy mock'dan olinadi.
+  const registry = mockSaleDebtRegistryTx();
+  if (opts.registryRow) {
+    registry.debtRows.push({
+      id: 'debt-registry-1',
+      name: 'QRZ-2026-00007',
+      sourceDocType: SALE_DEBT_SOURCE_DOC_TYPE,
+      sourceDocId: SALE_ID,
+      counterpartyId: opts.agentId ?? AGENT_ID,
+      totalMinor: opts.registryRow.totalMinor,
+      paidMinor: opts.registryRow.paidMinor ?? 0n,
+      status: opts.registryRow.status ?? 'unpaid',
+      nextContactAt: new Date('2026-09-08T04:00:00.000Z'),
+      closedAt: null,
+    });
+  }
+
   const tx = {
+    ...registry.tx,
     // G4 — post() endi ajratmani YACHEYKA kesimida quradi va saqlaydi.
     stockByCell: { findMany: vi.fn().mockResolvedValue([]) },
     retailSalePositionAllocation: {
@@ -173,7 +200,7 @@ function makeHarness(opts: {
     // F8: CustomerOrderService — zakazsiz chekda chaqirilmaydi.
     { applyPayment: async () => {} } as never,
   );
-  return { svc, tx, client, created, money, balance, loyalty };
+  return { svc, tx, client, created, money, balance, loyalty, registry };
 }
 
 /** 100 000 tiyinlik chek, 10 dona. */

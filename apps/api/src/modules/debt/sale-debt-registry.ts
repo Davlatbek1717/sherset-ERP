@@ -263,6 +263,13 @@ export interface SaleDebtDeltaPlan {
    * tekislanadi va Q3 buni `DebtNote` bilan OCHIQ qayd etadi.
    */
   clampedByPaidMinor: bigint;
+  /**
+   * Qatorga harakat PAYTIDA tushgan to'lov (`Debt.paidMinor`) — kirishdan
+   * o'zgarishsiz ko'chadi. Q3 izoh matni nizoni AYNAN shu son bilan
+   * tushuntiradi; chaqiruvchi uni ikkinchi marta uzatsa ikki manba bir kun
+   * ayrilardi (Q2 ning `plan.noteText` sabog'i).
+   */
+  paidMinorAtMove: bigint;
 }
 
 /**
@@ -304,5 +311,77 @@ export function planSaleDebtDelta({
     status: remaining <= 0n ? 'paid' : paidMinor > 0n ? 'partial' : 'unpaid',
     closed: remaining <= 0n,
     clampedByPaidMinor,
+    paidMinorAtMove: paidMinor,
   };
+}
+
+/** {@link saleDebtMoveNoteText} kirishi. */
+export interface SaleDebtMoveNoteInput {
+  /** Chek raqami (`CHK-…`/`ТРН-…`) — izohda ko'rinadi. */
+  saleName: string;
+  /** Harakat sababi: qaytarish yoki chek tahriri. */
+  reason: 'refund' | 'edit';
+  /** Qatorning harakatdan OLDINGI summasi. */
+  previousTotalMinor: bigint;
+  /** {@link planSaleDebtDelta} natijasi. */
+  plan: SaleDebtDeltaPlan;
+  /**
+   * Mijoz ALMASHGAN bo'lsa — qator ko'chirilgan (eski) kontragent id'si.
+   * `undefined` ⇒ mijoz o'zgarmagan.
+   */
+  retargetedFromId?: string | null;
+  /**
+   * Ko'chirish RAD ETILDI: qatorga allaqachon to'lov tushgan, ya'ni uni
+   * boshqa mijozga o'tkazish o'sha to'lovlarni ham ko'chirib, tarixni
+   * yolg'onga aylantirardi (Q3).
+   */
+  retargetBlocked?: boolean;
+}
+
+/**
+ * Q3 — reyestr qatori HARAKATLANGANDA yoziladigan `DebtNote` matni (SOF).
+ *
+ * NEGA SOF MODULDA: Q1 dagi `planSaleDebtRow().noteText` bilan bir xil
+ * intizom — matn servisda yozilsa hech qachon testda qulflanmaydi va ikki
+ * yo'l (qaytarish/tahrir) darhol ikki xil gapira boshlaydi.
+ *
+ * Matn HAR DOIM uch savolga javob beradi: (1) qaysi hujjat harakatga sabab
+ * bo'ldi, (2) summa qanchadan qanchaga o'zgardi, (3) NIZO bormi — ya'ni
+ * to'langan pul yoki ko'chirish to'sig'i.
+ */
+export function saleDebtMoveNoteText({
+  saleName,
+  reason,
+  previousTotalMinor,
+  plan,
+  retargetedFromId,
+  retargetBlocked,
+}: SaleDebtMoveNoteInput): string {
+  const cause = reason === 'refund' ? 'QAYTARISH' : 'CHEK TAHRIRI';
+  const parts = [
+    `«${saleName}» bo\`yicha ${cause}: reyestr qatori ${previousTotalMinor} → ` +
+      `${plan.nextTotalMinor} (tiyin) ga o\`zgardi.`,
+    'Balansga bu yerdan HECH NARSA yozilmadi — pul daftarini chekning o`z yo`li',
+    'harakatlantirdi (balanceAdopted simmetriyasi).',
+  ];
+  if (plan.clampedByPaidMinor > 0n) {
+    parts.push(
+      `🔴 NIZO: qator ${plan.clampedByPaidMinor} (tiyin) ga pastroq tushishi kerak edi, ` +
+        `lekin mijoz allaqachon ${plan.paidMinorAtMove} (tiyin) to\`lagan — to\`langan pulni ` +
+        'yo`q qilib bo`lmaydi, qator shunga tekislandi. Tekshirib chiqing.',
+    );
+  }
+  if (retargetBlocked) {
+    parts.push(
+      '🔴 MIJOZ ALMASHTIRILDI, lekin qator KO`CHIRILMADI: unga allaqachon to`lov tushgan ' +
+        '(to`lovlar eski mijozniki). Qator eski mijozda yopildi; yangi mijozning qarzi ' +
+        'BALANSDA ko`rinadi va u kassaga to`lov qilganda reyestrga adopsiya orqali kiradi.',
+    );
+  } else if (retargetedFromId !== undefined && retargetedFromId !== null) {
+    parts.push(`Qator boshqa mijozga ko\`chirildi (eski mijoz id: ${retargetedFromId}).`);
+  }
+  if (plan.closed) {
+    parts.push('Qoldiq 0 — qator YOPILDI, undirish ro`yxatidan chiqadi.');
+  }
+  return parts.join(' ');
 }

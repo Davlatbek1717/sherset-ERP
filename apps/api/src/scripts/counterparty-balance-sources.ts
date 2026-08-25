@@ -142,7 +142,10 @@ export const DECLARED_BALANCE_WRITERS: readonly BalanceWriter[] = [
     sources: ['retail-credit', 'retail-credit-refund'],
     note:
       'post() +debtAmount (DEBT tender qatori), refund() −debtReturnMinor (SALES-04). ' +
-      'Kontragent SOLD_ON_CREDIT audit hodisasidan aniqlanadi.',
+      'Kontragent SOLD_ON_CREDIT audit hodisasidan aniqlanadi. ' +
+      '🔴 Q2/Q3 (2026-08-25): shu fayl UNDIRISH REYESTRIGA ham yozadi ' +
+      '(writeSaleDebtRegistryRow / moveSaleDebtRegistryRow), LEKIN o`sha qatorlar ' +
+      "balansga TEGMAYDI (balanceAdopted=true) — ya'ni bu yerda yangi manba YO'Q.",
   },
   {
     file: 'modules/cashier-session/cashier-session.service.ts',
