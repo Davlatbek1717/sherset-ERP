@@ -1,6 +1,15 @@
 # Omborchi va TSD mijozlari — kontrol, vozvrat, TSD APK
 
-> **Yaratilgan:** 2026-08-23 · **Buyurtmachi:** Ozodbek (egasi) · **Holat:** G1+G2+G3 KOD TAYYOR · **G4 2a (backend) TAYYOR** — kassa endi ko'p ombordan AVTOMATIK sotadi (tasdiq-to'sig'i olib tashlandi); 2b qoldi: POS UI, yig'ish topshiriqlari, H2/H3 (E5) · **G5 QISMAN** — TSD auth + APK skeleti · **G6 QISMAN** — TSD ish ekranlari (yig'ish + yetishmovchilik, joylashtirish, sanash) tayyor, **APK ENDI HAQIQATAN QURILADI** (`BUILD SUCCESSFUL`), lekin jonli qurilmada tekshirilmagan (qoida 11). **Deploy kutilmoqda** — egasi «keyinroq» dedi VA 2026-08-24 hodisasi hal bo'lmagan (`docs/plans/2026-08-24-split-kassa-hodisasi.md`). Deploy'da: `topup-role-permissions.ts` MAJBURIY (`retailcontrol` + `returnacceptance`); **BESHTA migratsiya** — G1 `…120000_drawer_cash_out_sales_return`, G3 `…170000_sales_return_retail_sale`, **G4 `20260825020000_retail_sale_position_allocation`**, **G5 `20260825170000_tsd_device`**, **G6 `20260825200000_tsd_work_screens`**; **egasi qo'lida:** Ombor 07 kartasiga «Kassa oldidagi ombor» checkbox'i (busiz «07 bo'linishda oxirida» qoidasi ishlamaydi). ⚠️ Bu deploy JONLI XULQNI o'zgartiradi — G4 2a hisobotidagi «Jonli sozlash» NI VA G6 hisobotining 1-bandini (omborchiga yacheyka ko'chirish OCHILADI) o'qing
+> **Yaratilgan:** 2026-08-23 · **Buyurtmachi:** Ozodbek (egasi) · **Holat:** **G1 ⚠️ QISMAN** (kod tayyor va HEAD'da butunligi 2026-08-25 da qayta tasdiqlandi; qabul mezoni jonli tasdiqni kutmoqda — egasi 2026-08-25 da deploy'ni «hozir yo'q» dedi; `9fe25d15` da bitta o'lik i18n kaliti tuzatildi) · G2+G3 KOD TAYYOR · **G4 2a (backend) TAYYOR** — kassa endi ko'p ombordan AVTOMATIK sotadi (tasdiq-to'sig'i olib tashlandi); 2b qoldi: POS UI, yig'ish topshiriqlari, H2/H3 (E5) · **G5 QISMAN** — TSD auth + APK skeleti · **G6 QISMAN** — TSD ish ekranlari (yig'ish + yetishmovchilik, joylashtirish, sanash) tayyor, **APK ENDI HAQIQATAN QURILADI** (`BUILD SUCCESSFUL`), lekin jonli qurilmada tekshirilmagan (qoida 11). **Deploy kutilmoqda** — egasi «keyinroq» dedi VA 2026-08-24 hodisasi hal bo'lmagan (`docs/plans/2026-08-24-split-kassa-hodisasi.md`). Deploy'da: `topup-role-permissions.ts` MAJBURIY (`retailcontrol` + `returnacceptance`); **BESHTA migratsiya** — G1 `…120000_drawer_cash_out_sales_return`, G3 `…170000_sales_return_retail_sale`, **G4 `20260825020000_retail_sale_position_allocation`**, **G5 `20260825170000_tsd_device`**, **G6 `20260825200000_tsd_work_screens`**; **egasi qo'lida:** Ombor 07 kartasiga «Kassa oldidagi ombor» checkbox'i (busiz «07 bo'linishda oxirida» qoidasi ishlamaydi). ⚠️ Bu deploy JONLI XULQNI o'zgartiradi — G4 2a hisobotidagi «Jonli sozlash» NI VA G6 hisobotining 1-bandini (omborchiga yacheyka ko'chirish OCHILADI) o'qing
+>
+> 📋 **DEPLOY DOSSIERI (2026-08-25) — `docs/ops/2026-08-25-deploy-dossieri.md`.**
+> Yuqoridagi «BESHTA migratsiya» ESKIRGAN: delta `62a27024..8d1f4a01` (37 commit)
+> va **YETTITA migratsiya** — branch'ga Q1–Q3 (qarz reyestri) va A1 (avans) ham
+> qo'shildi. Dossierda 6 ta bloklovchi kamchilik va qadamma-qadam retsept bor.
+> 🔴 **B3: `/deploy` va `deploy-smart.sh` bu delta uchun ISHLATILMAYDI** — ular
+> `origin/climart-adoption` ga `reset --hard` qiladi, u esa jonlidan 8 commit
+> ORQADA (F6/F7/F8 ni produksiyadan o'chirib tashlardi). Faqat qo'lda F-reja 2.8.
+>
 > **Ijro tartibi:** har faza ALOHIDA sessiyada. Agent shu faylni va
 > `docs/plans/2026-08-23-ombor-restrukturizatsiya.md` ni (F-reja) TO'LIQ o'qiydi,
 > O'Z fazasini bajaradi, testlardan o'tkazadi, pastdagi «Hisobotlar»ga yozadi va TO'XTAYDI.
@@ -411,6 +420,144 @@ Ikkala rejani va docs/plans/2026-08-24-split-kassa-hodisasi.md ni to'liq o'qi (a
 > Shablon: **Faza · sana · commit(lar)** — nima qilindi (fayl ro'yxati bilan qisqa),
 > test natijalari (raqamlar), deploy holati (jonli tekshiruv dalili), ochiq qolganlar,
 > keyingi fazaga eslatmalar.
+
+### G1 — Vozvrat pulini kassadan qaytarish · ⚠️ QISMAN (qoida 11) · 2026-08-25 · `9fe25d15`
+
+> **Bu ikkinchi G1 sessiyasi.** Birinchisi (2026-08-24, `8b39a083`) KODNI yozdi —
+> uning hisoboti pastda o'z holicha turibdi. Bu sessiya deploy + jonli smoke uchun
+> chaqirilgan edi; **egasi deploy'ni RAD ETDI** («C — hozir deploy YO'Q», 2026-08-25).
+> Shu sabab G1 qoida 11 bo'yicha **YOPILMAYDI**: qabul mezoni jonli tasdiqni talab
+> qiladi. Sessiya kod tomonini yopdi, bitta HAQIQIY nuqson topib tuzatdi va TO'XTADI.
+
+**1. G1 kodi HEAD'da butunligi tasdiqlandi** (43 commit o'tgandan keyin — G2…G6,
+Q1–Q3, A1, A2 ustidan). Dalil kod o'qish bilan emas, TEST bilan:
+`customer-payout.test.ts` 13/13 ✅; `cashier-session` + `sales-return` modullari
+36 fayl / **492 test** ✅. Marshrutlar, `CASH_OUT_KIND.returnPayout`,
+`summarizeCashOut.returnPayoutMinor`, `BALANCE_DOC_TYPE.returnPayout`,
+doc-resolver va `recompute` bloki — hammasi joyida. A1 (`customerPrepay`) aynan
+G1 ning ko'zgusi qilib qurilgan, ya'ni G1 poydevor sifatida allaqachon ishlatilgan.
+
+**2. 🔴 TOPILGAN NUQSON — G1 ning O'ZI kiritgan o'lik i18n kaliti.**
+G1 sessiyasi `pages.pos.customer_card_doc.returnPayout` = «Vozvrat puli»
+kalitini qo'shgan, lekin `apps/web/src/components/pos/customer-card-panel.tsx`
+dagi `KNOWN_DOC_TYPES` ro'yxatiga tegmagan. O'sha ro'yxat — yorliq ko'rsatishning
+qo'riqchisi (`KNOWN_DOC_TYPES.has(docType) ? tDoc(docType) : docType`). Natija:
+**POS mijoz kartasida vozvrat to'lovi qatorida yorliq o'rniga xom `returnPayout`
+satri chiqardi.** i18n gate buni TUTA OLMAYDI — kalit MAVJUD, faqat hech kim
+o'qimaydi. Deploy qilinganda kassir buni birinchi vozvrat to'lovidayoq ko'rardi.
+
+Shu bilan birga G1 hisobotining o'z «ochiq qolganlar» bandi ham yopildi:
+`salesReturn` (vozvratning O'ZI — to'lovning jufti, balans reyestrida
+2026-08-12 dan beri bor) ikkala xaritada ham yorliqsiz edi.
+
+Tuzatildi (`9fe25d15`):
+
+| Fayl | O'zgarish |
+|---|---|
+| `apps/web/src/components/pos/customer-card-panel.tsx` | `KNOWN_DOC_TYPES` += `returnPayout`, `salesReturn` |
+| `apps/web/src/app/print/reconciliation-act/page.tsx` | `ACT_DOC_TYPES` += `salesReturn` |
+| `apps/web/src/messages/{ru,uz}.json` | `pages.print.act.doc_types.salesReturn` + `pages.pos.customer_card_doc.salesReturn` (ru «Возврат от покупателя» / uz «Mijozdan qaytarish») |
+| `apps/web/src/components/pos/__tests__/customer-card-panel.test.tsx` | 2 yangi test |
+
+**Teskari nazorat (yangi testlar haqiqatan qulflaydimi):** tuzatish vaqtincha
+olib tashlanib qayta yugurtirildi → `2 failed | 2 passed | 21 skipped`.
+Tuzatish qaytarilgach → **25/25 ✅**. Ya'ni testlar bo'sh emas.
+
+Saldo va pul mantiqiga TEGILMADI — faqat yorliq ro'yxatlari va i18n.
+
+**3. Qoida 12/14 — rollback skripti git'ga kiritildi.**
+`packages/db/scripts/rollback/20260824120000_drawer_cash_out_sales_return_down.sql`
+(deploy-dossieri tekshiruvida retrospektiv yozilgan, lekin **untracked** turardi —
+yo'qolish xavfi, aynan IS-6 naqshi) endi versiyalangan.
+⚠️ **Lokal dev bazada HALI SINALMAGAN** — `sherset_v2_dev` paroli bu sessiyaga
+berilmagan (dossier B1/B4 dagi AYNI to'siq). Qoida 12 «yoziladi VA sinaladi»
+deydi ⇒ bu band **ochiq qarz** bo'lib qoladi.
+
+**4. Testlar (yolg'iz yugurtirilgan, toza o'lchov):**
+
+| Gate | Natija |
+|---|---|
+| `apps/api` vitest (to'liq) | 654 fayl (1 skip) · **9227 passed** · 2 skipped · **0 failed** ✅ |
+| `apps/web` vitest (to'liq) | 327 fayl · **4309 passed** · 26 skipped · **0 failed** ✅ |
+| `turbo typecheck` api+web+db | ✅ 4/4 successful |
+| `node scripts/check-lint.mjs` | ✅ 0 error, 1192 warning (siyosat: warning ruxsat) |
+| i18n gate'lar (`pnpm i18n:gate`) | ✅ 19/19 — 1115 fayl, 15807 kalit |
+
+> ⚠️ **O'lchov usuli haqida halol qayd.** Birinchi urinishda ikkala suite
+> BIR VAQTDA yugurtirildi → api 1 failed, web 8 failed (5 fayl). Har biri
+> alohida qayta yugurtirilganda **ikkalasi ham 0 failed**. Ya'ni o'sha 9 ta
+> xato — parallel-yuklama timeout flake'i (dossier D4 bilan bir klass),
+> regressiya EMAS. Yuqoridagi jadval **alohida** yugurishlarniki.
+
+**5. Deploy holati: ⛔ BAJARILMADI — egasining qarori (2026-08-25).**
+Sessiya boshida holat aniq qilib qo'yildi: G1 ni YOLG'IZ chiqarib bo'lmaydi —
+branch deltasi `62a27024..HEAD` endi **43 commit / 7 migratsiya** va ichida
+G1–G6 + Q1–Q3 + A1 + A2 aralash (dossier B5). Egasiga uch yo'l berildi
+(A — butun branch, B — tor branch G4siz, C — deploy yo'q); **egasi C ni tanladi.**
+⇒ jonli tekshiruv qilinmadi, `warehouse-state.ts` yugurtirilmadi (jonli baza
+ochilmadi), VPS HEAD tekshirilmadi. Deploy retsepti o'z holicha kuchda:
+`docs/ops/2026-08-25-deploy-dossieri.md` (5-bo'lim).
+
+**6. QABUL MEZONI — bandma-band (qoida 11):**
+
+| # | Mezon | Holat |
+|---|---|---|
+| 1 | jonlida sinov-vozvrat post qilinadi | ❌ deploy yo'q |
+| 2 | POS'da mijoz profilida summasi chiqadi | ❌ deploy yo'q |
+| 3 | to'langach smena expected-cash AYNAN shu summaga kamayadi | ❌ deploy yo'q |
+| 4 | ikkinchi to'lov urinishi rad etiladi | ❌ deploy yo'q (testda ✅: cap 400 + poyga 409) |
+
+**To'rttadan biri ham jonlida bajarilmagan ⇒ G1 «QISMAN».** Yopish sharti —
+deploy + dossier 5-bo'lim 7-qadamidagi G1 zanjiri.
+
+**7. QOIDA 10 — «bu o'zgarish qaysi mavjud oqimni buzishi mumkin?»**
+
+Bu sessiyaning o'zgarishi (`9fe25d15`) **jonli ma'lumotga ham, pul mantiqiga ham
+TEGMAYDI** — u ikkita `Set` ga qator qo'shadi va ikkita i18n kalit yozadi.
+«Buzmaydi» degani dalil bilan:
+
+- **Saldo/qoldiq:** balans hisobi `docType` bo'yicha UMUMAN filtrlamaydi
+  (`counterparty-balance-doc-types.ts` sarlavhasidagi shartnoma: «Saldo hech
+  qachon reyestrga bog'liq emas»). `ACT_DOC_TYPES` / `KNOWN_DOC_TYPES` faqat
+  YORLIQ tanlaydi, qator YO'QOTMAYDI (akt sahifasi, `docTypeLabel`).
+  ⇒ hech bir summa o'zgarmaydi.
+- **Ko'rinadigan o'zgarish:** ilgari `salesReturn` / `returnPayout` qatorida xom
+  kalit ko'rinardi, endi tarjima. Ya'ni **faqat matn** o'zgaradi.
+- **i18n gate:** kalitlar ru+uz ikkalasiga ham qo'shildi (parity ✅).
+- **Nimaga BARIBIR e'tibor kerak:** shu ro'yxatlarda `customerPrepay` (A1),
+  `prepayPayment` (A2), `counterpartyAdjustment` va `opening` HAMON YO'Q —
+  ya'ni AYNI nuqson ikkala yangi avans turida ham takrorlangan. Men ularga
+  ATAYLAB tegmadim (G1 chegarasidan tashqarida) — 9-bo'limda eslatma qoldirildi.
+- **G1 KODINING jonli xulqi haqida:** G1 kodi 2026-08-24 dan beri o'zgarmagan;
+  uning deploy'da nimani buzishi mumkinligi birinchi G1 hisobotida va dossier
+  4-bo'limida turibdi. Bu sessiya u tahlilni o'zgartiradigan hech narsa topmadi.
+
+**8. Ochiq qolganlar (G1 ni yopish uchun kerak bo'lganlar):**
+
+1. **Deploy + jonli smoke** (6-bo'limdagi 4 band) — egasi tayyor bo'lganda.
+2. **G1 rollback skripti lokal dev bazada sinalmagan** (qoida 12) —
+   `sherset_v2_dev` paroli kerak. Zanjir: DOWN → DOWN (no-op) → UP.
+3. **USD payout qurilmagan** (ataylab, G1 chegarasi) — o'zgarishsiz.
+4. ⚠️ **Uchta rollback skripti hamon UNTRACKED:**
+   `…_sales_return_retail_sale_down.sql` (G3),
+   `…_retail_sale_position_allocation_down.sql` (G4),
+   `…_debt_source_doc_down.sql` (Q1). Men faqat G1 nikini kiritdim (o'z
+   chegaram). Qolgan uchtasi va `docs/ops/2026-08-25-deploy-dossieri.md`
+   ning o'zi ham git'da YO'Q — **qoida 14 bo'yicha bu qarz**, egalari
+   (G3/G4/Q1 yoki deploy sessiyasi) kiritishi kerak.
+
+**9. Keyingi fazaga eslatmalar:**
+
+- **A1/A2 sessiyalariga:** `customer-card-panel.tsx` `KNOWN_DOC_TYPES` va
+  `reconciliation-act/page.tsx` `ACT_DOC_TYPES` ga `customerPrepay` va
+  `prepayPayment` qo'shilmagan ⇒ avans qatorlari POS mijoz kartasida va aktda
+  **xom kalit** bilan chiqadi. Bu G1 da topilgan nuqsonning AYNI takrori.
+  i18n kalitlari bor-yo'qligini tekshiring; yo'q bo'lsa ru+uz ikkalasiga.
+- **Deploy sessiyasiga:** G1 uchun migratsiya bitta —
+  `20260824120000_drawer_cash_out_sales_return`, lokal dev bazada 2× isbotlangan
+  (birinchi G1 hisoboti). Rollback skripti endi git'da, LEKIN sinalmagan.
+  Qaytarishdan oldin fayl boshidagi «pul izi» blokini o'qish MAJBURIY:
+  `SELECT count(*) FROM "retail_drawer_cash_out" WHERE "sales_return_id" IS NOT NULL;`
 
 ### G6 — TSD ish ekranlari · ⚠️ QISMAN (qoida 11) · 2026-08-25 · `700ba30e`
 
@@ -1373,7 +1520,9 @@ ni birga olib boradi (G1+G2). **Retsept (G1 retsepti + G2 qo'shimchalari):**
   `scripts/guard-baseline.json` dan o'sha qatorni olib tashlash kerak
   (kichik tozalash, alohida commit).
 
-### G1 — Vozvrat pulini kassadan qaytarish · 2026-08-24 · `8b39a083`
+### G1 — Vozvrat pulini kassadan qaytarish · 1-SESSIYA (kod) · 2026-08-24 · `8b39a083`
+
+> ℹ️ Bu G1 ning BIRINCHI sessiyasi (kod yozildi). Ikkinchisi — deploy uchun chaqirilgan 2026-08-25 sessiyasi — yuqorida, `9fe25d15` ostida.
 
 **Nima qilindi (backend):**
 - **Yangi endpoint `POST /cashier-sessions/:id/customer-payout`** (controller +
