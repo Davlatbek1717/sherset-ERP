@@ -483,6 +483,15 @@ deydi ⇒ bu band **ochiq qarz** bo'lib qoladi.
 | `node scripts/check-lint.mjs` | ✅ 0 error, 1192 warning (siyosat: warning ruxsat) |
 | i18n gate'lar (`pnpm i18n:gate`) | ✅ 19/19 — 1115 fayl, 15807 kalit |
 
+> ⚠️ **Ikkinchi halol qayd — DARAXT SOF EMAS EDI.** Sessiya davomida
+> `apps/api/src/modules/debt/pos-customer-debt.ts` ga **boshqa sessiya**
+> A3 ishini (`customerStanding()`) yozdi — ya'ni ishchi daraxtda men
+> yozmagan o'zgarish paydo bo'ldi (dossier B6 bilan bir naqsh). O'zgarish
+> sof ADDITIV (yangi eksport funksiya, mavjud kodga tegmaydi) va suite
+> yashil qoldi, lekin yuqoridagi raqamlar TO'LIQ toza HEAD niki emas.
+> Mening ikkala commit'im ATAYLAB aniq pathspec bilan qilindi — o'sha fayl
+> ularga TUSHMAGAN (uni A3 sessiyasi o'zi commit qiladi).
+>
 > ⚠️ **O'lchov usuli haqida halol qayd.** Birinchi urinishda ikkala suite
 > BIR VAQTDA yugurtirildi → api 1 failed, web 8 failed (5 fayl). Har biri
 > alohida qayta yugurtirilganda **ikkalasi ham 0 failed**. Ya'ni o'sha 9 ta
