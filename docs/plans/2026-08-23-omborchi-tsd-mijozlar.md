@@ -1,6 +1,6 @@
 # Omborchi va TSD mijozlari — kontrol, vozvrat, TSD APK
 
-> **Yaratilgan:** 2026-08-23 · **Buyurtmachi:** Ozodbek (egasi) · **Holat:** G1+G2+G3 KOD TAYYOR · **G4 2a (backend) TAYYOR** — kassa endi ko'p ombordan AVTOMATIK sotadi (tasdiq-to'sig'i olib tashlandi); 2b qoldi: POS UI, yig'ish topshiriqlari, H2/H3 (E5) · **G5 QISMAN** — TSD auth + APK skeleti kod-tayyor, jonli qurilmada tekshirilmagan (qoida 11). **Deploy kutilmoqda** — egasi «keyinroq» dedi VA 2026-08-24 hodisasi hal bo'lmagan (`docs/plans/2026-08-24-split-kassa-hodisasi.md`). Deploy'da: `topup-role-permissions.ts` MAJBURIY (`retailcontrol` + `returnacceptance`); **TO'RTTA migratsiya** — G1 `…120000_drawer_cash_out_sales_return`, G3 `…170000_sales_return_retail_sale`, **G4 `20260825020000_retail_sale_position_allocation`**, **G5 `20260825170000_tsd_device`**; **egasi qo'lida:** Ombor 07 kartasiga «Kassa oldidagi ombor» checkbox'i (busiz «07 bo'linishda oxirida» qoidasi ishlamaydi). ⚠️ Bu deploy JONLI XULQNI o'zgartiradi — 2a hisobotidagi «Jonli sozlash» ni o'qing
+> **Yaratilgan:** 2026-08-23 · **Buyurtmachi:** Ozodbek (egasi) · **Holat:** G1+G2+G3 KOD TAYYOR · **G4 2a (backend) TAYYOR** — kassa endi ko'p ombordan AVTOMATIK sotadi (tasdiq-to'sig'i olib tashlandi); 2b qoldi: POS UI, yig'ish topshiriqlari, H2/H3 (E5) · **G5 QISMAN** — TSD auth + APK skeleti · **G6 QISMAN** — TSD ish ekranlari (yig'ish + yetishmovchilik, joylashtirish, sanash) tayyor, **APK ENDI HAQIQATAN QURILADI** (`BUILD SUCCESSFUL`), lekin jonli qurilmada tekshirilmagan (qoida 11). **Deploy kutilmoqda** — egasi «keyinroq» dedi VA 2026-08-24 hodisasi hal bo'lmagan (`docs/plans/2026-08-24-split-kassa-hodisasi.md`). Deploy'da: `topup-role-permissions.ts` MAJBURIY (`retailcontrol` + `returnacceptance`); **BESHTA migratsiya** — G1 `…120000_drawer_cash_out_sales_return`, G3 `…170000_sales_return_retail_sale`, **G4 `20260825020000_retail_sale_position_allocation`**, **G5 `20260825170000_tsd_device`**, **G6 `20260825200000_tsd_work_screens`**; **egasi qo'lida:** Ombor 07 kartasiga «Kassa oldidagi ombor» checkbox'i (busiz «07 bo'linishda oxirida» qoidasi ishlamaydi). ⚠️ Bu deploy JONLI XULQNI o'zgartiradi — G4 2a hisobotidagi «Jonli sozlash» NI VA G6 hisobotining 1-bandini (omborchiga yacheyka ko'chirish OCHILADI) o'qing
 > **Ijro tartibi:** har faza ALOHIDA sessiyada. Agent shu faylni va
 > `docs/plans/2026-08-23-ombor-restrukturizatsiya.md` ni (F-reja) TO'LIQ o'qiydi,
 > O'Z fazasini bajaradi, testlardan o'tkazadi, pastdagi «Hisobotlar»ga yozadi va TO'XTAYDI.
@@ -411,6 +411,242 @@ Ikkala rejani va docs/plans/2026-08-24-split-kassa-hodisasi.md ni to'liq o'qi (a
 > Shablon: **Faza · sana · commit(lar)** — nima qilindi (fayl ro'yxati bilan qisqa),
 > test natijalari (raqamlar), deploy holati (jonli tekshiruv dalili), ochiq qolganlar,
 > keyingi fazaga eslatmalar.
+
+### G6 — TSD ish ekranlari · ⚠️ QISMAN (qoida 11) · 2026-08-25 · `700ba30e`
+
+**Holat: QISMAN.** Kod, migratsiya, testlar tayyor va **APK birinchi marta
+HAQIQATAN QURILDI** (G5 ning ochiq bandi yopildi). Lekin qabul mezoni JONLI
+qurilmada tekshirilmagan (terminal yo'q, deploy ham kutilmoqda) ⇒ faza
+«TUGADI» deb yopilmaydi. Qo'lda smoke qadamlari `android/tsd-app/README.md`
+oxirida — javobgar va vaqt o'sha yerda to'ldiriladi.
+
+**Ikki tomonlama bog'liqlik javobi (qoida 10 — «bu nima buzishi mumkin?»):**
+
+1. **🔴 RUXSAT KENGAYDI — eng katta o'zgarish va u JONLI xulqni o'zgartiradi.**
+   `POST /products/:id/cell-move` va `/cell-place` bazaviy talabi
+   `store.update` dan **`storecell.update`** ga tushirildi. Sabab majburiy edi:
+   reja G6.2 «joylashtirish FAQAT shu ikki endpoint orqali» deydi, TSD
+   foydalanuvchisi esa kichik omborchi (`storekeeper`) va uning shablonida
+   `store.update = NO` — ATAYLAB (`store-cell-permission.test.ts`). Ya'ni
+   G6.2 birinchi klikdayoq 403 bo'lardi.
+   **Nima buziladi:** web tovar kartasidagi «Переместить» tugmasi ruxsat bilan
+   YASHIRILMAGAN (u har doim ko'rinadi, cheklov faqat serverda edi) ⇒ deploy'dan
+   keyin **jonli «Omborchi» roli o'sha tugmani HAQIQATAN ishlata boshlaydi**.
+   Ilgari u 403 berardi. Egasi buni bilishi kerak.
+   **Nega bu yangi QOBILIYAT emas:** `storecell.update` allaqachon store-darajali
+   qoldiqni o'zgartira oladi — «Sanash» yo'li avto Оприходование/Списание
+   yozadi. Ya'ni omborchi qoldiqni siljitish huquqiga allaqachon ega edi,
+   endi unga TO'G'RI (hujjatli, ledger'li) yo'l ochildi.
+   **Nima YOPIQ qoldi:** ombor KARTOCHKASI (`store.update`) va OMBORLARARO
+   ko'chirish — u hamon `store.update` talab qiladi, ISTISNO faqat hovuz-ombor
+   (`__unassignedSource`, «Taqsimlanmagan»), chunki hovuzdan haqiqiy omborga
+   ko'chirish aynan F7 ning kundalik oqimi. Qaror sof modulda
+   (`product-cell-move-scope.ts`) va 12 ta test bilan qulflangan.
+   `cell-rebind` (tovar kartasi tahriri) ham `product.update` da QOLDI.
+
+2. **Kassa oqimi — TEGILMADI, dalil bilan.** `post()`, `sendToPicking`,
+   G4 taqsimoti, rezerv, kaskad — bir qatori ham o'zgarmagan. `retail-sale`
+   servisiga YAGONA o'zgarish `controlQueue` ning `select` iga
+   yetishmovchilik qatorlarini qo'shish (faqat O'QISH, additiv maydon).
+   Butun `retail-sale` moduli yashil.
+
+3. **Topshiriq HOLATI endi sof moduldan hisoblanadi** (`resolveTaskStatus`).
+   Yetishmovchilik yo'q bo'lganda natija AVVALGIDEK (test bilan qulflangan).
+   **Bitta xulq ATAYLAB o'zgardi:** ilgari `markConfirmed` BEKOR QILINGAN
+   topshiriqni ham qayta hisoblab `in_progress`/`done` ga ko'tarishi mumkin
+   edi — endi `cancelled` tegilmaydi. Bekor qilingan chekning topshirig'i
+   «yig'ib bo'lindi» deb ko'rinishi yolg'on bo'lardi.
+
+4. **`GET /restock-tasks/:id` qatorlar TARTIBI o'zgardi** (`position` →
+   yacheyka marshruti). Iste'molchilar: TSD va web checklist
+   (`/restock-tasks/[id]`) — ikkalasi ham AYNI ishni qiladi, ya'ni ikki xil
+   tartib ikki xil marshrut degani bo'lardi. Chop etish varag'i
+   (`picking-sheets`) BOSHQA metod va u tegilmagan (egasining 2026-08-16
+   «bitta varaq» qarori saqlanadi).
+
+5. **Yangi jadval `client_operations` — kalitsiz so'rovga TEGMAYDI.**
+   Web ekranlari `clientOpId` yubormaydi ⇒ na o'qish, na yozish bo'ladi
+   (test: kalitsiz yo'lda `findFirst` CHAQIRILMAYDI). Ya'ni brauzerdagi
+   xulq bir bayt ham o'zgarmaydi.
+
+6. **H2/H3, K-reja, Q-reja — tegilmadi.** G6 ombor holati modeliga
+   (`warehouse-state-core.ts`), taqsimotga yoki qarz reyestriga kirmaydi.
+   `docs/ops/jonli-holat.md` reyestriga qo'shiladigan yangi JONLI HOLAT
+   ham yo'q (yangi bayroq/ombor yaratilmadi).
+
+---
+
+**1-vazifa — YIG'ISH (picking) va YETISHMOVCHILIK.**
+
+🔴 **Rejada aytilgan «yetishmovchilik belgisi (kontrolga ko'rinadi)» — bu
+fazaning eng muhim bandi bo'lib chiqdi, chunki usiz KASSA TO'XTAYDI.**
+Zanjir: omborchi javonda tovarni topolmasa qatorni tasdiqlay olmaydi (bu
+yolg'on bo'lardi) ⇒ topshiriq ochiq qoladi ⇒ chek **kontrol navbatiga
+TUSHMAYDI** (G2 sharti: hamma topshiriq yopiq) ⇒ kassir chekni yopolmaydi.
+Bu 2026-08-24 hodisasining boshqa shakli: tizim ishlayotgandek ko'rinadi,
+savdo esa to'xtaydi.
+
+- **Sxema:** `restock_task_lines` ga `shortage_qty` + `note`/`at`/`by_id`/
+  `by_name`. **Ustun ALOHIDA, qator `quantity` si kamaytirilMAYDI** — qator
+  kassir chekining nusxasi va uni omborchi o'zgartirsa chek bilan topshiriq
+  jimgina ajralardi. Chekni FAQAT kontrol tahrirlaydi (`control-edit`, G2 —
+  u ham faqat KAMAYTIRADI).
+- **Endpoint** `POST /restock-tasks/:id/lines/:lineId/shortage`
+  `{qty, note?, clientOpId?}`. `qty` **MUTLAQ** son (delta emas): oflayn
+  navbat amalni qayta yuborsa natija AYNI bo'lsin. `0` = belgini olib
+  tashlash (omborchi tovarni keyin topib olishi normal holat).
+  Ruxsat qator tasdiqlash bilan BIR XIL — ataylab ochiq (Q10 DEFER naqshi),
+  chunki u chekni o'zgartirmaydi, faqat XABAR beradi;
+  `mutation-guard-coverage` klass-qulfiga SABAB bilan yozildi.
+- **Sof modul `restock-task-progress.ts`:** `isLineClosed` (ikki yo'l:
+  tasdiq YOKI yetishmovchilik), `resolveTaskStatus`, `planShortage`,
+  `collectedQty`, `sortLinesByRoute`. Qoida servis ichida qolsa hech qachon
+  testda qulflanmasdi (G2 `retail-control.ts` naqshi).
+- **Kontrolga ko'rinishi:** `GET /retail-sales/control-queue` javobiga
+  `shortages[]` qo'shildi va `/omborchi/kontrol` kartasida sariq blok
+  chiqadi: «{tovar}: N ta yetmadi (M tadan)» + izoh + ko'rsatma
+  («kamaytiring yoki o'chiring, aks holda mijoz yo'q tovar uchun pul
+  to'laydi»). i18n ru+uz.
+- **Web checklist** (`/restock-tasks/[id]`) belgini KO'RSATADI (⚠ + kim
+  qo'ygani) va o'sha qatorda «Joylandi» tugmasini yashiradi; «bajarildi»
+  hisobi yetishmovchilikni ham sanaydi (aks holda ro'yxat 100 % ga hech
+  qachon yetmasdi). Belgi QO'YISH — terminal ekranining ishi.
+
+**2-vazifa — JOYLASHTIRISH / KO'CHIRISH (`PlaceScreen.kt`).**
+Uch skan: tovar → manba (mavjud yacheykalardan biri **yoki** «yacheykasiz
+qoldiq») → maqsad yacheyka → miqdor. Manba yacheyka bo'lsa `cell-move`,
+yacheykasiz bo'lsa `cell-place` (F7 `pool-placement.ts`: o'z ombori → hovuz →
+uy). **Eski `__yacheyka` satriga hech qachon yozilmaydi** — `cell-rebind`
+TSD allowlist'ida umuman yo'q. Yacheykasiz yo'l ATAYLAB birinchi darajali:
+jonlida qoldiqning ~94 % i yacheykasiz (`docs/ops/jonli-holat.md`).
+
+**3-vazifa — SANASH (`CountScreen.kt`).**
+Yacheyka yorlig'ini skan → tarkib → har tovarga son →
+`PUT /admin/stores/:id/cells/:cellId/stock`.
+🔴 **FAQAT `mode: 'set'`** (mutlaq), `add` ATAYLAB ishlatilmaydi: sanash
+natijasi ta'rifiga ko'ra mutlaq, va bu yo'lda server idempotentlik kalitini
+o'qiy olmaydi (u yerda yagona tranzaksiya yo'q — avto Оприходование/Списание
+hujjatlari alohida yoziladi). Shuning uchun himoya SEMANTIKADA. Shu sababdan
+sanash oflayn navbatga ham QO'YILMAYDI — aloqa yo'q bo'lsa ekran shuni aytadi
+va son maydonda turadi (jim yo'qotish yo'q).
+
+**4-vazifa — SKAN-MA'LUMOT (`ScanInfoScreen.kt`).** Nom, jami qoldiq,
+yacheykalar kesimi. **Narx yo'q** — bu ekranning intizomi emas, server
+shartnomasi (`/tsd/scan` oq ro'yxati; `/products` TSD'ga yopiq).
+Bo'lak kodi (`BLK-`, K-reja 7.3) taniladi va tovar tanlovini OCHMAYDI.
+
+**5-vazifa — OFLAYN NAVBAT (G5 ning ochiq bandi) va IDEMPOTENTLIK.**
+
+G5 da navbat faqat YOZILARDI. Endi `QueueSender.kt` uni bo'shatadi va ilova
+ochilganda avtomatik urinadi. Ikki xil xato — ikki xil qaror:
+tarmoq/5xx ⇒ navbat JOYIDA qoladi; 4xx ⇒ amal navbatdan chiqadi (aks holda
+boshdagi joyni band qilib butun navbatni abadiy to'xtatardi), lekin
+**JIMGINA emas** — sabab bilan «RAD ETILGAN amallar» ro'yxatiga tushadi va
+ekranda turadi (IS-5 klassi).
+
+🔴 **Nega idempotentlik kaliti kerak bo'ldi (yangi `client_operations`
+jadvali).** Uzilish server amalni BAJARGANDAN KEYIN — javob yo'lda ekan —
+ham bo'ladi: klient «yetib bormadi» deb qayta yuboradi, aslida bajarilgan.
+Kalitsiz `cell-move` 10 dona o'rniga 20 ni ko'chirardi. Eng nozik joyi
+`confirm-scan`: u qatorga MANZILLANGAN EMAS (birinchi ochiq qatorni topadi),
+ya'ni bitta tovar chekda ikki qatorda bo'lsa takror skan IKKINCHISINI ham
+yopardi — olinmagan tovar «olindi» bo'lib qolardi. **Test buni ikki tomondan
+ko'rsatadi:** kalit bilan — takror hech nimani yopmaydi; kalitsiz — aynan
+o'sha xulq qaytadi.
+**Da'vo IKKI QADAMDA** (`shared/client-op.ts`): (a) tranzaksiyadan OLDIN
+o'qish — odatiy takror shu yerda to'xtaydi; (b) tranzaksiya ICHIDA yozish —
+poyga uchun. Ikkinchisi effekt bilan BIR tranzaksiyada bo'lishi shartning
+o'zi: tashqarida yozilsa va effekt yiqilsa kalit «bajarilgan» bo'lib qolib
+qayta urinish JIM RAD etilardi (ish yo'qoladi); effektdan keyin yozilsa
+oradagi qulash kalitni yo'qotardi (ildiz muammoning o'zi).
+Postgres'da tranzaksiya ichidagi unikal-buzilish butun tranzaksiyani abort
+qiladi — shuning uchun poygada `DuplicateClientOpError` otiladi va u
+TASHQARIDA yutiladi. **Javob TANASI saqlanmaydi:** takrorga joriy holat
+qayta o'qib beriladi (saqlangan nusxa kontrol tahririni yashirardi).
+Kalit MAJBURIY EMAS ⇒ web yo'li o'zgarmaydi.
+
+**6-vazifa — TSD ilovasi qayta tuzildi.** `MainActivity` endi QOBIQ
+(juftlash, PIN, router, skaner marshruti, navbat); ish ekranlari alohida
+fayllarda va `Activity` ni ko'rmaydi (`Shell`/`Screen` shartnomasi, `Ui.kt`).
+Skan AVVAL joriy ekranga beriladi (u bosqichga qarab talqin qiladi), ekran
+uni yemasa umumiy narxsiz skan-ma'lumot ochiladi. Skan maydoni ekranlar
+almashganda ham fokusda QOLADI — klaviatura-wedge skaner aynan fokusdagi
+maydonga yozadi, aks holda har o'tishda birinchi skan yo'qolardi.
+**«Tayyor» tugmasi ATAYLAB YO'Q** (G2 hisobotining G6 ga eslatmasi): TSD
+`mark-ready` bilan flip qilmaydi — hamma qator yopilgach chek KONTROLGA
+tushadi va ekran shuni aytadi.
+
+---
+
+**🔴 APK QURILDI (G5 ning ochiq bandi YOPILDI).**
+G5 «Android toolchain yo'q» degan edi; bu sessiyada toolchain shu mashinada
+topildi (`D:/dev/java/jdk-17`, `D:/dev/android-sdk`, platform `android-34`)
+va Gradle 8.7 alohida yuklab olindi (mashinadagi Gradle 9.1 AGP 8.5.0 bilan
+MOS EMAS). Natija: **`BUILD SUCCESSFUL`, ogohlantirishsiz**,
+`app/build/outputs/apk/debug/app-debug.apk` ≈ **7,1 MB**.
+Ya'ni G5+G6 ning butun Kotlin qismi endi kompilyatsiyadan o'tgan
+(ilgari u UMUMAN tekshirilmagan edi). Buyruq va shartlar
+`android/tsd-app/README.md` «Build» bo'limida.
+
+**Testlar:** yangi 4 fayl — `restock-task-progress` **24**,
+`restock-task-shortage-wiring` **12**, `shared/client-op` **15**,
+`product/product-cell-move-scope` **12**; mavjud fayllarga:
+`tsd-policy` **+1** (yetishmovchilik marshruti + `exact` + metod),
+web `omborchi/kontrol/page` **+2** (yetishmovchilik bloki bor/yo'q).
+Jami **+66**.
+TO'LIQ: **api 646 fayl / 9098 passed (2 skipped, 0 xato)**;
+**web 326 fayl / 4291 passed (26 skipped, 0 xato)**;
+typecheck api(8G)/web/db yashil; i18n gate'lar yashil;
+biome yangi/tegilgan fayllarda xatosiz (kontrol sahifasidagi 20 ta
+`useSortedClasses` ogohlantirishi mening ishimdan OLDIN ham AYNAN 20 ta edi —
+o'lchab tekshirildi).
+
+**Migratsiya `20260825200000_tsd_work_screens`** (idempotent DDL):
+`restock_task_lines` ga 5 ustun + `client_operations` jadvali (unikal
+`(account_id, client_op_id)`).
+**Qaytarish yo'li (qoida 12):**
+`packages/db/scripts/rollback/20260825200000_tsd_work_screens_down.sql` —
+buyrug'i faylning boshida, ikkita SHARTI ham u yerda yozilgan (terminallar
+ishlamayotgan payt + ochiq topshiriqlarda yetishmovchilik belgisi bo'lmasin).
+
+⚠️ **BAJARILMAGAN QADAM (halol qayd — qoida 7):** migratsiya **lokal dev
+bazada YUGURTIRILMAGAN**, chunki bu sessiyada `sherset_v2_dev` paroli
+berilmagan (maxfiylik qoidasi bo'yicha so'ralishi kerak). G5 va G3
+migratsiyalari lokal bazada 2 marta yugurtirilib isbotlangan edi — bu
+migratsiya SHU tekshiruvni **deploy'dan OLDIN kutadi**. SQL o'sha
+isbotlangan naqshning aynan o'zi (`ADD COLUMN IF NOT EXISTS`,
+`CREATE TABLE IF NOT EXISTS`, `DO $$ … EXCEPTION WHEN duplicate_object`),
+lekin naqsh — isbot emas.
+
+**Deploy holati: KUTILMOQDA** — G1+G2+G3+G4+G5 bilan bir deltada boradi.
+Deploy'da **BESHINCHI migratsiya** qo'shiladi: `20260825200000_tsd_work_screens`
+(`prisma db execute --file …` → `prisma migrate resolve --applied …` →
+oxirida `prisma generate`).
+**Yangi ruxsat-entity YO'Q** ⇒ `topup-role-permissions.ts` ga G6 hech narsa
+qo'shmaydi.
+🔴 **Lekin jonli XULQ O'ZGARADI** — yuqoridagi 1-band: «Omborchi» roli
+tovar kartasidagi «Переместить по ячейкам» ni HAQIQATAN ishlata boshlaydi
+(ilgari 403 edi). Egasi buni tasdiqlashi kerak.
+
+**Ochiq qolganlar / keyingi ishlarga:**
+- **Jonli tekshiruv qilinmagan ⇒ faza QISMAN (qoida 11).** Qabul mezoni:
+  chek TSD bilan yig'ilib kontrolga tushishi, vozvrat tovarining yacheykaga
+  joylanishi, yacheykaning TSD'da sanalishi. 8 bandli qo'lda smoke
+  `android/tsd-app/README.md` da (javobgar/vaqt maydonlari bilan).
+- **Migratsiya lokal bazada sinalmagan** (yuqorida) — parol kerak.
+- **TSD qurilmalarini boshqarish EKRANI hamon yo'q** (G5 dan qolgan):
+  juftlash/bekor qilish faqat API orqali.
+- **Sanash oflayn ishlamaydi** (ataylab, yuqorida) — kerak bo'lsa
+  `setCellStock` ni yagona tranzaksiyaga yig'ish alohida ish.
+- **`client_operations` tozalanmaydi** — jadval o'sib boradi (qator kichik:
+  bitta smenada bir necha yuz qator). Vaqti kelganda kunlik `DELETE … WHERE
+  created_at < now() - interval '30 days'` cron'i qo'shilsin; indeks
+  (`account_id, created_at`) shu uchun allaqachon bor.
+- **Ruscha TSD matnlari yo'q** (`values-ru/strings.xml` — G5 qarori kuchda:
+  ombor xodimlari o'zbekchada ishlaydi).
+- **Boshqa sessiyaning qoldig'i (mening ishim emas, G5 dan beri turibdi):**
+  K-reja fayli va uning F-rejaga qo'shgan 10-qoida qatori, hamda
+  `cell-contents-modal` o'zgarishlari commit qilinmagan.
 
 ### G5 — TSD auth + APK skeleti · ⚠️ QISMAN (qoida 11) · 2026-08-25 · `623c6a18`
 
