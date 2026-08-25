@@ -1,6 +1,6 @@
 # Kassada mijoz hisob-kitobi — qarzni undirish ro'yxatiga ulash + avans bilan ishlash
 
-> **Yaratilgan:** 2026-08-25 · **Buyurtmachi:** Ozodbek (egasi) · **Holat:** Q1 QISMAN + Q2 QISMAN + Q3 QISMAN + **A1 QISMAN** (2026-08-25) — qarz oqimi kodda va testda TO'LIQ (`7ef30b61`, `af8d3339`, `633e2ebd`), avans QABULI ham kodda va testda TO'LIQ (**`8d1f4a01`**): kassir mijozdan oldindan to'lov ola oladi, pul yashiqqa va smena kutilgan naqdiga kiradi, mijoz balansi manfiy tomonga suriladi va `Debt` reyestriga TEGILMAYDI. **HECH BIRI DEPLOY QILINMAGAN** — deploy branch'i `kassa-qarzi-q1-q2` @ `456e53af` (Q3 ham, A1 ham unda YO'Q — qayta yig'ilishi kerak), push va jonli tasdiq KUTILMOQDA; A1 migratsiyasi lokal dev bazada HALI SINALMAGAN (parol kutilmoqda, qoida 7); `opening` manbasi qarori hamon ochiq; navbat A2 (yoki Q4)
+> **Yaratilgan:** 2026-08-25 · **Buyurtmachi:** Ozodbek (egasi) · **Holat:** Q1 QISMAN + Q2 QISMAN + Q3 QISMAN + **A1 QISMAN** (2026-08-25) — qarz oqimi kodda va testda TO'LIQ (`7ef30b61`, `af8d3339`, `633e2ebd`), avans QABULI ham kodda va testda TO'LIQ (**`8d1f4a01`**): kassir mijozdan oldindan to'lov ola oladi, pul yashiqqa va smena kutilgan naqdiga kiradi, mijoz balansi manfiy tomonga suriladi va `Debt` reyestriga TEGILMAYDI. **A1 migratsiyasi lokal dev bazada IKKI MARTA sinaldi, backfill zond bilan isbotlandi, Prisma drifti YO'Q, `recompute` DRY-RUN `changed: 0`.** **HECH BIRI DEPLOY QILINMAGAN** — deploy branch'i `kassa-qarzi-q1-q2` @ `456e53af` (Q3 ham, A1 ham unda YO'Q — qayta yig'ilishi kerak), push va jonli tasdiq KUTILMOQDA; `opening` manbasi qarori hamon ochiq; 🔴 A1 sxemada 35 bayonotlik MAVJUD DRIFT topdi (4 ta `DROP TABLE` bilan) — alohida ish; navbat A2 (yoki Q4)
 > **Ikki shikoyat (egasi, 2026-08-25):**
 > 1. «Qarzdorlikni undirish bo'limiga kassadan qo'shilgan yangi qarzdorliklar
 >    ko'rinmayapti.» → fazalar **Q1…Q6**
@@ -2079,7 +2079,10 @@ yo'qotmaydi, faqat «bu avans edi» yorlig'ini yo'qotadi.
 | 9 | POS oynasi | ✅ 6 test |
 | 10 | i18n ru + uz, gate'lar yashil | ✅ 19 test |
 | 11 | api + web testlari to'liq yashil | ✅ (bitta begona beqaror test bundan mustasno — yuqorida) |
-| 12 | **migratsiya lokal dev bazada ikki marta xatosiz** | ❌ **PAROL KUTILMOQDA** (qoida 7) |
+| 12 | **migratsiya lokal dev bazada ikki marta xatosiz** | ✅ **BAJARILDI** (`sherset_v2_dev`, quyida raqamlari bilan) |
+| 12b | (qo'shimcha) backfill xulqi HAQIQIY jadval ustida isbotlandi | ✅ zond |
+| 12c | (qo'shimcha) Prisma drift YO'Q (indeks nomlari) | ✅ `migrate diff` |
+| 12d | (qo'shimcha) `recompute` DRY-RUN yangi manba bilan yashil | ✅ `changed: 0` |
 | 13 | **jonlida: sinov-mijozga 100 000 avans → kassa +100 000** | ❌ VPS/deploy kerak |
 | 14 | **jonlida: mijoz balansi −100 000** | ❌ VPS kerak |
 | 15 | **jonlida: smena «kutilgan naqd» +100 000** | ❌ VPS kerak |
@@ -2087,7 +2090,111 @@ yo'qotmaydi, faqat «bu avans edi» yorlig'ini yo'qotadi.
 | 17 | **jonlida: mijoz undirish ro'yxatida CHIQMAYDI** (invariant 4) | ❌ VPS kerak |
 | 18 | **jonlida: smena yopilganda kamomad/ortiqcha 0** | ❌ VPS kerak |
 
-**Shuning uchun holat «TUGADI» EMAS, «QISMAN».** Yopish sharti: 12–18 bandlari.
+**Shuning uchun holat «TUGADI» EMAS, «QISMAN».** Yopish sharti: 13–18
+bandlari (jonli tasdiq). 12-band **YOPILDI** — pastga qarang.
+
+#### ✅ LOKAL DEV BAZADA MIGRATSIYA (qoida 7) — BAJARILDI
+
+Baza: `sherset_v2_dev` @ localhost (PostgreSQL **18**, `scram-sha-256`).
+Parol egasidan so'raldi va **shu sessiyadan tashqariga yozilmadi** (qoida 5).
+
+**Migratsiyadan OLDIN** (vakuum emasligini ko'rsatish uchun):
+
+```
+kind ustuni      : (0 rows)  ← YO'Q
+mavjud qatorlar  : 0
+indekslar        : _pkey · _account_id_name_key · _account_id_retail_shift_id_idx  (3 ta)
+```
+
+**IKKI MARTA yugurtirildi** (`psql -v ON_ERROR_STOP=1 -f …/migration.sql`):
+
+```
+===== 1-MARTA =====            ===== 2-MARTA (AYNAN o'sha) =====
+ALTER TABLE                    NOTICE: column "kind" ... already exists, skipping
+CREATE INDEX                   ALTER TABLE
+CREATE INDEX                   NOTICE: relation "..._retail_shift_id_kind_idx" already exists, skipping
+EXIT=0                         CREATE INDEX
+                               NOTICE: relation "..._agent_id_kind_idx" already exists, skipping
+                               CREATE INDEX
+                               EXIT=0
+```
+
+Ikkinchi yugurish **to'liq no-op** — uchala bayonot ham `skipping`.
+
+**Bazadan O'QIB tekshirildi** (`a1-local-drawer-kind-verify.sql`):
+
+```
+kind | character varying | 20 | NOT NULL | DEFAULT 'other'::character varying
+
+retail_drawer_cash_in_account_id_agent_id_kind_idx
+  → btree (account_id, agent_id, kind)
+retail_drawer_cash_in_account_id_retail_shift_id_kind_idx
+  → btree (account_id, retail_shift_id, kind)
+
+avans hujjatlari            : 0   (kod deploy qilinmagan — kutilgan)
+balans jurnalida customerPrepay : 0   (kutilgan)
+```
+
+**🔴 «Mavjud qatorlar `other` bo'ladi» — VAKUUM EDI, ZOND bilan yopildi.**
+Dev bazada `retail_drawer_cash_in` **BO'SH** (0 qator), ya'ni yuqoridagi
+3-so'rov hech narsa isbotlamasdi. Shuning uchun
+`apps/api/src/scripts/a1-local-drawer-kind-probe.sql` yozildi: u ustunni
+olib tashlaydi (= migratsiyagacha holat) → `kind` SIZ qator yozadi
+(= «eski hujjat») → migratsiyani QAYTA qo'llaydi → natijani o'qiydi →
+**o'zi ROLLBACK qiladi**. HAQIQIY jadval ustida, bitta tranzaksiyada.
+
+```
+--- 1. Ustunni olib tashlaymiz ---        DROP INDEX · DROP INDEX · ALTER TABLE
+    ustun_bor_endi = 0
+--- 2. `kind` SIZ qator yozamiz ---       ZOND-ESKI-QATOR | sum_minor = 777000
+--- 3. Migratsiyani QAYTA yugurtiramiz ---ALTER TABLE · CREATE INDEX · CREATE INDEX
+--- 4. ESKI QATOR qanday qiymat oldi ---  ZOND-ESKI-QATOR | other | 777000   ← 🔴 DALIL
+--- 5. DEFAULT yangi qatorga ham ---      ZOND-YANGI-QATOR | other
+--- 6. ROLLBACK ---
+--- 7. ROLLBACKdan KEYIN ---              zond qatorlari=0 · ustun=1 · indekslar=2
+```
+
+Ikki narsa BIRDAN isbotlandi: (a) migratsiyadan oldin mavjud bo'lgan qator
+`'other'` oladi va **`sum_minor` BIR TIYIN ham o'zgarmaydi** (777000 →
+777000); (b) **teskari yo'l ishlaydi** — zondning 1-bosqichi AYNAN
+hisobotdagi rollback retseptining uch bayonoti.
+
+**Prisma DRIFT tekshiruvi** (`prisma migrate diff --from-url <dev>
+--to-schema-datamodel prisma/schema.prisma`):
+
+```
+diffdagi bayonotlar : 35
+  «retail_drawer_cash_in» uchraydi : 0   ← 🔴 A1 da DRIFT YO'Q
+  «debts» (Q1) uchraydi            : 0   ← Q1 da ham drift yo'q
+```
+
+Ya'ni ikkala indeks nomi ham Prisma generatsiya qiladigani bilan AYNAN mos
+(nomlar 57 va 50 belgi — 63 chegarasidan past, truncation yo'q).
+⚠️ Qolgan **35 bayonot MAVJUD DRIFT** va A1 ga aloqasi yo'q: 16 ta
+`ALTER INDEX … RENAME` (qo'lda yozilgan eski migratsiyalarning indeks
+nomlari, masalan `retail_drawer_cash_out_account_shift_kind_idx`), 11
+`ALTER TABLE`, 4 `DROP TABLE`. **Bu A1 topgan, lekin A1 tuzatmaydigan
+narsa** — alohida ish sifatida qayd etiladi («Ochiq qolganlar» 7-band).
+
+**`recompute-counterparty-balances` DRY-RUN** (dev baza, hech narsa
+yozilmadi) — yangi `customer-prepays` manbasi bilan:
+
+```
+mode: DRY-RUN (no writes)
+(account,counterparty,currency) pairs: 799 | changed: 0 | unchanged: 799
+cross-check: ⚠️ 759 kalitda hujjat-rekonstruksiyasi jurnaldan farq qiladi
+```
+
+Uch xulosa: (1) **`changed: 0`** — yangi manba birorta saldoni
+qimirlatmadi; (2) skript `assertCounterpartyBalanceCoverage()` dan
+O'TDI, ya'ni reyestr ↔ `SOURCE:` marker bog'lami HAQIQIY yugurishda ham
+butun; (3) cross-check shovqini **759** — Q1 o'lchagan raqamning AYNAN
+o'zi, ya'ni **A1 bir zarra ham shovqin qo'shmadi** (Q1 hisoboti: «183 →
+759»; A1 dan keyin ham 759).
+
+Zond va tekshiruv skriptlari repoga kiritildi (qoida 14 ruhida):
+`apps/api/src/scripts/a1-local-drawer-kind-probe.sql` va
+`…-verify.sql`.
 
 #### Deploy holati
 
@@ -2144,13 +2251,27 @@ qoldiradi — jonli ma'lumot QO'LDA (SQL bilan) o'zgartirilmaydi.
    manbasi qo'shilmagan; jonlida `APPLY=1` yugurtirilgan-yugurtirilmagani
    tekshirilmagan (VPS kirishi kerak).
 2. **Q2/Q3 dan meros:** jonli tasdiq, deploy branch'i push qilinmagan.
-3. **A1 ning O'Z ochiq bandlari:** lokal dev bazada migratsiya sinovi
-   (parol kutilmoqda); jonli tasdiqning 6 bandi.
+3. **A1 ning O'Z ochiq bandi:** faqat **jonli tasdiq** (mezon 13–18).
+   Lokal dev bazada migratsiya sinovi **BAJARILDI** (yuqorida).
 4. **A3 gacha kassirda storno yo'li YO'Q** (yuqorida asoslangan).
 5. **i18n doc-type yorliqlari** (`customerPrepay`) — A3 ning 3-vazifasi.
 6. **Avansdan to'lash yo'li hali YO'Q** — mijozning puli balansda turadi,
    lekin uni chekka ishlatish A2 da ochiladi. **Egasiga aytilsin: A2 gacha
    avans faqat QARZNI YOPADI** (qarzdor mijozda) yoki balansda kutadi.
+7. 🔴 **YANGI TOPILMA — sxema DRIFTI (A1 ga aloqasi yo'q, A1 tuzatmaydi).**
+   `prisma migrate diff` dev bazada **35 bayonotlik farq** ko'rsatadi:
+   16 ta `ALTER INDEX … RENAME` (qo'lda yozilgan eski migratsiyalarda
+   indekslar Prisma kutgan nomdan boshqa nom bilan yaratilgan — masalan
+   `retail_drawer_cash_out_account_shift_kind_idx` →
+   `retail_drawer_cash_out_account_id_retail_shift_id_kind_idx`), 11
+   `ALTER TABLE`, 4 `DROP TABLE`, 1 `CREATE TABLE`, 1 `CREATE INDEX`,
+   1 `DROP INDEX`. **Oqibati:** kimdir kelajakda `prisma migrate dev`
+   yugurtirsa, u shu 35 bayonotni «tuzatish» deb bazaga qo'llamoqchi
+   bo'ladi — jumladan **4 ta `DROP TABLE`**. Bu jonli bazada ma'lumot
+   yo'qotishi bo'lardi. Repoda migratsiyalar `db execute --file` +
+   `migrate resolve --applied` bilan beriladi (qoida 7), ya'ni bugungi
+   oqim xavfsiz — lekin bu **kutilmagan qurol** va alohida faza sifatida
+   ko'rib chiqilishi kerak. A1 uni FAQAT o'lchadi va qayd etdi.
 
 #### Keyingi fazaga (A2) eslatmalar
 
