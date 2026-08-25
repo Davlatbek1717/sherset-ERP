@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Backend bazaviy URL. `usesCleartextTraffic=false` ⇒ FAQAT https. -->
+    <string name="api_base_url">https://erp.sherset.uz/api/v1</string>
+
+    <!--
+      DataWedge/Urovo/Newland broadcast action'i. TSD MODELI ANIQLANGACH shu
+      yerda o'zgartiriladi — kod tegilmaydi (`ScannerBridge.kt`).
+      Bo'sh qoldirilsa ilova faqat klaviatura-wedge rejimida ishlaydi.
+    -->
+    <string name="scanner_broadcast_action"></string>
+    <string name="scanner_broadcast_extra">com.symbol.datawedge.data_string</string>
+</resources>

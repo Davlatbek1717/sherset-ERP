@@ -201,6 +201,12 @@ const INTENTIONALLY_OPEN: Record<string, string> = {
   // qurilma kaliti (argon2, `PosDeviceService.verify`) + PIN (lookup topadi,
   // argon2 tasdiqlaydi). Qurilmasiz so'rov 401 oladi.
   'AuthController#posLoginHandler': 'PIN-login — token shu yerda beriladi (qurilma kaliti + PIN)',
+  // TSD (omborchi qo'l terminali) kirish nuqtasi — G5. Kassa yo'li bilan bir
+  // xil sabab, LEKIN qat'iyroq: qurilma kaliti bu yerda MAJBURIY
+  // (`TsdLoginSchema`), ya'ni kalitsiz so'rov 400 da to'xtaydi va PIN
+  // maydoniga umuman yetib bormaydi.
+  'AuthController#tsdLoginHandler':
+    'TSD-login — token shu yerda beriladi (qurilma kaliti MAJBURIY + PIN)',
   // F7 kassir almashtirish: `@RequirePermission` ATAYLAB yo'q — kiosk
   // kassirining ruxsat matritsasida employee-huquqlari yo'q va bo'lmasligi
   // kerak. Himoya servisda, tartibda: kiosk-juftlik (qurilma kaliti YOKI

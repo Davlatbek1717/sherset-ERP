@@ -27,6 +27,8 @@ interface MockRow {
   replacedById: string | null;
   revokedAt: Date | null;
   expiresAt: Date;
+  /** G5 — sessiya TSD terminaliga bog'langan bo'lsa. */
+  tsdDeviceId?: string | null;
 }
 
 function makePrisma(row: MockRow | null, opts?: { revokeCount?: number }) {
@@ -200,5 +202,57 @@ describe('TokenService.createRefreshToken — family rooting', () => {
     expect(creates).toHaveLength(1);
     expect(creates[0]?.id).toBeDefined();
     expect(creates[0]?.familyId).toBe(creates[0]?.id);
+  });
+});
+
+/**
+ * G5 — TSD sessiyasining terminalga bog'lanishi ROTATSIYADA meros bo'ladi.
+ *
+ * Bu qulf bo'lmasa: birinchi refresh vorisga `tsd_device_id` yozmasdi,
+ * `auth.service.refresh` `deviceMode` ni tiklay olmasdi va terminal sessiyasi
+ * jimgina cheklovsiz ERP sessiyasiga aylanardi.
+ */
+describe('TokenService — TSD bog`lanishi (G5)', () => {
+  it('login`da qurilma qatorga yoziladi', async () => {
+    const { prisma, creates } = makePrisma(null);
+    await svc(prisma).createRefreshToken('emp-1', {}, undefined, 'tsd-1');
+    expect(creates[0]?.tsdDeviceId).toBe('tsd-1');
+  });
+
+  it('oddiy login`da NULL (mavjud xulq o`zgarmaydi)', async () => {
+    const { prisma, creates } = makePrisma(null);
+    await svc(prisma).createRefreshToken('emp-1', {});
+    expect(creates[0]?.tsdDeviceId).toBeNull();
+  });
+
+  it('faol rotatsiyada voris MEROS oladi va qaytariladi', async () => {
+    const { prisma, creates } = makePrisma({
+      id: 'old-1',
+      employeeId: 'emp-1',
+      familyId: 'fam-1',
+      replacedById: null,
+      revokedAt: null,
+      expiresAt: FUTURE,
+      tsdDeviceId: 'tsd-1',
+    });
+    const result = await svc(prisma).rotateRefreshToken('raw-old', {});
+    expect(result?.tsdDeviceId).toBe('tsd-1');
+    expect(creates[0]?.tsdDeviceId).toBe('tsd-1');
+  });
+
+  it('grace-oynasidagi qardosh token ham MEROS oladi', async () => {
+    // Aks holda ikki tab poygasida cheklov jimgina yechilardi.
+    const { prisma, creates } = makePrisma({
+      id: 'old-1',
+      employeeId: 'emp-1',
+      familyId: 'fam-1',
+      replacedById: 'new-1',
+      revokedAt: new Date(Date.now() - 1_000),
+      expiresAt: FUTURE,
+      tsdDeviceId: 'tsd-1',
+    });
+    const result = await svc(prisma).rotateRefreshToken('raw-old', {});
+    expect(result?.tsdDeviceId).toBe('tsd-1');
+    expect(creates[0]?.tsdDeviceId).toBe('tsd-1');
   });
 });

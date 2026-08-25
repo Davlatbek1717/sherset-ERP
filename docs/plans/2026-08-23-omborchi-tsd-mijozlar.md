@@ -1,6 +1,6 @@
 # Omborchi va TSD mijozlari — kontrol, vozvrat, TSD APK
 
-> **Yaratilgan:** 2026-08-23 · **Buyurtmachi:** Ozodbek (egasi) · **Holat:** G1+G2+G3 KOD TAYYOR · **G4 2a (backend) TAYYOR** — kassa endi ko'p ombordan AVTOMATIK sotadi (tasdiq-to'sig'i olib tashlandi); 2b qoldi: POS UI, yig'ish topshiriqlari, H2/H3 (E5). **Deploy kutilmoqda** — egasi «keyinroq» dedi VA 2026-08-24 hodisasi hal bo'lmagan (`docs/plans/2026-08-24-split-kassa-hodisasi.md`). Deploy'da: `topup-role-permissions.ts` MAJBURIY (`retailcontrol` + `returnacceptance`); **UCHTA migratsiya** — G1 `…120000_drawer_cash_out_sales_return`, G3 `…170000_sales_return_retail_sale`, **G4 `20260825020000_retail_sale_position_allocation`**; **egasi qo'lida:** Ombor 07 kartasiga «Kassa oldidagi ombor» checkbox'i (busiz «07 bo'linishda oxirida» qoidasi ishlamaydi). ⚠️ Bu deploy JONLI XULQNI o'zgartiradi — 2a hisobotidagi «Jonli sozlash» ni o'qing
+> **Yaratilgan:** 2026-08-23 · **Buyurtmachi:** Ozodbek (egasi) · **Holat:** G1+G2+G3 KOD TAYYOR · **G4 2a (backend) TAYYOR** — kassa endi ko'p ombordan AVTOMATIK sotadi (tasdiq-to'sig'i olib tashlandi); 2b qoldi: POS UI, yig'ish topshiriqlari, H2/H3 (E5) · **G5 QISMAN** — TSD auth + APK skeleti kod-tayyor, jonli qurilmada tekshirilmagan (qoida 11). **Deploy kutilmoqda** — egasi «keyinroq» dedi VA 2026-08-24 hodisasi hal bo'lmagan (`docs/plans/2026-08-24-split-kassa-hodisasi.md`). Deploy'da: `topup-role-permissions.ts` MAJBURIY (`retailcontrol` + `returnacceptance`); **TO'RTTA migratsiya** — G1 `…120000_drawer_cash_out_sales_return`, G3 `…170000_sales_return_retail_sale`, **G4 `20260825020000_retail_sale_position_allocation`**, **G5 `20260825170000_tsd_device`**; **egasi qo'lida:** Ombor 07 kartasiga «Kassa oldidagi ombor» checkbox'i (busiz «07 bo'linishda oxirida» qoidasi ishlamaydi). ⚠️ Bu deploy JONLI XULQNI o'zgartiradi — 2a hisobotidagi «Jonli sozlash» ni o'qing
 > **Ijro tartibi:** har faza ALOHIDA sessiyada. Agent shu faylni va
 > `docs/plans/2026-08-23-ombor-restrukturizatsiya.md` ni (F-reja) TO'LIQ o'qiydi,
 > O'Z fazasini bajaradi, testlardan o'tkazadi, pastdagi «Hisobotlar»ga yozadi va TO'XTAYDI.
@@ -411,6 +411,246 @@ Ikkala rejani va docs/plans/2026-08-24-split-kassa-hodisasi.md ni to'liq o'qi (a
 > Shablon: **Faza · sana · commit(lar)** — nima qilindi (fayl ro'yxati bilan qisqa),
 > test natijalari (raqamlar), deploy holati (jonli tekshiruv dalili), ochiq qolganlar,
 > keyingi fazaga eslatmalar.
+
+### G5 — TSD auth + APK skeleti · ⚠️ QISMAN (qoida 11) · 2026-08-25 · `<commit>`
+
+**Holat: QISMAN.** Kod, migratsiya va testlar tayyor; qabul mezoni JONLI
+qurilmada tekshirilmagan (terminal hali yo'q, deploy ham kutilmoqda) ⇒ faza
+«TUGADI» deb yopilmaydi. Qo'lda smoke qadamlari `android/tsd-app/README.md`
+oxirida — javobgar va vaqt o'sha yerda to'ldiriladi.
+
+**Ikki tomonlama bog'liqlik javobi (qoida 10 — «bu nima buzishi mumkin?»):**
+- **Kassa oqimi — TEGILMADI, dalil bilan.** `pos_devices` jadvali, `PosLoginService`,
+  `PosDeviceService`, `kiosk-policy.ts` dagi KIOSK QATORLARI — hech biri o'zgarmagan.
+  TSD o'z jadvali (`tsd_devices`) va o'z servislari bilan yuradi. `pos-login`
+  `pos_devices` dan o'qiydi va TSD qatorini KO'RMAYDI ⇒ terminal kaliti bilan
+  kassa smenasi ochib bo'lmaydi (tuzilmaviy, unutilgan `where` ga bog'liq emas).
+- **Umumiy kod ikkita — ikkalasi ham testlar bilan qulflangan:**
+  (a) `kiosk-policy.ts` ning mos-kelish MANTIG'I `route-allowlist.ts` ga ko'chdi
+  (qoidalar RO'YXATI o'zgarmadi). Xavf: matcher xatosi kassa allowlist'ini
+  buzardi. Yopildi — mavjud `kiosk-policy.test.ts` va
+  `kiosk-policy-customer-card.test.ts` bir qatori ham o'zgartirilmasdan yashil.
+  (b) `token.service` — `createRefreshToken` ga 4-chi IXTIYORIY parametr,
+  `rotateRefreshToken` javobiga yangi maydon. Mavjud chaqiruvchilar
+  (`auth.service.login`, `pos-login.issueBundle`) tegilmagan; TSD bo'lmagan
+  yo'lda qiymat `null` va bu test bilan qulflangan.
+- **`auth.service.refresh()` — YANGI so'rov qo'shildi**, lekin FAQAT
+  `tsdDeviceId` bo'lgan qatorda. Oddiy sessiyada qo'shimcha DB so'rovi YO'Q
+  (test: `loadActive` chaqirilmasligi).
+- **Global guard qo'shildi (`TsdGuard`)** — har so'rovdan o'tadi. Xavf: xato
+  qilsa BUTUN tizim yiqilardi. Shuning uchun birinchi shart eng arzon va eng
+  tor: `user.deviceMode !== 'tsd'` ⇒ darhol `true`. `deviceMode` da'vosi
+  faqat `tsd-login` beradi, ya'ni bugungi HECH BIR tokenda u yo'q va guard
+  amalda hech kimga tegmaydi (testlar: oddiy, kiosk va ESKI token).
+- **Migratsiya** — yangi jadval + `refresh_tokens` ga NULLABLE ustun. Mavjud
+  qatorlar o'zgarmaydi; FK `RESTRICT` bo'lgani uchun eski qatorlar bloklanmaydi
+  (ular `NULL`).
+- **H2/H3, G4 taqsimoti, ombor qoldig'i — UMUMAN tegilmadi:** bu faza qoldiq
+  yozadigan biror kod yo'liga kirmaydi.
+
+---
+
+**1-vazifa TADQIQOTI — «qurilma turi maydoni yoki alohida jadval» (reja shuni so'ragan):**
+
+**Qaror: ALOHIDA jadval `tsd_devices`.** Uch sabab, ikkinchisi hal qiluvchi:
+
+1. **Sxema mos kelmaydi.** `pos_devices.cash_desk_id` va `organization_id`
+   NOT NULL — chunki `CashierSession` uchalasini talab qiladi. TSD da kassa
+   YO'Q. `kind` ustuni yo'lini tanlasak bu ikkalasini nullable qilish kerak
+   edi, ya'ni `PosDeviceContext.cashDeskId: string` → `string | null` va
+   null-ishlov JONLI kassa yo'liga kirib borardi. 2026-08-24 hodisasidan
+   keyingi 10-qoida aynan shunday yon ta'sir haqida.
+2. **Fail-closed.** TSD kaliti kassa smenasini ocholmasligi TUZILMAVIY bo'lishi
+   kerak. Alohida jadval bilan `pos-login` TSD qatorini umuman ko'rmaydi;
+   `kind` ustuni bilan esa butun xavfsizlik BITTA unutilgan `where kind='pos'`
+   ga bog'liq bo'lardi.
+3. Terminalga ombor kerak, kassa/tashkilot kerak emas — ustunlarning yarmi
+   bo'sh turadigan jadval «ikki narsani bitta jadvalda saqlash» belgisi.
+
+**Nusxa-kod xavfi yopildi:** qulf chegaralari (`POS_DEVICE_MAX_ATTEMPTS`,
+`POS_DEVICE_LOCKOUT_MS`) NUSXALANMADI — `pos-device.service.js` dan import
+qilinadi, ya'ni ikki qurilma sirtining qulf siyosati jimgina ajralib ketmaydi.
+
+**2-tadqiqot — sessiya belgisi qayerda yashaydi (rejada yo'q, lekin fazani hal qiladi):**
+`uiMode` YARAMAYDI: u xodimning ROLlaridan hisoblanadi, ya'ni omborchini
+brauzerda ham cheklab qo'yardi. Kerak bo'lgan narsa — SESSIYA belgisi, shuning
+uchun yangi ixtiyoriy JWT da'vosi `deviceMode: 'tsd'`.
+🔴 **Va shu yerda tuzoq bor edi:** `AuthService.refresh()` yangi tokenni
+XODIMDAN qayta quradi (rollar, hr-ruxsatlar) — ya'ni da'vo 15 daqiqadan keyin
+birinchi refresh'da JIMGINA yo'qolardi va terminal sessiyasi cheklovsiz ERP
+sessiyasiga aylanardi. Shuning uchun bog'lanish `refresh_tokens.tsd_device_id`
+da SAQLANADI, rotatsiyada MEROS bo'ladi va refresh'da qurilma HALI HAM tirikligi
+tekshiriladi. Beshta test aynan shu zanjirni qulflaydi.
+
+---
+
+**Nima qilindi (backend):**
+
+1. **Sxema + migratsiya `20260825170000_tsd_device`** (idempotent DDL):
+   `tsd_devices` jadvali (argon2 `secret_hash`, `store_id`, `app_version`,
+   `revoked_at`, bazadagi qulf hisoblagichi) + `refresh_tokens.tsd_device_id`
+   (FK **RESTRICT** — ataylab `SET NULL` EMAS: qurilma qatori o'chsa null
+   qolgan sessiya cheklovsiz sessiyaga KO'TARILARDI).
+   **Lokal dev bazada (`sherset_v2_dev`) 2 marta yugurtirilib isbotlangan**
+   (ikkinchisi no-op); ustunlar/FK siyosati (`confdeltype='r'` = RESTRICT)/
+   indekslar SQL bilan tekshirildi.
+2. **`packages/db/scripts/rollback/20260825170000_tsd_device_down.sql`
+   (qoida 12).** Teskarisi O'SHA sessiyada yozildi va lokal bazada sinaldi:
+   DOWN → DOWN (no-op) → UP. Buyrug'i faylning boshida. Fayl ATAYLAB migratsiya
+   papkasidan tashqarida (prisma u yerda faqat `migration.sql` ni kutadi).
+3. **`auth/tsd-device.service.ts`** — juftlash/tanish/qulf. Qo'shimcha:
+   juftlashda ombor SHU akkauntniki ekani tekshiriladi (`pos_devices` da
+   `store_id` uchun FK yo'q edi — begona ID yozib qo'yish mumkin bo'lardi).
+   `loadActive()` — refresh yo'li uchun KALITSIZ tiriklik tekshiruvi.
+4. **`auth/tsd-login.service.ts`** + `POST /auth/tsd-login`. Kassadan farqi:
+   **qurilma kaliti MAJBURIY** (`TsdLoginSchema`, `.strict()`). Sabab yozildi:
+   kassada egasi 2026-08-11 da juftlashni ixtiyoriy qilgan, chunki kassa
+   kompyuteri qulflangan xonada va brauzer zaxirasi kerak edi; TSD esa ombor
+   bo'ylab yuradigan QO'L terminali va uning zaxira yo'li allaqachon bor
+   (omborchi brauzerdan oddiy login qiladi).
+   Refresh-token javob TANASIDA ham qaytadi — Android klientida cookie idorasi
+   yo'q. Javobdagi xodim kaliti `id` (parol/POS login bilan bir xil).
+5. **`auth/tsd-policy.ts` + `auth/tsd.guard.ts`** — default-deny marshrut
+   ro'yxati va uni bajaradigan GLOBAL guard (`KioskGuard` naqshi, `APP_GUARD`).
+   Ikkala guard MUSTAQIL: kesishma har doim ikkalasidan tor.
+6. **`auth/route-allowlist.ts`** — mos-kelish mantig'i kiosk siyosatidan
+   AJRATILDI (`normalizePath`, segment-chegara, `exact`, `Method`, `Rule`).
+   Nusxalash shu repoda nomi bor xato-klassi bo'lardi. Kiosk QOIDALARI
+   o'zgarmadi va mavjud testlari bir qatori ham tegilmasdan yashil.
+7. **`token.service.ts`** — `deviceMode` da'vosi imzolanadi;
+   `createRefreshToken(..., tsdDeviceId?)`; `rotateRefreshToken` bog'lanishni
+   MEROS qiladi (faol rotatsiyada ham, grace-oynasidagi qardosh tokenda ham)
+   va qaytaradi.
+8. **`auth.service.refresh()`** — `tsdDeviceId` bo'lsa qurilma tirikligi
+   tekshiriladi va `deviceMode` TIKLANADI; bekor qilingan yoki boshqa
+   akkauntga o'tgan qurilma → 401 (yo'qolgan terminal admin bekor qilgach
+   ko'pi bilan bitta access-JWT muddatida o'ladi).
+9. **`POST /auth/tsd-device/pair`** — JWT + `@RequirePermission({employee, update})`.
+   `@RequireHrPermission` ATAYLAB ishlatilmadi (2026-08-10 hodisasi: bu
+   controllerda HR guard ulanmagan, dekorator jim bezak bo'lardi).
+
+**🔴 NARX MUAMMOSI VA UNING YECHIMI (qabul mezonining «narx hech qayerda
+ko'rinmaydi» bandi).**
+Reja allowlist'ga «scan-lookup» ni kiritishni so'raydi. Lekin mavjud skan
+yo'llarining HAMMASI narx oqizadi: `GET /products` to'liq tovar qatorini
+(`buyPrice`, `minPrice`, `salePrices`) qaytaradi, `GET /products/:id/scan`
+esa faqat `buyPrice`/`minPrice` ni kesadi — `salePrices` qoladi. Ekranda
+ko'rsatmaslik himoya EMAS: token haqiqiy, `curl` bor.
+⇒ **`/products` TSD ro'yxatiga UMUMAN kiritilmadi**, o'rniga narxsiz sirt:
+- **`modules/tsd/tsd-scan.ts`** (sof) — ustunlarning **OQ RO'YXATI**
+  (`TSD_PRODUCT_SELECT`, qora ro'yxat EMAS: kelajakda yangi narx ustuni
+  qo'shilsa u o'z-o'zidan kirmaydi), multi-hit tanlovi va kod tasnifi;
+- **`modules/tsd/tsd.service.ts` + `GET /tsd/scan`** — tovar nomi, kod,
+  shtrixlar, o'lchov, jami qoldiq, YACHEYKA kesimi. Servis ataylab
+  `ProductService` ni chaqirmaydi (uning har o'quv yo'li narx bilan keladi).
+Testlar buni ikki tomondan qulflaydi: javobda narx-nomli kalit yo'qligi VA
+so'rovda narx ustuni SO'RALMAGANI.
+
+**K-reja bilan kesishma (qoida 10, `2026-08-25-bolinadigan-tovar-bolak-hisobi.md` 7.3):**
+bo'lak yorliqlari `BLK-` makonida va MUTLAQO unikal, tovar shtrixlari esa
+ataylab unikal emas. Skaner ularni ajratmasa omborchi bo'lakni skanerlaganda
+multi-hit TOVAR tanlovi ochilib, kesim oqimi buzilardi. K-reja hali
+boshlanmagan, shuning uchun `/tsd/scan` bo'lak kodini TANIYDI va
+`kind: 'piece', supported: false` qaytaradi — ilova «bu bo'lak kodi, hali
+qo'llab-quvvatlanmaydi» deydi va JIMGINA noto'g'ri tovarni ochmaydi.
+K1 qurilgach shu shox to'ldiriladi (test allaqachon turibdi).
+
+**TSD allowlist'i (`tsd-policy.ts`) — nimalar OCHIQ:**
+`GET /restock-tasks` (+ detali), qator tasdiqlash (qo'lda va `confirm-scan`),
+`GET /tsd/scan`, `GET /admin/stores/cells/by-barcode`, `POST /products/:id/cell-move`
+va `cell-place` (AYNAN shu ikkisi, `exact`), `GET|PUT /admin/stores/:id/cells/:cellId/stock`
+(+ `…/products` — sanash ro'yxati), `/notifications`, `/auth`, `/health`,
+`/permissions/me`.
+**YOPIQ (test bilan):** `/products` va butun tovar kartasi, `/price-*`,
+`/supply`, hisobotlar, `/retail-sales`, `/cashier-sessions`, `/cash-out`,
+`/debts`, `/counterparties`, `/hr/*`, `POST /restock-tasks/from-sales-return`
+(terminal topshiriqni BAJARADI, ochmaydi), `cell-rebind` (tovar kartasi tahriri).
+Ro'yxatga narx-nomli prefiks kirmasligini alohida qo'riqchi testi tekshiradi.
+
+**Nima qilindi (APK skeleti — `android/tsd-app`):**
+`driver-app` andozasi bo'yicha, farqlari sabab bilan yozilgan:
+- `DeviceStore.kt` — kalit va refresh-token **EncryptedSharedPreferences** da
+  (`driver-app` da oddiy prefs edi; u har safar parol so'rardi, TSD esa
+  kalitni DOIMIY saqlaydi). **PIN hech qachon saqlanmaydi** — ikki omil bitta
+  joyda yotsa bir omilga aylanadi.
+- `ApiClient.kt` — faqat allowlist ichidagi yo'llar. Yangi topshiriq signali
+  **polling** (SSE emas): SSE ni Android'da tirik ushlash foreground-service
+  talab qilardi, ya'ni `driver-app` ning butun murakkabligi; terminal esa
+  qo'lda va ekran ochiq. Narxi (kechikish ≤ interval) izohda yozilgan.
+- `ActionQueue.kt` — oflayn FIFO amal navbati. `PingBuffer` dan TUBDAN farqi
+  izohda: yo'qolgan ping zararsiz, yo'qolgan «tasdiqlandi» esa ish yo'qotadi,
+  ikki marta yuborilgani esa qoldiqni ikki marta siljitardi ⇒ qat'iy ketma-ket
+  yuborish + `clientOpId` (server hali o'qimaydi — G6) + navbat to'lsa
+  YANGISI rad etiladi (eng eskisi tashlanmaydi: jim yo'qotish — IS-5 klassi).
+- `ScannerBridge.kt` — **ikki rejim birga**: klaviatura-wedge (sukut, hamma
+  terminalda sozlashsiz) va DataWedge/Urovo/Newland broadcast (model
+  aniqlangach FAQAT `config.xml` to'ldiriladi, kod tegilmaydi).
+- `MainActivity.kt` — juftlash → PIN → topshiriqlar → skan; **multi-hit
+  majburiy** (ilova o'zi birortasini tanlamaydi).
+- `dimens.xml` — tegish nishonlari **56dp/64dp**. Reja «`min-h-[44px]` va
+  yirikroq, rem bazasi 12px» deydi; web'da `min-h-11` amalda 33px bo'lib
+  chiqadi. Android'da `dp` mutlaq o'lchov ⇒ tuzoq yo'q, va qiymat ataylab
+  Material minimumidan (48dp) yirikroq (qo'lqop, harakat, sovuq ombor).
+- Manifestda **kamera va lokatsiya ruxsati YO'Q** (`driver-app` dan asosiy
+  farq): terminal kuzatuv qilmaydi, skan apparat skanerdan keladi.
+- `README.md` — endpoint kontrakti, build qadamlari va **qo'lda smoke
+  ro'yxati** (jumladan: TSD tokeni bilan `GET /products` → 403; refresh'dan
+  keyin yana 403; `revoked_at` qo'yilgach `/auth/refresh` → 401).
+- **Build-verified EMAS** — `driver-app` bilan bir xil chegara (bu repoda
+  Android toolchain yo'q). Bu qabul mezonining ochiq qismi.
+
+**Testlar:** yangi 7 fayl — `tsd-policy` **20**, `tsd.guard` **10**,
+`tsd-device.service` **10**, `tsd-login.service` **14**, `tsd-session-refresh`
+**5**, `tsd/tsd-scan` **12**, `tsd/tsd.service` **8**; mavjud fayllarga:
+`pos-endpoint-guards` **+3** (TSD juftlash qo'riqchisi, tokensiz login,
+`TsdGuard` global ulangani), `token.service.test` **+4** (bog'lanish
+merosi). Jami **+86**.
+`mutation-guard-coverage` KLASS-QULFI yangi endpointni O'ZI USHLADI —
+`tsdLoginHandler` `INTENTIONALLY_OPEN` ga SABAB bilan qo'shildi (qo'riqchi
+ishlayapti).
+TO'LIQ: **api 641 fayl / 9004 passed (2 skipped, 0 xato)**;
+**web 325 fayl / 4283 passed (26 skipped, 0 xato)**; typecheck api(8G)/web/db
+yashil; biome yangi/tegilgan fayllarda xatosiz (qolgan 3 ta `useTemplate`
+ogohlantirishi — mening ishimdan OLDINGI qatorlar).
+
+**Deploy holati: KUTILMOQDA** — G1+G2+G3+G4 bilan bir deltada boradi
+(egasining «keyinroq» qarori + 2026-08-24 hodisasi hal bo'lmagan).
+Deploy'da **TO'RTINCHI migratsiya** qo'shiladi:
+`20260825170000_tsd_device` (`prisma db execute --file …` →
+`prisma migrate resolve --applied …` → oxirida `prisma generate`).
+**Yangi ruxsat-entity YO'Q** ⇒ `topup-role-permissions.ts` ga G5 hech narsa
+qo'shmaydi. **Jonli xulq O'ZGARMAYDI:** `deviceMode` da'vosi bugungi hech bir
+tokenda yo'q, `TsdGuard` hech kimga tegmaydi, `/tsd/scan` esa faqat yangi
+marshrut. Terminal juftlanmaguncha `tsd_devices` bo'sh turadi.
+
+**Ochiq qolganlar / keyingi fazaga (G6):**
+- **Jonli tekshiruv qilinmagan ⇒ faza QISMAN (qoida 11).** Qabul mezoni:
+  pairing → PIN → o'z tasklari → oflayn navbat → narx yo'qligi. Qadamlar
+  `android/tsd-app/README.md` da; qurilma kelgach bajariladi.
+- **APK build qilinmagan** (Android toolchain yo'q) — `gradle wrapper` +
+  `assembleDebug` birinchi marta Android Studio bo'lgan mashinada yuriladi.
+- **`clientOpId` ni server QABUL QILMAYDI** — idempotentlik G6 da
+  `restock-tasks` confirm yo'liga qo'shiladi. Klient kalitni HOZIRDAN
+  yuboradi, chunki keyin qo'shish APK yangilanishini talab qilardi.
+- **Oflayn navbat AVTOMATIK bo'shamaydi** — hozir faqat yoziladi; yuborish
+  siklidan (WorkManager yoki oddiy retry) G6 mas'ul.
+- **Ish ekranlari yo'q** (yig'ish qatorlari, joylashtirish, sanash) — G5
+  doirasi auth + skelet edi; ulanish nuqtalari (`ApiClient` metodlari) tayyor.
+- **TSD qurilmalarini boshqarish EKRANI yo'q** — juftlash/bekor qilish hozir
+  faqat API orqali (`pos-device/pair` da ham web UI yo'q — bir xil holat).
+  Bekor qilish uchun hozircha `tsd_devices.revoked_at` ni qo'yish kerak;
+  kichik admin ekrani alohida ish sifatida qoldirildi.
+- **`/auth` prefiksi TSD ro'yxatida `['*']`** — kiosk ro'yxati bilan parity.
+  Ikkinchi qulf ruxsat matritsasi (`tsd-device/pair` uchun `employee.update`,
+  omborchida yo'q). Torroq qilish mumkin, lekin bu allowlist'ning umumiy
+  naqshini o'zgartiradi (G5 doirasidan tashqari).
+- **G6 uchun eslatma:** G2 hisobotidagi band kuchda — TSD'da «tayyor» oqimi
+  `mark-ready` orqali flip QILMAYDI, chek kontrolga tushadi; UX shuni
+  ko'rsatsin.
+- **Boshqa sessiyaning qoldig'i (mening ishim emas):** K-reja fayli
+  (`docs/plans/2026-08-25-bolinadigan-tovar-bolak-hisobi.md`) va uning
+  F-rejaga qo'shgan 10-qoida qatori **commit qilinmagan** holda turibdi —
+  o'sha sessiya yakunlashi kerak.
 
 ### G4 · 2a-bosqich — kassa AJRATMADAN ayiradi (backend TUGADI) · 2026-08-25 · `b4c27d24`
 

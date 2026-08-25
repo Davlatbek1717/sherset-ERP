@@ -73,6 +73,23 @@ export interface AuthenticatedUser {
    * qaraladi — refresh'gacha hech kim cheklanib qolmaydi.
    */
   uiMode?: 'full' | 'kiosk';
+  /**
+   * Sessiya QURILMA rejimi (G-reja G5). `tsd` — omborchining qo'l terminali;
+   * `TsdGuard` server tomonda marshrutlarni `tsd-policy.ts` ro'yxati bilan
+   * cheklaydi.
+   *
+   * `uiMode` dan farqi ATAYLAB: `uiMode` xodimning ROLlaridan hisoblanadi
+   * (ya'ni xodimga tegishli), `deviceMode` esa SESSIYAga tegishli — o'sha
+   * omborchi brauzerdan kirsa cheklanmaydi.
+   *
+   * Ixtiyoriy: da'vo yo'q = oddiy sessiya. Eski tokenlar hech qachon TSD deb
+   * qaralmaydi, ya'ni bu qo'shimcha hech kimni jimgina cheklab qo'ymaydi.
+   *
+   * 🔴 `refresh()` tokenni XODIMDAN qayta quradi, ya'ni bu da'vo o'z-o'zidan
+   * yo'qolardi. Shuning uchun bog'lanish `refresh_tokens.tsd_device_id` da
+   * saqlanadi va rotatsiyada meros bo'ladi (`token.service.ts`).
+   */
+  deviceMode?: 'tsd';
   hrPermissions: Array<{
     pageKey: string;
     section: string | null;
@@ -202,3 +219,38 @@ export const PairPosDeviceSchema = z.object({
   organizationId: z.string().uuid(),
 });
 export type PairPosDeviceInput = z.infer<typeof PairPosDeviceSchema>;
+
+/**
+ * TSD (omborchi qo'l terminali) kirishi — qurilma kaliti + PIN.
+ *
+ * 🔴 `deviceId`/`deviceSecret` MAJBURIY — kassa (`PosLoginSchema`) dan aynan
+ * shu bilan farq qiladi. Kassada egasi 2026-08-11 da juftlashni ixtiyoriy
+ * qildi, chunki u yerda kassa kompyuteri jismonan qulflangan xonada turadi va
+ * brauzerdan zaxira kirish kerak edi. TSD esa QO'L terminali: u ombor bo'ylab
+ * yuradi, yo'qolishi/olib ketilishi mumkin, va uning zaxira yo'li YO'Q
+ * (omborchi brauzerdan oddiy login bilan kiraveradi). Kalitsiz bu endpoint
+ * ochiq internetda 10 000 variantli PIN maydoniga aylanardi.
+ */
+export const TsdLoginSchema = z
+  .object({
+    deviceId: z.string().uuid(),
+    deviceSecret: z.string().min(32),
+    pin: z.string().regex(/^\d{4}$/, 'PIN 4 raqamdan iborat bo`lishi kerak'),
+    /** APK versiyasi — faqat qayd uchun (`PosDevice.shellVersion` naqshi). */
+    appVersion: z.string().max(32).optional(),
+  })
+  .strict();
+export type TsdLoginInput = z.infer<typeof TsdLoginSchema>;
+
+/**
+ * TSD terminalini omborga bog'lash (JWT + `employee.update`).
+ *
+ * Kassa/tashkilot YO'Q: terminal pul bilan ishlamaydi, unga faqat ombor kerak.
+ */
+export const PairTsdDeviceSchema = z
+  .object({
+    name: z.string().min(1).max(200),
+    storeId: z.string().uuid(),
+  })
+  .strict();
+export type PairTsdDeviceInput = z.infer<typeof PairTsdDeviceSchema>;

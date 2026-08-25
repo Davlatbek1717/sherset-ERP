@@ -12,6 +12,8 @@ import {
 import { assertEmployeeMayLogin } from './employee-login-guards.js';
 import { resolveUiMode } from './kiosk-policy.js';
 import { TokenService } from './token.service.js';
+import { TsdDeviceService } from './tsd-device.service.js';
+import { DEVICE_MODE_TSD } from './tsd-policy.js';
 
 const MAX_FAILED_ATTEMPTS = 5;
 const LOCKOUT_MS = 15 * 60 * 1000;
@@ -21,6 +23,8 @@ export class AuthService {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(TokenService) private readonly tokens: TokenService,
+    // G5 — refresh'da TSD sessiyasi cheklovini tiklash uchun (pastdagi izoh).
+    @Inject(TsdDeviceService) private readonly tsdDevices: TsdDeviceService,
   ) {}
 
   /** Authenticate email+password; throws on bad creds; returns tokens. */
@@ -173,6 +177,25 @@ export class AuthService {
       throw new UnauthorizedException('Bu IP-manzildan kirish taqiqlangan');
     }
 
+    // 🔴 G5 — TSD sessiyasi cheklovini TIKLASH.
+    //
+    // Bu metod yangi tokenni XODIMDAN qayta quradi (rollar, hr-ruxsatlar),
+    // ya'ni tokendagi `deviceMode` da'vosi shu yerda yo'qolardi va terminal
+    // sessiyasi 15 daqiqadan keyin JIMGINA to'liq ERP sessiyasiga aylanardi.
+    // Bog'lanish refresh QATORIDA saqlanadi va rotatsiyada meros bo'ladi.
+    //
+    // Qurilma bekor qilingan bo'lsa sessiya SHU YERDA o'ladi (fail-closed):
+    // yo'qolgan terminalni admin bekor qilishi bilan ochiq sessiya ham
+    // ko'pi bilan bitta access-JWT muddatida (≤15 daqiqa) tugaydi.
+    let deviceMode: 'tsd' | undefined;
+    if (rotated.tsdDeviceId) {
+      const device = await this.tsdDevices.loadActive(rotated.tsdDeviceId);
+      if (!device || device.accountId !== employee.accountId) {
+        throw new UnauthorizedException('Qurilma tanilmadi');
+      }
+      deviceMode = DEVICE_MODE_TSD;
+    }
+
     const authUser: AuthenticatedUser = {
       sub: employee.id,
       accountId: employee.accountId,
@@ -182,6 +205,7 @@ export class AuthService {
       hrRoles: employee.hrRoles,
       isChecker: employee.isChecker,
       uiMode: resolveUiMode(employee.roles.map((r) => r.role)),
+      ...(deviceMode ? { deviceMode } : {}),
       hrPermissions: employee.hrPermissions.map((p) => ({
         pageKey: p.pageKey,
         section: p.section,

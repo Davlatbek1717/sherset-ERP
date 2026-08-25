@@ -11,6 +11,15 @@
  * ko'rmaydi. Bu ataylab — xavfsizlik ro'yxati «unutish» bilan kengaymasin.
  */
 
+import { type Rule, isAllowedBy, normalizePath } from './route-allowlist.js';
+
+// Mos-kelish mantig'i (`normalizePath`, segment-chegara, `exact`) `route-allowlist.ts`
+// ga KO'CHIRILDI — endi uni TSD ro'yxati ham ishlatadi (G5). Bu yerda faqat
+// KIOSK QOIDALARI qoladi. `normalizePath` shu fayldan qayta eksport qilinadi,
+// chunki `kiosk.guard.ts` va testlar uni shu yerdan oladi.
+export { normalizePath };
+export type { Method, Rule } from './route-allowlist.js';
+
 export type UiMode = 'full' | 'kiosk';
 
 export const UI_MODE = { full: 'full', kiosk: 'kiosk' } as const;
@@ -27,30 +36,6 @@ export function resolveUiMode(roles: ReadonlyArray<{ uiMode?: string | null }>):
   if (roles.length === 0) return UI_MODE.full;
   const allKiosk = roles.every((r) => r.uiMode === UI_MODE.kiosk);
   return allKiosk ? UI_MODE.kiosk : UI_MODE.full;
-}
-
-/** HTTP metodlari — `*` = hammasi. */
-type Method = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | '*';
-
-interface Rule {
-  /**
-   * Yo'l prefiksi (`/api/v1` global prefiksisiz).
-   *
-   * `:` bilan boshlangan segment — **bitta** yo'l segmentiga mos keladi
-   * (`/customer-orders/:id/transitions/confirmed`). Bu ataylab regex emas:
-   * ro'yxat o'qiladigan qolsin va «`.*` yozib qo'ydim» xatosi bo'lmasin.
-   */
-  prefix: string;
-  methods: readonly Method[];
-  why: string;
-  /**
-   * `true` → AYNAN shu chuqurlik. Ichki yo'llar OCHILMAYDI.
-   *
-   * Kerak, chunki oddiy prefiks-qoida butun daraxtni ochadi: `/customer-orders`
-   * GET qoidasi `:id/related`, `:id/supply-shortfall` va kelajakdagi har
-   * qanday yangi sub-resursni ham jimgina ochib yuborardi.
-   */
-  exact?: boolean;
 }
 
 /**
@@ -201,48 +186,12 @@ export const KIOSK_ALLOWED: readonly Rule[] = [
   { prefix: '/notifications', methods: ['GET'], why: "bildirishnoma o'qish" },
 ] as const;
 
-/** Yo'ldan global prefiks va so'rov qatorini olib tashlaydi. */
-export function normalizePath(url: string, globalPrefix = '/api/v1'): string {
-  const path = url.split('?')[0] ?? '';
-  const withoutPrefix = path.startsWith(globalPrefix) ? path.slice(globalPrefix.length) : path;
-  // Oxirgi `/` ahamiyatsiz; bo'sh bo'lsa ildiz.
-  const trimmed = withoutPrefix.replace(/\/+$/, '');
-  return trimmed === '' ? '/' : trimmed;
-}
-
-/** `/a/b` → `['a','b']` (bo'sh segmentlarsiz). */
-function segments(path: string): string[] {
-  return path.split('/').filter((s) => s !== '');
-}
-
 /**
- * Yo'l qoidaga mos keladimi — **segment chegarasida**.
- *
- * `/products` qoidasi `/products/123` ga mos keladi, lekin `/products-secret`
- * ga MOS KELMAYDI (aks holda o'xshash nomli yangi modul jimgina ochilib
- * qolardi). `:param` segmenti istalgan BITTA segmentga mos keladi;
- * `exact` bo'lsa chuqurlik ham teng bo'lishi shart.
- */
-function matchesPrefix(rule: Rule, path: string): boolean {
-  const ruleSegs = segments(rule.prefix);
-  const pathSegs = segments(path);
-  if (rule.exact ? pathSegs.length !== ruleSegs.length : pathSegs.length < ruleSegs.length) {
-    return false;
-  }
-  return ruleSegs.every((seg, i) =>
-    seg.startsWith(':') ? pathSegs[i] !== undefined : seg === pathSegs[i],
-  );
-}
-
-/**
- * Kiosk shu so'rovni bajara oladimi.
+ * Kiosk shu so'rovni bajara oladimi. **Default-deny** (mantiq —
+ * `route-allowlist.ts`, TSD ro'yxati bilan umumiy).
  */
 export function isKioskAllowed(method: string, path: string): boolean {
-  const m = method.toUpperCase();
-  return KIOSK_ALLOWED.some((rule) => {
-    if (!matchesPrefix(rule, path)) return false;
-    return rule.methods.includes('*') || rule.methods.includes(m as Method);
-  });
+  return isAllowedBy(KIOSK_ALLOWED, method, path);
 }
 
 /**

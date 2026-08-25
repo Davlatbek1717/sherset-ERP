@@ -10,6 +10,9 @@ import { PosDeviceService } from './pos-device.service.js';
 import { PosLoginService } from './pos-login.service.js';
 import { PosPinService } from './pos-pin.service.js';
 import { TokenService } from './token.service.js';
+import { TsdDeviceService } from './tsd-device.service.js';
+import { TsdLoginService } from './tsd-login.service.js';
+import { TsdGuard } from './tsd.guard.js';
 
 /**
  * `JWT_ACCESS_TTL` comes from the environment, so it is a plain `string` at
@@ -63,9 +66,13 @@ function parseTtl(raw: string | undefined, fallback: string, varName: string) {
     KioskGuard,
     PosDeviceService,
     PosLoginService,
+    // G5 — TSD (omborchi qo'l terminali) sirti.
+    TsdGuard,
+    TsdDeviceService,
+    TsdLoginService,
   ],
   // `PosPinService` eksport qilinadi: admin PIN berish endpointi HR modulida
   // turadi (`hr/employees/:id/pos-pin`) va uni o'sha yerdan chaqiradi.
-  exports: [AuthService, TokenService, JwtAuthGuard, KioskGuard, PosPinService],
+  exports: [AuthService, TokenService, JwtAuthGuard, KioskGuard, TsdGuard, PosPinService],
 })
 export class AuthModule {}

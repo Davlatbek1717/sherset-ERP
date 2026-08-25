@@ -11,6 +11,7 @@ import { AttributeMetadataModule } from './modules/attribute-metadata/attribute-
 import { AuditLogModule } from './modules/audit-log/audit-log.module.js';
 import { AuthModule } from './modules/auth/auth.module.js';
 import { KioskGuard } from './modules/auth/kiosk.guard.js';
+import { TsdGuard } from './modules/auth/tsd.guard.js';
 import { BankImportModule } from './modules/bank-import/bank-import.module.js';
 import { BomModule } from './modules/bom/bom.module.js';
 import { BranchModule } from './modules/branch/branch.module.js';
@@ -127,6 +128,7 @@ import { TaskModule } from './modules/task/task.module.js';
 import { TaxRateModule } from './modules/tax-rate/tax-rate.module.js';
 import { TelegramModule } from './modules/telegram/telegram.module.js';
 import { TrackingCodeModule } from './modules/tracking-code/tracking-code.module.js';
+import { TsdModule } from './modules/tsd/tsd.module.js';
 import { UomModule } from './modules/uom/uom.module.js';
 import { UserSettingsModule } from './modules/user-settings/user-settings.module.js';
 import { VariantModule } from './modules/variant/variant.module.js';
@@ -229,6 +231,7 @@ import { PrismaModule } from './prisma/prisma.module.js';
     // Smena (POS navbat) — /sotuv sahifasi uchun; climart adoption o'chirgan edi.
     SmenaModule,
     RestockTaskModule,
+    TsdModule,
     SkladKeeperModule,
     ShiftScheduleModule,
     CompanySettingsModule,
@@ -296,6 +299,14 @@ import { PrismaModule } from './prisma/prisma.module.js';
      * `full` foydalanuvchiga tegmaydi (guard darhol o'tkazadi).
      */
     { provide: APP_GUARD, useClass: KioskGuard },
+    /**
+     * TSD cheklovi ham GLOBAL va AYNAN shu sabab bilan (G-reja G5): omborchi
+     * terminalidagi token haqiqiy, ya'ni ro'yxatdan tashqarisi faqat shu yerda
+     * yopiladi. `KioskGuard` dan MUSTAQIL: ikkalasi ham qo'llanadi va ikkita
+     * cheklovning kesishmasi har doim ikkalasidan tor (fail-closed).
+     * Oddiy (TSD bo'lmagan) sessiyaga tegmaydi — guard darhol o'tkazadi.
+     */
+    { provide: APP_GUARD, useClass: TsdGuard },
   ],
 })
 export class AppModule {}

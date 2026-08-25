@@ -143,11 +143,42 @@ describe('kassa endpointlari — ruxsat qo`riqchisi haqiqatan ulangan', () => {
     });
   }
 
+  /**
+   * G5 — TSD terminali. Juftlash kassa qurilmasi bilan BIR XIL daraja:
+   * terminal kaliti omborchi hisobiga kirish yo'lini ochadi. Qo'riqchisiz
+   * qolsa istalgan kirgan foydalanuvchi (jumladan kiosk kassiri) terminal
+   * juftlab, uning kalitini olib qo'ya olardi.
+   */
+  it('TSD juftlash — JWT + `employee` `update` talab qiladi', () => {
+    const block = routeBlock(authController, "@Post('tsd-device/pair')");
+    expect(block).toContain('JwtAuthGuard');
+    expect(block).toMatch(/@RequirePermission\(/);
+    expect(block).toContain("entity: 'employee'");
+    expect(block).toContain("action: 'update'");
+  });
+
+  it('TSD kirish endpointi ATAYLAB tokensiz va ruxsatsiz', () => {
+    // Qurilma kaliti + PIN ning O'ZI autentifikatsiya (`TsdLoginSchema`).
+    const block = routeBlock(authController, "@Post('tsd-login')");
+    expect(block).not.toContain('@RequirePermission');
+    expect(block).not.toContain('JwtAuthGuard');
+  });
+
   it('nazorat: routeBlock haqiqatan tor kesadi (butun faylni emas)', () => {
     // Mutant-tekshiruv: agar kesish ishlamasa, pos-login bloki
     // pos-device/pair dekoratorini ham ushlardi va yuqoridagi test yolg'on
     // yashil bo'lardi.
     expect(routeBlock(authController, "@Post('pos-login')")).not.toContain('pos-device/pair');
+  });
+});
+
+describe('G5 — TsdGuard GLOBAL ulangan', () => {
+  it('app.module APP_GUARD ro`yxatida TsdGuard bor', () => {
+    // Ro'yxat sof modulda (`tsd-policy.ts`), lekin uni BAJARADIGAN guard
+    // global bo'lmasa ro'yxat bezakka aylanardi — `pairPosDevice` hodisasi
+    // (2026-08-10) aynan shu klass edi.
+    const appModule = read('app.module.ts');
+    expect(appModule).toContain('useClass: TsdGuard');
   });
 });
 

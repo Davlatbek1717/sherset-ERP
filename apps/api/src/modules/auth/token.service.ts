@@ -54,6 +54,9 @@ export class TokenService {
       hrRoles: user.hrRoles,
       isChecker: user.isChecker,
       uiMode: user.uiMode,
+      // G5 — TSD sessiyasi belgisi. `undefined` bo'lsa da'vo umuman
+      // yozilmaydi, ya'ni oddiy sessiyalar tokeni o'zgarmaydi.
+      deviceMode: user.deviceMode,
       hrPermissions: user.hrPermissions,
     });
   }
@@ -156,12 +159,18 @@ export class TokenService {
    * Without `familyId` the token roots a NEW rotation family (login);
    * rotation passes the existing family through.
    */
+  /**
+   * @param tsdDeviceId G5 — sessiya TSD terminalidan ochilgan bo'lsa, o'sha
+   *   qurilma. Qatorda saqlanadi va rotatsiyada MEROS bo'ladi, aks holda
+   *   `deviceMode` cheklovi birinchi refresh'da yo'qolardi.
+   */
   async createRefreshToken(
     employeeId: string,
     meta: { userAgent?: string; ipAddress?: string },
     familyId?: string,
+    tsdDeviceId?: string | null,
   ): Promise<string> {
-    const { raw } = await this.createRefreshTokenRecord(employeeId, meta, familyId);
+    const { raw } = await this.createRefreshTokenRecord(employeeId, meta, familyId, tsdDeviceId);
     return raw;
   }
 
@@ -169,6 +178,7 @@ export class TokenService {
     employeeId: string,
     meta: { userAgent?: string; ipAddress?: string },
     familyId?: string,
+    tsdDeviceId?: string | null,
   ): Promise<{ raw: string; id: string }> {
     const raw = crypto.randomBytes(48).toString('base64url');
     const hash = this.hashToken(raw);
@@ -184,16 +194,21 @@ export class TokenService {
         ipAddress: meta.ipAddress?.slice(0, 45),
         expiresAt: new Date(Date.now() + this.refreshTtlDays * 86_400_000),
         familyId: familyId ?? id,
+        tsdDeviceId: tsdDeviceId ?? null,
       },
     });
 
     return { raw, id };
   }
 
+  /**
+   * @returns `tsdDeviceId` — vorisga MEROS bo'lgan terminal bog'lanishi
+   *   (`auth.service.refresh` shundan `deviceMode` ni tiklaydi).
+   */
   async rotateRefreshToken(
     oldRaw: string,
     meta: { userAgent?: string; ipAddress?: string },
-  ): Promise<{ raw: string; employeeId: string } | null> {
+  ): Promise<{ raw: string; employeeId: string; tsdDeviceId: string | null } | null> {
     const oldHash = this.hashToken(oldRaw);
     const existing = await this.prisma.client.refreshToken.findUnique({
       where: { tokenHash: oldHash },
@@ -202,6 +217,9 @@ export class TokenService {
       return null;
     }
     const familyId = existing.familyId ?? existing.id;
+    // Terminal bog'lanishi butun rotatsiya zanjiri bo'ylab yuradi — TSD
+    // sessiyasi vaqt o'tishi bilan cheklovsiz sessiyaga aylanmasin.
+    const tsdDeviceId = existing.tsdDeviceId ?? null;
 
     if (existing.revokedAt) {
       // Not rotation-revoked (logout / family revocation) → no grace.
@@ -213,8 +231,13 @@ export class TokenService {
         // logging this tab out. (The original successor's raw value is not
         // recoverable — only its hash is stored — so an idempotent re-issue
         // is impossible by design.)
-        const { raw } = await this.createRefreshTokenRecord(existing.employeeId, meta, familyId);
-        return { raw, employeeId: existing.employeeId };
+        const { raw } = await this.createRefreshTokenRecord(
+          existing.employeeId,
+          meta,
+          familyId,
+          tsdDeviceId,
+        );
+        return { raw, employeeId: existing.employeeId, tsdDeviceId };
       }
 
       // Replay of a long-consumed token = reuse detection: someone (or a
@@ -230,12 +253,17 @@ export class TokenService {
     // Active token: mint the successor FIRST, then revoke the old row
     // pointing at it. If the conditional revoke loses a concurrent rotation
     // (count 0), the successor is still a valid grace sibling — return it.
-    const successor = await this.createRefreshTokenRecord(existing.employeeId, meta, familyId);
+    const successor = await this.createRefreshTokenRecord(
+      existing.employeeId,
+      meta,
+      familyId,
+      tsdDeviceId,
+    );
     await this.prisma.client.refreshToken.updateMany({
       where: { id: existing.id, revokedAt: null },
       data: { revokedAt: new Date(), replacedById: successor.id },
     });
-    return { raw: successor.raw, employeeId: existing.employeeId };
+    return { raw: successor.raw, employeeId: existing.employeeId, tsdDeviceId };
   }
 
   async revokeRefreshToken(raw: string): Promise<void> {

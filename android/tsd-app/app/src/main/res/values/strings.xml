@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Skelet matnlari — o'zbekcha, `driver-app` naqshi bo'yicha.
+
+  Web ERP dagi ru+uz i18n majburiyati (F-reja 2-bo'lim, 3-qoida) bu yerda
+  BOSHQACHA hal qilinadi: ilova FAQAT ombor xodimlari uchun va ular
+  o'zbekchada ishlaydi. Ruscha kerak bo'lsa `values-ru/strings.xml` qo'shiladi
+  — Android resurs tizimi buni o'zi hal qiladi, kod o'zgarmaydi.
+-->
+<resources>
+    <string name="app_name">Sherset TSD</string>
+
+    <string name="pair_title">Terminalni ulash</string>
+    <string name="pair_hint">Qurilma ID</string>
+    <string name="pair_secret_hint">Qurilma kaliti</string>
+    <string name="pair_save">Saqlash</string>
+    <string name="pair_done">Terminal ulandi</string>
+    <string name="pair_missing">Terminal hali ulanmagan</string>
+
+    <string name="login_title">Kirish</string>
+    <string name="login_pin_hint">PIN (4 raqam)</string>
+    <string name="login_button">Kirish</string>
+    <string name="login_failed">PIN noto\'g\'ri</string>
+    <string name="logout">Chiqish</string>
+
+    <string name="tasks_title">Mening topshiriqlarim</string>
+    <string name="tasks_empty">Topshiriq yo\'q</string>
+    <string name="tasks_refresh">Yangilash</string>
+
+    <string name="scan_hint">Shtrix yoki yacheyka kodi</string>
+    <string name="scan_multi">Bir nechta tovar topildi — birini tanlang</string>
+    <string name="scan_none">Topilmadi</string>
+    <string name="scan_piece">Bu bo\'lak kodi — hozircha qo\'llab-quvvatlanmaydi</string>
+
+    <string name="queue_pending">Navbatda: %1$d ta amal</string>
+    <string name="offline">Aloqa yo\'q — amal navbatga qo\'yildi</string>
+</resources>

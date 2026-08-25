@@ -19,9 +19,11 @@ import {
   type AuthenticatedUser,
   ChangePasswordSchema,
   PairPosDeviceSchema,
+  PairTsdDeviceSchema,
   PosLoginSchema,
   SetEmployeePosPinSchema,
   SetPosPinSchema,
+  TsdLoginSchema,
   UpdateMeSchema,
 } from './auth.schema.js';
 import { AuthService } from './auth.service.js';
@@ -31,6 +33,8 @@ import { MEDIA_TOKEN_COOKIE, MEDIA_TOKEN_TTL_SEC } from './media-token.js';
 import { PosDeviceService } from './pos-device.service.js';
 import { PosLoginService } from './pos-login.service.js';
 import { PosPinService } from './pos-pin.service.js';
+import { TsdDeviceService } from './tsd-device.service.js';
+import { TsdLoginService } from './tsd-login.service.js';
 
 const REFRESH_COOKIE = 'ms_rt';
 const COOKIE_OPTS = {
@@ -66,6 +70,8 @@ export class AuthController {
     @Inject(PosPinService) private readonly posPin: PosPinService,
     @Inject(PosLoginService) private readonly posLogin: PosLoginService,
     @Inject(PosDeviceService) private readonly posDevices: PosDeviceService,
+    @Inject(TsdLoginService) private readonly tsdLogin: TsdLoginService,
+    @Inject(TsdDeviceService) private readonly tsdDevices: TsdDeviceService,
   ) {}
 
   @Post('login')
@@ -357,5 +363,58 @@ export class AuthController {
   async pairPosDevice(@CurrentUser() user: AuthenticatedUser, @Body() body: unknown) {
     const input = PairPosDeviceSchema.parse(body);
     return this.posDevices.pair(user.accountId, user.sub, input);
+  }
+
+  // ── TSD (omborchi qo'l terminali) — G-reja G5 ─────────────────────────────
+
+  /**
+   * Terminaldan kirish — qurilma kaliti + PIN, tokensiz.
+   *
+   * Kassa (`pos-login`) dan farqi: kalit MAJBURIY (`TsdLoginSchema` izohi) va
+   * sessiya `deviceMode: 'tsd'` bilan muhrlanib, `TsdGuard` uni tor marshrut
+   * ro'yxatiga qamaydi.
+   *
+   * Cookie'lar parol-login bilan AYNAN bir xil qo'yiladi — refresh/logout
+   * yo'llari o'zgarmaydi. (Android klienti cookie'ni saqlaydi; `mediaToken`
+   * unga kerak emas, lekin javob shakli ajralib ketmasin.)
+   */
+  @Post('tsd-login')
+  async tsdLoginHandler(
+    @Body() body: unknown,
+    @Req() req: FastifyRequest,
+    @Res({ passthrough: true }) res: FastifyReply,
+  ) {
+    const input = TsdLoginSchema.parse(body);
+    const meta = {
+      userAgent: req.headers['user-agent'],
+      ipAddress: (req.headers['x-forwarded-for'] as string | undefined) ?? req.ip,
+    };
+    const { accessToken, refreshToken, mediaToken, user, device } = await this.tsdLogin.login(
+      input,
+      meta,
+    );
+    res.setCookie(REFRESH_COOKIE, refreshToken, COOKIE_OPTS);
+    res.setCookie(MEDIA_TOKEN_COOKIE, mediaToken, MEDIA_COOKIE_OPTS);
+    // 🔴 Refresh-token JAVOBDA ham qaytadi (kassadan farq). Sabab: Android
+    // klienti brauzer emas — cookie idorasi OkHttp'da o'z-o'zidan yo'q va
+    // ilova tokenni shifrlangan holda o'zi saqlaydi. Cookie ham qo'yiladi
+    // (kelajakdagi WebView qobig'i uchun), lekin ilova tanani o'qiydi.
+    return { accessToken, refreshToken, user, device };
+  }
+
+  /**
+   * Terminalni omborga bog'lash. Kalit FAQAT shu javobda qaytadi.
+   *
+   * 🔴 `@RequirePermission` (HR dekoratori EMAS) — `pairPosDevice` izohidagi
+   * bilan aynan bir sabab: `PermissionsGuard` global, `HrPermissionGuard` esa
+   * bu controllerda ulanmagan va HR dekoratori jimgina BEZAK bo'lib qolardi.
+   * Qo'riqchi: `pos-endpoint-guards.test.ts`.
+   */
+  @Post('tsd-device/pair')
+  @UseGuards(JwtAuthGuard)
+  @RequirePermission({ entity: 'employee', action: 'update' })
+  async pairTsdDevice(@CurrentUser() user: AuthenticatedUser, @Body() body: unknown) {
+    const input = PairTsdDeviceSchema.parse(body);
+    return this.tsdDevices.pair(user.accountId, user.sub, input);
   }
 }

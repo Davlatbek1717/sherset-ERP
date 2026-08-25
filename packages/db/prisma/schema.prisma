@@ -87,6 +87,7 @@ model Account {
   organizationAccounts           OrganizationAccount[]
   cashDesks                      CashDesk[]
   posDevices                     PosDevice[]
+  tsdDevices                     TsdDevice[]
   moneyOperations                MoneyOperation[]
   cashIns                        CashIn[]
   cashOuts                       CashOut[]
@@ -620,6 +621,63 @@ model PosDevice {
   @@map("pos_devices")
 }
 
+/// TSD — kichik omborchining qo'l terminali (Android, skanerli).
+///
+/// 🔴 NEGA ALOHIDA JADVAL, `pos_devices` ga `kind` USTUNI EMAS (G5 qarori):
+///
+///  1. **Sxema mos kelmaydi.** `pos_devices.cash_desk_id` va `organization_id`
+///     NOT NULL — kassa smenasi uchalasini talab qiladi. TSD da kassa YO'Q.
+///     Ularni nullable qilish `PosDeviceContext.cashDeskId: string` shartnomasini
+///     `string | null` ga aylantirardi, ya'ni null-ishlov JONLI kassa yo'liga
+///     kirib borardi. F-reja 10-qoidasi aynan shunday «yon ta'sir» haqida.
+///  2. **Fail-closed.** TSD kaliti kassa smenasini HECH QACHON ocholmasligi kerak.
+///     Alohida jadval bilan bu tuzilmaviy: `pos-login` `pos_devices` dan o'qiydi
+///     va TSD qatorini ko'rmaydi. `kind` ustuni bilan esa xavfsizlik bitta
+///     unutilgan `where kind='pos'` ga bog'liq bo'lib qolardi.
+///
+/// Qolgan hamma narsa `PosDevice` bilan bir xil naqsh: kalit argon2 xeshi
+/// bo'lib saqlanadi, faqat juftlash javobida bir marta ko'rinadi; qulf
+/// BAZADA (API restart bilan aylanib o'tilmasin); qator O'CHIRILMAYDI —
+/// `revoked_at` qo'yiladi (audit izi).
+model TsdDevice {
+  id        String @id @default(uuid()) @db.Uuid
+  accountId String @map("account_id") @db.Uuid
+
+  /// Omborchi ko'radigan nom: «TSD-1, Ombor 02».
+  name String @db.VarChar(200)
+
+  /// Terminal QAYSI omborda ishlaydi. Kassa qurilmasidan farqli — kassa/tashkilot
+  /// yo'q, chunki TSD pul bilan ishlamaydi.
+  storeId String @map("store_id") @db.Uuid
+
+  /// argon2(qurilma maxfiy kaliti) — `PosDevice.secretHash` bilan bir xil naqsh.
+  secretHash String @map("secret_hash") @db.VarChar(255)
+
+  pairedById String    @map("paired_by_id") @db.Uuid
+  pairedAt   DateTime  @default(now()) @map("paired_at") @db.Timestamptz()
+  lastSeenAt DateTime? @map("last_seen_at") @db.Timestamptz()
+
+  /// Qurilmadagi APK versiyasi. NULL = qurilma versiya yubormadi
+  /// («eski» degani EMAS, «o'lchanmagan» — `PosDevice.shellVersion` izohi).
+  appVersion String? @map("app_version") @db.VarChar(32)
+
+  /// Terminal yo'qolsa admin bekor qiladi. Bekor qilingan qurilmaning ochiq
+  /// sessiyasi ham keyingi refresh'da o'ladi (`auth.service.refresh`).
+  revokedAt DateTime? @map("revoked_at") @db.Timestamptz()
+
+  failedAttempts Int       @default(0) @map("failed_attempts")
+  lockedUntil    DateTime? @map("locked_until") @db.Timestamptz()
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz()
+
+  account       Account        @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  refreshTokens RefreshToken[]
+
+  @@index([accountId, revokedAt])
+  @@map("tsd_devices")
+}
+
 // Role — per-account definition (e.g. Administrator, Manager, Cashier).
 model Role {
   id          String   @id @default(uuid()) @db.Uuid
@@ -747,11 +805,22 @@ model RefreshToken {
   familyId     String?   @map("family_id") @db.Uuid
   replacedById String?   @map("replaced_by_id") @db.Uuid
   createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz()
+  /// G5 - bu sessiya TSD (qo'l terminali) qurilmasidan ochilgan bo'lsa, o'sha
+  /// qurilma. NULL - oddiy brauzer/kassa sessiyasi.
+  ///
+  /// NEGA REFRESH QATORIDA: `deviceMode` da'vosi access-JWT ichida yashaydi,
+  /// `refresh()` esa yangi JWT ni XODIMDAN qayta quradi (rollar, hr-ruxsatlar).
+  /// Ya'ni da'vo faqat tokenda tursa, birinchi refresh'da TSD sessiyasi
+  /// JIMGINA to'liq ERP sessiyasiga aylanardi - cheklov o'z-o'zidan yechilardi.
+  /// Bog'lanish shu yerda saqlanadi va rotatsiyada meros bo'ladi.
+  tsdDeviceId  String?   @map("tsd_device_id") @db.Uuid
 
-  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  employee  Employee   @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  tsdDevice TsdDevice? @relation(fields: [tsdDeviceId], references: [id], onDelete: Restrict)
 
   @@index([employeeId, revokedAt])
   @@index([familyId])
+  @@index([tsdDeviceId])
   @@map("refresh_tokens")
 }
 
