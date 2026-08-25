@@ -1,6 +1,6 @@
 # Kassada mijoz hisob-kitobi — qarzni undirish ro'yxatiga ulash + avans bilan ishlash
 
-> **Yaratilgan:** 2026-08-25 · **Buyurtmachi:** Ozodbek (egasi) · **Holat:** Q1 QISMAN + Q2 QISMAN + Q3 QISMAN + A1 QISMAN + **A2 QISMAN** (2026-08-25) — qarz oqimi kodda va testda TO'LIQ (`7ef30b61`, `af8d3339`, `633e2ebd`), avans QABULI ham kodda va testda TO'LIQ (**`8d1f4a01`**): kassir mijozdan oldindan to'lov ola oladi, pul yashiqqa va smena kutilgan naqdiga kiradi, mijoz balansi manfiy tomonga suriladi va `Debt` reyestriga TEGILMAYDI. **A1 migratsiyasi lokal dev bazada IKKI MARTA sinaldi, backfill zond bilan isbotlandi, Prisma drifti YO'Q, `recompute` DRY-RUN `changed: 0`.** Avans SARFLASHI ham kodda va testda TO'LIQ (**`8178fd87`**): `PREPAY` tenderi — chek TO'LANGAN sanaladi, kassa naqdi O'ZGARMAYDI, mijoz balansi +summa (avans yeyiladi), avansdan ortig'i 400 bilan rad etiladi, `Debt` reyestriga TEGILMAYDI va `recompute` skriptiga IKKI yangi manba qo'shildi; **A2 da migratsiya YO'Q** (`RetailSalePayment.method` VarChar(20) yetadi). **HECH BIRI DEPLOY QILINMAGAN** — deploy branch'i `kassa-qarzi-q1-q2` @ `456e53af` (Q3, A1, A2 — uchalasi ham unda YO'Q, qayta yig'ilishi kerak), push va jonli tasdiq KUTILMOQDA; `opening` manbasi qarori hamon ochiq; 🔴 A1 sxemada 35 bayonotlik MAVJUD DRIFT topdi (4 ta `DROP TABLE` bilan) — alohida ish; navbat A3 (yoki Q4); A2 ochiq qoldirgan ikki qaror — avansdan to'langan chek TAHRIRLANMAYDI (400) va Z-hisobot `revenueByMethod` kesimi vozvrat-nusxalarini sanaydi (mavjud chegara)
+> **Yaratilgan:** 2026-08-25 · **Buyurtmachi:** Ozodbek (egasi) · **Holat:** Q1 QISMAN + Q2 QISMAN + Q3 QISMAN + A1 QISMAN + A2 QISMAN + **A3 QISMAN** (2026-08-25) — **AVANS OQIMI ENDI KODDA TO'LIQ: qabul (A1, `8d1f4a01`) → sarflash (A2, `8178fd87`) → ko'rsatish/tarix/qaytarish (A3, `526dda5c` + `1447a11e`)**. A3: `customerStanding` sof moduli (to'rt holat), POS kartasida «Avansi: N» (ilgari «0» turardi), avans yorliqlari UCH xaritada (POS · akt sahifasi · **Excel akti — reja bilmagan uchinchi joy**), `POST /cashier-sessions/:id/customer-prepay-refund` (kassa −summa / balans +summa, cap = mavjud avans, balans `FOR UPDATE` bilan QULFLANADI, RKO cheki `ВА-`), `recompute` ga **to'rtinchi manba** (`customer-prepay-refunds`), Z-hisobotda uchinchi avans qatori, menejer ro'yxatida avansli mijozlar ajralib turadi. **A3 da migratsiya YO'Q** (`RetailDrawerCashOut.kind` VarChar(20) va `agentId` yetadi). Qarz oqimi (Q1–Q3) o'zgarishsiz. **HECH BIRI DEPLOY QILINMAGAN** — deploy branch'i `kassa-qarzi-q1-q2` @ `456e53af` da Q3, A1, A2, A3 YO'Q (qayta yig'ilishi kerak), push va jonli tasdiq KUTILMOQDA; `opening` manbasi qarori hamon ochiq; A1 topgan 35 bayonotlik sxema DRIFTI (4 ta `DROP TABLE`) — alohida ish; navbat **Q4** (yoki Q5/Q6); A2 ning ikki chegarasi (avansdan to'langan chek TAHRIRLANMAYDI; Z-hisobot `revenueByMethod` vozvrat-nusxalarini sanaydi) va A3 ning ikki qaydi (mijozga «avansdan yechildi» xabari ATAYLAB yozilmadi; Excel akt yorliqlarida `returnPayout`/`salesReturn` hamon yo'q — G1 ning ishi) OCHIQ qoladi
 > **Ikki shikoyat (egasi, 2026-08-25):**
 > 1. «Qarzdorlikni undirish bo'limiga kassadan qo'shilgan yangi qarzdorliklar
 >    ko'rinmayapti.» → fazalar **Q1…Q6**
@@ -2746,3 +2746,403 @@ Deploy oldidan/keyin (qoida 8): `packages/db` da
 6. A3 ning karta ekrani `balanceMinor === null` («o'lchanmagan») uchinchi
    holatini unutmasin — `prepayAvailable` uni 0 qiladi, lekin KARTA uni
    «avansi yo'q» deb ko'rsatmasligi kerak.
+
+### A3 — Avansni ko'rsatish, tarixi va qaytarish · 2026-08-25 · **QISMAN** (jonli tasdiq + lokal `recompute` DRY-RUN kutilmoqda)
+
+**Xulq O'ZGARDI.** Kassir endi mijozning avansini **KO'RADI** (ilgari ekranda
+«0» turardi), avans harakatlari tarixda **YORLIQ bilan** chiqadi, va
+mijozning sarflanmagan avansini **naqd qaytarish** yo'li ochildi. Egasining
+ikkinchi shikoyatining («ishlay olmayapmiz») uchala tomoni ham — qabul (A1),
+sarflash (A2), ko'rsatish/qaytarish (A3) — endi kodda TO'LIQ.
+
+Commitlar: **`526dda5c`** (asosiy funksiya + testlar), **`1447a11e`**
+(Excel akt-sverkasidagi uchinchi yorliq xaritasi). Branch
+`yacheyka-inventarizatsiya`.
+
+#### Bog'liqlik holati (qoida 11 — ochiq aytiladi)
+
+A3 ning sharti — «A2 tugagan bo'lsin». A2 holati **«QISMAN»**: kod va testlar
+TO'LIQ, jonli tasdiq deploy'ga bog'liq holda OCHIQ. Kod darajasida
+tekshirildi va tasdiqlandi:
+
+| Shart | Holat |
+|---|---|
+| A2 tenderi joyida (`TENDER.prepay`, `PREPAY` qatori) | ✅ `retail-tenders.ts` da |
+| A2 ning sof qoidasi joyida (`prepayAvailable`) | ✅ `pos-customer-debt.ts:201` |
+| A1 yo'li joyida (`customerPrepay`, `АВ-` hujjati) | ✅ `cashier-session.service.ts` da |
+| A2 ning `salePrepay` docType'i va `recompute` bloklari | ✅ ikkalasi ham joyida |
+
+**FUNKSIONAL bog'liqlik BAJARILGAN** — A3 A2 ning KODIGA tayanadi
+(`prepayAvailable` ustiga quriladi), jonli tasdig'iga emas. Egasi Q2/Q3/A1/A2
+ni ham aynan shu sharoitda davom ettirishga ruxsat bergan. Meros ochiq
+bandlar pastda takrorlanadi.
+
+#### 🔴 Sessiya boshidagi to'siq — daraxtda BOSHQA IKKI sessiyaning ishi
+
+Ish boshlanganda daraxtda A3 AYNAN tegadigan uch fayl (`customer-card-panel.tsx`,
+`ru.json`, `uz.json`) **boshqa sessiyaning commit qilinmagan tahririda** edi
+(G1 — `returnPayout`/`salesReturn` yorliqlari). Fayllar 12 daqiqa oldin
+o'zgargan, ya'ni sessiya FAOL edi.
+
+Qaror: **kutildi va TEGILMADI** (CLAUDE.md §6.1 — «yozish/stash/revert TAQIQ»,
+Q2 sessiyasining `git stash` sabog'i). Bir necha daqiqadan keyin o'sha sessiya
+o'z ishini `9fe25d15` bilan commit qildi va daraxt tozalandi — A3 ish shundan
+KEYIN boshlandi. Ya'ni bu safar **worktree ham, stash ham kerak bo'lmadi**.
+
+Sessiya davomida ikkinchi parallel sessiya (K1 — bo'linadigan tovar reyestri)
+o'z ishini daraxtga qo'ydi (`stock-piece/*`, `schema.prisma`, `app.module.ts`,
+`tsd-scan.ts`, migratsiya). Unga TEGILMADI; commit `git add <aniq yo'llar>`
+bilan qilindi va `git show --name-only` bilan tasdiqlandi: **begona fayl
+commit'ga TUSHMADI** (yagona qo'shimcha — hook yozadigan `docs/progress.json`).
+
+⚠️ Buning bitta o'lchov oqibati bor: **to'liq test raqamlari izolyatsiyalanmagan**
+(daraxtda K1 ning kodi va testlari ham bor). Shuning uchun pastda ham absolyut
+raqam, ham **fayl kesimidagi aniq delta** beriladi.
+
+#### Nima qilindi
+
+| # | Fayl | Nima |
+|---|---|---|
+| 1 | `apps/api/src/modules/debt/pos-customer-debt.ts` | **YANGI sof modul** `customerStanding(balanceMinor, registryOutstanding)` — to'rt holat (`debt`/`prepaid`/`settled`/`unmeasured`) + summa + `conflicted` bayrog'i. `debtPayable` va `prepayAvailable` USTIDA turadi, yangi formula YO'Q |
+| 2 | `apps/api/src/modules/debt/pos-debt-payment.service.ts` | `GET /debts/pos/summary/:cpId` javobiga `standing` maydoni (mavjud maydonlarning biri ham o'zgarmadi) |
+| 3 | `apps/api/src/modules/cashier-session/pos-cash-out.ts` | `CASH_OUT_KIND.prepayRefund = 'prepay_refund'`; prefiks `ВА-`; daftar izohi «Avans qaytarildi»; `CASH_OUT_EVENT.prepayRefund`; audit rejasi (`balanceBeforeMinor` bilan); `summarizeCashOut.prepayRefundMinor` |
+| 4 | `apps/api/src/modules/cashier-session/cashier-session.schema.ts` | `CustomerPrepayRefundSchema` (summa IXTIYORIY — berilmasa to'liq qoldiq) |
+| 5 | `apps/api/src/modules/cashier-session/cashier-session.service.ts` | **YANGI** `customerPrepayRefund()` + `lockCounterpartyBalance()` (`FOR UPDATE`); `zReport()` ga `prepayRefundMinor`; `cashOutSummary()` ga yangi qator |
+| 6 | `apps/api/src/modules/cashier-session/cashier-session.controller.ts` | `POST :id/customer-prepay-refund` (ruxsat va kiosk qamrovi A1 bilan AYNAN bir xil) |
+| 7 | `apps/api/src/modules/cashier-session/shift-variance.ts` | `ZReportInput.prepayRefundMinor?` + `ZReport.prepayRefundMinor` (ixtiyoriy ⇒ mavjud chaqiruvchilar buzilmaydi) |
+| 8 | `apps/api/src/modules/counterparty-balance/counterparty-balance-doc-types.ts` | `BALANCE_DOC_TYPE.customerPrepayRefund` (nega `returnPayout` ham, `salePrepay` ham qayta ishlatilmagani izohda) |
+| 9 | `apps/api/src/modules/counterparty-balance/counterparty-balance-doc-resolver.ts` | `customerPrepayRefund` → `RetailDrawerCashOut` (`returnPayout` bilan AYNI jadval, sikl ikki tur bo'yicha; kalitlar ALOHIDA) |
+| 10 | `apps/api/src/scripts/recompute-counterparty-balances.ts` | 🔴 **`SOURCE: customer-prepay-refunds`** bloki (`+sumMinor`, `kind='prepay_refund'`) |
+| 11 | `apps/api/src/scripts/counterparty-balance-sources.ts` | `SCRIPT_SOURCES` ga yangi manba; `cashier-session.service.ts` yozuvi UCH manbali bo'ldi |
+| 12 | `apps/api/src/modules/counterparty-statement/statement-compute.util.ts` | `DOC_TYPE_LABEL` ga uchala avans turi (Excel akt-sverkasi — yorliq xaritasining UCHINCHI joyi) |
+| 13 | `apps/web/src/components/pos/customer-card-panel.tsx` | Karta endi `standing` dan yuradi: «Avansi» yorlig'i + yashil rang; `KNOWN_DOC_TYPES` ga uch yangi tur; `data-standing` atributi (test uchun) |
+| 14 | `apps/web/src/components/pos/customers-panel.tsx` | AYNI holat ko'rinishi + **«Avansni qaytarish»** tugmasi va bloki (faqat avansi bor mijozda, smenasiz o'chiq) + RKO cheki chopi |
+| 15 | `apps/web/src/app/print/cash-out/[docId]/page.tsx` | RKO chekining sarlavhasi: «AVANS QAYTARILDI» (vozvrat puli bilan chalkashmasin) |
+| 16 | `apps/web/src/app/print/reconciliation-act/page.tsx` | `ACT_DOC_TYPES` ga uch yangi tur |
+| 17 | `apps/web/src/lib/{z-report-receipt,use-z-receipt-labels}.ts` + `retail/sessions/[id]/page.tsx` | Z-hisobotda «Avans qaytarildi» qatori (chek va ekran) |
+| 18 | `apps/web/src/app/(app)/counterparties/page.tsx` | Menejer ro'yxatida avansli mijozlar ajralib turadi (manfiy saldo — yashil + tushuntirish `title`) |
+| 19 | `apps/web/src/messages/{ru,uz}.json` | **18 yangi kalit** (9 ru + 9 uz): karta holati (2), qaytarish bloki (4), Z-hisobot qatori (1), doc-type yorliqlari (3+3 = ikki xaritada), menejer izohi (1) |
+| 20 | 2 yangi test fayli + 9 mavjudga qo'shimcha | pastga qarang |
+
+**Endpointning shakli** (`customerPrepayRefund`):
+
+```
+session ← loadOpenShiftForDrawer      (ochiq · O'Z smenasi · SO'M kassa)
+agent   ← counterparty.findFirst      (topilmasa 404)
+cashBefore ← expectedCashMinor(...)   («yashiqda yo'q pul» signali uchun)
+raqam  ← allocateDocumentNumber('ВА-YYYY-')
+$transaction:
+    balansOldin ← lockCounterpartyBalance(FOR UPDATE)   ← BIRINCHI YOZUV
+    available   ← prepayAvailable(balansOldin)          ← A2 ning SOF qoidasi
+    available = 0                  ⇒ 400 («qaytariladigan avans yo'q»)
+    so'ralgan > available          ⇒ 400 (ANIQ son bilan)
+    so'ralgan berilmagan           ⇒ TO'LIQ qoldiq
+    retailDrawerCashOut.create({ kind:'prepay_refund', agentId })
+    audit (PREPAY_REFUND [+ CASH_OVERDRAWN])
+    money.applyDeltas(drawerMoneyDeltas({kind:'out'}))  → CashDesk −summa
+    balance.applyDelta(+summa, docType:'customerPrepayRefund')
+```
+
+#### 🔴 Rejadan TO'RTTA ataylab chekinish
+
+**1. `customerStanding` `conflicted` bayrog'ini ham qaytaradi (rejada YO'Q).**
+Reja to'rt holat va «tegishli summa» ni so'ragan edi. Lekin o'lchandi:
+manfiy balans + reyestrda ochiq qarz holatida `debtPayable` VA
+`prepayAvailable` **ikkalasi ham noldan katta** bo'ladi (A2 ning
+`pos-prepay-available.test.ts` da bu «har biri O'Z daftariga sodiq» deb
+qulflangan). Ya'ni to'rt holat kifoya emas: qaysi biri ko'rsatilishi
+KERAK degan savol qoladi.
+
+Qaror: ekran **pul daftariga ergashadi** (`prepaid`) — mijozning puli bizda
+turganda undan qarz so'rash reja invariant 4 ning ochiq buzilishi bo'lardi.
+Lekin ziddiyat **JIM emas**: `conflicted: true` qaytadi va kartadagi mavjud
+`registryExceedsBalance` ogohlantirishi baribir chiziladi.
+
+**2. `unmeasured` holatida summa NOL EMAS — reyestr qarzi ko'rsatiladi.**
+A2 hisobotining 6-eslatmasi «`balanceMinor === null` uchinchi holatini
+unutmang» degan edi. Amalda uchinchi holat IKKI qismli: balans qatori yo'q,
+LEKIN reyestrda haqiqiy qarz bo'lishi mumkin. `unmeasured` da summa
+`debtPayable(null, reyestr)` — ya'ni qarz ko'rinadi (aks holda kassir
+to'lovni qabul qilmasdan qaytarib yuborardi), holat esa baribir
+«o'lchanmagan» deb belgilanadi va karta buni alohida qator bilan aytadi.
+
+**3. `sumMinor` IXTIYORIY (`CustomerPrepaySchema` da MAJBURIY edi).**
+Reja imzoni aytmagan. Qabulda «qolgani qancha» degan manba YO'Q (mijoz
+qancha bersa shuncha), qaytarishda esa BOR — mijozning avansi. Shuning uchun
+bu yerda `CustomerPayoutSchema` (G1) naqshi olindi: berilmasa TO'LIQ qoldiq
+qaytariladi, ekran esa maydonni o'sha son bilan to'ldiradi.
+
+**4. «Avansni qaytarish» tugmasi faqat avansi bor mijozda KO'RINADI.**
+Reja tugmani shartsiz tasvirlagan edi. Avansi yo'q mijozda u har doim 400
+beradigan tugma bo'lardi — kassirni ishlamaydigan yo'lga chorlash. Tugma
+`standing.kind === 'prepaid'` da chiziladi; server cap'i esa mustaqil
+ishlaydi (ekran — qulaylik, HAQIQIY qaror serverda, qulf bilan).
+
+#### 🔴 Migratsiya KERAK EMAS — o'lchangan
+
+`RetailDrawerCashOut.kind` ustuni `String @default("other") @db.VarChar(20)`
+(sxemadan o'qildi), yangi qiymat `'prepay_refund'` — **14 belgi**.
+`agentId` ustuni jadvalda ALLAQACHON bor (G1 `return_payout` uchun qo'shgan),
+`@@index([accountId, retailShiftId, kind])` ham bor.
+
+**Ya'ni A3 da yangi migratsiya YO'Q**, va qoida 7 ning migratsiya-bandi
+qo'llanmaydi. VPS'da berilishi kerak bo'lgan migratsiyalar hamon O'SHA
+IKKITASI: `20260825120000_debt_source_doc` (Q1) va
+`20260825220000_drawer_cash_in_kind` (A1).
+
+#### 🔴 Avans tarixi — YOZMA TASDIQ (reja A3 vazifasi 3)
+
+Reja «mavjud `GET /debts/pos/history/:cpId` yangi `docType` larni AVTOMATIK
+ko'rsatadi — tekshirilsin va hisobotda yozma tasdiqlansin» degan edi.
+
+**Tasdiqlanadi, uch dalil bilan:**
+
+1. `pos-debt-payment.service.ts#history` `journalWhere({accountId,
+   counterpartyId, currency})` dan yuradi — `docType` filtri UMUMAN yo'q
+   (`counterparty-balance-journal.util.ts` sarlavhasi buni «chala-ro'yxat
+   bug-klassi» deb ataydi va shaklini testda qulflagan);
+2. `foldPosHistory` ham turni tekshirmaydi (yagona istisno — `opening`,
+   u tarixiy qoldiq sifatida alohida ko'rsatiladi);
+3. **yangi test** (`pos-debt-history.test.ts`): uchala tur
+   (`customerPrepay`, `salePrepay`, `customerPrepayRefund`) ro'yxatda
+   qoladi va ishoralari to'g'ri (qabul `−`, sarf va qaytarish `+`).
+
+Ya'ni A3 tarix uchun **server kodini o'zgartirmadi** — faqat YORLIQLARNI
+(uch xarita) qo'shdi, chunki A1/A2 ularni ataylab A3 ga qoldirgan edi.
+
+#### Yorliq xaritalari — REJA IKKITASINI BILARDI, UCHINCHISI TOPILDI
+
+| # | Joy | Kim o'qiydi |
+|---|---|---|
+| 1 | `pages.pos.customer_card_doc` (ru+uz) + `KNOWN_DOC_TYPES` | POS mijoz kartasi tarixi |
+| 2 | `pages.print.act.doc_types` (ru+uz) + `ACT_DOC_TYPES` | akt-sverka chop sahifasi |
+| 3 | 🔴 `DOC_TYPE_LABEL` (`statement-compute.util.ts`) | **Excel akt-sverkasi** — mijozga yuboriladigan fayl |
+
+Uchinchisi SERVER tomonda va reja ro'yxatida yo'q edi; usiz mijozga
+ketadigan Excel aktida xom `customerPrepayRefund` satri chiqardi
+(commit `1447a11e`).
+
+⚠️ **TOPILDI, LEKIN TUZATILMADI (begona faza ishi):** o'sha serverdagi
+xaritada `returnPayout` (G1) va `salesReturn` (P14) ham YO'Q. G1 sessiyasi
+bugun (`9fe25d15`) IKKI web xaritasini tuzatdi, serverdagi uchinchisi esa
+ochiq qoldi — G1 ning «ochiq qolganlar» bandiga qaytadi.
+
+#### Test natijalari (raqam bilan)
+
+| O'lchov | Natija |
+|---|---|
+| `apps/api` **to'liq** vitest | **658 fayl · 9350 test YASHIL**, 1 fayl / 2 test skip |
+| ...ning beqarorlik qaydi | ⚠️ Yuk ostida `auth/{pos,tsd}-device.service.test.ts` ning argon2 testlari 5 s timeout bilan yiqilishi mumkin (A1 hisoboti bu sinfni allaqachon qayd etgan). ALOHIDA yugurtirilganda **47/47 yashil**; oxirgi to'liq yugurish TO'LIQ yashil. A3 ga aloqasi yo'q — bu fayllarga tegilmagan |
+| `apps/web` **to'liq** vitest | **327 fayl · 4321 test YASHIL**, 26 skip |
+| `apps/api` typecheck (`tsc --noEmit`, `--max-old-space-size=8192`) | **0 xato** |
+| `apps/web` typecheck | **0 xato** |
+| `node scripts/check-lint.mjs` | **mening fayllarimda 0 error** (qolgan 7 xato — parallel K1 sessiyasining tugallanmagan fayllari: `stock-piece/*`, `app.module.ts`, `reports/piece-reconciliation`; TEGILMADI) |
+| `pnpm i18n:gate` | **19 test yashil** (1115 fayl, 15 818 statik kalit) |
+
+**Yangi testlar — jami 80, fayl kesimida ALOHIDA o'lchandi** (absolyut
+raqamlar K1 sessiyasi tufayli izolyatsiyalanmagan, delta esa aniq):
+
+| Fayl | Delta | Nimani qulflaydi |
+|---|---|---|
+| `debt/pos-customer-standing.test.ts` | **11** (YANGI) | to'rt holat · summa HECH QACHON manfiy emas · `null` balans «avansi yo'q» EMAS · `null` + reyestr qarzi → qarz YASHIRILMAYDI · nomuvofiqlik (`prepaid` + `conflicted`) · **`debtPayable`/`prepayAvailable` bilan zid natija bermaydi** (ikkinchi formula yozilsa qizil) |
+| `cashier-session/customer-prepay-refund.test.ts` | **26** (YANGI) | pul izi to'rt joyda (`ВА-` hujjati · kassa `−` · balans `+` · audit) · summa berilmasa TO'LIQ qaytadi · **invariant 4** (tuzoq-mock: `debt`/`debtNote` ga bir marta ham tegilmaydi) · **`FOR UPDATE` qulfi rostdan olinadi** · `CASH_OVERDRAWN` signali · **kassa qoldig'i yetmasa pul daftari TO'XTATADI** · CAP: ortiq → 400 aniq son bilan · avansi yo'q / balans nol / **balans o'lchanmagan** → 400 · chegara qiymati o'tadi · **ketma-ket ikki qaytarish qoldiqdan oshmaydi** (HOLATLI balans — A2 sabog'i) · yopiq/begona smena · USD kassa · 404 · nol/manfiy summa · **7 kod-shakl qo'riqchisi** (qulf `applyDelta` dan OLDIN · cap sof qoidadan · musbat delta · `kind:'out'` · AYNAN `retailDrawerCashOut` jadvali · `source` BERILMAYDI) |
+| `cashier-session/pos-cash-out.test.ts` | **+8** | `ВА-` prefiksi va uning UNIKALLIGI · daftar izohi · hujjat qoidalari (modda/qabul qiluvchi bo'lmaydi) · audit payload'i · **`balanceBefore` `null` ≠ `0`** · overdrawn juftligi · **Z-hisobotda O'Z QATORI** (`other` ga tushmaydi) · turi yo'q smenada 0 |
+| `debt/pos-debt-summary.test.ts` | **+5** | `standing` javobda: `prepaid`/`debt`/`unmeasured`/`settled` · **mavjud maydonlar o'zgarmadi** (orqaga moslik) · nomuvofiqlikda `conflicted` + `registryExceedsBalance` birga |
+| `debt/pos-debt-history.test.ts` | **+2** | 🔴 uchala yangi tur tarixda FILTRLANMAYDI · ishora konvensiyasi (qabul `−`, sarf va qaytarish `+`) |
+| `auth/kiosk-policy-customer-prepay.test.ts` | **+4** | yangi marshrut kioskda ochiq · **YANGI QATOR QO'SHILMAGAN** (qamrov o'lchovi) · `/cash-in` va ПКО daraxti HAMON YOPIQ |
+| `counterparty-balance/counterparty-balance-doc-resolver.test.ts` | **+2** | `ВА-` raqami chiqim jadvalidan · **`returnPayout` bilan kalitlar ALOHIDA** (kassa KIRIM jadvaliga tegilmaydi) |
+| `scripts/counterparty-balance-sources.test.ts` | **+2** | 🔴 uch tomonlama qulf: yozuvchi ↔ reyestr ↔ skript **TANASI** (`kind='prepay_refund'`, MUSBAT ishora) · `return_payout` va `prepay_refund` bloklari ALOHIDA |
+| `cashier-session/shift-variance.test.ts` | **+3** | `prepayRefundMinor` kutilgan naqdga ham, farqqa ham TEGMAYDI · berilmasa `0n` · **uchala avans raqami MUSTAQIL** |
+| `manager/collection/debt-collection.service.test.ts` | **+2** | 🔴 undirish ro'yxati `counterpartyBalance` ga UMUMAN murojaat qilmaydi (sof modulda ham balans tushunchasi yo'q) — **avansli mijoz u yerga tushishi mumkin emas** |
+| `counterparty-statement/statement-compute.util.test.ts` | **+3** | Excel yorliqlari · **B2B `prepayment` bilan chalkashmaydi** · noma'lum tur hamon o'zini qaytaradi |
+| `web/pos/__tests__/customer-card-panel.test.tsx` | **+5** | «Avansi» yorlig'i va AVANS summasi · **qarzdorda AVVALGIDEK** (regressiya yo'q) · o'lchanmagan holat · **eski server javobi (`standing` yo'q) — xulq o'zgarmaydi** · avans harakatlari tarixda YORLIQ bilan (xom `docType` emas) |
+| `web/pos/__tests__/customers-panel.test.tsx` | **+7** | avans summasi ko'rinadi · **qarzdorda tugma YO'Q** · maydon qolgan avans bilan to'ladi · POST + RKO cheki + blok yopiladi · **ortiq summada tugma o'chiq, chegarada ochiq** · **`/debts` ga POST ketmaydi** · mijoz almashsa blok yopiladi |
+
+#### Qoida 10 — «bu o'zgarish qaysi mavjud oqimni buzishi mumkin?»
+
+1. **Balans / pul — YANGI YOZUVCHI, va u QAMROVDA.**
+   `cashier-session.service.ts` allaqachon `DECLARED_BALANCE_WRITERS` da edi;
+   unga UCHINCHI manba (`customer-prepay-refunds`) qo'shildi va
+   `recompute-counterparty-balances.ts` ga mos blok yozildi. **Bu unutilsa
+   cross-check har qaytargan mijozda yolg'on farq ko'rsatardi** — A1 va A2
+   hisobotlari aynan shundan ogohlantirgan. Uch tomonlama qo'riqchi test bor.
+2. **`Debt` reyestri / undirish ro'yxati / eslatma cron'i — TEGILMAYDI
+   (invariant 4).** Qaytarish yo'li `debt`/`debtNote` delegatlariga umuman
+   murojaat qilmaydi (tuzoq-mock + kod-shakl testi). Qo'shimcha: undirish
+   ro'yxatining O'ZI balansdan o'qimasligi ham endi test bilan qulflangan —
+   ya'ni avansli mijoz u yerga IKKI tomondan ham tusha olmaydi.
+3. **Smena hisobi / kutilgan naqd — MAQSAD, va u KODSIZ ishlaydi.**
+   Hujjat `RetailDrawerCashOut` da turgani uchun `collectCashInputs.drawerOutMinor`
+   uni O'Z-O'ZIDAN ayiradi (`kind` UMUMAN o'qilmaydi). Formulaga bir qator
+   ham qo'shilmadi ⇒ «yangi turni qo'shishni unutish» xatosi tug'ilishi
+   mumkin emas (A1 dagi AYNI dalil, kirim tomonida).
+4. **Z-hisobot — YANGI QATOR, jamiga TEGMAYDI.** `prepayRefundMinor`
+   ixtiyoriy maydon ⇒ mavjud chaqiruvchilar va muzlatilgan javoblar
+   buzilmaydi; `expectedCashMinor` ga ALOHIDA qo'shilmaydi (`returnPayout`
+   bilan AYNI munosabat: pul `drawerOut` orqali allaqachon ayirilgan).
+   ⚠️ `summarizeCashOut.totalMinor` ga esa **QO'SHILADI** — u «naqddan
+   chiqqan JAMI pul» degan ma'noni bildiradi va avans qaytarish ham pul
+   chiqishi. Test buni AYNAN o'lchaydi (40k + 15k + 3k = 58k).
+5. **Mijozga Telegram xabari — YANGI XABAR KETMAYDI.** `applyDelta` ga
+   `source` ATAYLAB berilmaydi (A1/A2 bilan bir xil qaror): musbat delta
+   «🛒 Qarzga qo'shildi» matnini tanlardi va o'z pulini qaytarib olgan
+   mijozga bu OCHIQ YOLG'ON bo'lardi. Kod-shakl testi `source:` yo'qligini
+   tekshiradi; `debt-source-wiring` qo'riqchisi yashil.
+6. **POS «Qarz to'lovi» oynasi / FIFO — TEGILMAGAN.** `debtPayable`
+   o'zgarmadi; `summary()` javobiga faqat maydon QO'SHILDI.
+7. **POS mijoz kartasi — ESKI SERVER bilan ham ishlaydi.** `standing`
+   ixtiyoriy o'qiladi: yo'q bo'lsa ekran AVVALGIDEK `payableMinor` ni
+   chizadi (deploy oynasida FE yangi, API eski bo'lishi mumkin). Test bor.
+8. **Akt-sverka / statement — SALDO TO'G'RI, YORLIQ endi TO'LIQ.** Saldo
+   docType ro'yxatiga bog'liq emas (Faza 10 shartnomasi); uch xarita esa
+   endi uchala avans turini ham biladi.
+9. **Kiosk qamrovi — BIR ZARRA ham kengaymadi.** Yangi marshrut
+   `/cashier-sessions` prefiksi ostida (`methods: ['*']`), ya'ni ro'yxatga
+   qator QO'SHILMADI va bu test bilan o'lchanadi. `/cash-in` va ПКО daraxti
+   YOPIQ qoldi.
+10. **Ruxsat matritsasi — YANGI RUXSAT YO'Q** (`cashiersession.create`,
+    `customer-payout`/`customer-prepay` bilan bir xil).
+11. **Deadlock — yangi yuza ochilmadi.** Qulf tartibi butun repoda BITTA:
+    **BALANS → QARZLAR**. Bu yerda faqat balans qulflanadi (qarz qulfi
+    umuman olinmaydi), ya'ni tartib buzilishi mumkin emas.
+12. **USD kassa — OCHIQ 400** (`loadOpenShiftForDrawer` qo'riqchisi,
+    A1 bilan bir xil chegara).
+13. **`ВА-` raqamlar ketma-ketligi** — `allocateDocumentNumber` orqali,
+    `ВВ-` (G1) va `АВ-` (A1) dan ALOHIDA hisoblagich (prefiks boshqa).
+    Prefikslarning UNIKALLIGI test bilan o'lchanadi.
+14. **RKO cheki — sarlavha turni AYTADI.** Avans qaytarish cheki «VOZVRAT
+    PULI» deb bosilsa, mijoz imzolagan qog'oz noto'g'ri hodisani tasdiqlardi
+    (tovar qaytmagan). Yangi sarlavha: «AVANS QAYTARILDI».
+15. **Ombor / qoldiq / yacheyka — TEGILMAGAN.** A3 `stock`, `store-cell`,
+    `retail-allocation`, `retail-sale` fayllariga bir qator ham yozmadi.
+    H-, G- va K-rejalar hududiga kirilmadi.
+    ⚠️ Lekin branch'da G4/G5/G6, Q1–Q3, A1, A2 va (commit qilinmagan holda)
+    K1 ham turibdi — **deploy oynasi ularni ham olib chiqadi**, shuning uchun
+    deploy paytida qoida 8 ning `warehouse-state.ts` qo'shimchasi va qoida 13
+    ning uchma-uch smoke'i MAJBURIY.
+
+#### Qabul mezoni bo'yicha holat (qoida 11)
+
+| # | Mezon | Holat |
+|---|---|---|
+| 1 | sof modul — to'rt holat | ✅ 11 test |
+| 2 | karta ko'rinishi (qarz / avans / o'lchanmagan) | ✅ 5 web test |
+| 3 | qaytarish cap va poyga | ⚠️ **QISMAN** — cap 5 test bilan, qulf `FOR UPDATE` ekani va `applyDelta` dan OLDIN olinishi kod-shakl testi bilan, ketma-ket qaytarish HOLATLI balans ustida; **HAQIQIY ikki-sessiyali poyga bazani talab qiladi** (A2 dagi AYNI to'siq) |
+| 4 | tarixda avans qatorlari ko'rinishi | ✅ server testi + web testi + yozma tasdiq (yuqorida) |
+| 5 | i18n ru + uz, gate'lar yashil | ✅ 19 test, 18 yangi kalit |
+| 6 | menejer tomoni (avansli mijozlar ko'rinadi) | ✅ ro'yxat ustuni; **undirish ekranida chiqmasligi** qo'riqchi test bilan |
+| 7 | api + web testlari to'liq yashil | ✅ 9342 + 4321 |
+| 8 | **jonlida: avansi bor mijoz kartasida «Avansi: N»** | ❌ **VPS/deploy kerak** |
+| 9 | **jonlida: tarixda kirim va sarf qatorlari** | ❌ VPS kerak |
+| 10 | **jonlida: qolgan avans naqd qaytariladi, balans nolga keladi** | ❌ VPS kerak |
+| 11 | **jonlida: qarzi bor mijozda karta AVVALGIDEK** (regressiya yo'q) | ❌ VPS kerak |
+| 12 | **`recompute` DRY-RUN lokal bazada** (A3 bloki bilan) | ❌ **parol kutilmoqda** (`packages/db/.env` repoda yo'q — A2 dagi AYNI to'siq) |
+
+**Shuning uchun holat «TUGADI» EMAS, «QISMAN».** Yopish sharti: 3, 8–12
+bandlari.
+
+#### Deploy holati
+
+**Deploy QILINMADI**, VPS'ga tegilmadi, jonli bazaga tegilmadi.
+
+🔴 **Deploy branch'i YANGILANISHI KERAK.** `kassa-qarzi-q1-q2` @ `456e53af`
+da Q3 ham, A1 ham, A2 ham, A3 ham YO'Q. Hozirgi `yacheyka-inventarizatsiya`
+da esa A3 bilan bir qatorda **G4 (ombor avto-taqsimoti), G5/G6 (TSD)** va
+(commit qilinsa) **K1 (bo'linadigan tovar)** ham turibdi — `git merge --ff-only`
+ularni AJRATA OLMAYDI. Q2 dagi cherry-pick retsepti bilan yangi branch
+yig'ilishi kerak (`4f5c1750` asosida: Q1 → Q2 → Q3 → A1 → A2 → **A3**
++ onboarding kalendar tuzatmasi). **Bu A3 sessiyasida QILINMADI — buyruq
+kutilmoqda.**
+
+Migratsiyalar: **A3 da yangisi YO'Q** (yuqorida o'lchandi). Q1 niki
+(`20260825120000_debt_source_doc`) va A1 niki
+(`20260825220000_drawer_cash_in_kind`) — **ikkalasi ham VPS'da BERILMAGAN**
+va kod'dan OLDIN berilishi SHART.
+
+#### Jonli tekshiruv retsepti (deploy'dan KEYIN)
+
+Deploy oldidan/keyin (qoida 8): `packages/db` da
+`npx tsx scripts/warehouse-state.ts` — chiqishi hisobotga ko'chiriladi.
+
+1. A1 retsepti bilan sinov mijozga **100 000** avans kiritiladi → balans
+   **−100 000**.
+2. POS «Mijozlar» tabi → shu mijoz → 🔴 yirik son **«Mijozning avansi
+   100 000»** (yashil) bo'lib chiqadi — ilgari bu yerda «0» turardi.
+   Mijoz kartasi (`Mijoz kartasi` tugmasi) ham AYNI sonni ko'rsatadi.
+3. Kartadagi **tarix**: `АВ-…` qatori «Avans qabul qilindi» yorlig'i bilan
+   (xom `customerPrepay` satri EMAS).
+4. A2 retsepti bilan **60 000** lik chek avansdan to'lanadi → karta endi
+   **40 000** avans ko'rsatadi, tarixda «Avansdan to'lov» qatori paydo
+   bo'ladi.
+5. 🔴 **«Avansni qaytarish»** tugmasi bosiladi → maydon **400** (qolgan
+   avans) bilan to'lgan bo'ladi → «Qaytarish».
+6. RKO cheki (`ВА-2026-…`) **«AVANS QAYTARILDI»** sarlavhasi bilan chop
+   oynasida ochiladi.
+7. Kassa qoldig'i **−40 000**; kontragent balansi **0**; karta endi
+   «To'lanadigan qarz 0» ko'rsatadi (`settled`).
+8. Tarixda uchinchi qator: «Avans qaytarildi» (`ВА-` raqami bilan).
+9. 🔴 **Ortiqcha urinish:** avansi qolmagan mijozda tugma UMUMAN
+   ko'rinmaydi; API'ga to'g'ridan-to'g'ri so'rov 400 beradi.
+10. Z-hisobot: «Avans qaytarildi» qatori **400**, «Mijozlardan avans»
+    **1 000**, «Avansdan to'landi» **600** — uchalasi AYRIM.
+11. Smena yopiladi → kamomad/ortiqcha **0** (kassir 100 000 kirib,
+    40 000 chiqqanini sanaydi).
+12. 🔴 `/menejer/undirish` → shu mijoz **CHIQMAYDI** (invariant 4).
+13. Menejer `/counterparties` ro'yxati: avansi bor mijozning saldosi
+    **yashil** va `title` da «avans» tushuntirishi bor.
+14. 🔴 **Regressiya:** qarzi bor BOSHQA mijoz kartasi AVVALGIDEK
+    «To'lanadigan qarz» ni ko'rsatadi (rang va yorliq o'zgarmagan).
+15. **`recompute` DRY-RUN** (jonlida, `APPLY` SIZ): avans qaytargan
+    mijozda farq ko'rsatmasligi — A3 skript blokining jonli isboti.
+16. Uchma-uch smoke (qoida 13): bitta sotuv (post → tekshir → cancel),
+    bitta yacheyka sanash, bitta ko'chirish.
+17. Izni tozalash: 5-band (qaytarish) avansni o'zi nolga keltiradi;
+    qolgan hujjatlar (`АВ-`, `ВА-`) pul izi sifatida QOLADI — bu to'g'ri,
+    pul hujjati o'chirilmaydi (A1 ning STORNO qarori).
+
+#### Ochiq qolganlar
+
+1. **Q1 dan meros (o'zgarishsiz):** `recompute` cross-check'iga `opening`
+   manbasi qo'shilmagan; jonlida `APPLY=1` yugurtirilgan-yugurtirilmagani
+   tekshirilmagan (VPS kirishi kerak).
+2. **Q2/Q3/A1/A2 dan meros:** jonli tasdiq, deploy branch'i push
+   qilinmagan; A2 ning `edit()` chegarasi (avansdan to'langan chek
+   TAHRIRLANMAYDI) va Z-hisobot `revenueByMethod` kesimi — o'zgarishsiz.
+3. **A3 ning O'Z ochiq bandlari:** jonli tasdiqning 8–11 va 13–14
+   bandlari; lokal bazada `recompute` DRY-RUN (**parol kutilmoqda**);
+   haqiqiy ikki-sessiyali poyga sinovi.
+4. 🔴 **Excel akt yorliqlarida `returnPayout` va `salesReturn` HAMON YO'Q**
+   (`DOC_TYPE_LABEL`) — A3 topdi, lekin bu G1/P14 ning ishi, TEGILMADI.
+5. **Avans harakati haqida mijozga xabar** («avansingizdan yechildi») —
+   A2 uni A3 ga surgan edi. **A3 da ham YOZILMADI, ataylab:** har uch yo'lda
+   (`customerPrepay`, `salePrepay`, `customerPrepayRefund`) `source`
+   berilmaydi, chunki mavjud `source` lug'ati faqat QARZ matnlarini
+   (`🛒 Qarzga qo'shildi` / `↩️ Qarzingizdan ayirildi`) tanlaydi va
+   ikkalasi ham avans uchun YOLG'ON. Yangi xabar turi = yangi shablon +
+   yangi `source` qiymati + egasining matn qarori ⇒ **alohida ish**
+   (tavsiya: Q6 yoki egasi so'raganda). Bu jimlik shu yerda va kod
+   izohlarida OCHIQ qayd etilgan.
+6. **Avansi bor mijozda «Qarz to'lash» tugmasi hamon ko'rinadi** — u
+   `payableMinor = 0` bilan ochiladi va POS «ochiq qarz yo'q» deydi.
+   Zarar yo'q, lekin ortiqcha qadam; A3 hajmidan tashqarida qoldirildi.
+
+#### Keyingi fazaga (Q4 yoki Q6) eslatmalar
+
+1. `customerStanding` — ekran holatining YAGONA manbasi. Yangi ekran
+   (masalan Q4 ning undirish qatori) mijoz holatini ko'rsatmoqchi bo'lsa
+   AYNAN shundan yursin, `balanceMinor` ning ishorasini qayta o'qimasin.
+2. `conflicted` bayrog'i hozircha faqat ekran ogohlantirishi uchun.
+   Agar Q4 da undirish ro'yxatiga «nomuvofiq mijozlar» filtri kerak
+   bo'lsa — manba shu.
+3. `prepay_refund` hujjati `RetailDrawerCashOut` da `return_payout` bilan
+   YONMA-YON yashaydi. Bu jadvalni o'qiydigan HAR yangi hisobot `kind` ni
+   TEKSHIRSIN — aks holda avans qaytarishlari «vozvrat puli» bo'lib
+   sanaladi (`summarizeCashOut` da ular ALOHIDA, naqsh o'sha).
+4. Z-hisobotda endi **uchta** avans raqami bor va ular hech qachon
+   qo'shilmaydi: `prepayMinor` (kirim) · `prepaySpentMinor` (sarf) ·
+   `prepayRefundMinor` (chiqim). Yangi qator qo'shilsa shu intizom
+   saqlansin (`shift-variance.ts` izohi).
+5. Q5 (backfill) A3 ga TEGMAYDI: avans qatorlari `Debt` reyestriga hech
+   qachon tushmaydi, ya'ni backfill ularni ko'rmasligi kerak. Skript
+   `retailSalePayment` `TENDER.debt` qatorlaridan yuradi — `PREPAY`
+   qatorlari u yerga tushmaydi (A2 da ajratilgan).
