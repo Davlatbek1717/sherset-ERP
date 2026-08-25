@@ -1,64 +1,85 @@
 package uz.sherset.tsd
 
 import android.os.Bundle
-import android.view.Gravity
 import android.view.ViewGroup
-import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
-import android.widget.Toast
 import androidx.activity.ComponentActivity
-import org.json.JSONArray
 import org.json.JSONObject
+import java.util.ArrayDeque
 import java.util.UUID
 import java.util.concurrent.Executors
 
 /**
- * TSD skeleti (G-reja G5, 2-vazifa): juftlash → PIN → topshiriqlar → skan.
+ * TSD ilovasi: juftlash → PIN → ISH EKRANLARI.
  *
- * `driver-app/MainActivity.kt` naqshi: dasturiy UI (layout XML yo'q), IO
- * bitta thread'da, natija `runOnUiThread` bilan. Ish EKRANLARI (yig'ish
- * qatorlari, joylashtirish, sanash) — G6 fazasi; bu yerda ularning ULANISH
- * NUQTASI bor va u ishlaydi.
+ * G5 skeletida bu fayl butun ilova edi; G6 da u QOBIQQA aylandi — juftlash,
+ * kirish, skaner marshruti, oflayn navbat va ekranlar orasidagi navigatsiya.
+ * Ish ekranlarining O'ZI alohida fayllarda (`TaskListScreen`,
+ * `TaskDetailScreen`, `ShortageScreen`, `PlaceScreen`, `CountScreen`,
+ * `ScanInfoScreen`) va ular `Activity` ni ko'rmaydi — faqat `Shell` ni.
  *
- * 🔴 NARX HECH QAYERDA ko'rsatilmaydi. Bu ekranning intizomi emas, SERVER
+ * 🔴 NARX HECH QAYERDA ko'rsatilmaydi. Bu ekranlarning intizomi emas, SERVER
  * shartnomasi: ilova `/tsd/scan` dan foydalanadi va u narx qaytarmaydi,
  * `/products` esa TSD sessiyasiga umuman yopiq (`tsd-policy.ts`).
  */
-class MainActivity : ComponentActivity() {
+class MainActivity : ComponentActivity(), Shell {
 
-    private val io = Executors.newSingleThreadExecutor()
+    private val ioPool = Executors.newSingleThreadExecutor()
     private lateinit var store: DeviceStore
-    private lateinit var queue: ActionQueue
-    private lateinit var api: ApiClient
-    private lateinit var scanner: ScannerBridge
+
+    override lateinit var api: ApiClient
+    override lateinit var queue: ActionQueue
+    override lateinit var sender: QueueSender
+    override lateinit var ui: Ui
+    override var employeeId: String = ""
 
     private lateinit var status: TextView
     private lateinit var body: LinearLayout
-    private var employeeId: String? = null
+    private lateinit var scanField: EditText
+    private lateinit var scanner: ScannerBridge
+
+    private var current: Screen? = null
+    private val history = ArrayDeque<Screen>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         store = DeviceStore(this)
         queue = ActionQueue(this)
         api = ApiClient(getString(R.string.api_base_url))
+        sender = QueueSender(api, queue)
+        ui = Ui(this)
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(16), dp(16), dp(16), dp(16))
+            setPadding(ui.dp(16), ui.dp(16), ui.dp(16), ui.dp(16))
         }
-        status = TextView(this).apply {
-            textSize = 18f
-            text = if (store.isPaired) getString(R.string.login_title) else getString(R.string.pair_missing)
-        }
+        status = TextView(this).apply { textSize = 18f }
+        // Skan maydoni HAR DOIM ekranning tepasida va fokusda turadi:
+        // klaviatura-wedge rejimida skaner kodni AYNAN fokusdagi maydonga
+        // «yozadi», ya'ni maydon ekranlar bilan birga almashsa har o'tishda
+        // birinchi skan yo'qolardi.
+        scanField = ui.input(R.string.scan_hint)
         body = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+
         root.addView(status)
-        root.addView(ScrollView(this).apply { addView(body) })
+        root.addView(scanField)
+        root.addView(
+            ScrollView(this).apply {
+                layoutParams = LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    0,
+                    1f,
+                )
+                addView(body)
+            },
+        )
         setContentView(root)
 
-        scanner = ScannerBridge(this) { code -> onScan(code) }
+        scanner = ScannerBridge(this) { code -> routeScan(code) }
+        scanner.bindKeyboardWedge(scanField)
 
         if (store.isPaired) showLogin() else showPairing()
     }
@@ -66,6 +87,10 @@ class MainActivity : ComponentActivity() {
     override fun onStart() {
         super.onStart()
         scanner.start()
+        // Ekran yoqilganda navbat o'z-o'zidan bo'shashga urinadi: omborchi
+        // oflayn ishlab, keyin Wi-Fi zonasiga qaytadi va u yerda hech nima
+        // bosmasligi mumkin. G5 da bu YO'Q edi (navbat faqat yozilardi).
+        if (employeeId.isNotEmpty()) flushQueue(silent = true)
     }
 
     override fun onStop() {
@@ -73,7 +98,104 @@ class MainActivity : ComponentActivity() {
         super.onStop()
     }
 
-    // -- 1) Juftlash ---------------------------------------------------------
+    // ── Shell ───────────────────────────────────────────────────────────────
+
+    override fun setStatus(text: String) {
+        status.text = text
+    }
+
+    override fun go(screen: Screen) {
+        val prev = current
+        if (prev != null && prev !== screen) history.push(prev)
+        current = screen
+        body.removeAllViews()
+        status.text = screen.title(ui)
+        screen.render(body)
+        // Fokus skan maydonida qoladi — wedge skaner shu maydonga yozadi.
+        scanField.requestFocus()
+    }
+
+    override fun back() {
+        val prev = history.poll()
+        if (prev == null) {
+            go(TaskListScreen(this))
+            return
+        }
+        current = prev
+        body.removeAllViews()
+        status.text = prev.title(ui)
+        prev.render(body)
+        scanField.requestFocus()
+    }
+
+    override fun io(work: () -> Unit) {
+        ioPool.execute {
+            try {
+                work()
+            } catch (e: ApiClient.ApiException) {
+                runOnUiThread { setStatus(e.message ?: "") }
+            } catch (e: Exception) {
+                runOnUiThread { setStatus(e.message ?: e.javaClass.simpleName) }
+            }
+        }
+    }
+
+    override fun main(work: () -> Unit) = runOnUiThread(work)
+
+    override fun enqueue(method: String, path: String, body: JSONObject, label: String) {
+        try {
+            queue.enqueue(
+                ActionQueue.Action(
+                    opId = body.optString("clientOpId").ifEmpty { UUID.randomUUID().toString() },
+                    method = method,
+                    path = path,
+                    body = body,
+                    label = label,
+                ),
+            )
+            main { ui.toast(ui.str(R.string.offline_queued, queue.size())) }
+        } catch (e: ActionQueue.QueueFullException) {
+            // Navbat to'lgan — YANGISI rad etiladi va bu BALAND aytiladi.
+            // Eng eskisini tashlash jim yo'qotish bo'lardi (IS-5 klassi).
+            main { ui.toast(e.message ?: "") }
+        }
+    }
+
+    private fun flushQueue(silent: Boolean) {
+        if (queue.size() == 0) return
+        io {
+            val r = sender.flush()
+            main {
+                if (!silent || r.sent > 0 || r.rejected > 0) {
+                    ui.toast(
+                        if (r.offline) ui.str(R.string.queue_offline, r.left)
+                        else ui.str(R.string.queue_sent, r.sent, r.rejected),
+                    )
+                }
+                if (r.sent > 0 || r.rejected > 0) go(TaskListScreen(this))
+            }
+        }
+    }
+
+    // ── Skaner marshruti ────────────────────────────────────────────────────
+
+    /**
+     * Skan AVVAL joriy ekranga beriladi (u bosqichga qarab talqin qiladi);
+     * ekran uni yemasa — umumiy NARXSIZ skan-ma'lumot ochiladi.
+     *
+     * Bu tartib muhim: joylashtirish ekranida yacheyka kodi «bu yacheyka»
+     * degani, ma'lumot ekranida esa «bu yacheykada nima bor» degani.
+     */
+    private fun routeScan(code: String) {
+        val screen = current
+        if (screen != null && screen.onScan(code)) return
+        io {
+            val hit = api.scan(code)
+            main { go(ScanInfoScreen(this, hit)) }
+        }
+    }
+
+    // ── 1) Juftlash ─────────────────────────────────────────────────────────
 
     /**
      * Juftlash — admin `POST /auth/tsd-device/pair` javobidan olgan ID va
@@ -85,213 +207,67 @@ class MainActivity : ComponentActivity() {
      */
     private fun showPairing() {
         body.removeAllViews()
-        val id = input(R.string.pair_hint)
-        val secret = input(R.string.pair_secret_hint)
-        val save = bigButton(R.string.pair_save) {
-            val d = id.text.toString().trim()
-            val s = secret.text.toString().trim()
-            if (d.isEmpty() || s.isEmpty()) return@bigButton
-            store.deviceId = d
-            store.deviceSecret = s
-            toast(R.string.pair_done)
-            showLogin()
-        }
-        body.addView(TextView(this).apply { text = getString(R.string.pair_title); textSize = 20f })
+        status.text = getString(R.string.pair_missing)
+        val id = ui.input(R.string.pair_hint)
+        val secret = ui.input(R.string.pair_secret_hint)
+        body.addView(ui.label(getString(R.string.pair_title), big = true))
         body.addView(id)
         body.addView(secret)
-        body.addView(save)
+        body.addView(
+            ui.button(R.string.pair_save) {
+                val d = id.text.toString().trim()
+                val s = secret.text.toString().trim()
+                if (d.isEmpty() || s.isEmpty()) return@button
+                store.deviceId = d
+                store.deviceSecret = s
+                ui.toast(R.string.pair_done)
+                showLogin()
+            },
+        )
     }
 
-    // -- 2) PIN kirish -------------------------------------------------------
+    // ── 2) PIN kirish ───────────────────────────────────────────────────────
 
     private fun showLogin() {
         body.removeAllViews()
+        history.clear()
+        current = null
         status.text = getString(R.string.login_title)
-        val pin = input(R.string.login_pin_hint).apply { inputType = 18 /* numberPassword */ }
-        val btn = bigButton(R.string.login_button) {
-            val code = pin.text.toString().trim()
-            pin.setText("")
-            io.execute {
-                runCatching {
-                    api.login(
+        val pin = ui.input(R.string.login_pin_hint).apply { inputType = 18 /* numberPassword */ }
+        body.addView(pin)
+        body.addView(
+            ui.button(R.string.login_button) {
+                val code = pin.text.toString().trim()
+                pin.setText("")
+                io {
+                    val resp = api.login(
                         store.deviceId.orEmpty(),
                         store.deviceSecret.orEmpty(),
                         code,
                         appVersion(),
                     )
-                }.onSuccess { resp ->
                     // Refresh-token TANADAN olinadi (cookie yo'q) va
-                    // shifrlangan holda saqlanadi.
+                    // shifrlangan holda saqlanadi. PIN HECH QACHON saqlanmaydi.
                     store.refreshToken = resp.optString("refreshToken").takeIf { it.isNotEmpty() }
-                    employeeId = resp.optJSONObject("user")?.optString("id")
-                    runOnUiThread { showTasks() }
-                }.onFailure { e ->
-                    runOnUiThread { status.text = e.message ?: getString(R.string.login_failed) }
+                    employeeId = resp.optJSONObject("user")?.optString("id").orEmpty()
+                    main {
+                        go(TaskListScreen(this))
+                        flushQueue(silent = true)
+                    }
                 }
-            }
-        }
-        body.addView(pin)
-        body.addView(btn)
+            },
+        )
     }
 
-    // -- 3) Topshiriqlar -----------------------------------------------------
-
-    private fun showTasks() {
-        body.removeAllViews()
-        status.text = getString(R.string.tasks_title)
-
-        val scanField = input(R.string.scan_hint)
-        scanner.bindKeyboardWedge(scanField)
-        body.addView(scanField)
-        body.addView(bigButton(R.string.tasks_refresh) { loadTasks() })
-        body.addView(bigButton(R.string.logout) {
-            store.clearSession()
-            api.accessToken = null
-            showLogin()
-        })
-        if (queue.size() > 0) {
-            body.addView(TextView(this).apply {
-                text = getString(R.string.queue_pending, queue.size())
-            })
-        }
-        loadTasks()
+    /** Chiqish — sessiya o'chadi, juftlik QOLADI (terminal qayta ulanmasin). */
+    override fun logout() {
+        store.clearSession()
+        api.accessToken = null
+        employeeId = ""
+        showLogin()
     }
-
-    private fun loadTasks() {
-        val me = employeeId ?: return
-        io.execute {
-            runCatching { api.myTasks(me) }
-                .onSuccess { items -> runOnUiThread { renderTasks(items) } }
-                .onFailure { e -> runOnUiThread { status.text = e.message.orEmpty() } }
-        }
-    }
-
-    private fun renderTasks(items: JSONArray) {
-        if (items.length() == 0) {
-            body.addView(TextView(this).apply { text = getString(R.string.tasks_empty) })
-            return
-        }
-        for (i in 0 until items.length()) {
-            val t = items.optJSONObject(i) ?: continue
-            body.addView(bigButton(t.optString("name", t.optString("id"))) {
-                // G6: topshiriq detali va qator tasdiqlash ekrani.
-                toast(t.optString("id"))
-            })
-        }
-    }
-
-    // -- 4) Skan -------------------------------------------------------------
-
-    /**
-     * Skan natijasi. **Multi-hit MAJBURIY** (G-reja): shtrixlar ataylab unikal
-     * emas, shuning uchun bir nechta tovar chiqsa ilova O'ZI birortasini
-     * tanlamaydi — ro'yxat ko'rsatadi va odam tanlaydi. Jimgina birinchisini
-     * olish noto'g'ri tovarni ko'chirishga olib kelardi.
-     */
-    private fun onScan(code: String) {
-        io.execute {
-            runCatching { api.scan(code) }
-                .onSuccess { resp -> runOnUiThread { renderScan(resp) } }
-                .onFailure { e -> runOnUiThread { status.text = e.message.orEmpty() } }
-        }
-    }
-
-    private fun renderScan(resp: JSONObject) {
-        body.removeAllViews()
-        when (resp.optString("kind")) {
-            // K-reja 7.3 — bo'lak kodi tovar tanlovini OCHMAYDI.
-            "piece" -> body.addView(TextView(this).apply { text = getString(R.string.scan_piece) })
-            "none" -> body.addView(TextView(this).apply { text = getString(R.string.scan_none) })
-            "cell" -> io.execute {
-                runCatching { api.cellByBarcode(resp.optString("code")) }
-                    .onSuccess { r -> runOnUiThread { renderCell(r) } }
-            }
-            else -> {
-                val products = resp.optJSONArray("products") ?: JSONArray()
-                if (products.length() > 1) {
-                    body.addView(TextView(this).apply { text = getString(R.string.scan_multi) })
-                }
-                for (i in 0 until products.length()) {
-                    val p = products.optJSONObject(i) ?: continue
-                    body.addView(bigButton(productLabel(p)) { toast(p.optString("id")) })
-                }
-            }
-        }
-        body.addView(bigButton(R.string.tasks_refresh) { showTasks() })
-    }
-
-    /** Tovar qatori — nom, qoldiq, yacheyka. NARX YO'Q (server ham bermaydi). */
-    private fun productLabel(p: JSONObject): String {
-        val cells = p.optJSONArray("cells") ?: JSONArray()
-        val where = if (cells.length() > 0) {
-            cells.optJSONObject(0)?.optString("cellName").orEmpty()
-        } else {
-            p.optString("homeCell")
-        }
-        return p.optString("name") + "  ·  " + p.optString("totalQty") + "  ·  " + where
-    }
-
-    private fun renderCell(r: JSONObject) {
-        body.removeAllViews()
-        val stock = r.optJSONArray("stock") ?: JSONArray()
-        for (i in 0 until stock.length()) {
-            val s = stock.optJSONObject(i) ?: continue
-            body.addView(TextView(this).apply {
-                textSize = 18f
-                text = s.optString("name") + "  ·  " + s.optString("qty")
-            })
-        }
-        body.addView(bigButton(R.string.tasks_refresh) { showTasks() })
-    }
-
-    // -- UI yordamchilari ----------------------------------------------------
-
-    /**
-     * Tegish nishonlari `dimens.xml` dan (56dp/64dp). Web'dagi `min-h-11`
-     * tuzog'i (rem bazasi 12px ⇒ 33px) bu yerda yo'q: `dp` mutlaq o'lchov.
-     */
-    private fun bigButton(textRes: Int, onClick: () -> Unit): Button =
-        bigButton(getString(textRes), onClick)
-
-    private fun bigButton(label: String, onClick: () -> Unit): Button = Button(this).apply {
-        text = label
-        textSize = 18f
-        gravity = Gravity.CENTER_VERTICAL or Gravity.START
-        minHeight = resources.getDimensionPixelSize(R.dimen.touch_target_primary)
-        layoutParams = LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.WRAP_CONTENT,
-        ).apply { topMargin = dp(8) }
-        setOnClickListener { onClick() }
-    }
-
-    private fun input(hintRes: Int): EditText = EditText(this).apply {
-        hint = getString(hintRes)
-        textSize = 20f
-        minHeight = resources.getDimensionPixelSize(R.dimen.touch_target_min)
-        layoutParams = LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.WRAP_CONTENT,
-        ).apply { topMargin = dp(8) }
-    }
-
-    private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
-
-    private fun toast(res: Int) = Toast.makeText(this, res, Toast.LENGTH_SHORT).show()
-    private fun toast(text: String) = Toast.makeText(this, text, Toast.LENGTH_SHORT).show()
 
     private fun appVersion(): String =
         runCatching { packageManager.getPackageInfo(packageName, 0).versionName }
             .getOrNull().orEmpty()
-
-    /** G6 uchun ulanish nuqtasi — oflayn amalni navbatga qo'yish. */
-    @Suppress("unused")
-    private fun enqueue(method: String, path: String, payload: JSONObject) {
-        runCatching {
-            queue.enqueue(
-                ActionQueue.Action(UUID.randomUUID().toString(), method, path, payload),
-            )
-            toast(R.string.offline)
-        }.onFailure { toast(it.message.orEmpty()) }
-    }
 }

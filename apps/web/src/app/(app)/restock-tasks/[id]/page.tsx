@@ -24,6 +24,14 @@ interface RestockLine {
   binLocation: string | null;
   confirmedAt: string | null;
   confirmedByName: string | null;
+  /**
+   * G6 — omborchi TSD'da «javonda topolmadim» degan MUTLAQ miqdor
+   * (`null` = belgilanmagan). Bu yerda faqat KO'RSATILADI: belgi qo'yish
+   * terminal ekranining ishi, chekni kamaytirish esa kontrolniki (G2).
+   */
+  shortageQty: string | null;
+  shortageNote: string | null;
+  shortageByName: string | null;
 }
 interface RestockTaskDetail {
   id: string;
@@ -87,7 +95,10 @@ export default function RestockTaskDetailPage() {
   }
 
   const total = data.lines.length;
-  const confirmed = data.lines.filter((l) => l.confirmedAt).length;
+  // G6 — yetishmovchilik belgilangan qator ham YOPIQ (`restock-task-progress.ts`),
+  // ya'ni «bajarildi» hisobi uni ham sanaydi; aks holda 100 % ga hech qachon
+  // yetmaydigan ro'yxat chiqardi.
+  const confirmed = data.lines.filter((l) => l.confirmedAt || l.shortageQty).length;
 
   return (
     <div className="mx-auto max-w-4xl space-y-4 p-6">
@@ -171,12 +182,24 @@ export default function RestockTaskDetailPage() {
                         </span>
                       )}
                     </span>
+                  ) : line.shortageQty ? (
+                    <span
+                      className="inline-flex items-center gap-1 text-[var(--ms-text-warning)]"
+                      data-test-id="line-shortage"
+                    >
+                      ⚠ {t('shortage', { qty: Number(line.shortageQty) })}
+                      {line.shortageByName && (
+                        <span className="text-[var(--ms-text-muted)] text-xs">
+                          · {line.shortageByName}
+                        </span>
+                      )}
+                    </span>
                   ) : (
                     <span className="text-[var(--ms-text-muted)]">{t('pending')}</span>
                   )}
                 </td>
                 <td className="px-3 py-2 text-right">
-                  {!line.confirmedAt && (
+                  {!line.confirmedAt && !line.shortageQty && (
                     <Button
                       variant="secondary"
                       size="sm"

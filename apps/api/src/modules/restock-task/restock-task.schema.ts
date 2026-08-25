@@ -37,12 +37,37 @@ export const RestockTaskFilterSchema = z.object({
   limit: z.coerce.number().int().min(1).max(200).default(100),
 });
 
+/**
+ * G6 — TSD oflayn navbatining idempotentlik kaliti (`shared/client-op.ts`).
+ * Web ekranlari uni YUBORMAYDI (brauzerda navbat yo'q) ⇒ ixtiyoriy.
+ */
+const clientOpId = z.string().trim().min(1).max(64).optional();
+
 /** Manual per-line confirm — optional productId echo for an extra safety check. */
 export const ConfirmLineSchema = z.object({
   productId: uuid.nullish(),
+  clientOpId,
 });
 
 /** QR-scan confirm — the scanned product id (parsed from the senik QR URL). */
 export const ConfirmScanSchema = z.object({
   productId: uuid,
+  clientOpId,
+});
+
+/**
+ * G6 — YETISHMOVCHILIK belgisi: «javonda shuncha topolmadim».
+ *
+ * `qty` MUTLAQ son (delta EMAS) — sabab `restock-task-progress.ts`
+ * `planShortage` izohida: oflayn navbat amalni qayta yuborishi mumkin va
+ * mutlaq son qayta yuborilganda AYNI natijani beradi. `0` — belgini olib
+ * tashlash (omborchi tovarni keyin topib olishi normal holat).
+ */
+export const ShortageSchema = z.object({
+  qty: z
+    .string()
+    .trim()
+    .regex(/^\d+(\.\d{1,6})?$/, 'qty must be a non-negative decimal (<=6 dp)'),
+  note: z.string().trim().max(500).optional(),
+  clientOpId,
 });

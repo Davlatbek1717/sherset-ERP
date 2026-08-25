@@ -2,12 +2,15 @@ import { randomUUID } from 'node:crypto';
 import type { Prisma } from '@moysklad/db';
 import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service.js';
+import { PermissionsService } from '../permissions/permissions.service.js';
 import { assertCellStockEmpty } from '../shared/cell-stock-guard.js';
+import { claimClientOp, findClientOp, isDuplicateClientOp } from '../shared/client-op.js';
 import { parseDecimalScaled } from '../shared/decimal.js';
 import { computeTransferCost } from '../shared/move-cost-basis.js';
 import { PlacementSource, allocatePlacement, totalTakenMicro } from '../shared/pool-placement.js';
 import { findPoolStore, sumAssignedByAssortment } from '../stock/pool-store.util.js';
 import { type StockBalance, StockService } from '../stock/stock.service.js';
+import { requiredCellOpScope } from './product-cell-move-scope.js';
 import { CellMoveSchema, CellPlaceSchema, CellRebindSchema } from './product-cell-move.schema.js';
 
 /**
@@ -30,7 +33,26 @@ export class ProductCellMoveService {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(StockService) private readonly stock: StockService,
+    // G6 — omborlararo ko'chirish uchun QO'SHIMCHA `store.update` tekshiruvi
+    // (`product-cell-move-scope.ts` izohi). Marshrut dekoratori bazaviy
+    // `storecell.update` ni beradi, bu yerda esa daraja amalning O'ZIGA
+    // qarab ko'tariladi.
+    @Inject(PermissionsService) private readonly permissions: PermissionsService,
   ) {}
+
+  /**
+   * Amal omborlararo bo'lsa (va manba hovuz EMAS) — `store.update` talab
+   * qilinadi. Sof qaror `requiredCellOpScope` da; bu yerda faqat ijro.
+   */
+  private async assertCellOpScope(
+    userId: string,
+    takes: ReadonlyArray<{ storeId: string; crossStore: boolean }>,
+    poolStoreId: string | null,
+  ): Promise<void> {
+    if (requiredCellOpScope(takes, poolStoreId) === 'store') {
+      await this.permissions.require(userId, 'store', 'update', 'ALL');
+    }
+  }
 
   /**
    * Weighted-average cost (tiyin) of `qty` units at the SOURCE store — the value
@@ -74,62 +96,97 @@ export class ProductCellMoveService {
     const toStore = await this.resolveTargetStore(accountId, parsed.toCellId);
     const crossStore = toStore !== fromStore;
 
-    const docId = randomUUID();
-    await this.prisma.client.$transaction(
-      async (tx) => {
-        // Lock the SOURCE store's balance — serialises concurrent moves of this
-        // product (source sufficiency) and gives the weighted-average cost basis.
-        const balances = await this.stock.lockBalances(tx, accountId, fromStore, [
-          { kind: 'product', id: productId },
-        ]);
+    // G6 — daraja amalning O'ZIGA qarab ko'tariladi (omborlararo, hovuzdan
+    // tashqari). Tekshiruv tranzaksiyadan OLDIN: rad etilgan amal umuman
+    // boshlanmasin.
+    const pool = crossStore ? await findPoolStore(this.prisma.client, accountId) : null;
+    await this.assertCellOpScope(userId, [{ storeId: fromStore, crossStore }], pool?.id ?? null);
 
-        // Fresh source-cell balance under the lock — a bin can never go negative.
-        const fromRow = await tx.stockByCell.findUnique({
-          where: {
-            accountId_storeId_cellId_assortmentKind_assortmentId: {
-              accountId,
+    // G6 — TSD oflayn navbati amalni qayta yuborishi mumkin; kalitsiz qayta
+    // yuborish 10 dona o'rniga 20 ni ko'chirardi (`shared/client-op.ts`).
+    const route = 'products/cell-move';
+    const clientOpId = parsed.clientOpId ?? null;
+    // Takror: effekt ALLAQACHON bo'lgan — `alreadyApplied` shuni aytadi.
+    if (await findClientOp(this.prisma.client, { accountId, clientOpId, route })) {
+      return {
+        ok: true,
+        crossStore,
+        fromCellId: parsed.fromCellId,
+        toCellId: parsed.toCellId,
+        alreadyApplied: true,
+      };
+    }
+
+    const docId = randomUUID();
+    let duplicate = false;
+    await this.prisma.client
+      .$transaction(
+        async (tx) => {
+          await claimClientOp(tx, { accountId, clientOpId, route, employeeId: userId });
+          // Lock the SOURCE store's balance — serialises concurrent moves of this
+          // product (source sufficiency) and gives the weighted-average cost basis.
+          const balances = await this.stock.lockBalances(tx, accountId, fromStore, [
+            { kind: 'product', id: productId },
+          ]);
+
+          // Fresh source-cell balance under the lock — a bin can never go negative.
+          const fromRow = await tx.stockByCell.findUnique({
+            where: {
+              accountId_storeId_cellId_assortmentKind_assortmentId: {
+                accountId,
+                storeId: fromStore,
+                cellId: parsed.fromCellId,
+                assortmentKind: 'product',
+                assortmentId: productId,
+              },
+            },
+            select: { qty: true },
+          });
+          if (!fromRow || fromRow.qty.lessThan(parsed.qty)) {
+            throw new BadRequestException("Yacheykada yetarli miqdor yo'q");
+          }
+
+          const costOfN = crossStore ? this.costOfUnits(balances.get(productId), parsed.qty) : 0n;
+          await this.stock.applyDeltas(tx, accountId, userId, [
+            {
               storeId: fromStore,
-              cellId: parsed.fromCellId,
               assortmentKind: 'product',
               assortmentId: productId,
+              cellId: parsed.fromCellId,
+              qtyDelta: `-${parsed.qty}`,
+              costDeltaMinor: crossStore ? -costOfN : null,
+              docType: 'cell_move',
+              docId,
+              reason: 'post',
             },
-          },
-          select: { qty: true },
-        });
-        if (!fromRow || fromRow.qty.lessThan(parsed.qty)) {
-          throw new BadRequestException("Yacheykada yetarli miqdor yo'q");
-        }
+            {
+              storeId: toStore,
+              assortmentKind: 'product',
+              assortmentId: productId,
+              cellId: parsed.toCellId,
+              qtyDelta: parsed.qty,
+              costDeltaMinor: crossStore ? costOfN : null,
+              docType: 'cell_move',
+              docId,
+              reason: 'post',
+            },
+          ]);
+        },
+        { isolationLevel: 'Serializable', timeout: 20000 },
+      )
+      .catch((e: unknown) => {
+        // Poyga: ikkinchi nusxa AYNI paytda kelgan — effekt yo'q, xato ham yo'q.
+        if (!isDuplicateClientOp(e)) throw e;
+        duplicate = true;
+      });
 
-        const costOfN = crossStore ? this.costOfUnits(balances.get(productId), parsed.qty) : 0n;
-        await this.stock.applyDeltas(tx, accountId, userId, [
-          {
-            storeId: fromStore,
-            assortmentKind: 'product',
-            assortmentId: productId,
-            cellId: parsed.fromCellId,
-            qtyDelta: `-${parsed.qty}`,
-            costDeltaMinor: crossStore ? -costOfN : null,
-            docType: 'cell_move',
-            docId,
-            reason: 'post',
-          },
-          {
-            storeId: toStore,
-            assortmentKind: 'product',
-            assortmentId: productId,
-            cellId: parsed.toCellId,
-            qtyDelta: parsed.qty,
-            costDeltaMinor: crossStore ? costOfN : null,
-            docType: 'cell_move',
-            docId,
-            reason: 'post',
-          },
-        ]);
-      },
-      { isolationLevel: 'Serializable', timeout: 20000 },
-    );
-
-    return { ok: true, crossStore, fromCellId: parsed.fromCellId, toCellId: parsed.toCellId };
+    return {
+      ok: true,
+      crossStore,
+      fromCellId: parsed.fromCellId,
+      toCellId: parsed.toCellId,
+      ...(duplicate ? { alreadyApplied: true } : {}),
+    };
   }
 
   /**
@@ -285,77 +342,127 @@ export class ProductCellMoveService {
       sourceStoreIds.push(homeCell.storeId);
     }
 
+    /**
+     * G6 — UY-OMBOR manbasi omborlararo ko'chirish (hovuz emas), ya'ni
+     * `store.update` talab qiladi (`product-cell-move-scope.ts`).
+     *
+     * Ruxsati yo'q foydalanuvchida (kichik omborchi/TSD) bu manba XATO
+     * bermaydi, ro'yxatdan CHIQARILADI. Sabab: xato bersa oddiy joylashtirish
+     * ham — o'z ombori va hovuz butun miqdorni qoplaydigan holatda ham —
+     * 403 bo'lardi, ya'ni ruxsat AMALGA emas, TOVARNING uy-yacheykasi
+     * qayerdaligiga bog'lanib qolardi. Qoplanmasa xabar halol:
+     * «Yacheykada yetarli miqdor yo'q».
+     */
+    const escalating = sourceStoreIds.filter(
+      (sid) => sid !== toStore && sid !== (pool?.id ?? null),
+    );
+    if (escalating.length > 0) {
+      const scope = await this.permissions.resolveScope(userId, 'store', 'update');
+      if (scope !== 'ALL') {
+        for (const sid of escalating) {
+          const i = sourceStoreIds.indexOf(sid);
+          if (i >= 0) sourceStoreIds.splice(i, 1);
+        }
+      }
+    }
+
+    // G6 — oflayn navbat takrori (`shared/client-op.ts`).
+    const route = 'products/cell-place';
+    const clientOpId = parsed.clientOpId ?? null;
+    // Takror: effekt ALLAQACHON bo'lgan. Javob YANGI harakatni ta'riflamaydi
+    // (`sources` bo'sh, `crossStore` false) — `alreadyApplied` shuni aytadi.
+    if (await findClientOp(this.prisma.client, { accountId, clientOpId, route })) {
+      return {
+        ok: true,
+        crossStore: false,
+        toCellId: parsed.toCellId,
+        qty: parsed.qty,
+        sources: [],
+        alreadyApplied: true,
+      };
+    }
+
     const docId = randomUUID();
     let takenPlan: Array<{ storeId: string; qty: string; crossStore: boolean }> = [];
-    await this.prisma.client.$transaction(
-      async (tx) => {
-        // Qulf store-id TARTIBIDA (deadlock oldini olish); manba prioriteti
-        // esa quyida sourceStoreIds tartibida quriladi.
-        const balByStore = new Map<string, Map<string, StockBalance>>();
-        for (const sid of [...sourceStoreIds].sort()) {
-          balByStore.set(
-            sid,
-            await this.stock.lockBalances(tx, accountId, sid, [{ kind: 'product', id: productId }]),
-          );
-        }
-        const sources: PlacementSource[] = [];
-        for (const sid of sourceStoreIds) {
-          const bal = balByStore.get(sid)?.get(productId);
-          const assigned = await sumAssignedByAssortment(tx, accountId, sid, [
-            { kind: 'product', id: productId },
-          ]);
-          sources.push(
-            new PlacementSource({
-              storeId: sid,
-              qty: bal?.qty ?? '0',
-              assignedQty: assigned.get(`product|${productId}`) ?? '0',
-              reservedQty: bal?.reservedQty ?? '0',
-              costBalanceMinor: bal?.costBalanceMinor ? BigInt(bal.costBalanceMinor) : 0n,
-              crossStore: sid !== toStore,
-            }),
-          );
-        }
+    let duplicate = false;
+    await this.prisma.client
+      .$transaction(
+        async (tx) => {
+          await claimClientOp(tx, { accountId, clientOpId, route, employeeId: userId });
+          // Qulf store-id TARTIBIDA (deadlock oldini olish); manba prioriteti
+          // esa quyida sourceStoreIds tartibida quriladi.
+          const balByStore = new Map<string, Map<string, StockBalance>>();
+          for (const sid of [...sourceStoreIds].sort()) {
+            balByStore.set(
+              sid,
+              await this.stock.lockBalances(tx, accountId, sid, [
+                { kind: 'product', id: productId },
+              ]),
+            );
+          }
+          const sources: PlacementSource[] = [];
+          for (const sid of sourceStoreIds) {
+            const bal = balByStore.get(sid)?.get(productId);
+            const assigned = await sumAssignedByAssortment(tx, accountId, sid, [
+              { kind: 'product', id: productId },
+            ]);
+            sources.push(
+              new PlacementSource({
+                storeId: sid,
+                qty: bal?.qty ?? '0',
+                assignedQty: assigned.get(`product|${productId}`) ?? '0',
+                reservedQty: bal?.reservedQty ?? '0',
+                costBalanceMinor: bal?.costBalanceMinor ? BigInt(bal.costBalanceMinor) : 0n,
+                crossStore: sid !== toStore,
+              }),
+            );
+          }
 
-        const wantMicro = parseDecimalScaled(parsed.qty);
-        const takes = allocatePlacement(sources, wantMicro);
-        if (totalTakenMicro(takes) < wantMicro) {
-          throw new BadRequestException("Yacheykada yetarli miqdor yo'q");
-        }
-        takenPlan = takes.map((t) => ({
-          storeId: t.storeId,
-          qty: t.qty,
-          crossStore: t.crossStore,
-        }));
-
-        const deltas = takes.flatMap((t) => [
-          {
+          const wantMicro = parseDecimalScaled(parsed.qty);
+          const takes = allocatePlacement(sources, wantMicro);
+          if (totalTakenMicro(takes) < wantMicro) {
+            throw new BadRequestException("Yacheykada yetarli miqdor yo'q");
+          }
+          takenPlan = takes.map((t) => ({
             storeId: t.storeId,
-            assortmentKind: 'product',
-            assortmentId: productId,
-            cellId: null,
-            cellMode: 'store-only' as const,
-            qtyDelta: `-${t.qty}`,
-            costDeltaMinor: t.crossStore ? -t.costMinor : null,
-            docType: 'cell_place',
-            docId,
-            reason: 'post' as const,
-          },
-          {
-            storeId: toStore,
-            assortmentKind: 'product',
-            assortmentId: productId,
-            cellId: parsed.toCellId,
-            qtyDelta: t.qty,
-            costDeltaMinor: t.crossStore ? t.costMinor : null,
-            docType: 'cell_place',
-            docId,
-            reason: 'post' as const,
-          },
-        ]);
-        await this.stock.applyDeltas(tx, accountId, userId, deltas);
-      },
-      { isolationLevel: 'Serializable', timeout: 20000 },
-    );
+            qty: t.qty,
+            crossStore: t.crossStore,
+          }));
+
+          const deltas = takes.flatMap((t) => [
+            {
+              storeId: t.storeId,
+              assortmentKind: 'product',
+              assortmentId: productId,
+              cellId: null,
+              cellMode: 'store-only' as const,
+              qtyDelta: `-${t.qty}`,
+              costDeltaMinor: t.crossStore ? -t.costMinor : null,
+              docType: 'cell_place',
+              docId,
+              reason: 'post' as const,
+            },
+            {
+              storeId: toStore,
+              assortmentKind: 'product',
+              assortmentId: productId,
+              cellId: parsed.toCellId,
+              qtyDelta: t.qty,
+              costDeltaMinor: t.crossStore ? t.costMinor : null,
+              docType: 'cell_place',
+              docId,
+              reason: 'post' as const,
+            },
+          ]);
+          await this.stock.applyDeltas(tx, accountId, userId, deltas);
+        },
+        { isolationLevel: 'Serializable', timeout: 20000 },
+      )
+      .catch((e: unknown) => {
+        // Poyga: ikkinchi nusxa AYNI paytda kelgan — effekt yo'q, xato ham yo'q.
+        if (!isDuplicateClientOp(e)) throw e;
+        duplicate = true;
+      });
 
     return {
       ok: true,
@@ -364,6 +471,7 @@ export class ProductCellMoveService {
       qty: parsed.qty,
       // F7: qaysi ombordan qancha olindi — UI/diagnostika uchun (additiv).
       sources: takenPlan,
+      ...(duplicate ? { alreadyApplied: true } : {}),
     };
   }
 }

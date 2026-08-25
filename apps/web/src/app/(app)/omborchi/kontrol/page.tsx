@@ -17,6 +17,7 @@ import { api } from '@/lib/api-client';
 import { Input, formatMoney, useConfirm, useToast } from '@moysklad/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
+  AlertTriangle,
   CheckCircle2,
   ClipboardCheck,
   Clock,
@@ -33,6 +34,20 @@ interface QueueTask {
   assigneeName: string | null;
   status: string;
 }
+/**
+ * G6 — omborchi TSD'da «javonda topolmadim» degan qatorlar.
+ *
+ * Kontrol uchun bu ENG MUHIM ma'lumot: chek tarkibida bu qatorlar HALI
+ * TURIBDI (omborchi chekni o'zgartirmaydi — u faqat xabar beradi), ya'ni
+ * tasdiqlashdan oldin ularni kamaytirish yoki o'chirish kerak. Aks holda
+ * mijoz yo'q tovar uchun pul to'laydi.
+ */
+interface QueueShortage {
+  productName: string;
+  quantity: string;
+  shortageQty: string;
+  note: string | null;
+}
 interface QueueSale {
   id: string;
   name: string;
@@ -45,6 +60,7 @@ interface QueueSale {
   } | null;
   _count: { positions: number };
   pickingTasks: QueueTask[];
+  shortages?: QueueShortage[];
 }
 
 interface DetailPosition {
@@ -135,6 +151,7 @@ function ControlCard({ sale, onChanged }: { sale: QueueSale; onChanged: () => vo
   };
 
   const keptCount = detail ? detail.positions.filter((p) => !edit[p.id]?.removed).length : 0;
+  const shortages = sale.shortages ?? [];
 
   return (
     <div className="rounded-2xl border-2 border-[var(--ms-border)] bg-[var(--ms-bg-surface)] shadow-sm">
@@ -189,6 +206,32 @@ function ControlCard({ sale, onChanged }: { sale: QueueSale; onChanged: () => vo
             </div>
           )}
         </div>
+
+        {shortages.length > 0 && (
+          <div className="w-full rounded-xl border-2 border-amber-300 bg-amber-50 p-3">
+            <div className="flex items-center gap-1.5 text-sm font-bold text-amber-800">
+              <AlertTriangle className="h-4 w-4" />
+              {t('shortage_title')}
+            </div>
+            <ul className="mt-1 space-y-0.5">
+              {shortages.map((s, i) => (
+                <li
+                  // biome-ignore lint/suspicious/noArrayIndexKey: snapshot ro'yxati
+                  key={i}
+                  className="text-xs text-amber-900"
+                >
+                  {t('shortage_row', {
+                    name: s.productName,
+                    shortage: s.shortageQty,
+                    quantity: s.quantity,
+                  })}
+                  {s.note ? ` — ${s.note}` : ''}
+                </li>
+              ))}
+            </ul>
+            <p className="mt-1 text-[11px] text-amber-700">{t('shortage_hint')}</p>
+          </div>
+        )}
 
         <div className="flex shrink-0 items-center gap-2">
           <button

@@ -53,11 +53,12 @@ describe('controlQueue — navbat filtri', () => {
       { id: 'partial', name: 'CH-2', moment: new Date('2026-08-24T09:05Z') },
       { id: 'no-tasks', name: 'CH-3', moment: new Date('2026-08-24T09:10Z') },
     ];
+    // G6 — so'rov endi yetishmovchilik qatorlarini ham tanlaydi (`lines`).
     const tasks = [
-      { sourceId: 'all-done', status: 'done', skladNo: 1, assigneeName: 'Ali' },
-      { sourceId: 'all-done', status: 'done', skladNo: 2, assigneeName: 'Vali' },
-      { sourceId: 'partial', status: 'done', skladNo: 1, assigneeName: 'Ali' },
-      { sourceId: 'partial', status: 'pending', skladNo: 2, assigneeName: 'Vali' },
+      { sourceId: 'all-done', status: 'done', skladNo: 1, assigneeName: 'Ali', lines: [] },
+      { sourceId: 'all-done', status: 'done', skladNo: 2, assigneeName: 'Vali', lines: [] },
+      { sourceId: 'partial', status: 'done', skladNo: 1, assigneeName: 'Ali', lines: [] },
+      { sourceId: 'partial', status: 'pending', skladNo: 2, assigneeName: 'Vali', lines: [] },
     ];
     const client = {
       retailSale: { findMany: vi.fn().mockResolvedValue(sales) },

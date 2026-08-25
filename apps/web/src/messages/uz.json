@@ -5818,6 +5818,14 @@
         "move_none_selected": "Yacheykani tanlang",
         "move_failed": "Ko'chirishda xato: {msg}",
         "move_stock_changed": "«{cell}» yacheykasida qoldiq bor (hozir {qty}) — ko'chirish TO'LIQ bajarilmadi. Oynani yopib ro'yxatni yangilang va qaytadan ko'chiring",
+        "unassign_button": "Chiqarish",
+        "unassign_confirm_title": "«{product}» «{cell}» yacheykasidan chiqarilsinmi?",
+        "unassign_confirm_body": "Faqat BOG'LANISH uziladi — ombor qoldig'i o'zgarmaydi. Mahsulotni keyin istalgan yacheykaga qayta bog'lash mumkin.",
+        "unassign_success": "«{product}» «{cell}» yacheykasidan chiqarildi",
+        "unassign_noop": "«{product}» «{cell}» yacheykasiga bog'lanmagan ekan — ro'yxat eskirgan. Oynani yopib qayta oching",
+        "unassign_blocked": "«{product}» chiqarilmadi: «{cell}» yacheykasida {qty} dona qoldiq bor. Avval «Sanash» bilan 0 ga tushiring yoki boshqa yacheykaga ko'chiring",
+        "unassign_disabled_hint": "Yacheykada {qty} dona qoldiq bor — avval «Sanash» bilan 0 ga tushiring yoki «Ko'chirish» bilan boshqa yacheykaga o'tkazing",
+        "unassign_failed": "Chiqarishda xato: {msg}",
         "range_button": "Diapazon bo'yicha",
         "range_title": "Yacheykalarni diapazon bo'yicha yaratish",
         "range_template": "Shablon",
@@ -9142,7 +9150,10 @@
       "edit_row_restore": "Qatorni qaytarish",
       "edit_empty_warning": "Chekda kamida bitta tovar qolishi kerak",
       "qty": "Soni",
-      "detail_not_loaded": "Chek tafsiloti hali yuklanmadi"
+      "detail_not_loaded": "Chek tafsiloti hali yuklanmadi",
+      "shortage_title": "Omborchi topolmadi",
+      "shortage_row": "{name}: {shortage} ta yetmadi ({quantity} tadan)",
+      "shortage_hint": "Bu qatorlar chekda HALI TURIBDI — kamaytiring yoki o'chiring, aks holda mijoz yo'q tovar uchun pul to'laydi."
     },
     "omborchi_vozvrat": {
       "title": "Vozvrat qabuli",
@@ -10426,7 +10437,8 @@
     "scan_hint": "Mahsulot senigidagi QR kodni kameraga ko'rsating",
     "scan_success": "Skanerlandi va tasdiqlandi",
     "confirmed": "Tasdiqlangan",
-    "pending": "Kutilmoqda"
+    "pending": "Kutilmoqda",
+    "shortage": "yetmadi: {qty}"
   },
   "picking": {
     "send_to_picking": "Yig'ish varaqasi",

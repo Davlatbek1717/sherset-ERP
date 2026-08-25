@@ -88,6 +88,7 @@ model Account {
   cashDesks                      CashDesk[]
   posDevices                     PosDevice[]
   tsdDevices                     TsdDevice[]
+  clientOperations               ClientOperation[]
   moneyOperations                MoneyOperation[]
   cashIns                        CashIn[]
   cashOuts                       CashOut[]
@@ -1411,11 +1412,58 @@ model RestockTaskLine {
   confirmedByName String?   @map("confirmed_by_name") @db.VarChar(255)
   position        Int       @default(0)
 
+  /// G6 — YETISHMOVCHILIK: javonda topilmagan miqdor (MUTLAQ son, `quantity` dan
+  /// katta bo'lolmaydi). NULL = omborchi hali yetishmovchilik belgilamagan;
+  /// belgi olib tashlanganda ustun yana NULL bo'ladi (0 yozilmaydi).
+  ///
+  /// Nega ALOHIDA ustun, `quantity` ni kamaytirish EMAS: topshiriq qatori
+  /// KASSIR chekining nusxasi. Uni omborchi kamaytirsa chek bilan topshiriq
+  /// jimgina ajralib ketardi va kontrol nimani tekshirishni bilmasdi.
+  /// Chek tarkibini FAQAT kontrol o'zgartiradi (`control-edit`, G2) — omborchi
+  /// esa «shuncha topolmadim» deb XABAR beradi.
+  shortageQty     Decimal?  @map("shortage_qty") @db.Decimal(20, 6)
+  shortageNote    String?   @map("shortage_note")
+  shortageAt      DateTime? @map("shortage_at") @db.Timestamptz()
+  shortageById    String?   @map("shortage_by_id") @db.Uuid
+  shortageByName  String?   @map("shortage_by_name") @db.VarChar(255)
+
   restockTask RestockTask @relation(fields: [restockTaskId], references: [id], onDelete: Cascade)
 
   @@index([restockTaskId, position])
   @@index([accountId, productId])
   @@map("restock_task_lines")
+}
+
+/// G6 — OFLAYN AMALNING IDEMPOTENTLIK KALITI (TSD).
+///
+/// TSD ombor bo'ylab yuradi va aloqasi uziladi. Uzilgan amal `ActionQueue` da
+/// turadi va aloqa tiklangach QAYTA yuboriladi — lekin uzilish server amalni
+/// BAJARGANDAN KEYIN, javob yo'lda ekan ham bo'lishi mumkin. Bunda qayta
+/// yuborish qoldiqni IKKI marta siljitardi (`cell-move` 10 dona o'rniga 20).
+///
+/// Shuning uchun klient har amalga bir marta `clientOpId` (UUID) beradi va
+/// server uni AYNAN mutatsiya tranzaksiyasi ICHIDA da'vo qiladi: unikal
+/// buzilish = «bu amal allaqachon bajarilgan» ⇒ effekt takrorlanmaydi.
+/// Tranzaksiya ichida bo'lgani MUHIM — server yiqilsa da'vo ham, effekt ham
+/// birga qaytadi va qayta yuborish toza ishlaydi.
+///
+/// Nima SAQLANMAYDI: javob TANASI. Takror so'rovga server joriy holatni qayta
+/// o'qib beradi — saqlangan eski nusxa oradagi o'zgarishlarni yashirardi.
+model ClientOperation {
+  id         String   @id @default(uuid()) @db.Uuid
+  accountId  String   @map("account_id") @db.Uuid
+  /// Klient bergan kalit (UUID). Unikallik AKKAUNT ichida.
+  clientOpId String   @map("client_op_id") @db.VarChar(64)
+  /// Qaysi amal — takror kalit BOSHQA marshrutda kelsa bu xato (klient nosozligi).
+  route      String   @db.VarChar(120)
+  employeeId String?  @map("employee_id") @db.Uuid
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@unique([accountId, clientOpId])
+  @@index([accountId, createdAt])
+  @@map("client_operations")
 }
 
 model MoneyOperation {

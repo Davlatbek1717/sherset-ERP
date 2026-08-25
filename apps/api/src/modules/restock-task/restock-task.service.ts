@@ -3,10 +3,18 @@ import { BadRequestException, Inject, Injectable, NotFoundException } from '@nes
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { NotificationService } from '../notification/notification.service.js';
 import {
+  claimClientOp,
+  findClientOp,
+  isDuplicateClientOp,
+  normalizeClientOpId,
+} from '../shared/client-op.js';
+import { planShortage, resolveTaskStatus, sortLinesByRoute } from './restock-task-progress.js';
+import {
   ConfirmLineSchema,
   ConfirmScanSchema,
   CreateRestockFromSalesReturnSchema,
   RestockTaskFilterSchema,
+  ShortageSchema,
 } from './restock-task.schema.js';
 
 /**
@@ -370,24 +378,38 @@ export class RestockTaskService {
       },
       orderBy: { createdAt: 'desc' },
       take: f.limit,
-      include: { lines: { select: { confirmedAt: true } } },
+      include: { lines: { select: { confirmedAt: true, shortageQty: true } } },
     });
     return {
       items: items.map(({ lines, ...t }) => ({
         ...t,
         lineCount: lines.length,
         confirmedCount: lines.filter((l) => l.confirmedAt).length,
+        // G6 — TSD ro'yxatida topshiriq kartasi «nechtasi qoldi» ni ko'rsatadi.
+        // Yetishmovchilik belgilangan qator ham YOPIQ (sof modul izohi), ya'ni
+        // `openCount` omborchi hali TEGMAGAN qatorlar soni.
+        shortageCount: lines.filter((l) => l.shortageQty != null).length,
+        openCount: lines.filter((l) => l.confirmedAt == null && l.shortageQty == null).length,
       })),
     };
   }
 
+  /**
+   * Topshiriq detali. Qatorlar YACHEYKA MARSHRUTI tartibida (G6.1) —
+   * `sortLinesByRoute` izohi: omborchi javon bo'ylab bir yo'nalishda yuradi,
+   * chek tartibidagi ro'yxat esa uni bir javonga uch marta qaytarardi.
+   *
+   * Tartib TSD uchun ham, web checklist'i (`/restock-tasks/[id]`) uchun ham
+   * bir xil: ish bir xil, ya'ni ikki xil tartib berish ikki xil marshrut
+   * demakdi. Qatorning asl `position` i javobda QOLADI.
+   */
   async findById(accountId: string, id: string) {
     const task = await this.prisma.client.restockTask.findFirst({
       where: { id, accountId },
       include: { lines: { orderBy: { position: 'asc' } } },
     });
     if (!task) throw new NotFoundException('Joylashtirish vazifasi topilmadi');
-    return task;
+    return { ...task, lines: sortLinesByRoute(task.lines) };
   }
 
   /** Confirm a specific line (manual «placed» button). */
@@ -406,13 +428,32 @@ export class RestockTaskService {
     if (input.productId && line.productId && input.productId !== line.productId) {
       throw new BadRequestException('Mahsulot bu qatorga mos kelmaydi');
     }
-    await this.markConfirmed(accountId, userId, taskId, line.id, line.confirmedAt != null);
+    // Bu yo'l QATORGA manzillangan (`lineId`) ⇒ takror yuborish baribir o'sha
+    // qatorni tasdiqlaydi va `alreadyConfirmed` uni no-op qiladi. Ya'ni
+    // idempotentlik kaliti bu yerda SHART emas — klient uni baribir yuboradi
+    // (bitta navbat shakli), server esa uni `markConfirmed` da da'vo qiladi.
+    await this.markConfirmed(accountId, userId, taskId, line.id, line.confirmedAt != null, {
+      clientOpId: normalizeClientOpId(input.clientOpId),
+      route: 'restock-tasks/lines/confirm',
+    });
     return this.findById(accountId, taskId);
   }
 
   /** Confirm by SCANNED product (senik QR) — matches the first unconfirmed line. */
   async confirmScan(accountId: string, userId: string, taskId: string, raw: unknown) {
     const input = ConfirmScanSchema.parse(raw);
+    const clientOpId = normalizeClientOpId(input.clientOpId);
+    const route = 'restock-tasks/confirm-scan';
+
+    // 🔴 BU YO'L QATORGA MANZILLANGAN EMAS — u BIRINCHI ochiq qatorni topadi.
+    // Ya'ni bitta tovar topshiriqda IKKI qatorda bo'lsa (kassir uni ikki marta
+    // qo'shgan), aloqa uzilib qayta yuborilgan skan IKKINCHI qatorni ham
+    // yopardi va omborchi olmagan tovar «olindi» bo'lib qolardi. Shuning
+    // uchun aynan shu yo'lda idempotentlik kaliti MAJBURIY ma'noga ega.
+    if (await findClientOp(this.prisma.client, { accountId, clientOpId, route })) {
+      return this.findById(accountId, taskId);
+    }
+
     const lines = await this.prisma.client.restockTaskLine.findMany({
       where: { restockTaskId: taskId, accountId },
       orderBy: { position: 'asc' },
@@ -425,7 +466,74 @@ export class RestockTaskService {
         exists ? 'Bu mahsulot allaqachon tasdiqlangan' : 'Skanerlangan mahsulot bu vazifada yo‘q',
       );
     }
-    await this.markConfirmed(accountId, userId, taskId, match.id, false);
+    await this.markConfirmed(accountId, userId, taskId, match.id, false, { clientOpId, route });
+    return this.findById(accountId, taskId);
+  }
+
+  /**
+   * G6 — YETISHMOVCHILIK: «javonda shuncha topolmadim».
+   *
+   * Nega umuman kerak: qator na tasdiqlanadi, na yopiladi bo'lsa topshiriq
+   * abadiy ochiq qoladi ⇒ chek KONTROL NAVBATIGA TUSHMAYDI (G2 sharti) va
+   * kassir uni yopolmaydi. Belgisiz yetishmovchilik — 2026-08-24 hodisasining
+   * boshqa shakli: tizim ishlayotgandek ko'rinadi, kassa esa to'xtaydi.
+   *
+   * Chek tarkibi bu yerda O'ZGARMAYDI (qator `quantity` si tegilmaydi) —
+   * qaror kontrolda: katta omborchi qatorni chiqarib tashlaydi yoki
+   * kamaytiradi (`control-edit`, faqat KAMAYTIRISH).
+   */
+  async setShortage(
+    accountId: string,
+    userId: string,
+    taskId: string,
+    lineId: string,
+    raw: unknown,
+  ) {
+    const input = ShortageSchema.parse(raw ?? {});
+    const line = await this.prisma.client.restockTaskLine.findFirst({
+      where: { id: lineId, restockTaskId: taskId, accountId },
+      select: { id: true, quantity: true, confirmedAt: true, shortageQty: true },
+    });
+    if (!line) throw new NotFoundException('Vazifa qatori topilmadi');
+
+    const task = await this.prisma.client.restockTask.findFirst({
+      where: { id: taskId, accountId },
+      select: { status: true },
+    });
+    if (!task) throw new NotFoundException('Joylashtirish vazifasi topilmadi');
+    if (task.status === 'cancelled') {
+      throw new BadRequestException('Vazifa bekor qilingan');
+    }
+
+    const plan = planShortage(
+      {
+        quantity: line.quantity.toString(),
+        confirmedAt: line.confirmedAt,
+        shortageQty: line.shortageQty?.toString() ?? null,
+      },
+      input.qty,
+    );
+    if (plan.refusals.length > 0) throw new BadRequestException(plan.refusals.join('; '));
+    if (plan.noop) return this.findById(accountId, taskId);
+
+    const employee = await this.prisma.client.employee.findFirst({
+      where: { id: userId, accountId },
+      select: { name: true },
+    });
+
+    await this.prisma.client.$transaction(async (tx) => {
+      await tx.restockTaskLine.update({
+        where: { id: line.id },
+        data: {
+          shortageQty: plan.shortageQty,
+          shortageNote: plan.shortageQty === null ? null : (input.note ?? null),
+          shortageAt: plan.shortageQty === null ? null : new Date(),
+          shortageById: plan.shortageQty === null ? null : userId,
+          shortageByName: plan.shortageQty === null ? null : (employee?.name ?? null),
+        },
+      });
+      await this.syncTaskStatus(tx, taskId);
+    });
     return this.findById(accountId, taskId);
   }
 
@@ -437,31 +545,85 @@ export class RestockTaskService {
     taskId: string,
     lineId: string,
     alreadyConfirmed: boolean,
+    op?: { clientOpId: string | null; route: string },
   ): Promise<void> {
     if (alreadyConfirmed) return; // idempotent
     const employee = await this.prisma.client.employee.findFirst({
       where: { id: userId, accountId },
       select: { name: true },
     });
-    await this.prisma.client.$transaction(async (tx) => {
-      await tx.restockTaskLine.update({
-        where: { id: lineId },
-        data: {
-          confirmedAt: new Date(),
-          confirmedById: userId,
-          confirmedByName: employee?.name ?? null,
-        },
+    try {
+      await this.prisma.client.$transaction(async (tx) => {
+        // Kalit AYNAN shu tranzaksiyada da'vo qilinadi (`shared/client-op.ts`):
+        // effekt yiqilsa kalit ham qaytadi, ya'ni qayta yuborish toza ishlaydi.
+        if (op) {
+          await claimClientOp(tx, {
+            accountId,
+            clientOpId: op.clientOpId,
+            route: op.route,
+            employeeId: userId,
+          });
+        }
+        await tx.restockTaskLine.update({
+          where: { id: lineId },
+          data: {
+            confirmedAt: new Date(),
+            confirmedById: userId,
+            confirmedByName: employee?.name ?? null,
+          },
+        });
+        await this.syncTaskStatus(tx, taskId);
       });
-      const lines = await tx.restockTaskLine.findMany({
-        where: { restockTaskId: taskId },
-        select: { confirmedAt: true },
-      });
-      const allDone = lines.every((l) => l.confirmedAt != null);
-      const anyDone = lines.some((l) => l.confirmedAt != null);
-      await tx.restockTask.update({
-        where: { id: taskId },
-        data: { status: allDone ? 'done' : anyDone ? 'in_progress' : 'pending' },
-      });
+    } catch (e) {
+      // Poyga: ikkinchi nusxa AYNI paytda kelgan. Effekt yo'q, xato ham yo'q —
+      // chaqiruvchi joriy holatni qaytaradi (idempotent javob).
+      if (!isDuplicateClientOp(e)) throw e;
+    }
+  }
+
+  /**
+   * Topshiriq holatini QATORLARDAN qayta hisoblaydi (sof modul —
+   * `resolveTaskStatus`). Ilgari bu mantiq shu yerda bitta qatorda edi va
+   * FAQAT `confirmedAt` ga qarardi; G6 ikkinchi yopilish yo'lini
+   * (yetishmovchilik) qo'shdi, ya'ni qoida endi testda qulflanadi.
+   *
+   * `cancelled` topshiriq TEGILMAYDI: uni manba hujjatning bekor qilinishi
+   * qo'ygan va qatorlardan qayta hisoblash uni jimgina «done» ga
+   * ko'tarardi — ya'ni bekor qilingan chek «yig'ib bo'lindi» bo'lib qolardi.
+   */
+  private async syncTaskStatus(
+    tx: {
+      restockTaskLine: {
+        findMany(args: {
+          where: { restockTaskId: string };
+          select: { confirmedAt: boolean; shortageQty: boolean };
+        }): Promise<Array<{ confirmedAt: Date | null; shortageQty: unknown }>>;
+      };
+      restockTask: {
+        findFirst(args: {
+          where: { id: string };
+          select: { status: boolean };
+        }): Promise<{ status: string } | null>;
+        update(args: { where: { id: string }; data: { status: string } }): Promise<unknown>;
+      };
+    },
+    taskId: string,
+  ): Promise<void> {
+    const current = await tx.restockTask.findFirst({
+      where: { id: taskId },
+      select: { status: true },
     });
+    if (current?.status === 'cancelled') return;
+    const lines = await tx.restockTaskLine.findMany({
+      where: { restockTaskId: taskId },
+      select: { confirmedAt: true, shortageQty: true },
+    });
+    const status = resolveTaskStatus(
+      lines.map((l) => ({
+        confirmedAt: l.confirmedAt,
+        shortageQty: l.shortageQty == null ? null : String(l.shortageQty),
+      })),
+    );
+    await tx.restockTask.update({ where: { id: taskId }, data: { status } });
   }
 }

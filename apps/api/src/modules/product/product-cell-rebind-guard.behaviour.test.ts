@@ -83,7 +83,9 @@ function makeService({ oldCellQty = null }: FakeOpts = {}) {
     $transaction: vi.fn(async (fn: (t: typeof tx) => Promise<unknown>) => fn(tx)),
   };
 
-  const svc = new ProductCellMoveService({ client } as never, {} as never);
+  // `rebind` ruxsat darajasini ko'tarmaydi (u qoldiq siljitmaydi) — stub
+  // faqat konstruktor shartnomasi uchun.
+  const svc = new ProductCellMoveService({ client } as never, {} as never, {} as never);
   return { svc, tx, client, product };
 }
 

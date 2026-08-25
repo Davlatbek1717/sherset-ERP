@@ -71,4 +71,22 @@ export class RestockTaskController {
   ) {
     return this.svc.confirmScan(user.accountId, user.sub, id, body);
   }
+
+  /**
+   * G6 — «javonda shuncha topolmadim» (yetishmovchilik belgisi).
+   *
+   * Ruxsat qatorlarni TASDIQLASH bilan bir xil, ya'ni ATAYLAB ochiq (Q10
+   * DEFER, yuqoridagi sinf izohi): bu ham omborchi ekranining o'z sirti va
+   * u chek tarkibini O'ZGARTIRMAYDI — faqat XABAR beradi. Chekni kamaytirish
+   * kontrol huquqi (`retailcontrol.update`, G2).
+   */
+  @Post(':id/lines/:lineId/shortage')
+  async setShortage(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Param('lineId') lineId: string,
+    @Body() body: unknown,
+  ) {
+    return this.svc.setShortage(user.accountId, user.sub, id, lineId, body);
+  }
 }

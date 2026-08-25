@@ -88,11 +88,19 @@ export class ProductController {
     return this.service.cellStock(user.accountId, id);
   }
 
-  // «Переместить» — move this product between two cells of the SAME store (pure
-  // per-cell redistribution; store-level stock unchanged). An address-storage
-  // mutation ⇒ `store.update`, consistent with every other cell operation.
+  // «Переместить» — move this product between two cells (pure per-cell
+  // redistribution within one store; a REAL transfer across stores).
+  //
+  // 🔴 G6 (2026-08-25): bazaviy talab `store.update` dan `storecell.update` ga
+  // TUSHIRILDI. Sabab: TSD da joylashtirish/ko'chirish kichik omborchining
+  // (`storekeeper`) ishi, uning shablonida esa `store.update = NO` — ATAYLAB
+  // (`store-cell-permission.test.ts`: omborchi ombor KARTOCHKASINI
+  // tahrirlamaydi). Yacheyka ichida siljitish esa «Sanash» bilan bir klass
+  // (u ham `storecell.update` va u ham store-darajali qoldiqni o'zgartiradi).
+  // OMBORLARARO ko'chirish uchun qo'shimcha daraja servisda ko'tariladi
+  // (`product-cell-move-scope.ts`) — hovuz-ombordan tashqari.
   @Post(':id/cell-move')
-  @RequirePermission({ entity: 'store', action: 'update' })
+  @RequirePermission({ entity: 'storecell', action: 'update' })
   async cellMove(
     @CurrentUser() user: AuthenticatedUser,
     @Param('id') id: string,
@@ -115,11 +123,11 @@ export class ProductController {
   }
 
   // «Переместить» qty from the HOME-CELL remainder into a real target cell —
-  // allocate the product's unallocated on-hand into an address-storage bin
-  // (StockByCell only; store stock unchanged). Address-storage mutation ⇒
-  // `store.update`, consistent with `cell-move`.
+  // allocate the product's unallocated on-hand into an address-storage bin.
+  // Bazaviy talab `storecell.update` (G6 — `cell-move` dagi izoh); uy-ombor
+  // manbasi (omborlararo, hovuz emas) servisda `store.update` talab qiladi.
   @Post(':id/cell-place')
-  @RequirePermission({ entity: 'store', action: 'update' })
+  @RequirePermission({ entity: 'storecell', action: 'update' })
   async cellPlace(
     @CurrentUser() user: AuthenticatedUser,
     @Param('id') id: string,

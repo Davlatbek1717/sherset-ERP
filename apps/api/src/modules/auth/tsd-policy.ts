@@ -45,6 +45,15 @@ export const TSD_ALLOWED: readonly Rule[] = [
     exact: true,
     why: 'qatorni SKANER bilan tasdiqlash',
   },
+  // G6 — «javonda topolmadim». Busiz topshiriq abadiy ochiq qolardi va chek
+  // KONTROL NAVBATIGA TUSHMASDI (G2 sharti) — ya'ni kassa yopilmagan chek
+  // bilan qotib qolardi. Bu qator chek tarkibini o'zgartirmaydi.
+  {
+    prefix: '/restock-tasks/:id/lines/:lineId/shortage',
+    methods: ['POST'],
+    exact: true,
+    why: 'qatorda yetishmovchilikni belgilash',
+  },
   // 🔴 `POST /restock-tasks/from-sales-return` ATAYLAB YO'Q: u vozvratdan
   // topshiriq OCHADI (kassir/katta omborchi ishi), TSD esa topshiriqni
   // BAJARADI. `picking-sheets` ham yo'q — u chop etish yo'li (kassa qobig'i).

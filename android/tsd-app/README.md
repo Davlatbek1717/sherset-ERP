@@ -1,9 +1,11 @@
-# Sherset TSD — omborchi qo'l terminali (G5 skeleti)
+# Sherset TSD — omborchi qo'l terminali
 
-> **Holat:** SKELET — auth oqimi + arxitektura + kalit fayllar.
-> **Build-verified EMAS** (bu repo pnpm/TS monorepo, Android toolchain yo'q) —
-> `driver-app` bilan bir xil chegara.
-> Reja: [`docs/plans/2026-08-23-omborchi-tsd-mijozlar.md`](../../docs/plans/2026-08-23-omborchi-tsd-mijozlar.md) → G5.
+> **Holat:** ISH EKRANLARI TAYYOR (G6). Auth va skelet — G5.
+> **BUILD-VERIFIED** (2026-08-25): `assembleDebug` ogohlantirishsiz o'tdi,
+> `app-debug.apk` ≈ 7,1 MB. Toolchain shu mashinada: JDK 17 va Android SDK
+> `D:/dev` da (Gradle 8.7 alohida yuklab olindi — repo'da wrapper yo'q).
+> **JONLI QURILMADA sinalmagan** — terminal hali yo'q (qoida 11).
+> Reja: [`docs/plans/2026-08-23-omborchi-tsd-mijozlar.md`](../../docs/plans/2026-08-23-omborchi-tsd-mijozlar.md) → G5, G6.
 
 ## Nima qiladi (G5 doirasi)
 
@@ -17,8 +19,29 @@
    `GET /admin/stores/cells/by-barcode`. Multi-hit tanlovi majburiy.
 5. **Oflayn amal navbati** — `ActionQueue.kt` (FIFO, `clientOpId` bilan).
 
-**G6 da quriladi:** yig'ish qatorlarini tasdiqlash ekrani, joylashtirish/
-ko'chirish, yacheyka sanash, navbatni avtomatik bo'shatuvchi fon ishi.
+## Ish ekranlari (G6 doirasi)
+
+Har ekran alohida faylda va `Shell` interfeysi orqali ishlaydi — `Activity` ni
+KO'RMAYDI. Skan avval JORIY ekranga beriladi (u bosqichga qarab talqin qiladi),
+ekran uni yemasa umumiy narxsiz skan-ma'lumot ochiladi.
+
+| Ekran | Fayl | Nima qiladi |
+|---|---|---|
+| Topshiriqlar | `TaskListScreen.kt` | `picking` + `restock` bitta navbatda; kartada `qolgan / jami` va ⚠ yetishmovchilik soni |
+| Topshiriq detali | `TaskDetailScreen.kt` | Qatorlar **yacheyka marshruti** tartibida (saralashni SERVER qiladi); qo'lda tasdiq, skan bilan tasdiq |
+| Yetishmovchilik | `ShortageScreen.kt` | «Javonda shuncha topolmadim» — MUTLAQ son; chek tarkibi O'ZGARMAYDI |
+| Joylashtirish | `PlaceScreen.kt` | tovar → manba (yacheyka **yoki** yacheykasiz qoldiq) → maqsad yacheyka → miqdor |
+| Sanash | `CountScreen.kt` | Yacheyka yorlig'i → tarkib → mutlaq sanoq (`mode: 'set'`) |
+| Skan ma'lumoti | `ScanInfoScreen.kt` | Nom, jami qoldiq, yacheykalar — **narxsiz** |
+| Multi-hit tanlovi | `PickProductScreen.kt` | Shtrix bir nechta tovarga tegishli bo'lsa TANLOVNI ODAM qiladi |
+
+**Navbatni bo'shatish** — `QueueSender.kt`: qat'iy ketma-ket, tarmoq/5xx da
+navbat JOYIDA qoladi, 4xx da amal navbatdan chiqadi va **sabab bilan** ekranda
+ko'rinadi (jim yo'qotish yo'q). Ilova ochilganda navbat o'z-o'zidan yuboriladi.
+
+🔴 **«Tayyor» tugmasi ATAYLAB YO'Q.** Hamma qator yopilgach topshiriq
+o'z-o'zidan `done` bo'ladi va chek KONTROL navbatiga tushadi (G2) — TSD chekni
+`mark-ready` bilan flip QILMAYDI. Ekran «kontrolga ketdi» deb aytadi.
 
 ## Backend kontrakti
 
@@ -30,6 +53,7 @@ ko'chirish, yacheyka sanash, navbatni avtomatik bo'shatuvchi fon ishi.
 | `/restock-tasks` | GET | «Mening topshiriqlarim» |
 | `/restock-tasks/:id/lines/:lineId/confirm` | POST | Qatorni qo'lda tasdiqlash |
 | `/restock-tasks/:id/confirm-scan` | POST | Skaner bilan tasdiqlash |
+| `/restock-tasks/:id/lines/:lineId/shortage` | POST | **G6** — «topolmadim» (mutlaq miqdor; `0` = belgini olib tashlash) |
 | `/tsd/scan?code=` | GET | **Narxsiz** tovar qidiruvi (multi-hit) |
 | `/admin/stores/cells/by-barcode?code=` | GET | Yacheyka yorlig'i |
 | `/products/:id/cell-move` · `/cell-place` | POST | Ko'chirish / joylashtirish |
@@ -58,15 +82,28 @@ bilan sanab chiqilgan. Ekranda ko'rsatmaslik himoya emas: token haqiqiy.
   `res/values/config.xml` dagi `scanner_broadcast_action` to'ldiriladi,
   **kod o'zgarmaydi**.
 
-## Build (prerequisites)
+## Build
 
-1. **Android Studio** (yoki `sdkmanager` + JDK 17), `ANDROID_HOME` sozlangan.
-2. Gradle wrapper: `cd android/tsd-app && gradle wrapper --gradle-version 8.7`
-   (repo'da wrapper binarlari yo'q — `driver-app` bilan bir xil qaror).
-3. `local.properties` ga `sdk.dir=…`; kerak bo'lsa
+**2026-08-25 da shu mashinada BAJARILDI va o'tdi** (`BUILD SUCCESSFUL`,
+ogohlantirishsiz, `app-debug.apk` ≈ 7,1 MB).
+
+1. **JDK 17** va **Android SDK** (platform `android-34`). Shu mashinada ular
+   `D:/dev/java/jdk-17` va `D:/dev/android-sdk` da.
+2. **Gradle 8.7** — AGP 8.5.0 shuni kutadi. Repo'da wrapper binarlari YO'Q
+   (`driver-app` bilan bir xil qaror), shuning uchun gradle alohida yuklab
+   olinadi yoki `gradle wrapper --gradle-version 8.7` bilan yaratiladi.
+   ⚠️ Shu mashinadagi Gradle 9.1 (`D:/dev/gradle`) AGP 8.5.0 bilan MOS EMAS.
+3. `local.properties` ga `sdk.dir=…` (gitignore'da); kerak bo'lsa
    `app/src/main/res/values/config.xml` dagi `api_base_url` ni o'zgartiring.
-4. `./gradlew assembleDebug` → `app/build/outputs/apk/debug/app-debug.apk`.
-5. Terminalда «Noma'lum manbalar» ni yoqib APK'ni o'rnating.
+4. Buyruq:
+
+   ```sh
+   JAVA_HOME=D:/dev/java/jdk-17 ANDROID_HOME=D:/dev/android-sdk \
+     <gradle-8.7>/bin/gradle --no-daemon assembleDebug
+   ```
+
+   → `app/build/outputs/apk/debug/app-debug.apk`.
+5. Terminalda «Noma'lum manbalar» ni yoqib APK'ni o'rnating.
 
 ## Qo'lda smoke (G5 qabul mezoni)
 
@@ -84,7 +121,34 @@ bilan sanab chiqilgan. Ekranda ko'rsatmaslik himoya emas: token haqiqiy.
 6. **Bekor qilish tekshiruvi:** bazada `tsd_devices.revoked_at` ni qo'ying →
    keyingi `/auth/refresh` **401** berishi kerak.
 7. **Oflayn:** Wi-Fi ni o'chiring, amal qiling — «Navbatda: N ta amal»
-   ko'rinsin; Wi-Fi qaytgach navbat bo'shashi (G6 da avtomatlashtiriladi).
+   ko'rinsin; Wi-Fi qaytgach ilovani qayta oching → navbat o'z-o'zidan
+   yuborilsin («Yuborildi: N, rad etildi: 0»).
+
+## Qo'lda smoke (G6 qabul mezoni — TERMINAL kelgach)
+
+Javobgar: __________ · Sana/vaqt: __________ · APK versiyasi: __________
+
+1. **Yig'ish zanjiri (G2 bilan uchma-uch):** kassir 2 skladli chek ochib
+   yig'ishga yuboradi → TSD'da topshiriq chiqadi → qatorlar **yacheyka
+   tartibida** ekanini ko'zdan kechiring → har qatorni skan yoki tugma bilan
+   tasdiqlang → oxirgi qatordan keyin ekranda «chek KONTROLGA tushdi» chiqsin
+   va chek `/omborchi/kontrol` navbatida ko'rinsin.
+2. **Yetishmovchilik:** bitta qatorda «Topolmadim» → miqdor → saqlang.
+   Topshiriq YOPILSIN, chek kontrolga TUSHSIN va kontrol kartasida sariq
+   «Omborchi topolmadi» bloki miqdori bilan ko'rinsin.
+   So'ng kontrolda o'sha qatorni kamaytiring — kassirda summa o'zgarsin.
+3. **Takror himoyasi:** o'sha «Topolmadim» ni AYNI qiymat bilan yana yuboring —
+   hech narsa o'zgarmasin (400 ham bo'lmasin).
+4. **Joylashtirish:** tovar shtrixini skanerlang → «Yacheykasiz qoldiq» →
+   maqsad yacheyka yorlig'ini skanerlang → miqdor → **Ko'chirish**.
+   Qoldiq hisobotida o'sha yacheykada ko'rinsin.
+5. **Ko'chirish (yacheyka → yacheyka):** o'sha tovarni boshqa yacheykaga
+   ko'chiring; ombor JAMI qoldig'i O'ZGARMASIN.
+6. **Omborlararo qulf:** kichik omborchi bilan boshqa OMBOR yacheykasiga
+   ko'chirishga urinib ko'ring → **403** («store.update kerak»).
+7. **Sanash:** yacheyka yorlig'ini skanerlang → tarkib chiqsin → bitta tovarga
+   yangi son kiriting → saqlang → `/cell` ekranida o'sha son ko'rinsin.
+8. **Narx tekshiruvi (yana):** har ekranda narx YO'Qligini ko'zdan kechiring.
 
 ## Fayl xaritasi
 
@@ -99,6 +163,10 @@ app/src/main/java/uz/sherset/tsd/
    ApiClient.kt                            — allowlist ichidagi endpointlar
    ActionQueue.kt                          — oflayn FIFO amal navbati
    ScannerBridge.kt                        — wedge + broadcast skaner
-   MainActivity.kt                         — juftlash → PIN → topshiriqlar → skan
+   QueueSender.kt                          — navbatni bo'shatish (G6)
+   Ui.kt                                   — vidjetlar + `Shell`/`Screen` shartnomasi
+   MainActivity.kt                         — qobiq: juftlash → PIN → router → skan marshruti
+   TaskListScreen.kt · TaskDetailScreen.kt · ShortageScreen.kt
+   PlaceScreen.kt · CountScreen.kt · ScanInfoScreen.kt · PickProductScreen.kt
 app/build.gradle.kts · settings.gradle.kts — build konfiguratsiyasi
 ```

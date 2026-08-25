@@ -132,6 +132,48 @@ describe('OmborchiKontrolPage — G2 kontrol ekrani', () => {
     );
   });
 
+  /**
+   * G6 — omborchi TSD'da «topolmadim» degan qatorlar kontrol kartasida
+   * KO'RINISHI shart. Chek tarkibida ular HALI turibdi (omborchi chekni
+   * o'zgartirmaydi), ya'ni bu belgi ko'rinmasa katta omborchi to'liq
+   * bo'lmagan chekni «To'liq» deb yuborardi va mijoz yo'q tovar uchun pul
+   * to'lardi.
+   */
+  it('G6 — yetishmovchilik kartada ko`rinadi (miqdor va izoh bilan)', async () => {
+    vi.mocked(api.get).mockImplementation(async (path: string) => {
+      if (path.startsWith('/retail-sales/control-queue')) {
+        return {
+          items: [
+            {
+              ...QUEUE.items[0],
+              shortages: [
+                {
+                  productName: 'Shurup 5mm',
+                  quantity: '5',
+                  shortageQty: '2',
+                  note: 'javon bo`sh',
+                },
+              ],
+            },
+          ],
+        };
+      }
+      if (path === `/retail-sales/${SALE_ID}`) return DETAIL;
+      throw new Error(`unexpected GET ${path}`);
+    });
+
+    renderWithProviders(<OmborchiKontrolPage />);
+    expect(await screen.findByText('Omborchi topolmadi')).toBeInTheDocument();
+    expect(screen.getByText(/Shurup 5mm: 2 ta yetmadi \(5 tadan\)/)).toBeInTheDocument();
+    expect(screen.getByText(/kamaytiring yoki o'chiring/)).toBeInTheDocument();
+  });
+
+  it('yetishmovchilik yo`q bo`lsa blok umuman chiqmaydi', async () => {
+    renderWithProviders(<OmborchiKontrolPage />);
+    await screen.findByText('CH-00042');
+    expect(screen.queryByText('Omborchi topolmadi')).not.toBeInTheDocument();
+  });
+
   it("hamma qator o'chirilsa Saqlash o'chadi (bo'sh chek yuborilmaydi)", async () => {
     const user = userEvent.setup();
     renderWithProviders(<OmborchiKontrolPage />);

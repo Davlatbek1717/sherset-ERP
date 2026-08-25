@@ -3813,7 +3813,22 @@ export class RetailSaleService {
         sourceType: 'retailsale',
         sourceId: { in: sales.map((s) => s.id) },
       },
-      select: { sourceId: true, status: true, skladNo: true, assigneeName: true },
+      select: {
+        sourceId: true,
+        status: true,
+        skladNo: true,
+        assigneeName: true,
+        // G6 — omborchi «javonda topolmadim» degan qatorlar. Kontrol
+        // AYNAN shularni chekdan chiqaradi yoki kamaytiradi (`control-edit`),
+        // ya'ni ular navbat kartasida KO'RINISHI shart: aks holda katta
+        // omborchi to'liq bo'lmagan chekni «To'liq» deb yuborardi va kassir
+        // mijozdan yo'q tovar uchun pul olardi.
+        lines: {
+          where: { shortageQty: { not: null } },
+          select: { productName: true, quantity: true, shortageQty: true, shortageNote: true },
+          orderBy: { position: 'asc' },
+        },
+      },
     });
     const bySale = new Map<string, typeof tasks>();
     for (const t of tasks) {
@@ -3833,6 +3848,15 @@ export class RetailSaleService {
           assigneeName: t.assigneeName,
           status: t.status,
         })),
+        // G6 — yetishmovchilik (topshiriqlar bo'ylab yig'ilgan, additiv maydon).
+        shortages: (bySale.get(s.id) ?? []).flatMap((t) =>
+          t.lines.map((l) => ({
+            productName: l.productName,
+            quantity: l.quantity.toString(),
+            shortageQty: l.shortageQty?.toString() ?? '0',
+            note: l.shortageNote,
+          })),
+        ),
       }));
     return { items };
   }

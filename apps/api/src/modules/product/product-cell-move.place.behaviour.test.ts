@@ -103,8 +103,13 @@ function makeWorld(opts: {
     $transaction: vi.fn(async (cb: (t: unknown) => Promise<unknown>) => cb(client)),
   };
   const stock = new StockService({ client: {} } as never);
-  const svc = new ProductCellMoveService({ client } as never, stock);
-  return { svc, ledger };
+  // G6 — servis endi ruxsat darajasini AMALGA qarab ko'taradi
+  // (`product-cell-move-scope.ts`). Bu testlar F7 taqsimot mantig'ini
+  // o'lchaydi, ya'ni ular «hamma narsaga ruxsati bor» aktyorni ifodalaydi;
+  // darajaning O'ZI alohida testda qulflanadi.
+  const permissions = { resolveScope: vi.fn(async () => 'ALL'), require: vi.fn(async () => 'ALL') };
+  const svc = new ProductCellMoveService({ client } as never, stock, permissions as never);
+  return { svc, ledger, permissions };
 }
 
 describe('place() — F7 ko`p-manbali joylashtirish', () => {

@@ -272,6 +272,8 @@ const INTENTIONALLY_OPEN: Record<string, string> = {
   'PickListController#markPrinted': 'DEFER Q10 — omborchi ekrani, mos entity-slug yo`q',
   'RestockTaskController#confirmLine': 'DEFER Q10 — omborchi ekrani, mos entity-slug yo`q',
   'RestockTaskController#confirmScan': 'DEFER Q10 — omborchi ekrani, mos entity-slug yo`q',
+  'RestockTaskController#setShortage':
+    'G6 — qator tasdiqlash bilan BIR sirt (yuqoridagi ikkisi kabi); chek tarkibini o`zgartirmaydi, faqat XABAR beradi',
 };
 
 function stripComments(src: string): string {

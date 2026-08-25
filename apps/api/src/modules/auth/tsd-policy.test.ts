@@ -23,6 +23,14 @@ describe('isTsdAllowed — omborchi ishi OCHIQ', () => {
     expect(isTsdAllowed('POST', '/restock-tasks/t1/confirm-scan')).toBe(true);
   });
 
+  it('G6 — yetishmovchilik belgisi OCHIQ (busiz chek kontrolga tushmasdi)', () => {
+    expect(isTsdAllowed('POST', '/restock-tasks/t1/lines/l1/shortage')).toBe(true);
+    // `exact` — ichki yo'llar ochilmaydi.
+    expect(isTsdAllowed('POST', '/restock-tasks/t1/lines/l1/shortage/x')).toBe(false);
+    // Faqat POST: yetishmovchilikni O'CHIRISH yo'li yo'q (0 yuboriladi).
+    expect(isTsdAllowed('DELETE', '/restock-tasks/t1/lines/l1/shortage')).toBe(false);
+  });
+
   it('narxsiz skan-qidiruv va yacheyka yorlig`i', () => {
     expect(isTsdAllowed('GET', '/tsd/scan')).toBe(true);
     expect(isTsdAllowed('GET', '/admin/stores/cells/by-barcode')).toBe(true);
