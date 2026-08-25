@@ -122,6 +122,23 @@ export const DEBT_LEDGER_CURRENCY = 'UZS';
 /** `sourceDocType` qiymati — POS chekidan tug'ilgan qator (Q1 migratsiyasi). */
 export const SALE_DEBT_SOURCE_DOC_TYPE = 'retailsale';
 
+/**
+ * `Debt.comment` — menejer ro'yxatda ko'radigan qisqa manba matni.
+ *
+ * 🔴 Q5 (2026-08-25) da ALOHIDA funksiyaga chiqarildi: backfill skriptining
+ * sof rejasi (`scripts/q5-backfill-plan.ts`) AYNAN shu matnni yozishi shart —
+ * reja §Q5 vazifa 2: «har qator: Q2 yozuvchisi bilan AYNAN bir xil shakl».
+ * Ikki joyda ikki literal qolsa, backfill ochgan qatorlar jonli yozuvchining
+ * qatorlaridan MATN bilan ajralib turardi va menejer bitta hodisani ikki xil
+ * manba deb o'qirdi.
+ *
+ * ⚠️ Bu matnga TAYANMANG (Q4 eslatmasi): manba va chek raqami
+ * `sourceDocType`/`sourceDocId` dan o'qiladi, izoh matni o'zgarishi mumkin.
+ */
+export function saleDebtComment(saleName: string): string {
+  return `Kassa cheki «${saleName}» bo\`yicha qarz.`;
+}
+
 /** Bir sanani Toshkent kalendar kuniga (`YYYY-MM-DD`) aylantiradi. */
 export function tashkentDayKey(d: Date): string {
   return new Date(d.getTime() + TASHKENT_OFFSET_MS).toISOString().slice(0, 10);
@@ -277,7 +294,7 @@ export function planSaleDebtRow(input: SaleDebtRowInput, now: Date): SaleDebtRow
     totalMinor,
     balanceAdopted: true,
     nextContactAt: saleDebtDueAt(now, input.termDays),
-    comment: `Kassa cheki «${input.saleName}» bo\`yicha qarz.`,
+    comment: saleDebtComment(input.saleName),
     noteText: noteParts.join(' '),
     coveredByPrepayMinor,
     balanceUnmeasured,
