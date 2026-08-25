@@ -1,3 +1,5 @@
+import { PIECE_LABEL_PREFIX } from '../stock-piece/stock-piece-core.js';
+
 /**
  * TSD skan-qidiruvining SOF yadrosi (Prisma yo'q, Nest yo'q) — G-reja G5.
  *
@@ -38,12 +40,17 @@ export type ScanCodeKind = 'piece' | 'cell' | 'product';
  * ataylab unikal EMAS (multi-hit). Ikkalasi bir qidiruvga tushsa omborchi
  * bo'lakni skanerlaganda tovar tanlovi ochilib, kesim oqimi buzilardi.
  *
- * K-reja hali qurilmagan (K1…K6 boshlanmagan), shuning uchun bu yerda
- * bo'lak kodi TANILADI, lekin `supported: false` bilan qaytadi — terminal
- * «bu bo'lak kodi, hali qo'llab-quvvatlanmaydi» deb aytadi va JIMGINA
- * noto'g'ri tovarni ochmaydi.
+ * K1 (2026-08-25) bo'lak reyestrini qurdi va prefiksning YAGONA uyi endi
+ * `stock-piece-core.ts` — bu yerdagi nom shundan qayta eksport qilinadi
+ * (ikki joyda ikki qiymat bo'lib ketishi aynan 7.3 ogohlantirgan xato-klass
+ * bo'lardi; `stock-piece-core.test.ts` ikkalasi bir xilligini qulflaydi).
+ *
+ * K2…K4 hali qurilmagan (bo'lak KIRITISH va KESIM oqimi yo'q), shuning uchun
+ * bu yerda bo'lak kodi TANILADI, lekin `supported: false` bilan qaytadi —
+ * terminal «bu bo'lak kodi, hali qo'llab-quvvatlanmaydi» deb aytadi va
+ * JIMGINA noto'g'ri tovarni ochmaydi.
  */
-export const PIECE_CODE_PREFIX = 'BLK-';
+export const PIECE_CODE_PREFIX = PIECE_LABEL_PREFIX;
 
 /**
  * Skaner yuborgan qiymatni tozalaydi.

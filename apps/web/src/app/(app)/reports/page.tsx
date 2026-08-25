@@ -108,6 +108,13 @@ const REPORT_CARDS: ReportCard[] = [
     descriptionKey: 'unit_economics_card_description',
     icon: Icons.chart,
   },
+  // K-reja K1 — bo'lak reyestri sverkasi (kabel/sim/shlang).
+  {
+    href: '/reports/piece-reconciliation',
+    titleKey: 'piece_reconciliation_card_title',
+    descriptionKey: 'piece_reconciliation_card_description',
+    icon: Icons.reportStockBalance,
+  },
 ];
 
 export default function ReportsLandingPage() {

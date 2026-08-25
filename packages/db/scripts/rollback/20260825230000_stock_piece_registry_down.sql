@@ -1,0 +1,48 @@
+-- QAYTARISH YO'LI (F-reja 2-bo'lim, 12-qoida) — K1 migratsiyasining TESKARISI.
+--
+-- Migratsiya faqat QO'SHADI: bitta ustun (`products.piece_tracked`, default
+-- FALSE) va bitta YANGI jadval (`stock_pieces`). Mavjud birorta ustun/jadval
+-- o'zgarmagan, birorta qator ko'chirilmagan ⇒ qaytarish qoldiqqa, chekka,
+-- kassaga va yacheykalarga TEGMAYDI. `stock_pieces` ga TASHQARIDAN havola
+-- qiladigan FK yo'q (havolalar SHU jadvaldan chiqadi: accounts/stores/
+-- store_cells/o'zi) ⇒ RESTRICT to'siq bo'lmaydi.
+--
+-- 🔴 MA'LUMOT YO'QOLADI (ikkalasi ham K-reja doirasida):
+--   (a) `stock_pieces` — ombordagi jismoniy bo'laklar reyestri (qaysi
+--       yacheykada nechta rulon va qanday uzunlikdagi bo'laklar bor, hamda
+--       ularning `BLK-` yorliqlari). Qoldiqning O'ZI (`stocks`/`stock_by_cell`)
+--       BU JADVALDA EMAS va tegilmaydi — ya'ni kassa/ombor hisobi bir grammga
+--       ham o'zgarmaydi, faqat «tarkib» ma'lumoti yo'qoladi. Lekin uni qayta
+--       yig'ish OMBORCHINING QO'L MEHNATI (yacheykalarni qayta sanash) —
+--       shuning uchun qaytarishdan OLDIN EKSPORT qiling:
+--         \copy (SELECT * FROM "stock_pieces") TO 'stock-pieces-backup.csv' CSV HEADER
+--   (b) `products.piece_tracked` — qaysi tovarlarda bo'lak hisobi yoqilgani.
+--       Yoqilgan tovarlar ro'yxatini ham saqlang:
+--         \copy (SELECT id, name, code FROM products WHERE piece_tracked) TO 'piece-tracked-backup.csv' CSV HEADER
+--
+-- TEKSHIRUV (qaytarishdan oldin — nima yo'qolishini raqam bilan ko'ring):
+--   SELECT count(*) FILTER (WHERE status = 'active') AS faol_bolaklar,
+--          count(*)                                  AS jami_qatorlar
+--     FROM "stock_pieces";
+--   SELECT count(*) AS bayroqli_tovarlar FROM "products" WHERE "piece_tracked";
+--   Ikkalasi ham 0 bo'lsa qaytarish MUTLAQO izsiz (K1 deploy'idan keyingi,
+--   K2 boshlanishidan oldingi holat aynan shunday bo'ladi).
+--
+-- TARTIB: avval jadval (FK va indekslar `DROP TABLE` bilan birga ketadi),
+-- keyin ustun — ular bir-biriga bog'liq emas, lekin jadval oldin ketsa
+-- yarim qaytgan holatda ham `piece_tracked` o'qiydigan kod qolmaydi.
+--
+-- ⚠️ Fayl ATAYLAB migratsiya papkasidan TASHQARIDA: prisma u yerda faqat
+-- `migration.sql` ni kutadi (G5/G6 rollback skriptlari bilan bir naqsh).
+--
+-- Yugurtirish:
+--   cd packages/db && npx prisma db execute --schema prisma/schema.prisma \
+--     --file scripts/rollback/20260825230000_stock_piece_registry_down.sql
+--   npx prisma migrate resolve --rolled-back 20260825230000_stock_piece_registry   # kuzatilayotgan bo'lsa
+--   npx prisma generate
+--
+-- Har qadam idempotent: qayta yugurtirish no-op.
+
+DROP TABLE IF EXISTS "stock_pieces";
+
+ALTER TABLE "products" DROP COLUMN IF EXISTS "piece_tracked";

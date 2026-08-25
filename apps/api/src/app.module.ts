@@ -119,6 +119,7 @@ import { SkladKeeperModule } from './modules/sklad-keeper/sklad-keeper.module.js
 import { SmenaModule } from './modules/smena/smena.module.js';
 import { SmsModule } from './modules/sms/sms.module.js';
 import { StateModule } from './modules/state/state.module.js';
+import { StockPieceModule } from './modules/stock-piece/stock-piece.module.js';
 import { StockModule } from './modules/stock/stock.module.js';
 import { StoreModule as StoreAdminModule } from './modules/store/store.module.js';
 import { SupplyApprovalModule } from './modules/supply-approval/supply-approval.module.js';
@@ -159,6 +160,7 @@ import { PrismaModule } from './prisma/prisma.module.js';
     PresenceModule,
     CustomerOrderModule,
     StockModule,
+    StockPieceModule,
     DemandModule,
     InvoiceOutModule,
     PaymentInModule,

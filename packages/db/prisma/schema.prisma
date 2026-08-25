@@ -83,6 +83,7 @@ model Account {
   processingProcessPositionEdges ProcessingProcessPositionEdge[]
   stocks                         Stock[]
   stockByCell                    StockByCell[]
+  stockPieces                    StockPiece[]
   auditLog                       AuditLog[]
   organizationAccounts           OrganizationAccount[]
   cashDesks                      CashDesk[]
@@ -1090,6 +1091,7 @@ model Store {
   cells                         StoreCell[]
   stockByCell                   StockByCell[]
   retailSalePositionAllocations RetailSalePositionAllocation[]
+  stockPieces                   StockPiece[]
 
   @@unique([accountId, code])
   @@index([accountId, archived])
@@ -1156,6 +1158,7 @@ model StoreCell {
   inventoryPositions      InventoryPosition[]      @relation("InventoryPositionCell")
   stockByCell             StockByCell[]
   retailSaleAllocations   RetailSalePositionAllocation[]
+  stockPieces             StockPiece[]
   // Multi-bin: products bound to THIS cell (many-to-many with Product, see
   // ProductCellLink).
   productLinks            ProductCellLink[]        @relation("ProductCellLinkCell")
@@ -5451,6 +5454,18 @@ model Product {
   // Serial tracking
   isSerialTrackable Boolean @default(false) @map("is_serial_trackable")
 
+  // K-reja (`docs/plans/2026-08-25-bolinadigan-tovar-bolak-hisobi.md`) — «Bo'lak
+  // hisobi yuritilsin». Rulondan metrlab sotiladigan tovar (kabel, sim, shlang,
+  // zanjir, lenta): qoldiq bitta son bo'lib turadi, ombordagi JISMONIY bo'laklar
+  // (250+250+250+200+150+70+50 = 1220 m) esa hech qayerda yozilmaydi va kassir
+  // mijozga «4 ta butun rulon bor» deb yanglishadi.
+  //
+  // Bayroq yoqilgan tovarning bo'lak reyestri `StockPiece` da yuritiladi. K1 da
+  // bayroq FAQAT ustun sifatida qo'shiladi — hech qayerda yoqilmaydi va sverka
+  // hisobotidan boshqa hech bir oqim uni o'qimaydi. Yoqish ekrani va siyosati —
+  // K6 (birligi «m» bo'lgan YANGI tovarda yoqilgan holda keladi, K-Q9).
+  pieceTracked Boolean @default(false) @map("piece_tracked")
+
   // Discount policy
   discountProhibited Boolean @default(false) @map("discount_prohibited")
 
@@ -7743,6 +7758,80 @@ model StockByCell {
   // «Свободна/Занята» — any qty>0 row for a cell.
   @@index([cellId])
   @@map("stock_by_cell")
+}
+
+/// Bo'lak reyestri — K-reja (`docs/plans/2026-08-25-bolinadigan-tovar-bolak-hisobi.md`),
+/// K1 fazasi. Rulondan metrlab sotiladigan tovarning (kabel/sim/shlang) ombordagi
+/// JISMONIY bo'laklari: **bitta qator = bitta jismoniy bo'lak**.
+///
+/// 🔷 ASOSIY G'OYA (K-reja 2-bo'lim): **kesish qoldiqni O'ZGARTIRMAYDI.** 250 m lik
+/// rulondan 180 m kesilganda ombordagi kabel kamaymaydi — `250` o'rniga `180 + 70`
+/// bo'ladi, jami o'sha 250. Shuning uchun bu jadval `Stock`/`StockByCell` ga
+/// PARALLEL turadi va ularni HECH QACHON o'zgartirmaydi; qoldiq avvalgidek faqat
+/// to'lov paytida kamayadi (F-reja Q1).
+///
+/// INVARIANT: `Σ length WHERE status='active'` == o'sha (ombor × yacheyka × tovar)
+/// qoldig'i (`StockByCell.qty`, yacheykasizda `Stock.qty − Σ StockByCell.qty`).
+/// Farq chiqsa **kassa TO'XTAMAYDI** — sverka hisoboti signal beradi (K1/3-vazifa).
+/// Bu ataylab shunday: 2026-08-24 da kassa aynan qoldiq mexanizmiga tegilgani
+/// uchun to'xtagan edi (`docs/plans/2026-08-24-split-kassa-hodisasi.md`).
+///
+/// `whole` (butun rulon) ≠ bo'lak — egasining qarori (K-Q3): butun rulonlar
+/// bir-biridan farq qilmaydi (uchala 250 m bir xil, qaysinisini olish farqsiz) va
+/// YORLIQSIZ turadi (UI ularni «250 m × 3» deb guruhlaydi); bo'laklar esa har biri
+/// individ va UNIKAL yorliq oladi. Shundan `whole = true ⟹ label IS NULL` — DB
+/// CHECK va `stock-piece-core.ts` guardi bilan ikki qavat qulflangan.
+model StockPiece {
+  id             String  @id @default(uuid()) @db.Uuid
+  accountId      String  @map("account_id") @db.Uuid
+  storeId        String  @map("store_id") @db.Uuid
+  /// NULL = yacheykaga biriktirilmagan, ombor darajasidagi «Без ячейки» hovuzi.
+  /// ATAYLAB (G-reja E1 bilan bir sabab): jonlida qoldiqning ~94 % i hech bir
+  /// yacheykaga biriktirilmagan (`docs/ops/jonli-holat.md`). Faqat yacheykali
+  /// bo'lakni qo'llasak reyestr aynan eng katta qismni ko'ra olmasdi.
+  cellId         String? @map("cell_id") @db.Uuid
+  /// `StockByCell`/`Stock` bilan AYNAN bir xil polimorf kalit (product|variant).
+  /// FK ATAYLAB yo'q — `stock_by_cell` da ham yo'q (assortiment ikki jadvalda).
+  assortmentKind String  @default("product") @map("assortment_kind") @db.VarChar(20)
+  assortmentId   String  @map("assortment_id") @db.Uuid
+  /// QOLGAN uzunlik (kesimdan keyin yangilanadi). `StockByCell.qty` bilan AYNAN
+  /// bir xil aniqlik — aks holda sverka yaxlitlash tufayli abadiy farq berardi.
+  length         Decimal @db.Decimal(20, 6)
+  /// Butun rulonmi (yorliqsiz, almashtiriladigan) — K-Q3.
+  whole          Boolean @default(false)
+  /// Bo'lak yorlig'i, `BLK-` makonida (K-reja 7.3). Tovar shtrixlari ataylab
+  /// UNIKAL EMAS (multi-hit tanlovi), bo'lak yorlig'i esa aynan BITTA jismoniy
+  /// bo'lakni bildiradi ⇒ majburan unikal. Unikallik AKKAUNT ichida: yorliq
+  /// raqami akkaunt bo'yicha yuritiladi va global unikallik ikki tenantni
+  /// to'qnashtirardi (`products.code` naqshi).
+  label          String? @db.VarChar(40)
+  /// Qaysi bo'lakdan kesilgan (tarix zanjiri).
+  sourcePieceId  String? @map("source_piece_id") @db.Uuid
+  /// `active` — omborda turibdi, sverkaga KIRADI; `consumed` — mijozga ketgan
+  /// yoki hisobdan chiqarilgan, sverkada SANALMAYDI (tarix uchun qoladi).
+  status         String  @default("active") @db.VarChar(20)
+
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt  DateTime  @updatedAt @map("updated_at") @db.Timestamptz()
+  consumedAt DateTime? @map("consumed_at") @db.Timestamptz()
+
+  account     Account      @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  // Restrict: bo'lagi bor ombor jimgina o'chmasin (`StockByCell.store` naqshi).
+  store       Store        @relation(fields: [storeId], references: [id], onDelete: Restrict)
+  // SetNull: yacheyka o'chsa bo'lak ombor darajasiga TUSHADI, yo'qolmaydi —
+  // jismoniy bo'lak omborda qolaveradi va sverkadan chiqib ketmasligi kerak.
+  cell        StoreCell?   @relation(fields: [cellId], references: [id], onDelete: SetNull)
+  // SetNull: manba bo'lak o'chsa bola yetim qoladi, lekin YO'QOLMAYDI.
+  sourcePiece StockPiece?  @relation("StockPieceCut", fields: [sourcePieceId], references: [id], onDelete: SetNull)
+  cutPieces   StockPiece[] @relation("StockPieceCut")
+
+  @@unique([accountId, label])
+  // Sverka va K2/K3 ekranlari: (ombor × tovar) kesimidagi faol bo'laklar.
+  @@index([accountId, storeId, assortmentKind, assortmentId, status], map: "stock_pieces_account_store_assortment_status_idx")
+  // Yacheyka tarkibi (K2 ekrani, TSD sanash).
+  @@index([cellId])
+  @@index([sourcePieceId])
+  @@map("stock_pieces")
 }
 
 // =========================================================================
