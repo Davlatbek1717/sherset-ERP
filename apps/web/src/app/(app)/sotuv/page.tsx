@@ -793,6 +793,10 @@ function SalesScreen({
             priceMinor: minor,
             priceStr: (Number(minor) / 100).toString(),
             availableStock: product.stock != null ? Number(product.stock.available) : undefined,
+            // K3 — bo'linadigan tovar bayrog'i tovar kartochkasidan ko'chadi
+            // (`GET /products` qatorida keladi). Faqat shu tovarlarda qator
+            // oynasida bo'lak paneli ochiladi.
+            pieceTracked: product.pieceTracked === true,
             ...cardPrices(product.buyPrice, product.salePrices),
           },
         ];
@@ -1019,7 +1023,16 @@ function SalesScreen({
   const editingLine = cart.find((l) => l.productId === editingProductId) ?? null;
 
   const applyLineEdit = useCallback(
-    (productId: string, next: { quantity: string; priceStr: string; priceMinor: bigint }) => {
+    (
+      productId: string,
+      next: {
+        quantity: string;
+        priceStr: string;
+        priceMinor: bigint;
+        /** K3 — kassir kelishgan bo'lak tarkibi (`['150','30']`). */
+        pieceLengths?: string[];
+      },
+    ) => {
       setCart((prev) =>
         prev.map((l) =>
           l.productId === productId
@@ -1028,6 +1041,7 @@ function SalesScreen({
                 quantity: next.quantity,
                 priceStr: next.priceStr,
                 priceMinor: next.priceMinor,
+                pieceLengths: next.pieceLengths,
               }
             : l,
         ),

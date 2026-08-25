@@ -276,6 +276,8 @@ const POS_DONE_FILES = [
   'components/pos/cashier-select-screen.tsx',
   'components/pos/rasmilashtirish-modal.tsx',
   'components/pos/shell-version-badge.tsx',
+  // K3 (bo'linadigan tovar) — kassirga bo'lak tarkibi va taklif.
+  'components/pos/piece-offer-panel.tsx',
   'app/(app)/sotuv/page.tsx',
   // F1 (POS redizayn) — page.tsx dan ajratilgan rejim-komponentlar.
   'app/(app)/sotuv/_components/smena-mode.tsx',

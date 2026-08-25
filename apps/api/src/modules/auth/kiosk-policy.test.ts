@@ -374,3 +374,32 @@ describe("Qo'lda kurs yo'li — kiosk ro'yxati (2026-08-17)", () => {
     expect(isKioskAllowed('GET', '/exchange-rates/manual/changes')).toBe(true);
   });
 });
+
+// ---------------------------------------------------------------------------
+// K3 (K-reja) — bo'linadigan tovarning bo'laklari kassirga
+// ---------------------------------------------------------------------------
+
+describe('K3 — `/stock-pieces/availability` AYNAN bitta yo`l', () => {
+  it('kassir bo`lak tarkibini o`qiy oladi', () => {
+    // Filtrlar QUERY da (`?assortmentId=…&quantity=…`) — qo'riqchi yo'lni
+    // query'siz ko'radi, ya'ni ro'yxat ham yo'l bo'yicha yozilgan.
+    expect(isKioskAllowed('GET', '/stock-pieces/availability')).toBe(true);
+  });
+
+  it('🔴 reyestrning QOLGANI kioskka YOPIQ (yozuv — katta omborchiniki)', () => {
+    // `exact` bo'lmasa bitta prefiks butun reyestrni ochib yuborardi:
+    // qo'shish, uzunlikni tuzatish, «tugadi», bayroq — hammasi kassirga.
+    expect(isKioskAllowed('GET', '/stock-pieces')).toBe(false);
+    expect(isKioskAllowed('POST', '/stock-pieces')).toBe(false);
+    expect(isKioskAllowed('GET', '/stock-pieces/lookup')).toBe(false);
+    expect(isKioskAllowed('POST', '/stock-pieces/flag')).toBe(false);
+    expect(isKioskAllowed('PATCH', '/stock-pieces/abc')).toBe(false);
+    expect(isKioskAllowed('POST', '/stock-pieces/abc/close')).toBe(false);
+    expect(isKioskAllowed('GET', '/stock-pieces/reconciliation')).toBe(false);
+  });
+
+  it('faqat GET — yozish metodlari yopiq', () => {
+    expect(isKioskAllowed('POST', '/stock-pieces/availability')).toBe(false);
+    expect(isKioskAllowed('PATCH', '/stock-pieces/availability')).toBe(false);
+  });
+});

@@ -13,6 +13,7 @@ import type { AuthenticatedUser } from '../auth/auth.schema.js';
 import { CurrentUser } from '../auth/current-user.decorator.js';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
 import { RequirePermission } from '../permissions/require-permission.decorator.js';
+import { StockPieceAvailabilityService } from './stock-piece-availability.service.js';
 import { StockPieceReconcileService } from './stock-piece-reconcile.service.js';
 import { StockPieceRegistryService } from './stock-piece-registry.service.js';
 
@@ -23,6 +24,11 @@ import { StockPieceRegistryService } from './stock-piece-registry.service.js';
  *
  *  - **Sverka hisoboti — `report.view`** (K1). U mavjud hisobotlar bilan bir
  *    sirtda turadi (`/reports`) va faqat O'QIYDI.
+ *  - **Kassir ko'rinishi — `product.view`** (K3, `availability`). U tovar
+ *    kartochkasining KO'RINISHI (bo'lak tarkibi), reyestr boshqaruvi EMAS —
+ *    shuning uchun kassirning mavjud ruxsati yetadi va yangi entity kerak
+ *    bo'lmadi. Kiosk tomonida marshrut `KIOSK_ALLOWED` da AYNAN shu yo'l
+ *    bilan ochilgan (ikki qulf birga — `kiosk-policy.ts` naqshi).
  *  - **Reyestr boshqaruvi — `piecetracking`** (K2). Bu yo'llar YOZADI, ya'ni
  *    ombordagi jismoniy holatni ta'riflaydi ⇒ o'z entity'si bo'lishi shart
  *    (G2/G3 dagi `retailcontrol`/`returnacceptance` naqshi). K-Q9: huquq
@@ -38,6 +44,8 @@ export class StockPieceController {
   constructor(
     @Inject(StockPieceReconcileService) private readonly recon: StockPieceReconcileService,
     @Inject(StockPieceRegistryService) private readonly registry: StockPieceRegistryService,
+    @Inject(StockPieceAvailabilityService)
+    private readonly availabilityService: StockPieceAvailabilityService,
   ) {}
 
   @Get('reconciliation')
@@ -47,6 +55,20 @@ export class StockPieceController {
     @Query() query: Record<string, unknown>,
   ) {
     return this.recon.reconcile(user.accountId, query);
+  }
+
+  /**
+   * K3 — kassir/tovar kartochkasi uchun bo'lak TARKIBI (faqat o'qish):
+   * `3 × 250 · 200 · 150 · 70 · 50`, «eng uzun uzluksiz» va so'ralgan miqdor
+   * uchun taklif. Bayrog'i o'chiq tovarda bo'sh javob qaytadi.
+   */
+  @Get('availability')
+  @RequirePermission({ entity: 'product', action: 'view' })
+  async availability(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: Record<string, unknown>,
+  ) {
+    return this.availabilityService.availability(user.accountId, query);
   }
 
   /** Yorliqni skanerlash — AYNAN bitta bo'lak (K-reja 7.3). */

@@ -59,5 +59,13 @@ export const PosProductRowSchema = z.object({
   buyPrice: MinorAmount.nullable().optional(),
   salePrices: z.array(SalePriceEntrySchema).nullable().optional(),
   stock: ProductStockSchema.nullable().optional(),
+  /**
+   * K3 (bo'linadigan tovar — kabel/sim/shlang): «Bo'lak hisobi yuritilsin».
+   * `optional` — maydon `Product` da 2026-08-25 dan bor, lekin bu shakl
+   * QUYI CHEGARA (yuqoridagi izoh) va eski javoblarda bo'lmasligi mumkin.
+   * POS uni ko'rib bo'lak tarkibini so'raydi; `false`/yo'q bo'lsa ekran
+   * bir bayt ham o'zgarmaydi.
+   */
+  pieceTracked: z.boolean().optional(),
 });
 export type PosProductRow = z.infer<typeof PosProductRowSchema>;

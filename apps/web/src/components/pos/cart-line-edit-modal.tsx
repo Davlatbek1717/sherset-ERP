@@ -16,6 +16,7 @@
  * manba. Ikkinchi nusxa yozilsa oynadagi raqam savatdagidan farq qilardi.
  */
 
+import { PieceOfferPanel } from '@/components/pos/piece-offer-panel';
 import { isShersetShell } from '@/lib/pos-device';
 import { cartLineRevenueMinor, normalizeQtyDecimal } from '@/lib/pos/cart-math';
 import { parseAmountToMinor } from '@/lib/pos/parse-amount';
@@ -46,6 +47,14 @@ export interface CartLineEditTarget {
   wholesaleMinor: bigint | null;
   basePriceMinor: bigint | null;
   availableStock?: number;
+  /**
+   * K3 — «Bo'lak hisobi yuritilsin» (`Product.pieceTracked`): kabel, sim,
+   * shlang. Faqat SHU tovarlarda oynada bo'lak paneli ochiladi; qolganlarida
+   * ekran bir bayt ham o'zgarmaydi (K3 qabul mezoni).
+   */
+  pieceTracked?: boolean;
+  /** Kassir kelishgan bo'lak uzunliklari (`['150','30']`) — K3/3-vazifa. */
+  pieceLengths?: string[];
 }
 
 export interface CartLineEditResult {
@@ -54,6 +63,12 @@ export interface CartLineEditResult {
   /** Maydonda ko'ringan matn (bo'sh bo'lishi MUMKIN). */
   priceStr: string;
   priceMinor: bigint;
+  /**
+   * K3 — kassir mijoz bilan kelishgan bo'lak uzunliklari (`['150','30']`).
+   * `undefined` = kelishuv yo'q (yoki tovar bo'linadigan emas). Miqdorni
+   * O'ZGARTIRMAYDI: `150 + 30 = 180` — bu TARKIB, yangi miqdor emas.
+   */
+  pieceLengths?: string[];
 }
 
 interface Props {
@@ -92,6 +107,12 @@ export function CartLineEditModal({
 
   const [loadedId, setLoadedId] = useState<string | null>(line?.productId ?? null);
   const [qtyInput, setQtyInput] = useState(line?.quantity ?? '');
+  /**
+   * K3 — kassir qabul qilgan bo'lak taklifi (`['150','30']`).
+   * Miqdor qo'lda o'zgartirilsa TOZALANADI: eski kelishuv yangi miqdorga
+   * yolg'on bo'lardi (mijoz 180 ga rozi bo'lgan, kassir 200 yozgan).
+   */
+  const [pieceLengths, setPieceLengths] = useState<string[] | undefined>(line?.pieceLengths);
   const [priceInput, setPriceInput] = useState(line?.priceStr ?? '');
   const [activeField, setActiveField] = useState<Field>('qty');
   /**
@@ -124,6 +145,7 @@ export function CartLineEditModal({
     setLoadedId(line.productId);
     setQtyInput(line.quantity);
     setPriceInput(line.priceStr);
+    setPieceLengths(line.pieceLengths);
     setActiveField('qty');
     setReplaceNext(true);
   }
@@ -133,12 +155,22 @@ export function CartLineEditModal({
 
   const setActive = activeField === 'qty' ? setQtyInput : setPriceInput;
 
+  /**
+   * Miqdorga QO'LDA tegilganda bo'lak kelishuvi bekor bo'ladi (K3).
+   * Sabab: `150 + 30` mijoz 180 ga rozi bo'lgani uchun yozilgan; kassir
+   * miqdorni 200 qilsa, o'sha tarkib omborchiga YOLG'ON ko'rsatma bo'lardi.
+   */
+  const clearPiecesOnQtyEdit = () => {
+    if (activeField === 'qty') setPieceLengths(undefined);
+  };
+
   const selectField = (field: Field) => {
     setActiveField(field);
     setReplaceNext(true);
   };
 
   const handleKey = (key: string) => {
+    clearPiecesOnQtyEdit();
     if (key === '⌫') {
       setReplaceNext(false);
       setActive((prev) => prev.slice(0, -1));
@@ -195,7 +227,7 @@ export function CartLineEditModal({
       onRemove();
       return;
     }
-    onSave({ quantity, priceStr: priceInput, priceMinor });
+    onSave({ quantity, priceStr: priceInput, priceMinor, pieceLengths });
   };
 
   const activeValue = activeField === 'qty' ? qtyInput : priceInput;
@@ -352,6 +384,49 @@ export function CartLineEditModal({
               </div>
             </div>
 
+            {/* K3 — bo'linadigan tovar (kabel/sim/shlang): bo'lak TARKIBI,
+                «eng uzun uzluksiz» va so'ralgan miqdor uchun taklif. Bayrog'i
+                o'chiq tovarda panel UMUMAN chizilmaydi (ichida `null`), ya'ni
+                oyna avvalgidek qoladi. Panel FAQAT O'QIYDI. */}
+            {line.pieceTracked && (
+              <PieceOfferPanel
+                productId={line.productId}
+                quantity={quantity}
+                onApplySplit={
+                  readOnly
+                    ? undefined
+                    : (lengths) => {
+                        // Miqdor O'ZGARMAYDI — 150 + 30 aynan o'sha 180.
+                        // Yozilgani TARKIB: kassir mijoz bilan nimaga
+                        // kelishganini omborchi ko'rsin (savat qatorida).
+                        setPieceLengths(lengths);
+                      }
+                }
+              />
+            )}
+
+            {/* K3 — kassir qabul qilgan bo'lak kelishuvi (savatga shu tushadi). */}
+            {pieceLengths && pieceLengths.length > 1 && (
+              <div
+                data-test-id="pos-line-edit-pieces"
+                className="flex items-center justify-between gap-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-2 text-[14px] text-amber-900"
+              >
+                <span className="font-semibold tabular-nums">
+                  {t('line_edit_pieces')}: {pieceLengths.join(' + ')}
+                </span>
+                {!readOnly && (
+                  <button
+                    type="button"
+                    data-test-id="pos-line-edit-pieces-clear"
+                    onClick={() => setPieceLengths(undefined)}
+                    className="min-h-[44px] rounded-lg px-3 font-semibold text-[13px] underline"
+                  >
+                    {tCommon('cancel')}
+                  </button>
+                )}
+              </div>
+            )}
+
             {readOnly ? (
               // Zakazga bog'langan savat: narx/miqdor zakaz hujjatining ishi.
               // Numpad UMUMAN chizilmaydi — «bosildi-yu hech nima bo'lmadi»
@@ -385,6 +460,7 @@ export function CartLineEditModal({
                     aria-label={activeField === 'qty' ? t('line_edit_qty') : t('cart_price')}
                     value={activeValue}
                     onChange={(e) => {
+                      clearPiecesOnQtyEdit();
                       setActive(e.target.value);
                       setReplaceNext(false);
                     }}

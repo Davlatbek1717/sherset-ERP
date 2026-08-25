@@ -500,6 +500,18 @@ export function SavatPanel({
                     <div className="mt-1 flex items-center gap-3">
                       <span className="flex items-center gap-1.5 text-[16px] text-[var(--ms-text-muted)] tabular-nums">
                         <span data-test-id="sotuv-cart-qty">{qty}</span>
+                        {/* K3 — kassir mijoz bilan kelishgan bo'lak tarkibi
+                            («180 (150 + 30)»). Miqdorga TEGMAYDI: yig'indisi
+                            aynan o'sha `qty`. Omborchi buni chekda ko'rib
+                            qaysi bo'laklarni kesishini biladi. */}
+                        {line.pieceLengths && line.pieceLengths.length > 1 && (
+                          <span
+                            data-test-id="sotuv-cart-pieces"
+                            className="text-[14px] text-amber-700"
+                          >
+                            ({line.pieceLengths.join(' + ')})
+                          </span>
+                        )}
                         <span>×</span>
                         <span data-test-id="sotuv-cart-price-edit">
                           {formatMoney(line.priceMinor)}

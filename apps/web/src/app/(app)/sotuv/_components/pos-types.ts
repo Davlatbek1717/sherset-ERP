@@ -36,6 +36,20 @@ export interface CartLine {
   costMinor: bigint | null;
   wholesaleMinor: bigint | null;
   basePriceMinor: bigint | null;
+  /**
+   * K3 — «Bo'lak hisobi yuritilsin» (`Product.pieceTracked`): kabel, sim,
+   * shlang. Tovar kartochkasidan savatga qo'shilganda ko'chadi va qator
+   * oynasida bo'lak panelini ochadi. Bayroq o'chiq (yoki yo'q) bo'lsa POS
+   * bir bayt ham o'zgarmaydi.
+   */
+  pieceTracked?: boolean;
+  /**
+   * K3 — kassir MIJOZ BILAN kelishgan bo'lak uzunliklari (`['150','30']`).
+   * Bu MIQDOR emas, TARKIB: yig'indisi `quantity` ga teng. Server hozircha
+   * uni QABUL QILMAYDI (pozitsiya darajasida saqlash — K4 ning ishi), ya'ni
+   * qiymat savatda yashaydi va kassirga/omborchiga ko'rsatiladi.
+   */
+  pieceLengths?: string[];
 }
 
 /**

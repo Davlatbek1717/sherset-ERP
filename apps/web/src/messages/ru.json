@@ -1252,7 +1252,9 @@
     "stock_hide_by_variants": "Скрыть по модификациям",
     "stock_cells_warehouse": "Склад {prefix}",
     "stock_cells_no_prefix": "Ячейки без префикса",
-    "stock_cells_unassigned": "Не привязано к ячейкам"
+    "stock_cells_unassigned": "Не привязано к ячейкам",
+    "stock_pieces": "Куски:",
+    "stock_pieces_longest": "самый длинный цельный: {length}"
   },
   "modifications_modal": {
     "title": "Создание модификаций",
@@ -8127,6 +8129,7 @@
       "items_count": "товаров: {n}",
       "line_edit_locked": "Привязано к заказу — цена и количество меняются в заказе",
       "line_edit_open": "Редактировать строку",
+      "line_edit_pieces": "Куски",
       "line_edit_qty": "Количество",
       "line_edit_title": "Редактировать строку",
       "load_error": "Ошибка загрузки",
@@ -9256,6 +9259,17 @@
       "warn_invalid": "Строк с нарушением правил модели: {count}",
       "warn_scrap": "Активных отрезков короче 1 м: {count} — это обрезки, их нужно списать",
       "whole_group": "{length} × {count}"
+    },
+    "pieces": {
+      "apply_split": "Разделить так",
+      "longest": "Самый длинный цельный",
+      "needs_split": "Цельного куска на {qty} {uom} НЕТ — самый длинный {longest} {uom}. Согласуйте с клиентом.",
+      "not_enough": "В реестре всего {registry} {uom} — не хватает {missing} {uom}",
+      "single": "Цельный кусок на {qty} {uom} есть (отрежут от {from})",
+      "suggestion": "Предложение",
+      "times": "×",
+      "title": "Куски",
+      "uom_fallback": "м"
     },
     "pos": {
       "add": "Добавить",

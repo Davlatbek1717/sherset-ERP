@@ -10,6 +10,7 @@ import {
 import { BARCODE_TYPES, barcodeTypeLabel, genEan13 } from '@/components/products/use-product-form';
 import { useDestructiveMutation } from '@/hooks/use-destructive-mutation';
 import { api } from '@/lib/api-client';
+import { formatPieceComposition } from '@/lib/piece-composition';
 import {
   Button,
   Combobox,
@@ -131,6 +132,27 @@ interface CellBreakdownStore {
     qty: string;
     cells: Array<{ cellId: string; name: string; qty: string }>;
   }>;
+}
+
+/**
+ * K3 (2026-08-25): bo'linadigan tovarning BO'LAK tarkibi —
+ * `GET /stock-pieces/availability`. Bayrog'i (`pieceTracked`) o'chiq tovarda
+ * javob bo'sh keladi va «Qoldiqlar» tabi bir bayt ham o'zgarmaydi.
+ */
+interface PieceAvailability {
+  product: { id: string; uom: string | null; pieceTracked: boolean };
+  stores: Array<{
+    storeId: string;
+    storeName: string;
+    composition: {
+      wholeGroups: Array<{ length: string; count: number }>;
+      pieces: Array<{ id: string; label: string | null; length: string; cellName: string | null }>;
+      registryQty: string;
+      activePieces: number;
+      longest: string | null;
+    };
+  }>;
+  composition: { longest: string | null; activePieces: number; registryQty: string };
 }
 
 interface MovementRow {
@@ -409,6 +431,8 @@ export function ProductDetailWidget({
   const tProduct = useTranslations('pages.product_new');
   const tCommon = useTranslations('common');
   const tProductSelect = useTranslations('product_select');
+  /** K3 — bo'lak tarkibi kassa ekrani bilan BIR lug'atdan (`pages.pieces`). */
+  const tPieces = useTranslations('pages.pieces');
   const tFilters = useTranslations('filters');
   const router = useRouter();
   const [modModalOpen, setModModalOpen] = useState(false);
@@ -495,6 +519,18 @@ export function ProductDetailWidget({
   });
   const cellBreakdownByStore = new Map(
     (cellBreakdownQuery.data?.stores ?? []).map((s) => [s.storeId, s]),
+  );
+
+  // K3: bo'linadigan tovarda (kabel/sim/shlang) qoldiq TARKIBI — nechta butun
+  // rulon va qanday bo'laklar. Bayroq o'chiq bo'lsa javob bo'sh (`stores: []`)
+  // va pastdagi qatorlar UMUMAN chizilmaydi.
+  const pieceQuery = useQuery<PieceAvailability>({
+    queryKey: ['product-stock-pieces', productId],
+    queryFn: () =>
+      api.get<PieceAvailability>(`/stock-pieces/availability?assortmentId=${productId}`),
+  });
+  const pieceByStore = new Map(
+    (pieceQuery.data?.stores ?? []).map((s) => [s.storeId, s.composition]),
   );
 
   const stockQuery = useQuery<{ items: StockRow[] }>({
@@ -1315,6 +1351,36 @@ export function ProductDetailWidget({
                         <td className="px-2 py-1.5 text-right tabular-nums">{s.inTransitQty}</td>
                         <td className="px-2 py-1.5 text-right tabular-nums">{s.available}</td>
                       </tr>
+                      {/* K3: bo'lak tarkibi — `250 × 3 · 200 · 150` va eng uzun
+                        uzluksiz. Faqat bo'linadigan tovarda (kabel/sim/shlang)
+                        va faqat reyestrida qatori bor omborda ko'rinadi. */}
+                      {s.storeId &&
+                        (() => {
+                          const comp = pieceByStore.get(s.storeId);
+                          if (!comp || comp.activePieces === 0) return null;
+                          // Formatlash KASSA ekrani bilan BIR manbadan
+                          // (`lib/piece-composition.ts`): kassir va katta
+                          // omborchi bir xil tarkibni ko'rishi shart.
+                          const parts = formatPieceComposition(comp, tPieces('times'));
+                          return (
+                            <tr
+                              className="border-[var(--ms-border-default)] border-b bg-[var(--ms-bg-muted)]"
+                              data-test-id="stock-piece-row"
+                            >
+                              <td className="py-1.5 pr-2 pl-6 text-xs">
+                                <span className="font-medium">{t('stock_pieces')}</span>{' '}
+                                <span className="tabular-nums">{parts.join(' · ')}</span>
+                                <span className="ml-2 text-[var(--ms-text-muted)]">
+                                  {t('stock_pieces_longest', { length: comp.longest ?? '0' })}
+                                </span>
+                              </td>
+                              <td className="px-2 py-1.5 text-right text-xs tabular-nums">
+                                {comp.registryQty}
+                              </td>
+                              <td colSpan={3} />
+                            </tr>
+                          );
+                        })()}
                       {/* F1: yacheykalar kesimi — prefiks («Ombor NN») guruh sarlavhasi,
                         ostida yacheyka qatorlari, so'ngida «biriktirilmagan» qoldiq.
                         Yacheykasi yo'q tovar uchun hech narsa qo'shilmaydi (hammasi

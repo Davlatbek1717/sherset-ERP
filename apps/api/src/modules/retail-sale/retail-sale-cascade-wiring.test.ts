@@ -249,8 +249,10 @@ describe('F6 — post(): stok ombori kaskaddan', () => {
     expect(resp.error).toBe('InsufficientStock');
     // Xabar endi tasdiqqa EMAS, defitsitga ishora qiladi.
     expect(resp.message).not.toContain("bosh omborchi tasdig'i");
+    // K3 (7.1) — `reason` maydoni qo'shildi (sabab: xabar matni shunga qarab
+    // tanlanadi). Bo'linmaydigan tovarda u har doim `insufficient`.
     expect(resp.details.shortages).toEqual([
-      { assortmentId: PRODUCT_ID, requested: '2', missing: '1' },
+      { assortmentId: PRODUCT_ID, requested: '2', missing: '1', reason: 'insufficient' },
     ]);
     expect(stock.applyDeltas).not.toHaveBeenCalled();
   });

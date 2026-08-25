@@ -91,6 +91,8 @@ import {
   type AllocStore,
   type PositionAllocation,
   allocateForSale,
+  buildShortfallMessage,
+  collectPieceTracked,
   readPosFrontStore,
   resolveAllocStores,
   spreadAllocationsToPositions,
@@ -773,7 +775,9 @@ export class RetailSaleService {
             // P12 — narx poli chegirmadan KEYINGI summani o'lchaydi; chegirmasiz
             // o'qilsa savat chegirmasi polni jimgina teshib o'tardi.
             discount: true,
-            product: { select: { name: true } },
+            // K3 — `pieceTracked` shu yerdan keladi (`collectPieceTracked`):
+            // bo'linadigan tovarda avto-taqsimot bo'linmaydi (K-reja 7.1).
+            product: { select: { name: true, pieceTracked: true } },
           },
           orderBy: { position: 'asc' },
         },
@@ -944,6 +948,9 @@ export class RetailSaleService {
     // G4 (Q1-v2) — taqsimot omborlari (kaskad + 07/BRAK belgilari). Kaskad
     // bilan BIR paytda, tranzaksiyadan tashqarida o'qiladi.
     const allocStores = await this.resolveAllocationStores(accountId);
+    // K3 (7.1) — bo'linadigan tovarda taqsimot BO'LINMAYDI: mijozga uzluksiz
+    // bo'lak kerak. Bayroq pozitsiya bilan birga keladi (qo'shimcha so'rov yo'q).
+    const pieceTrackedIds = collectPieceTracked(stockPositions);
     const stockStore = cascade[0] ?? null;
     const storeId = stockStore?.id ?? sessionStoreId;
     const allowNegative = stockStore
@@ -1323,6 +1330,7 @@ export class RetailSaleService {
               })),
               balancesByStore,
               storeId,
+              pieceTrackedIds,
             );
 
         // Ma'lumot invarianti buzilgan (07 da bir tovar bir necha yacheykada) —
@@ -1337,9 +1345,7 @@ export class RetailSaleService {
           if (!allowNegative) {
             throw new BadRequestException({
               error: 'InsufficientStock',
-              message:
-                "Tizimdagi hech bir omborda yetarli miqdor yo'q. Yetishmagan tovar(lar): " +
-                plan.shortfalls.map((sf) => `${sf.assortmentId} — ${sf.missing} ta`).join('; '),
+              message: buildShortfallMessage(plan.shortfalls),
               details: { shortages: plan.shortfalls },
             });
           }
@@ -3468,6 +3474,8 @@ export class RetailSaleService {
     positions: ReadonlyArray<{ id: string; productId: string; quantity: unknown }>,
     balancesByStore: ReadonlyMap<string, Map<string, StockBalance>>,
     fallbackStoreId: string,
+    /** K3 (7.1) — bo'linadigan tovarlar; bo'sh to'plam = eski xulq. */
+    pieceTracked: ReadonlySet<string> = new Set(),
   ) {
     const productIds = [...new Set(positions.map((p) => p.productId))];
     const storeIds = allocStores.map((st) => st.id);
@@ -3527,6 +3535,7 @@ export class RetailSaleService {
       cellsByProduct,
       availableByProduct,
       fallbackStoreId,
+      pieceTracked,
     });
 
     return {
@@ -3731,7 +3740,15 @@ export class RetailSaleService {
         // do'konga tushib, yechim boshqasidan bo'lardi — hech qachon
         // bo'shamaydigan hold.
         session: { select: { storeId: true, store: { select: { allowNegativeStock: true } } } },
-        positions: { select: { id: true, productId: true, quantity: true } },
+        positions: {
+          select: {
+            id: true,
+            productId: true,
+            quantity: true,
+            // K3 (7.1) — bo'linadigan tovar bayrog'i (`collectPieceTracked`).
+            product: { select: { pieceTracked: true } },
+          },
+        },
       },
     });
     if (!sale) throw new NotFoundException(`RetailSale ${id} not found`);
@@ -3756,6 +3773,10 @@ export class RetailSaleService {
     const stockPositions = sale.positions.filter(
       (p): p is typeof p & { productId: string; id: string } => p.productId !== null,
     );
+    // K3 (7.1) — bo'linadigan tovarda rezerv ham BO'LINMAYDI: post() nima
+    // qilsa, rezerv ham shuni qilishi kerak (aks holda hold bir omborda,
+    // yechim boshqasida qolardi).
+    const pieceTrackedIds = collectPieceTracked(stockPositions);
 
     // Flip va rezerv BITTA tranzaksiyada. Ajralsa ikki yoriq ochilardi:
     // flip o'tib rezerv yiqilsa — chek yig'ishda-yu tovar band emas; rezerv
@@ -3801,6 +3822,7 @@ export class RetailSaleService {
           })),
           balancesByStore,
           storeId,
+          pieceTrackedIds,
         );
         perPosition = planned.perPosition;
         for (const w of planned.plan.warnings) {
@@ -3813,11 +3835,7 @@ export class RetailSaleService {
           // bosilgan lahzada chiqsin.
           throw new BadRequestException({
             error: 'InsufficientStock',
-            message:
-              "Tizimdagi hech bir omborda yetarli miqdor yo'q. Yetishmagan tovar(lar): " +
-              planned.plan.shortfalls
-                .map((sf) => `${sf.assortmentId} — ${sf.missing} ta`)
-                .join('; '),
+            message: buildShortfallMessage(planned.plan.shortfalls),
             details: { shortages: planned.plan.shortfalls },
           });
         }

@@ -5,6 +5,7 @@ import {
   type AllocStoreAvailable,
   type AllocationInput,
   allocateForSale,
+  buildShortfallMessage,
   resolveAllocStores,
   spreadAllocationsToPositions,
 } from './retail-allocation.js';
@@ -274,7 +275,11 @@ describe('3-holat — bo‘linish: boshqa omborlar avval, 07 ENG OXIRIDA', () =>
         availableByProduct: new Map([[P, avail([S01, '60'])]]),
       }),
     );
-    expect(r.shortfalls).toEqual([{ assortmentId: P, requested: '500', missing: '440' }]);
+    // K3 (7.1) — `reason` maydoni qo'shildi: xabar matni shunga qarab
+    // tanlanadi. Bo'linmaydigan tovarda u har doim `insufficient`.
+    expect(r.shortfalls).toEqual([
+      { assortmentId: P, requested: '500', missing: '440', reason: 'insufficient' },
+    ]);
     expect(r.allocations).toHaveLength(1);
   });
 
@@ -534,5 +539,138 @@ describe('zaxira yo‘l (kaskad sozlanmagan)', () => {
     expect(r.allocations).toEqual([
       { assortmentId: P, storeId: 'smena', storeName: '', cellId: null, cellName: null, qty: '5' },
     ]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// K3 (K-reja 7.1) — bo'linadigan tovar istisnosi
+// ---------------------------------------------------------------------------
+
+describe('🔴 K3/7.1 — `pieceTracked` tovarda BO`LINISH yo`q', () => {
+  const cells = new Map([[P, [cell(S01, '01-a', '100'), cell(S02, '02-a', '80')]]]);
+  const availTwo = new Map([[P, avail([S01, '100'], [S02, '80'])]]);
+
+  it('bayroq O`CHIQ: 180 ikki yacheykadan BO`LINADI (eski xulq, o`zgarmagan)', () => {
+    const r = allocateForSale(
+      input({ requested: '180', cellsByProduct: cells, availableByProduct: availTwo }),
+    );
+    expect(r.rules[0]?.rule).toBe('split');
+    expect(r.allocations).toHaveLength(2);
+    expect(r.shortfalls).toHaveLength(0);
+  });
+
+  it('bayroq YOQILGAN: bo`linmaydi — `no-single-source` qaytadi', () => {
+    // Mijozga UZLUKSIZ 180 m kerak; «100 + 80» yaroqsiz. Qaror kassirga
+    // qaytadi (K-Q5), tizim o'zi bo'lmaydi.
+    const r = allocateForSale({
+      ...input({ requested: '180', cellsByProduct: cells, availableByProduct: availTwo }),
+      pieceTracked: new Set([P]),
+    });
+    expect(r.allocations).toHaveLength(0);
+    expect(r.rules[0]?.rule).toBe('none');
+    expect(r.shortfalls).toEqual([
+      {
+        assortmentId: P,
+        requested: '180',
+        missing: '180',
+        reason: 'no-single-source',
+        largestSingle: '100',
+      },
+    ]);
+  });
+
+  it('bayroq YOQILGAN, lekin BITTA manba qoplaydi: sotuv AVVALGIDEK o`tadi', () => {
+    // Eng ko'p uchraydigan holat — kassa to'xtamaydi.
+    const r = allocateForSale({
+      ...input({
+        requested: '80',
+        cellsByProduct: cells,
+        availableByProduct: availTwo,
+      }),
+      pieceTracked: new Set([P]),
+    });
+    expect(r.shortfalls).toHaveLength(0);
+    expect(r.allocations).toHaveLength(1);
+    expect(r.allocations[0]?.qty).toBe('80');
+    expect(r.rules[0]?.rule).toBe('single');
+  });
+
+  it('bayroq YOQILGAN, 07 yolg`iz qoplaydi: 1-holat o`zgarmaydi', () => {
+    const r = allocateForSale({
+      ...input({
+        requested: '100',
+        cellsByProduct: new Map([[P, [cell(S07, '07-a', '150')]]]),
+        availableByProduct: new Map([[P, avail([S07, '150'])]]),
+      }),
+      pieceTracked: new Set([P]),
+    });
+    expect(r.rules[0]?.rule).toBe('front');
+    expect(r.allocations).toHaveLength(1);
+  });
+
+  it('bayroq YOQILGAN va jami ham yetmaydi: sabab `insufficient`', () => {
+    // «Yolg'iz manba yo'q» emas, HAQIQIY defitsit — kassir mijozga «bunchasi
+    // yo'q» deydi, bo'lish taklifi ma'nosiz.
+    const r = allocateForSale({
+      ...input({
+        requested: '500',
+        cellsByProduct: cells,
+        availableByProduct: availTwo,
+      }),
+      pieceTracked: new Set([P]),
+    });
+    expect(r.shortfalls[0]?.reason).toBe('insufficient');
+    expect(r.shortfalls[0]?.missing).toBe('320');
+    expect(r.allocations).toHaveLength(0);
+  });
+
+  it('bayroq boshqa tovarda: shu tovar avvalgidek bo`linadi', () => {
+    const r = allocateForSale({
+      ...input({ requested: '180', cellsByProduct: cells, availableByProduct: availTwo }),
+      pieceTracked: new Set(['boshqa-tovar']),
+    });
+    expect(r.rules[0]?.rule).toBe('split');
+    expect(r.allocations).toHaveLength(2);
+  });
+});
+
+describe('xabar matni — sabab bo`yicha', () => {
+  it('defitsitda xabar AVVALGIDEK (bayroqsiz akkauntda bir harf ham o`zgarmaydi)', () => {
+    const msg = buildShortfallMessage([
+      { assortmentId: P, requested: '10', missing: '4', reason: 'insufficient' },
+    ]);
+    expect(msg).toBe(
+      "Tizimdagi hech bir omborda yetarli miqdor yo'q. Yetishmagan tovar(lar): p1 — 4 ta",
+    );
+  });
+
+  it('bo`linadigan tovarda xabar «yetmaydi» DEMAYDI — bo`lishni taklif qiladi', () => {
+    const msg = buildShortfallMessage([
+      {
+        assortmentId: P,
+        requested: '180',
+        missing: '180',
+        reason: 'no-single-source',
+        largestSingle: '100',
+      },
+    ]);
+    expect(msg).not.toContain("yetarli miqdor yo'q");
+    expect(msg).toContain('uzluksiz');
+    expect(msg).toContain('eng kattasi 100');
+  });
+
+  it('ikkala sabab birga kelsa ikkalasi ham xabarda', () => {
+    const msg = buildShortfallMessage([
+      { assortmentId: 'p2', requested: '10', missing: '4', reason: 'insufficient' },
+      {
+        assortmentId: P,
+        requested: '180',
+        missing: '180',
+        reason: 'no-single-source',
+        largestSingle: '100',
+      },
+    ]);
+    expect(msg).toContain('p2 — 4 ta');
+    expect(msg).toContain('p1 — 180');
   });
 });

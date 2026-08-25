@@ -59,6 +59,18 @@ export const KIOSK_ALLOWED: readonly Rule[] = [
   { prefix: '/products', methods: ['GET'], why: 'tovar qidiruv va narx' },
   { prefix: '/product-folders', methods: ['GET'], why: 'katalog daraxti' },
   { prefix: '/stock', methods: ['GET'], why: "qoldiq ko'rsatish" },
+  // K3 (bo'linadigan tovar) — kassir kabel/sim/shlangning BO'LAKLARINI ko'radi
+  // («3 x 250 · 200 · 150», «eng uzun uzluksiz»). AYNAN bitta yo'l, `exact`:
+  // `/stock-pieces` ning qolgani (reyestr ro'yxati, qo'shish, tuzatish,
+  // «tugadi», bayroq) katta OMBORCHIniki va kioskka ochilmaydi.
+  // IKKI QULF BIRGA (`/exchange-rates/manual` naqshi): marshrut shu yerda,
+  // ruxsat esa `product.view` — kassirda allaqachon bor.
+  {
+    prefix: '/stock-pieces/availability',
+    methods: ['GET'],
+    exact: true,
+    why: "bo'linadigan tovarning bo'laklari (kassir ko'rinishi, narxsiz)",
+  },
   { prefix: '/price-types', methods: ['GET'], why: 'chakana/optom narx turi' },
   { prefix: '/expense-items', methods: ['GET'], why: 'xarajat moddasi tanlash' },
   { prefix: '/currencies', methods: ['GET'], why: 'USD naqd uchun' },

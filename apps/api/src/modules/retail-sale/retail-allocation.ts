@@ -45,6 +45,17 @@ import { formatDecimalScaled, parseDecimalScaled } from '../shared/decimal.js';
  * E4 — BRAK ombori (G3, `__brakStore`) manba sifatida QATNASHMAYDI: brak tovar
  * mijozga sotilmaydi. F6 kaskadida u `__posPriority` yo'qligi bilan chiqib
  * turardi; bu dvigatel esa yacheykalardan ishlagani uchun ISTISNO OCHIQ yozilgan.
+ *
+ * ---------------------------------------------------------------------------
+ * 🔴 K3 (K-reja 7.1) — BO'LINADIGAN TOVAR ISTISNOSI (egasi, 2026-08-25).
+ * `pieceTracked = true` tovarlarda (kabel, sim, shlang — rulondan metrlab
+ * sotiladigan) **3-holat QO'LLANMAYDI**: 180 m ni «100 + 80» deb ikki
+ * yacheykadan taqsimlash mijozga YAROQSIZ, chunki unga UZLUKSIZ bo'lak kerak.
+ * Bunday tovarda avto-taqsimot 1- va 2-holat bilan cheklanadi (bitta manba
+ * butun miqdorni qoplashi shart); qoplamasa — bo'lish emas, `no-single-source`
+ * sababi bilan yetishmovchilik qaytadi va KASSIR mijoz bilan kelishadi
+ * («150 + 30 ga rozimi?»). Qaror mijoznikida — tizim o'zi bo'lmaydi.
+ * To'liq tavsif: `docs/plans/2026-08-25-bolinadigan-tovar-bolak-hisobi.md`.
  */
 
 // ---------------------------------------------------------------------------
@@ -113,6 +124,12 @@ export interface AllocationInput {
    * POS eski yo'l bilan — smena omboridan ishlaydi (F6 zaxira yo'li).
    */
   fallbackStoreId?: string | null;
+  /**
+   * K3 (7.1) — bo'linadigan tovarlar (`Product.pieceTracked`). BO'SH/berilmagan
+   * bo'lsa xulq BAYT-BAYTGA avvalgidek: bayroq hech qayerda yoqilmagan
+   * akkauntda bu maydon hech narsani o'zgartirmaydi.
+   */
+  pieceTracked?: ReadonlySet<string>;
 }
 
 // ---------------------------------------------------------------------------
@@ -145,10 +162,29 @@ export interface AllocationWarning {
   cells: number;
 }
 
+/**
+ * Yetishmovchilik SABABI — xabar matni va kassirning keyingi qadami shunga
+ * bog'liq (IS-5: nosozlik sababi ko'rinmasa, kassir nima qilishni bilmaydi).
+ *
+ *  - `insufficient` — tizimda jami yetmaydi (avvalgi yagona holat);
+ *  - `no-single-source` — jami YETADI, lekin bitta manba yolg'iz qoplamaydi
+ *    va tovar bo'linadigan (K3/7.1) ⇒ bo'lib yuborish TAQIQLANGAN.
+ */
+export type ShortfallReason = 'insufficient' | 'no-single-source';
+
+export interface AllocationShortfall {
+  assortmentId: string;
+  requested: string;
+  missing: string;
+  reason: ShortfallReason;
+  /** `no-single-source` da — eng katta YOLG'IZ manba (kassirga taklif uchun). */
+  largestSingle?: string;
+}
+
 export interface AllocationResult {
   allocations: Allocation[];
   /** Butun kaskadda ham topilmagan qism (haqiqiy defitsit). */
-  shortfalls: Array<{ assortmentId: string; requested: string; missing: string }>;
+  shortfalls: AllocationShortfall[];
   rules: Array<{ assortmentId: string; rule: AllocationRule }>;
   warnings: AllocationWarning[];
 }
@@ -368,6 +404,25 @@ export function allocateForSale(input: AllocationInput): AllocationResult {
       continue;
     }
 
+    // ── K3 (7.1): bo'linadigan tovarda 3-holat QO'LLANMAYDI ────────────────
+    // Bir necha yacheykadan yig'ilgan 180 m mijozga yaroqsiz — unga UZLUKSIZ
+    // bo'lak kerak. Shuning uchun taqsimot shu yerda TO'XTAYDI va qaror
+    // kassirga qaytadi (mijoz bilan kelishish: «150 + 30»). Xabar «yetmaydi»
+    // emas — jami YETADI, faqat bir bo'lakda emas.
+    if (input.pieceTracked?.has(assortmentId)) {
+      const total = sources.reduce((sum, s) => sum + s.qty, 0n);
+      const largest = sources.reduce((max, s) => (s.qty > max ? s.qty : max), 0n);
+      shortfalls.push({
+        assortmentId,
+        requested: formatDecimalScaled(need),
+        missing: formatDecimalScaled(total < need ? need - total : need),
+        reason: total < need ? 'insufficient' : 'no-single-source',
+        largestSingle: formatDecimalScaled(largest),
+      });
+      rules.push({ assortmentId, rule: 'none' });
+      continue;
+    }
+
     // ── 3-holat: bo'linadi — boshqa omborlar avval, 07 oxirida ─────────────
     let remaining = need;
     for (const s of [...sources].sort(splitOrder)) {
@@ -382,6 +437,7 @@ export function allocateForSale(input: AllocationInput): AllocationResult {
         assortmentId,
         requested: formatDecimalScaled(need),
         missing: formatDecimalScaled(remaining),
+        reason: 'insufficient',
       });
     }
     rules.push({
@@ -391,6 +447,73 @@ export function allocateForSale(input: AllocationInput): AllocationResult {
   }
 
   return { allocations, shortfalls, rules, warnings };
+}
+
+// ---------------------------------------------------------------------------
+// K3 — bo'linadigan tovarlar to'plami
+// ---------------------------------------------------------------------------
+
+/**
+ * Chek pozitsiyalaridan bo'linadigan tovarlar to'plami (`Product.pieceTracked`).
+ *
+ * Bayroq POZITSIYA bilan birga o'qiladi (`product: { select: { pieceTracked } }`),
+ * ALOHIDA so'rov QILINMAYDI: `post()` va `sendToPicking()` allaqachon tovar
+ * relationini oladi, ya'ni bu maydon bepul keladi. Bayroqni bilmaydigan
+ * chaqiruvchida (maydon `undefined`) natija BO'SH ⇒ xulq bayt-baytga
+ * avvalgidek — «bayroq o'chiq bo'lsa hech narsa o'zgarmaydi» qabul mezoni
+ * shu yerdan boshlanadi.
+ */
+export function collectPieceTracked(
+  positions: ReadonlyArray<{
+    productId: string | null;
+    product?: { pieceTracked?: boolean | null } | null;
+  }>,
+): Set<string> {
+  const out = new Set<string>();
+  for (const p of positions) {
+    if (p.productId && p.product?.pieceTracked === true) out.add(p.productId);
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// Xabar
+// ---------------------------------------------------------------------------
+
+/**
+ * Yetishmovchilik xabari — kassir EKRANDA ko'radigan matn.
+ *
+ * Ikki sabab ikki xil ish talab qiladi, shuning uchun matn ham ikki xil:
+ *  - `insufficient` — tovar yo'q, xabar AVVALGIDEK (bayroq yoqilmagan
+ *    akkauntda matn bir harf ham o'zgarmaydi);
+ *  - `no-single-source` (K3/7.1) — tovar BOR, lekin bir manbada emas.
+ *    «Yetmaydi» deyish YOLG'ON bo'lardi va kassir mijozga yo'q deb qaytarardi;
+ *    aslida qilinadigan ish — mijoz bilan kelishib qatorni bo'lish.
+ */
+export function buildShortfallMessage(shortfalls: readonly AllocationShortfall[]): string {
+  const blocked = shortfalls.filter((s) => s.reason === 'no-single-source');
+  const missing = shortfalls.filter((s) => s.reason !== 'no-single-source');
+  const parts: string[] = [];
+
+  if (missing.length > 0) {
+    parts.push(
+      "Tizimdagi hech bir omborda yetarli miqdor yo'q. Yetishmagan tovar(lar): " +
+        missing.map((sf) => `${sf.assortmentId} — ${sf.missing} ta`).join('; '),
+    );
+  }
+  if (blocked.length > 0) {
+    parts.push(
+      "Bo'linadigan tovar: so'ralgan miqdorni YOLG'IZ qoplaydigan uzluksiz bo'lak yo'q " +
+        "(bo'lib yuborilmaydi). Mijoz bilan kelishib qatorni bo'ling. Tovar(lar): " +
+        blocked
+          .map(
+            (sf) =>
+              `${sf.assortmentId} — ${sf.requested} so'raldi, eng kattasi ${sf.largestSingle ?? '0'}`,
+          )
+          .join('; '),
+    );
+  }
+  return parts.join(' ');
 }
 
 // ---------------------------------------------------------------------------
