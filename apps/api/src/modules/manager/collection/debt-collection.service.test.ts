@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
 import { DebtCollectionService } from './debt-collection.service.js';
 
@@ -257,5 +260,43 @@ describe('DebtCollectionService.remind — idempotent + jurnal', () => {
     expect(sendBulkReminders).not.toHaveBeenCalled();
     expect(res.queued).toBe(0);
     expect(res.journaled).toBe(0);
+  });
+});
+
+/**
+ * A3 (2026-08-25, reja A3 vazifasi 5) — AVANSLI MIJOZ UNDIRISH RO'YXATIDA
+ * CHIQMASLIGI: kod-shakl qo'riqchisi.
+ *
+ * Reja «undirish ekranida bu mijozlar CHIQMASLIGI — Q4 filtri bilan
+ * ziddiyat yo'qligi tekshirilsin» degan edi. Tekshiruv MEXANIK: undirish
+ * ro'yxati FAQAT `Debt` reyestridan o'qiydi va `CounterpartyBalance` ga
+ * umuman murojaat qilmaydi, ya'ni manfiy saldo bu yerga hech qanday yo'l
+ * bilan qator qo'sha olmaydi (reja invariant 4).
+ *
+ * Q2 tomonda esa §2.2 kesishuv qoidasi avansi bor mijozga reyestr qatori
+ * OCHMAYDI — ikki tomon birga «avansli mijoz dunning oqimiga tushmaydi»
+ * kafolatini beradi.
+ *
+ * Kimdir bu yerga «balansdan ikkinchi manba» qo'shsa (Q0 da RAD ETILGAN
+ * A varianti) — test qizil bo'ladi.
+ */
+describe('A3 — undirish ro`yxati balansdan O`QIMAYDI (avansli mijoz chiqmaydi)', () => {
+  const SERVICE_SRC = readFileSync(
+    join(dirname(fileURLToPath(import.meta.url)), 'debt-collection.service.ts'),
+    'utf8',
+  );
+
+  it('servisda `counterpartyBalance` delegatiga murojaat YO`Q', () => {
+    expect(SERVICE_SRC).not.toMatch(/counterpartyBalance/);
+    // Manba AYNAN reyestr.
+    expect(SERVICE_SRC).toMatch(/debt\.findMany/);
+  });
+
+  it('sof modulda ham balans tushunchasi YO`Q', () => {
+    const PURE_SRC = readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), 'debt-collection.ts'),
+      'utf8',
+    );
+    expect(PURE_SRC).not.toMatch(/counterpartyBalance|balanceMinor/);
   });
 });

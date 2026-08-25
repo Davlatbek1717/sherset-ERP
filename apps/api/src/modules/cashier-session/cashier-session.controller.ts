@@ -245,6 +245,24 @@ export class CashierSessionController {
   }
 
   /**
+   * A3 — mijozning SARFLANMAGAN avansini naqd qaytarish. Ruxsat va kiosk
+   * qamrovi `customer-prepay` bilan AYNAN bir xil (yangi qator ham,
+   * yangi ruxsat ham KERAK EMAS).
+   *
+   * Cap (mijozning mavjud avansi) va balans QULFI servisda — bu yerda
+   * ikkinchi tekshiruv yozilmaydi (bitta haqiqat).
+   */
+  @Post(':id/customer-prepay-refund')
+  @RequirePermission({ entity: 'cashiersession', action: 'create' })
+  async customerPrepayRefund(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ) {
+    return this.sessions.customerPrepayRefund(user.accountId, user.sub, id, body);
+  }
+
+  /**
    * F5 — smenani yopishga to'sqinlik qiluvchi cheklar (draft|picking|ready)
    * STRUKTURA sifatida. Mezon `close()` bilan yagona yordamchida; endpoint
    * faqat o'qiydi — yopish qoidalari o'zgarmagan.

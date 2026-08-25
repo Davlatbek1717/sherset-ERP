@@ -82,6 +82,22 @@ export const BALANCE_DOC_TYPE = {
    * ning tarix yorliqlari ikkisini bir xil nomlab ko'rsatardi.
    */
   salePrepay: 'salePrepay',
+  /**
+   * A3 (2026-08-25): AVANSNI NAQD QAYTARISH — mijoz sarflanmagan avansini
+   * kassadan olib ketdi. `customerPrepay` (A1, qabul) deltasining AYNAN
+   * teskarisi (`+sumMinor`: biz to'ladik ⇒ bizning qarzimiz kamayadi).
+   * `docId` = `RetailDrawerCashOut.id` (`kind='prepay_refund'`, `ВА-` raqami).
+   *
+   * ⚠️ NEGA `returnPayout` QAYTA ISHLATILMADI: u AYNI jadvalda yashasa ham
+   * BOSHQA hodisa — vozvrat puli `SalesReturn` ga bog'langan (`salesReturnId`
+   * majburiy), avans qaytarishda esa hech qanday vozvrat hujjati yo'q.
+   * Bitta turga yig'ilsa akt-sverkada ikkovi bir yorliq ostida ko'rinib,
+   * «bu qaysi pul edi» savoli javobsiz qolardi.
+   *
+   * ⚠️ NEGA `salePrepay` EMAS: u chekning `PREPAY` tenderi (`docId` = chek)
+   * va yashiqqa UMUMAN tegmaydi.
+   */
+  customerPrepayRefund: 'customerPrepayRefund',
   paymentIn: 'paymentIn',
   paymentOut: 'paymentOut',
   cashIn: 'cashIn',

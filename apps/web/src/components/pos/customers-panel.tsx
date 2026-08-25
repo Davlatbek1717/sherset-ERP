@@ -39,9 +39,12 @@ import type { CustomerCardRow } from './customer-card-panel';
  * summagacha qabul qiladi; xotira `pos-customer-card-one-number`).
  * `balanceMinor === null` — O'LCHANMAGAN, 0 emas: alohida qator bo'lib
  * OCHIQ aytiladi, raqam yashirilmaydi.
- * ⚠️ Manfiy balansda (avansi bor mijoz) `payableMinor` `0` chiqadi va
- * ekran avansni HOZIRCHA ko'rsatmaydi — bu A3 fazasining ishi
- * (`customerStanding` sof moduli).
+ * 🔴 **A3** (2026-08-25) — manfiy balansdagi «0» BEKOR QILINDI. Ekran endi
+ * server bergan HOLATDAN yuradi (`standing`: qarz / avans / tekis /
+ * o'lchanmagan) va avansi bor mijozda «Avansi: N» ko'rsatadi. Shu yerdan
+ * uchinchi pul yo'li ham ochildi: **avansni NAQD QAYTARISH**
+ * (`POST /cashier-sessions/:id/customer-prepay-refund`, RKO cheki) — cap
+ * mijozning mavjud avansi, qulf va tekshiruv SERVERDA.
  *
  * Barcha ishlatiladigan endpointlar kiosk-policy'da ochiq:
  * `GET /counterparties?search=`, `GET /debts/pos/summary/:id`,
@@ -53,6 +56,25 @@ interface DebtSummaryLite {
   payableMinor: string;
   /** `CounterpartyBalance` qatori; `null` = O'LCHANMAGAN (0 EMAS). */
   balanceMinor: string | null;
+  /**
+   * 🔴 A3 — ekran holati (server bilan BITTA sof qoidadan). Ixtiyoriy:
+   * eski javobda yo'q va ekran o'sha holda avvalgidek ishlaydi.
+   */
+  standing?: {
+    kind: 'debt' | 'prepaid' | 'settled' | 'unmeasured';
+    amountMinor: string;
+    conflicted: boolean;
+  };
+}
+
+/** A3 — `POST /cashier-sessions/:id/customer-prepay-refund` javobi. */
+interface PrepayRefundDoc {
+  id: string;
+  name: string;
+  sumMinor: string;
+  /** Qaytargandan KEYIN mijozda qolgan avans. */
+  remainingPrepayMinor: string;
+  auditTypes: string[];
 }
 
 /** `GET /counterparty-debt-receipts/:id/preview` — mijozga ketadigan matn. */
@@ -160,6 +182,14 @@ export function CustomersPanel({
    */
   const [prepayOpen, setPrepayOpen] = useState(false);
   const [prepayAmount, setPrepayAmount] = useState('');
+  /**
+   * A3 — avansni NAQD QAYTARISH bloki. A1 bilan bir xil naqsh, teskari
+   * ishora. Farqi: bu yerda «qolgani qancha» degan MANBA bor (mijozning
+   * avansi), shuning uchun summa maydoni o'sha son bilan TO'LADI —
+   * G1 vozvrat to'lovi qanday qilsa, shunday.
+   */
+  const [prepayRefundOpen, setPrepayRefundOpen] = useState(false);
+  const [prepayRefundAmount, setPrepayRefundAmount] = useState('');
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -248,6 +278,32 @@ export function CustomersPanel({
     onError: (e: Error) => toast.error(e.message),
   });
 
+  /**
+   * A3 — avansni naqd qaytarish. Kassa `−summa`, mijoz balansi `+summa`.
+   * Muvaffaqiyatda RKO cheki bosiladi (mijoz imzo qo'yadigan qog'oz).
+   */
+  const refundPrepay = useMutation({
+    mutationFn: (sumMinor: bigint) =>
+      api.post<PrepayRefundDoc>(`/cashier-sessions/${sessionId}/customer-prepay-refund`, {
+        counterpartyId: agent?.id,
+        sumMinor: sumMinor.toString(),
+      }),
+    onSuccess: (doc) => {
+      setPrepayRefundOpen(false);
+      setPrepayRefundAmount('');
+      queryClient.invalidateQueries({ queryKey: ['pos-customers-debt', agent?.id] });
+      if (doc.auditTypes.includes('CASH_OVERDRAWN')) {
+        // Yashiqda kutilgandan ko'p pul chiqdi — server to'xtatmadi (Q10),
+        // lekin kassir BILISHI kerak (G1 bilan AYNI signal).
+        toast.error(t('unpaid_returns_overdrawn'));
+      } else {
+        toast.success(t('prepay_refunded', { name: doc.name }));
+      }
+      window.open(`/print/cash-out/${doc.id}?auto=1`, '_blank');
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
   const sendReceipt = useMutation({
     mutationFn: () =>
       api.post<{ queued: number }>(`/counterparty-debt-receipts/${agent?.id}/send`, {}),
@@ -267,6 +323,8 @@ export function CustomersPanel({
     setPayoutAmount('');
     setPrepayOpen(false);
     setPrepayAmount('');
+    setPrepayRefundOpen(false);
+    setPrepayRefundAmount('');
   }
 
   return (
@@ -340,14 +398,30 @@ export function CustomersPanel({
               data-test-id="pos-customers-debt"
               className="rounded-xl border border-[var(--ms-border)] p-4"
             >
+              {/* 🔴 A3 — BITTA yirik son, IKKI ma'no (karta paneli bilan
+                  AYNI qoida). Manba — serverning `standing` holati; eski
+                  javobda u yo'q va ekran avvalgidek `payableMinor` ni
+                  chizadi. */}
               <p className="text-[14px] text-[var(--ms-text-muted)]">
-                {t('customer_card_payable')}
+                {summary.standing?.kind === 'prepaid'
+                  ? t('customer_card_prepaid')
+                  : t('customer_card_payable')}
               </p>
-              <p className="font-semibold text-[32px] tabular-nums text-[var(--ms-text-primary)]">
-                {formatMoney(summary.payableMinor, currency)}
+              <p
+                data-test-id="pos-customers-amount"
+                data-standing={summary.standing?.kind ?? 'legacy'}
+                className={`font-semibold text-[32px] tabular-nums ${
+                  summary.standing?.kind === 'prepaid'
+                    ? 'text-emerald-700'
+                    : 'text-[var(--ms-text-primary)]'
+                }`}
+              >
+                {formatMoney(summary.standing?.amountMinor ?? summary.payableMinor, currency)}
               </p>
               <p className="text-[14px] text-[var(--ms-text-muted)]">
-                {t('customer_card_payable_hint')}
+                {summary.standing?.kind === 'prepaid'
+                  ? t('customer_card_prepaid_hint')
+                  : t('customer_card_payable_hint')}
               </p>
               {summary.balanceMinor === null && (
                 <p
@@ -527,7 +601,76 @@ export function CustomersPanel({
             >
               {t('prepay_btn')}
             </button>
+            {/* ── A3: AVANSNI QAYTARISH ─────────────────────────────────
+                Tugma FAQAT avansi bor mijozda ko'rinadi — avansi yo'q
+                mijozda u har doim 400 beradigan tugma bo'lardi. Smenasiz
+                o'chiq (A1/G1 bilan AYNI qoida: hujjat smenaga bog'lanadi
+                va kutilgan naqddan chiqadi). */}
+            {summary?.standing?.kind === 'prepaid' && (
+              <button
+                type="button"
+                data-test-id="pos-customers-prepay-refund"
+                disabled={!sessionId}
+                onClick={() => {
+                  setPrepayRefundOpen((v) => !v);
+                  // Maydon QOLGAN avans bilan to'ladi (G1 naqshi): kassir
+                  // ko'pincha hammasini qaytaradi.
+                  setPrepayRefundAmount(
+                    formatAmountInput(BigInt(summary.standing?.amountMinor ?? '0'), currency),
+                  );
+                }}
+                className={`h-[var(--pos-touch-min)] rounded-xl border text-[16px] disabled:opacity-50 ${
+                  prepayRefundOpen
+                    ? 'border-[var(--ms-text-brand)] text-[var(--ms-text-brand)]'
+                    : 'border-[var(--ms-border)] hover:bg-[var(--ms-bg-hover)]'
+                }`}
+              >
+                {t('prepay_refund_btn')}
+              </button>
+            )}
           </div>
+
+          {/* ── A3: qaytariladigan summa ───────────────────────────────── */}
+          {prepayRefundOpen && summary?.standing?.kind === 'prepaid' && (
+            <div
+              data-test-id="pos-prepay-refund"
+              className="flex flex-col gap-2 rounded-xl border border-[var(--ms-border)] p-3"
+            >
+              <p className="text-[14px] text-[var(--ms-text-muted)]">
+                {t('prepay_refund_hint', {
+                  amount: formatMoney(summary.standing.amountMinor, currency),
+                })}
+              </p>
+              <div className="flex items-center gap-2">
+                <Input
+                  type="text"
+                  inputMode="decimal"
+                  data-test-id="pos-prepay-refund-amount"
+                  value={prepayRefundAmount}
+                  onChange={(e) => setPrepayRefundAmount(e.target.value)}
+                  className="h-[48px] flex-1 text-[18px] tabular-nums"
+                />
+                <button
+                  type="button"
+                  data-test-id="pos-prepay-refund-submit"
+                  disabled={
+                    refundPrepay.isPending ||
+                    parseAmountToMinor(prepayRefundAmount, currency) <= 0n ||
+                    // Cap ekranda ham, serverda ham bor — lekin HAQIQIY
+                    // qaror serverniki (u balansni qulflab o'qiydi).
+                    parseAmountToMinor(prepayRefundAmount, currency) >
+                      BigInt(summary.standing.amountMinor)
+                  }
+                  onClick={() =>
+                    refundPrepay.mutate(parseAmountToMinor(prepayRefundAmount, currency))
+                  }
+                  className="h-[48px] shrink-0 rounded-lg bg-[var(--ms-bg-brand)] px-5 font-semibold text-[16px] text-white disabled:opacity-50"
+                >
+                  {t('prepay_refund_confirm')}
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* ── A1: avans summasi ──────────────────────────────────────── */}
           {prepayOpen && (

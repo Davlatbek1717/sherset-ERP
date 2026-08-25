@@ -54,6 +54,8 @@ const ORDER = {
 
 interface SummaryOver {
   payableMinor?: string;
+  /** A3 — karta holati (server bergan sof qoida natijasi). */
+  standing?: { kind: string; amountMinor: string; conflicted: boolean };
   adoptableMinor?: string;
   outstandingMinor?: string;
   balanceMinor?: string | null;
@@ -497,5 +499,131 @@ describe('F7-tuzatish (2026-08-14) — `initialAgent` bilan ochilish', () => {
   it('initialAgent YO`Q bo`lsa avvalgidek qidiruvdan boshlanadi', async () => {
     renderPanel();
     expect(await screen.findByTestId('customer-card-search')).toBeInTheDocument();
+  });
+});
+
+/**
+ * A3 (2026-08-25) — KARTADA AVANS KO'RINADI.
+ *
+ * NON-VACUOUS: A3 gacha manfiy balansli mijozda server `payableMinor: '0'`
+ * qaytarardi va karta «0 so'm qarz» chizardi — kassir mijozning pulimiz
+ * turganini BILMASDI (reja §1.3, 3-to'siq). Endi ekran serverning
+ * `standing` holatidan yuradi va IKKINCHI raqam qo'shmaydi: bitta yirik
+ * son, yorlig'i va rangi holatga qarab o'zgaradi (P2 falsafasi).
+ */
+describe('A3 — mijoz holati: qarz / avans / o`lchanmagan', () => {
+  it('avansi bor mijozda «Avansi» yorlig`i va AVANS summasi chiqadi', async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.get).mockImplementation(
+      routes({
+        payableMinor: '0',
+        outstandingMinor: '0',
+        balanceMinor: '-1000000',
+        standing: { kind: 'prepaid', amountMinor: '1000000', conflicted: false },
+      }),
+    );
+    renderPanel();
+    await pick(user);
+
+    const amount = screen.getByTestId('customer-card-payable');
+    expect(amount).toHaveAttribute('data-standing', 'prepaid');
+    // 🔴 Server bergan «0» EMAS — avans summasi.
+    expect(amount.textContent?.replace(/\s| /g, '')).toContain('10000,00');
+    expect(screen.getByText('Mijozning avansi')).toBeInTheDocument();
+  });
+
+  it('qarzi bor mijozda karta AVVALGIDEK «qarz» ni ko`rsatadi (regressiya yo`q)', async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.get).mockImplementation(
+      routes({ standing: { kind: 'debt', amountMinor: '100000', conflicted: false } }),
+    );
+    renderPanel();
+    await pick(user);
+
+    const amount = screen.getByTestId('customer-card-payable');
+    expect(amount).toHaveAttribute('data-standing', 'debt');
+    expect(amount.textContent?.replace(/\s| /g, '')).toContain('1000,00');
+    expect(screen.getByText("To'lanadigan qarz")).toBeInTheDocument();
+  });
+
+  it('🔴 balans O`LCHANMAGAN — «avansi yo`q» deb chizilmaydi, ogohlantirish qoladi', async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.get).mockImplementation(
+      routes({
+        balanceMinor: null,
+        payableMinor: '40000',
+        standing: { kind: 'unmeasured', amountMinor: '40000', conflicted: false },
+      }),
+    );
+    renderPanel();
+    await pick(user);
+
+    expect(screen.getByTestId('customer-card-payable')).toHaveAttribute(
+      'data-standing',
+      'unmeasured',
+    );
+    // NULL ≠ 0 qatori joyida qoladi (P2 shartnomasi).
+    expect(screen.getByTestId('customer-card-balance-missing')).toBeInTheDocument();
+  });
+
+  it('eski server javobi (`standing` YO`Q) — xulq AYNAN avvalgidek', async () => {
+    // Deploy oynasida FE yangi, API eski bo'lishi mumkin: karta bo'sh
+    // qolmasligi va yolg'on «avans» ko'rsatmasligi SHART.
+    const user = userEvent.setup();
+    vi.mocked(api.get).mockImplementation(routes({ payableMinor: '100000' }));
+    renderPanel();
+    await pick(user);
+
+    const amount = screen.getByTestId('customer-card-payable');
+    expect(amount).toHaveAttribute('data-standing', 'legacy');
+    expect(amount.textContent?.replace(/\s| /g, '')).toContain('1000,00');
+  });
+
+  it('🔴 avans harakatlari tarixda YORLIQ bilan chiqadi (xom `docType` emas)', async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.get).mockImplementation(
+      routes(
+        { standing: { kind: 'prepaid', amountMinor: '100000', conflicted: false } },
+        {
+          history: {
+            entries: [
+              {
+                at: '2026-08-25T09:00:00.000Z',
+                docType: 'customerPrepay',
+                docId: 'in-1',
+                number: null,
+                deltaMinor: '-100000',
+                increase: false,
+              },
+              {
+                at: '2026-08-25T10:00:00.000Z',
+                docType: 'salePrepay',
+                docId: 'sale-9',
+                number: null,
+                deltaMinor: '60000',
+                increase: true,
+              },
+              {
+                at: '2026-08-25T11:00:00.000Z',
+                docType: 'customerPrepayRefund',
+                docId: 'out-1',
+                number: null,
+                deltaMinor: '40000',
+                increase: true,
+              },
+            ],
+          },
+        },
+      ),
+    );
+    renderPanel();
+    await pick(user);
+
+    // Uchala yorliq ham i18n'dan keladi; xom `docType` satri qolmaydi.
+    expect((await screen.findAllByText('Avans qabul qilindi')).length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Avansdan to‘lov').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Avans qaytarildi').length).toBeGreaterThan(0);
+    expect(screen.queryByText('customerPrepay')).toBeNull();
+    expect(screen.queryByText('customerPrepayRefund')).toBeNull();
   });
 });

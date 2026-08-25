@@ -15,6 +15,10 @@ import { PrismaService } from '../../prisma/prisma.service.js';
 // `−sumMinor` kredit naqd bilan yopiladi (`+payout`, cashOut semantikasi).
 import { BALANCE_DOC_TYPE } from '../counterparty-balance/counterparty-balance-doc-types.js';
 import { CounterpartyBalanceService } from '../counterparty-balance/counterparty-balance.service.js';
+// A3 (2026-08-25) — avansni qaytarishning CAP'i A2 ning sof qoidasidan
+// o'qiladi (`-balanceMinor` ni bu yerda qayta hisoblash formulaning ikkinchi
+// nusxasi bo'lardi va bir kun server bilan ayrilardi).
+import { prepayAvailable } from '../debt/pos-customer-debt.js';
 // P4 — «unutilgan smena» chegarasi MK13 registrida (ikkinchi sozlama manbai
 // yaratilmaydi — `sla-thresholds-in-rule-config-table` intizomi).
 //
@@ -56,6 +60,7 @@ import {
 import {
   CloseSessionSchema,
   CustomerPayoutSchema,
+  CustomerPrepayRefundSchema,
   CustomerPrepaySchema,
   DrawerCashSchema,
   OpenSessionSchema,
@@ -1358,6 +1363,10 @@ export class CashierSessionService {
       // A2 — avansdan to'langan summa. KUTILGAN NAQDGA KIRMAYDI (`DEBT`
       // bilan bir xil): bu chek uchun yashiqqa bugun pul tushmagan.
       prepaySpentMinor: prepaySpentAgg._sum.amountMinor ?? 0n,
+      // A3 — mijozlarga naqd qaytarilgan avans. Bu KUTILGAN NAQDDAN
+      // allaqachon ayirilgan (`drawerOutMinor`); qator faqat «yashiqdan
+      // chiqqan pulning qanchasi mijoz avansi edi» savoliga javob beradi.
+      prepayRefundMinor: BigInt(cashOut.prepayRefundMinor),
       // `varianceMinor` ni sof modul AYNAN shu qiymatdan hisoblaydi — aks
       // holda farq ikki avlod raqam aralashmasi bo'lib qolardi.
       expectedCashMinor: expectedCash,
@@ -1407,6 +1416,8 @@ export class CashierSessionService {
       prepayMinor: z.prepayMinor.toString(),
       /** A2 — smenada mijozlarning avansidan to'langan summa (naqd EMAS). */
       prepaySpentMinor: z.prepaySpentMinor.toString(),
+      /** A3 — smenada mijozlarga naqd qaytarilgan avans (naqdning tarkibi). */
+      prepayRefundMinor: z.prepayRefundMinor.toString(),
       expenseByItem: cashOut.byExpenseItem,
       // Kutilgan naqd/farq qaysi avloddan — `'frozen'` = yopishda muzlatilgan
       // (kassir imzolagan hujjat), `'live'` = shu so'rovda qayta hisoblangan
@@ -2180,6 +2191,231 @@ export class CashierSessionService {
     });
   }
 
+  /**
+   * MIJOZ AVANSINI NAQD QAYTARISH — A3 (2026-08-25).
+   *
+   * Mijoz «pulimning qolganini qaytarib bering» desa, kassir shu yo'l bilan
+   * beradi: kassa −summa, mijoz balansi +summa (bizning qarzimiz kamayadi).
+   * `customerPrepay` (A1) ning AYNAN teskarisi va `customerPayout` (G1) ning
+   * skeleti — uchalasi ham yashiq jadvallarida yashaydi, ya'ni kutilgan-naqd
+   * formulasiga (§8.4) O'Z-O'ZIDAN kiradi.
+   *
+   * 🔴 CAP — MIJOZNING MAVJUD AVANSI (`prepayAvailable`, A2 ning sof
+   * qoidasi). Shuning uchun balans **`FOR UPDATE` bilan QULFLANADI**: bu yerda
+   * qaror balansning oldingi qiymatiga BOG'LIQ (A1 da bog'liq emas edi — o'sha
+   * sababdan u qulf olmaydi). Ikki parallel so'rov bir xil «avans bor» ni
+   * ko'rib ikki marta pul chiqarib yubormasin.
+   *
+   * Qulf TARTIBI butun repoda bitta: **BALANS → QARZLAR** (Q2/Q3/A2 bilan bir
+   * xil). Bu yerda qarz qulfi umuman olinmaydi, ya'ni tartib buzilmaydi.
+   *
+   * 🔴 **`Debt` reyestriga TEGILMAYDI** (reja invariant 4): avansning
+   * qaytarilishi na qarz, na qarz to'lovi — mijozning O'Z puli unga qaytdi.
+   * Tuzoq-mock testi buni qulflaydi.
+   *
+   * ⚠️ Bu A2 ning `PREPAY` tender VOZVRATI EMAS: u chek qaytarilganda
+   * balansni tiklaydi va yashiqqa umuman tegmaydi (A2 hisobotining
+   * 4-eslatmasi). Bu yerda pul jismonan yashiqdan chiqadi.
+   *
+   * A3 chegarasi: faqat SO'M kassa (`loadOpenShiftForDrawer` qo'riqchisi).
+   */
+  async customerPrepayRefund(
+    accountId: string,
+    cashierId: string,
+    sessionId: string,
+    raw: unknown,
+  ) {
+    const parsed = CustomerPrepayRefundSchema.parse(raw);
+    const session = await this.loadOpenShiftForDrawer(accountId, cashierId, sessionId);
+
+    // ⚠️ `archived` bo'yicha FILTR YO'Q (`customerPrepay`/`customerPayout`
+    // bilan bir xil qaror): mijozning puli bizda turgan bo'lsa, uni qaytarishni
+    // «arxivlangan» degan sabab bilan to'sib bo'lmaydi.
+    const agent = await this.prisma.client.counterparty.findFirst({
+      where: { id: parsed.counterpartyId, accountId },
+      select: { id: true, name: true },
+    });
+    if (!agent) throw new NotFoundException('Mijoz topilmadi');
+
+    // «Yashiqda yo'q pul chiqarildi» anomaliya-signali uchun (G1 naqshi).
+    const cashBeforeMinor = expectedCashMinor(
+      await this.collectCashInputs(
+        this.prisma.client,
+        accountId,
+        sessionId,
+        session.openingCashMinor,
+      ),
+    );
+
+    const kind = CASH_OUT_KIND.prepayRefund as CashOutKind;
+    const year = new Date().getFullYear();
+    const prefix = cashOutPrefix(kind, year);
+    const n = await allocateDocumentNumber(this.prisma.client, accountId, prefix, async () => {
+      const last = await this.prisma.client.retailDrawerCashOut.findFirst({
+        where: { accountId, name: { startsWith: prefix } },
+        orderBy: { name: 'desc' },
+        select: { name: true },
+      });
+      return last ? Number.parseInt(last.name.slice(prefix.length), 10) || 0 : 0;
+    });
+    const name = `${prefix}${String(n).padStart(5, '0')}`;
+    const creatorGroupId = await resolveCreatorGroupId(this.prisma.client, accountId, cashierId);
+
+    return this.prisma.client.$transaction(async (tx) => {
+      // 🔴 BIRINCHI YOZUV — QULF. Cap shu qiymatdan hisoblanadi, ya'ni u
+      // tranzaksiya oxirigacha o'zgarmasligi SHART.
+      const balanceBeforeMinor = await this.lockCounterpartyBalance(
+        tx,
+        accountId,
+        agent.id,
+        BASE_CURRENCY,
+      );
+      // `null` = O'LCHANMAGAN (balans qatori yo'q) — `prepayAvailable` uni 0
+      // qiladi, ya'ni yo'q pul qaytarilmaydi (A2 bilan AYNI ehtiyotkor tomon).
+      const availableMinor = prepayAvailable(balanceBeforeMinor);
+      if (availableMinor <= 0n) {
+        throw new BadRequestException(
+          `${agent.name} da qaytariladigan avans yo'q — mijozning oldindan to'lovi mavjud emas.`,
+        );
+      }
+      const requested = parsed.sumMinor != null ? BigInt(parsed.sumMinor) : availableMinor;
+      if (requested > availableMinor) {
+        // Invariant 5 ning ko'zgusi: avansdan ORTIQ pul chiqmaydi va bu
+        // jimgina QARZGA aylanmaydi. Xabar aniq son bilan.
+        throw new BadRequestException(
+          `Mijozning avansi atigi ${(availableMinor / 100n).toString()} so'm, ` +
+            `${(requested / 100n).toString()} so'm qaytarib bo'lmaydi.`,
+        );
+      }
+
+      // Hujjatning O'ZI to'g'rimi — sof modul (xarajat moddasi / qabul
+      // qiluvchi bu turda BO'LMASLIGI kerak).
+      const problems = validateCashOut({ kind, sumMinor: requested });
+      if (problems.length > 0) {
+        throw new BadRequestException(problems.map((pr) => pr.message).join('; '));
+      }
+
+      const doc = await tx.retailDrawerCashOut.create({
+        data: {
+          accountId,
+          ownerId: cashierId,
+          groupId: creatorGroupId,
+          name,
+          retailShiftId: sessionId,
+          organizationId: session.organizationId,
+          sumMinor: requested,
+          currency: session.cashDesk.currency,
+          moment: new Date(),
+          applicable: true,
+          state: 'posted',
+          postedAt: new Date(),
+          description: parsed.description ?? null,
+          kind,
+          agentId: agent.id,
+        },
+        select: {
+          id: true,
+          name: true,
+          sumMinor: true,
+          currency: true,
+          kind: true,
+          description: true,
+          createdAt: true,
+        },
+      });
+
+      const events = planCashOutAuditEvents({
+        docId: doc.id,
+        docName: doc.name,
+        kind,
+        sumMinor: requested,
+        agentId: agent.id,
+        agentName: agent.name,
+        description: parsed.description ?? null,
+        cashBeforeMinor,
+        balanceBeforeMinor,
+      });
+      if (events.length > 0) {
+        await tx.cashierAuditEvent.createMany({
+          data: events.map((e) => ({
+            accountId,
+            sessionId,
+            employeeId: cashierId,
+            type: e.type,
+            docId: e.docId,
+            payload: e.payload as Prisma.InputJsonValue,
+          })),
+        });
+      }
+
+      // Pul daftari — overdraft qo'riqchisi shu yerda (G1 naqshi): yashiqda
+      // yo'q pulni qaytarib bo'lmaydi, tranzaksiya orqaga qaytadi.
+      await this.money.applyDeltas(
+        tx,
+        accountId,
+        drawerMoneyDeltas({
+          kind: 'out',
+          cashDeskId: session.cashDeskId,
+          currency: session.cashDesk.currency,
+          sumMinor: doc.sumMinor,
+          documentId: doc.id,
+          description: `${cashOutLedgerLabel(kind)} ${doc.name} (${agent.name})`,
+        }),
+      );
+
+      // Mijoz balansi +summa: A1 yozgan −sumMinor avans naqd bilan qaytarildi.
+      // `source` ATAYLAB BERILMAYDI (A1/A2 bilan bir xil qaror): xabar matnini
+      // deltaning ISHORASI tanlaydi va musbat delta mijozga «Qarzga
+      // qo'shildi» deb ketardi — o'z pulini qaytarib olgan mijozga bu OCHIQ
+      // YOLG'ON bo'lardi.
+      await this.balance.applyDelta(tx, accountId, agent.id, BASE_CURRENCY, requested, {
+        docType: BALANCE_DOC_TYPE.customerPrepayRefund,
+        docId: doc.id,
+        organizationId: session.organizationId,
+      });
+
+      return {
+        ...doc,
+        sumMinor: doc.sumMinor.toString(),
+        agent,
+        /** Qaytarilgandan KEYIN mijozda qolgan avans (0 — to'liq qaytdi). */
+        remainingPrepayMinor: (availableMinor - requested).toString(),
+        /** Yozilgan audit hodisalari — FE «anomaliya» belgisini shundan oladi. */
+        auditTypes: events.map((e) => e.type),
+      };
+    });
+  }
+
+  /**
+   * A3 — kontragentning balans qatorini QULFLAB o'qiydi (`FOR UPDATE`).
+   *
+   * Naqsh AYNAN `retail-sale.service.ts#lockCounterpartyBalance` va
+   * `pos-debt-payment.service.ts#lockBalance` niki — uch yo'l bir xil qulfni
+   * bir xil tartibda oladi, shuning uchun deadlock qilmaydi.
+   *
+   * 🔴 `null` = qator YO'Q (**o'lchanmagan**), «0» EMAS. Qator yo'q bo'lsa
+   * qulf ham yo'q, lekin bu yerda zarari yo'q: avans qatori bo'lmagan mijozda
+   * qaytariladigan pul ham yo'q (`prepayAvailable(null) = 0`) va so'rov 400
+   * bilan rad etiladi.
+   */
+  private async lockCounterpartyBalance(
+    tx: Prisma.TransactionClient,
+    accountId: string,
+    counterpartyId: string,
+    currency: string,
+  ): Promise<bigint | null> {
+    const rows = await tx.$queryRaw<Array<{ balance_minor: bigint }>>`
+      SELECT balance_minor
+      FROM counterparty_balances
+      WHERE account_id = ${accountId}::uuid
+        AND counterparty_id = ${counterpartyId}::uuid
+        AND currency = ${currency}
+      FOR UPDATE
+    `;
+    const row = rows[0];
+    return row === undefined ? null : BigInt(row.balance_minor);
+  }
+
   /** Bitta pul-kirishi hujjati — PKO cheki uchun (A1). */
   async cashInDoc(accountId: string, docId: string) {
     const doc = await this.prisma.client.retailDrawerCashIn.findFirst({
@@ -2328,6 +2564,8 @@ export class CashierSessionService {
       expenseMinor: s.expenseMinor.toString(),
       collectionMinor: s.collectionMinor.toString(),
       returnPayoutMinor: s.returnPayoutMinor.toString(),
+      /** A3 — mijozlarga qaytarilgan avans (o'z qatori, `other` EMAS). */
+      prepayRefundMinor: s.prepayRefundMinor.toString(),
       otherMinor: s.otherMinor.toString(),
       totalMinor: s.totalMinor.toString(),
       byExpenseItem: s.byExpenseItem.map((i) => ({

@@ -64,12 +64,24 @@ export default function PrintCashOutPage() {
   const isCollection = data.kind === 'collection';
   // G1 — vozvrat puli: mijozga kassadan qaytarilgan naqd cheki.
   const isReturnPayout = data.kind === 'return_payout';
-  const title = isReturnPayout ? 'VOZVRAT PULI' : isCollection ? 'INKASSATSIYA' : 'XARAJAT';
-  const subtitle = isReturnPayout
-    ? 'Mijozga naqd qaytarish'
-    : isCollection
-      ? 'Naqd pul topshirish'
-      : 'Chiqim kassa orderi (RKO)';
+  // A3 — mijozning sarflanmagan AVANSI naqd qaytarildi. Bu vozvrat puli
+  // EMAS: hech qanday tovar qaytmagan, mijoz o'z pulini olib ketdi.
+  // Chalkashsa mijoz imzolagan qog'oz noto'g'ri hodisani tasdiqlardi.
+  const isPrepayRefund = data.kind === 'prepay_refund';
+  const title = isPrepayRefund
+    ? 'AVANS QAYTARILDI'
+    : isReturnPayout
+      ? 'VOZVRAT PULI'
+      : isCollection
+        ? 'INKASSATSIYA'
+        : 'XARAJAT';
+  const subtitle = isPrepayRefund
+    ? 'Oldindan to`langan pulning qaytarilishi'
+    : isReturnPayout
+      ? 'Mijozga naqd qaytarish'
+      : isCollection
+        ? 'Naqd pul topshirish'
+        : 'Chiqim kassa orderi (RKO)';
 
   return (
     <PrintShell autoPrint={auto}>

@@ -657,11 +657,30 @@ export default function CounterpartiesPage() {
       header: t('col_balance'),
       width: '110px',
       align: 'right',
-      cell: (cp) => (
-        <span className="font-medium tabular-nums">
-          {formatMoney(cp.balanceMinor, 'UZS', { displayAs: 'none' })}
-        </span>
-      ),
+      /**
+       * A3 (2026-08-25) — AVANSI BOR MIJOZLAR shu ustunda KO'RINADI.
+       *
+       * Manfiy saldo «biz mijozga qarzdormiz» degani
+       * (`counterparty-settlement.util.ts` ta'rifi) va A1/A2 dan keyin bu
+       * kundalik holatga aylandi. Ilgari u boshqa manfiy raqamlardan
+       * ajralmasdi — menejer «minus qarz» deb o'qirdi.
+       *
+       * ⚠️ Yangi hisobot QURILMAYDI (reja A3 vazifasi 5): manba — AYNAN
+       * o'sha ustun, faqat ishorasi o'qiladi. Filtrlash uchun mavjud
+       * balans filtri ishlatiladi.
+       */
+      cell: (cp) => {
+        const prepaid = BigInt(cp.balanceMinor || '0') < 0n;
+        return (
+          <span
+            data-test-id={prepaid ? 'counterparty-balance-prepaid' : 'counterparty-balance'}
+            title={prepaid ? t('balance_prepaid_hint') : undefined}
+            className={`font-medium tabular-nums ${prepaid ? 'text-emerald-700' : ''}`}
+          >
+            {formatMoney(cp.balanceMinor, 'UZS', { displayAs: 'none' })}
+          </span>
+        );
+      },
       cellText: (r: Counterparty) => formatMoney(r.balanceMinor, 'UZS', { displayAs: 'none' }),
     },
     {

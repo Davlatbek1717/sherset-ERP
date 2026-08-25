@@ -25,7 +25,7 @@ function makeClient(): { client: BalanceDocClient; asked: Record<string, string[
   const rows: Record<string, Array<{ id: string; name: string; moment: Date }>> = {
     retailDrawerCashIn: [D('in-1', 'АВ-2026-00001')],
     retailSale: [D('sale-1', 'ЧК-2026-00123')],
-    retailDrawerCashOut: [D('out-1', 'ВВ-2026-00007')],
+    retailDrawerCashOut: [D('out-1', 'ВВ-2026-00007'), D('out-2', 'ВА-2026-00003')],
     cashIn: [D('pko-1', 'ПКО-2026-00042')],
   };
   const delegate = (key: string) => ({
@@ -123,5 +123,37 @@ describe('resolveBalanceDocs — A1 `customerPrepay`', () => {
     expect(out.get(docKey('retailsale', 'sale-1'))?.number).toBe('ЧК-2026-00123');
     expect(out.get(docKey('salePrepay', 'sale-1'))?.number).toBe('ЧК-2026-00123');
     expect(asked.retailSale).toEqual(['sale-1']);
+  });
+
+  /**
+   * A3 (2026-08-25) — `customerPrepayRefund` (avansni naqd qaytarish)
+   * yorlig'i `RetailDrawerCashOut` dan keladi: `returnPayout` bilan AYNI
+   * jadval, lekin BOSHQA tur va boshqa hujjat (ВА- va ВВ- raqamlari).
+   */
+  it('A3: avans qaytarish qatori ВА- raqami bilan chiqim jadvalidan keladi', async () => {
+    const { client, asked } = makeClient();
+    const out = await resolveBalanceDocs(client, ACC, [
+      { docType: BALANCE_DOC_TYPE.customerPrepayRefund, docId: 'out-2' },
+    ]);
+    expect(out.get(docKey('customerPrepayRefund', 'out-2'))).toMatchObject({
+      number: 'ВА-2026-00003',
+      contractId: null,
+    });
+    expect(asked.retailDrawerCashOut).toEqual(['out-2']);
+    // 🔴 Kassa KIRIM jadvaliga (АВ-, A1) tegilmadi — turlar chalkashmagan.
+    expect(asked.retailDrawerCashIn).toBeUndefined();
+  });
+
+  it('A3: `returnPayout` va `customerPrepayRefund` — kalitlari ALOHIDA', async () => {
+    // Ikkalasi ham AYNI jadvaldan o'qiladi, lekin yorliq kalitlari
+    // aralashmaydi: akt-sverkada «bu qaysi pul edi» savoli javobli qoladi.
+    const { client } = makeClient();
+    const out = await resolveBalanceDocs(client, ACC, [
+      { docType: BALANCE_DOC_TYPE.returnPayout, docId: 'out-1' },
+      { docType: BALANCE_DOC_TYPE.customerPrepayRefund, docId: 'out-2' },
+    ]);
+    expect(out.get(docKey('returnPayout', 'out-1'))?.number).toBe('ВВ-2026-00007');
+    expect(out.get(docKey('customerPrepayRefund', 'out-2'))?.number).toBe('ВА-2026-00003');
+    expect(out.has(docKey('returnPayout', 'out-2'))).toBe(false);
   });
 });

@@ -148,6 +148,26 @@ export const CustomerPrepaySchema = z.object({
 });
 export type CustomerPrepayInput = z.infer<typeof CustomerPrepaySchema>;
 
+/**
+ * A3 — mijozning SARFLANMAGAN avansini naqd qaytarish.
+ *
+ * `sumMinor` IXTIYORIY (`CustomerPayoutSchema` naqshi, `CustomerPrepaySchema`
+ * dan farqi): bu yerda «qolgani qancha» degan manba BOR — mijozning mavjud
+ * avansi. Berilmasa TO'LIQ qoldiq qaytariladi. Cap va qulf — servisda
+ * (`prepayAvailable`, `FOR UPDATE`), chunki qaror balansning oldingi
+ * qiymatiga bog'liq.
+ */
+export const CustomerPrepayRefundSchema = z.object({
+  counterpartyId: z.string().uuid(),
+  sumMinor: z.coerce
+    .string()
+    .regex(/^\d+$/, 'sumMinor must be a non-negative integer')
+    .refine((v) => /[1-9]/.test(v), 'sumMinor must be greater than 0')
+    .optional(),
+  description: z.string().trim().max(4000).nullish(),
+});
+export type CustomerPrepayRefundInput = z.infer<typeof CustomerPrepayRefundSchema>;
+
 /** G1 — mijozning to'lanmagan vozvratlari (POS mijoz profili bloki). */
 export const UnpaidReturnsQuerySchema = z.object({
   agentId: z.string().uuid(),

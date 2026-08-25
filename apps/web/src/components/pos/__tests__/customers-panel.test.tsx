@@ -429,3 +429,145 @@ describe('CustomersPanel — A1 avans qabul qilish', () => {
     expect(screen.queryByTestId('pos-prepay')).toBeNull();
   });
 });
+
+/**
+ * A3 (2026-08-25) — AVANSNI NAQD QAYTARISH bloki + avans holatining
+ * ko'rinishi.
+ *
+ * NON-VACUOUS: A3 gacha manfiy balansda panel `payableMinor: '0'` ni chizardi
+ * («qarzi yo'q») va qaytarish tugmasi UMUMAN yo'q edi — kassir mijozning
+ * pulini qaytara olmasdi (A1 hisobotining STORNO qarori: tuzatish admin
+ * ekranlaridan ikki hujjat bilan qilinardi).
+ */
+const PREPAID = {
+  ...SUMMARY,
+  payableMinor: '0',
+  balanceMinor: '-10000000',
+  standing: { kind: 'prepaid', amountMinor: '10000000', conflicted: false },
+};
+
+describe('CustomersPanel — A3 avans holati va qaytarish', () => {
+  it('avansi bor mijozda AVANS summasi va «Avansi» yorlig`i chiqadi', async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.get).mockImplementation(routes(PREPAID));
+    renderPanel();
+    await pickCustomer(user);
+
+    const amount = screen.getByTestId('pos-customers-amount');
+    expect(amount).toHaveAttribute('data-standing', 'prepaid');
+    // 100 000 so'm (10 000 000 tiyin) — serverning «0» i EMAS.
+    expect(squash(amount.textContent)).toContain('100000,00');
+  });
+
+  it('qarzdor mijozda tugma ham, blok ham YO`Q (regressiya yo`q)', async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.get).mockImplementation(
+      routes({
+        ...SUMMARY,
+        standing: { kind: 'debt', amountMinor: '125000000', conflicted: false },
+      }),
+    );
+    renderPanel();
+    await pickCustomer(user);
+
+    expect(screen.queryByTestId('pos-customers-prepay-refund')).toBeNull();
+    expect(screen.getByTestId('pos-customers-amount')).toHaveAttribute('data-standing', 'debt');
+  });
+
+  it('blok ochilganda summa QOLGAN avans bilan to`ladi', async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.get).mockImplementation(routes(PREPAID));
+    renderPanel();
+    await pickCustomer(user);
+
+    await user.click(screen.getByTestId('pos-customers-prepay-refund'));
+    const input = (await screen.findByTestId('pos-prepay-refund-amount')) as HTMLInputElement;
+    expect(squash(input.value)).toBe('100000');
+  });
+
+  it('qaytarish POST + RKO cheki, blok yopiladi', async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.get).mockImplementation(routes(PREPAID));
+    vi.mocked(api.post).mockReset();
+    vi.mocked(api.post).mockResolvedValue({
+      id: 'out-1',
+      name: 'BA-2026-00001',
+      sumMinor: '10000000',
+      remainingPrepayMinor: '0',
+      auditTypes: ['PREPAY_REFUND'],
+    });
+    const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null);
+    renderPanel();
+    await pickCustomer(user);
+
+    await user.click(screen.getByTestId('pos-customers-prepay-refund'));
+    await user.click(await screen.findByTestId('pos-prepay-refund-submit'));
+
+    await waitFor(() => {
+      expect(api.post).toHaveBeenCalledWith('/cashier-sessions/sess-1/customer-prepay-refund', {
+        counterpartyId: 'cp-1',
+        sumMinor: '10000000',
+      });
+    });
+    // RKO cheki — mijoz imzo qo'yadigan qog'oz (avans qaytarilganini tasdiqlaydi).
+    expect(openSpy).toHaveBeenCalledWith('/print/cash-out/out-1?auto=1', '_blank');
+    await waitFor(() => expect(screen.queryByTestId('pos-prepay-refund')).toBeNull());
+    openSpy.mockRestore();
+  });
+
+  it('🔴 avansdan ORTIQ summada tugma o`chiq (server cap`ining ekran ko`zgusi)', async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.get).mockImplementation(routes(PREPAID));
+    renderPanel();
+    await pickCustomer(user);
+
+    await user.click(screen.getByTestId('pos-customers-prepay-refund'));
+    const input = await screen.findByTestId('pos-prepay-refund-amount');
+    await user.clear(input);
+    await user.type(input, '200000');
+    expect(screen.getByTestId('pos-prepay-refund-submit')).toBeDisabled();
+
+    // Chegaradagi qiymat esa o'tadi.
+    await user.clear(input);
+    await user.type(input, '100000');
+    expect(screen.getByTestId('pos-prepay-refund-submit')).not.toBeDisabled();
+  });
+
+  it('🔴 avans QARZ EMAS — qaytarishda ham `/debts` ga POST ketmaydi', async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.get).mockImplementation(routes(PREPAID));
+    vi.mocked(api.post).mockReset();
+    vi.mocked(api.post).mockResolvedValue({
+      id: 'out-1',
+      name: 'BA-2026-00001',
+      sumMinor: '10000000',
+      remainingPrepayMinor: '0',
+      auditTypes: ['PREPAY_REFUND'],
+    });
+    const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null);
+    renderPanel();
+    await pickCustomer(user);
+
+    await user.click(screen.getByTestId('pos-customers-prepay-refund'));
+    await user.click(await screen.findByTestId('pos-prepay-refund-submit'));
+
+    await waitFor(() => expect(api.post).toHaveBeenCalledTimes(1));
+    const posted = vi.mocked(api.post).mock.calls.map((c) => String(c[0]));
+    expect(posted).toEqual(['/cashier-sessions/sess-1/customer-prepay-refund']);
+    openSpy.mockRestore();
+  });
+
+  it('mijoz almashtirilsa qaytarish bloki YOPILADI', async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.get).mockImplementation(routes(PREPAID));
+    renderPanel();
+    await pickCustomer(user);
+    await user.click(screen.getByTestId('pos-customers-prepay-refund'));
+    await screen.findByTestId('pos-prepay-refund');
+
+    await user.click(screen.getByTestId('pos-customers-change'));
+    await user.click((await screen.findAllByTestId('pos-customers-result'))[0] as HTMLElement);
+    await screen.findByTestId('pos-customers-debt');
+    expect(screen.queryByTestId('pos-prepay-refund')).toBeNull();
+  });
+});

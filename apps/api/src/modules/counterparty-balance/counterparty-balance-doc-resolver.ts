@@ -328,8 +328,14 @@ export async function resolveBalanceDocs(
 
   // G1 — vozvrat puli hujjati (ВВ- raqami). Topilmasa qator raqamsiz chiqadi
   // (resolverning ataylab tanlangan degradatsiya yo'li — saldoga ta'sir yo'q).
-  const payoutIds = byType.get('returnPayout');
-  if (payoutIds?.size) {
+  //
+  // 🔴 A3 (2026-08-25): AVANS QAYTARISH hujjati (ВА- raqami) AYNI jadvalda
+  // yashaydi (`kind='prepay_refund'`), lekin turi ATAYLAB boshqa — biri
+  // vozvratga bog'langan pul, ikkinchisi mijozning o'z avansi. Shuning uchun
+  // sikl ikki tur bo'yicha yuradi, so'rov esa har turga bittadan.
+  for (const cashOutDocType of ['returnPayout', 'customerPrepayRefund'] as const) {
+    const payoutIds = byType.get(cashOutDocType);
+    if (!payoutIds?.size) continue;
     jobs.push(
       client.retailDrawerCashOut
         .findMany({
@@ -338,7 +344,7 @@ export async function resolveBalanceDocs(
         })
         .then((rows) => {
           for (const d of rows) {
-            out.set(docKey('returnPayout', d.id), {
+            out.set(docKey(cashOutDocType, d.id), {
               number: d.name,
               moment: d.moment,
               contractId: null,

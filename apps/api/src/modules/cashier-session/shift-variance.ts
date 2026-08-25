@@ -175,6 +175,20 @@ export interface ZReportInput {
    * bugun yashiqqa bu chek uchun hech qanday pul tushmagan.
    */
   prepaySpentMinor?: bigint;
+  /**
+   * A3 — smenada mijozlarga NAQD QAYTARILGAN avans (§8.5 qatori). Berilmasa 0.
+   *
+   * 🔴 Yuqoridagi IKKALASIDAN ham boshqa raqam:
+   *   · `prepayMinor`       — yashiqqa bugun KIRGAN mijoz puli;
+   *   · `prepaySpentMinor`  — avansning tovarga SARFLANISHI (naqd emas);
+   *   · `prepayRefundMinor` — avansning yashiqdan CHIQIB ketishi.
+   *
+   * ⚠️ Kutilgan naqdga ALOHIDA qo'shilmaydi: pul `RetailDrawerCashOut`
+   * hujjati bilan chiqqan, ya'ni `expectedCashMinor` formulasidagi
+   * `drawerOutMinor` uni ALLAQACHON ayirgan (`returnPayoutMinor` bilan
+   * AYNI munosabat). Qator faqat KO'RINISH uchun.
+   */
+  prepayRefundMinor?: bigint;
   expectedCashMinor: bigint;
   countedCashMinor: bigint | null;
   /** Dollar yashiq — sentda (MK31 · §8.4). Berilmasa 0. */
@@ -199,6 +213,8 @@ export interface ZReport extends ZReportInput {
   prepayMinor: bigint;
   /** A2 — avansdan to'langan summa; kirishda berilmasa `0n`. */
   prepaySpentMinor: bigint;
+  /** A3 — mijozlarga naqd qaytarilgan avans; kirishda berilmasa `0n`. */
+  prepayRefundMinor: bigint;
   expectedUsdCashMinor: bigint;
   countedUsdCashMinor: bigint | null;
   /** Dollar farqi — SENTDA, so'mga o'girilmaydi (§8.4). */
@@ -250,6 +266,7 @@ export function buildZReport(input: ZReportInput): ZReport {
     // A2: bu ham `expectedCashMinor` ga TEGMAYDI (`DEBT` bilan bir xil) —
     // yashiqqa bugun pul tushmagan, faqat mijozning krediti sarflangan.
     prepaySpentMinor: input.prepaySpentMinor ?? 0n,
+    prepayRefundMinor: input.prepayRefundMinor ?? 0n,
     expectedUsdCashMinor,
     countedUsdCashMinor,
     varianceUsdMinor:

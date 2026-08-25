@@ -44,6 +44,7 @@ export const SCRIPT_SOURCES = [
   'retail-credit-refund',
   'return-payouts',
   'customer-prepays',
+  'customer-prepay-refunds',
   'sale-prepay',
   'sale-prepay-refund',
 ] as const;
@@ -157,7 +158,7 @@ export const DECLARED_BALANCE_WRITERS: readonly BalanceWriter[] = [
   },
   {
     file: 'modules/cashier-session/cashier-session.service.ts',
-    sources: ['return-payouts', 'customer-prepays'],
+    sources: ['return-payouts', 'customer-prepays', 'customer-prepay-refunds'],
     note:
       'customerPayout() +sumMinor (G1, 2026-08-24): vozvrat puli kassadan naqd qaytarildi — ' +
       '`SalesReturn.post()` yozgan −sumMinor kreditning yopilishi. Hujjat: `RetailDrawerCashOut` ' +
@@ -165,7 +166,11 @@ export const DECLARED_BALANCE_WRITERS: readonly BalanceWriter[] = [
       '🔴 A1 (2026-08-25): customerPrepay() −sumMinor — kassada qabul qilingan MIJOZ AVANSI ' +
       "(«biz mijozga qarzdormiz»). Hujjat: `RetailDrawerCashIn` (kind='customer_prepay', " +
       "agentId bilan). `kind='topup'` («Внесение») balansga TEGMAYDI va manbada YO'Q. " +
-      'Bu ikkinchi manba UNUTILSA cross-check har avansli mijozda yolg`on farq ko`rsatardi.',
+      'Bu ikkinchi manba UNUTILSA cross-check har avansli mijozda yolg`on farq ko`rsatardi. ' +
+      '🔴 A3 (2026-08-25): customerPrepayRefund() +sumMinor — mijozning SARFLANMAGAN ' +
+      'avansi naqd qaytarildi (cap = prepayAvailable, balans FOR UPDATE bilan qulflanadi). ' +
+      "Hujjat: `RetailDrawerCashOut` (kind='prepay_refund', agentId bilan) — `return_payout` " +
+      'bilan AYNI jadval, lekin BOSHQA kind va BOSHQA docType (customerPrepayRefund).',
   },
 ];
 

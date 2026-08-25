@@ -239,3 +239,81 @@ export function planAdoption({
   const adoptMinor = need <= adoptableMinor ? need : adoptableMinor;
   return { adoptMinor, overpayMinor: need - adoptMinor };
 }
+
+/**
+ * A3 (2026-08-25) — MIJOZNING HOLATI: kassir ekranidagi BITTA yirik sonning
+ * ma'nosi. `debtPayable` (qarz) va `prepayAvailable` (avans) ustiga quriladi —
+ * bu yerda **ikkinchi formula YO'Q**, faqat ikkovidan qaysi biri ko'rsatilishi
+ * hal qilinadi.
+ *
+ * Nega kerak edi: A1/A2 dan keyin mijozning puli tizimda TURADI, lekin ekran
+ * uni ko'rsatmasdi — `payableMinor` manfiy balansda `0` qaytaradi
+ * (`debtPayable` — qarzdan avans olinmaydi) va kartadagi yagona yirik son
+ * aynan o'sha edi. Kassir «0» ni ko'rib mijozning pulimiz turganini
+ * BILMASDI ham (reja §1.3, 3-to'siq).
+ *
+ * «Bitta yirik son» qoidasi (P2 falsafasi) BUZILMAYDI: ikkinchi raqam
+ * qo'shilmaydi — ishoraga qarab YORLIQ va RANG o'zgaradi.
+ */
+export type CustomerStandingKind =
+  /** Mijoz bizga qarzdor — ekranda «To'lanadigan qarz» (mavjud xulq). */
+  | 'debt'
+  /** Biz mijozga qarzdormiz — ekranda «Avansi». */
+  | 'prepaid'
+  /** Hisob-kitob tekis: na qarz, na avans. */
+  | 'settled'
+  /**
+   * 🔴 Balans qatori YO'Q — «0» EMAS, O'LCHANMAGAN. Ekran buni «avansi yo'q»
+   * deb ko'rsatmasligi SHART (A2 hisobotining 6-eslatmasi): reyestrda ochiq
+   * qarz bo'lishi mumkin va u `amountMinor` da qaytadi.
+   */
+  | 'unmeasured';
+
+export interface CustomerStanding {
+  kind: CustomerStandingKind;
+  /**
+   * Ekranda ko'rsatiladigan YAGONA yirik son. HECH QACHON manfiy emas —
+   * ishora `kind` da, sonda emas (manfiy raqamni kassir «minus qarz» deb
+   * o'qirdi).
+   */
+  amountMinor: bigint;
+  /**
+   * 🔴 NOMUVOFIQLIK: balans manfiy (avans), lekin `Debt` reyestrida ochiq
+   * qarz ham bor. Ikki daftar qarama-qarshi gapiradi — biri jimgina
+   * bosilmaydi, ekran ogohlantirishni ko'rsatadi
+   * (`splitDebtSources.registryExceedsBalance` bilan bir hodisa, lekin bu
+   * yerda holatning O'Z signali sifatida qaytariladi).
+   */
+  conflicted: boolean;
+}
+
+/**
+ * Balans + reyestrdan ekran holatini chiqaradi.
+ *
+ * TARTIB ATAYLAB shunday:
+ *   1. `null` balans — QAROR qilib bo'lmaydi, ochiq aytiladi (`unmeasured`);
+ *   2. avans — pul daftari «biz qarzdormiz» desa, mijozdan qarz SO'RALMAYDI
+ *      (reja invariant 4: avansli mijoz undirish oqimiga tushmaydi);
+ *   3. qarz — mavjud xulq, bir bayt ham o'zgarmaydi;
+ *   4. qolgani — tekis hisob.
+ */
+export function customerStanding(
+  balanceMinor: bigint | null,
+  registryOutstandingMinor: bigint,
+): CustomerStanding {
+  const payableMinor = debtPayable(balanceMinor, registryOutstandingMinor).payableMinor;
+  const prepayMinor = prepayAvailable(balanceMinor);
+
+  if (balanceMinor === null) {
+    // Reyestrda qarz bo'lsa u ko'rinadi (0 deb yashirilmaydi), lekin holat
+    // baribir «o'lchanmagan» — karta buni alohida qator bilan aytadi.
+    return { kind: 'unmeasured', amountMinor: payableMinor, conflicted: false };
+  }
+  if (prepayMinor > 0n) {
+    return { kind: 'prepaid', amountMinor: prepayMinor, conflicted: payableMinor > 0n };
+  }
+  if (payableMinor > 0n) {
+    return { kind: 'debt', amountMinor: payableMinor, conflicted: false };
+  }
+  return { kind: 'settled', amountMinor: 0n, conflicted: false };
+}

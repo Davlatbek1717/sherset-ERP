@@ -330,3 +330,57 @@ describe('buildZReport — dollar qatori va konvertatsiya shartnomasi', () => {
     expect(z.varianceUsdMinor).toBeNull();
   });
 });
+
+/**
+ * A3 (2026-08-25) — MIJOZGA NAQD QAYTARILGAN AVANS Z-hisobotning alohida
+ * qatori. Endi uchta avans raqami bor va ular ARALASHTIRILMASIN:
+ *   · `prepayMinor`       — yashiqqa KIRGAN mijoz puli (A1);
+ *   · `prepaySpentMinor`  — avansning tovarga SARFLANISHI (A2, naqd EMAS);
+ *   · `prepayRefundMinor` — avansning yashiqdan CHIQIB ketishi (A3).
+ */
+describe('A3 — Z-hisobotda avansning qaytarilishi', () => {
+  const base = {
+    salesCount: 3,
+    revenueByMethod: [{ method: 'CASH_UZS', sumMinor: 600_000n, currency: 'UZS' }],
+    grossProfitMinor: 100_000n,
+    discountMinor: 0n,
+    creditSoldMinor: 0n,
+    debtPaidMinor: 0n,
+    returnsMinor: 0n,
+    expenseMinor: 0n,
+    collectionMinor: 0n,
+    returnPayoutMinor: 0n,
+    expectedCashMinor: 600_000n,
+    countedCashMinor: 600_000n,
+  };
+
+  it('`prepayRefundMinor` kutilgan naqdga ham, farqqa ham ALOHIDA tegmaydi', () => {
+    // Pul yashiqdan `RetailDrawerCashOut` hujjati bilan chiqqan, ya'ni
+    // `expectedCashMinor` formulasidagi `drawerOutMinor` uni ALLAQACHON
+    // ayirgan. Bu yerda ikkinchi marta ayirilsa kassirga SOXTA ORTIQCHA
+    // yozilardi (`returnPayoutMinor` bilan AYNI munosabat).
+    const withRefund = buildZReport({ ...base, prepayRefundMinor: 40_000n });
+    const without = buildZReport(base);
+    expect(withRefund.prepayRefundMinor).toBe(40_000n);
+    expect(withRefund.expectedCashMinor).toBe(without.expectedCashMinor);
+    expect(withRefund.varianceMinor).toBe(without.varianceMinor);
+  });
+
+  it('berilmasa `0n` — «noma`lum» emas, HAQIQATAN nol', () => {
+    expect(buildZReport(base).prepayRefundMinor).toBe(0n);
+  });
+
+  it('🔴 uchala avans raqami MUSTAQIL (biri ikkinchisini bosmaydi)', () => {
+    const z = buildZReport({
+      ...base,
+      prepayMinor: 100_000n,
+      prepaySpentMinor: 60_000n,
+      prepayRefundMinor: 40_000n,
+    });
+    expect(z.prepayMinor).toBe(100_000n);
+    expect(z.prepaySpentMinor).toBe(60_000n);
+    expect(z.prepayRefundMinor).toBe(40_000n);
+    // Ular QO'SHILMAYDI: 100k kirdi, 60k tovarga ketdi, 40k naqd qaytdi.
+    expect(z.prepayMinor).not.toBe(z.prepaySpentMinor + z.prepayRefundMinor + 1n);
+  });
+});

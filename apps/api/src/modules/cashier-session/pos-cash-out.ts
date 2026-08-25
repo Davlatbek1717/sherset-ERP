@@ -27,6 +27,18 @@ export const CASH_OUT_KIND = {
    * kutilgan-naqd formulasiga (§8.4) O'Z-O'ZIDAN kiradi.
    */
   returnPayout: 'return_payout',
+  /**
+   * A3 (2026-08-25) — AVANSNI QAYTARISH: mijoz o'zi qoldirgan oldindan
+   * to'lovning sarflanmagan qismini naqd qaytarib olmoqchi. `customer_prepay`
+   * (A1, kirim) ning AYNAN teskarisi: kassa `−summa`, mijoz balansi
+   * `+summa` (bizning qarzimiz kamayadi).
+   *
+   * ⚠️ Bu `PREPAY` tenderining VOZVRATI EMAS (A2): u chek qaytarilganda
+   * balansni tiklaydi va yashiqqa umuman tegmaydi. Bu yerda esa pul
+   * jismonan yashiqdan chiqadi, ya'ni RKO turkumidagi amal.
+   * Cap — mijozning MAVJUD avansi (`prepayAvailable`), servisda qulf bilan.
+   */
+  prepayRefund: 'prepay_refund',
   /** Tasniflanmagan — eski «Изъятие» yozuvlari. Yangi hujjat bunday bo'lmaydi. */
   other: 'other',
 } as const;
@@ -95,6 +107,9 @@ export function cashOutPrefix(kind: CashOutKind, year: number): string {
   if (kind === CASH_OUT_KIND.expense) return `РКО-${year}-`;
   if (kind === CASH_OUT_KIND.collection) return `ИНК-${year}-`;
   if (kind === CASH_OUT_KIND.returnPayout) return `ВВ-${year}-`;
+  // A3 — avans qaytarilishi. `АВ-` (kirim, A1) ning chiqim juftligi;
+  // ALOHIDA hisoblagich, ya'ni raqamlar bir-birini bosmaydi.
+  if (kind === CASH_OUT_KIND.prepayRefund) return `ВА-${year}-`;
   return `ИЗ-${year}-`;
 }
 
@@ -111,6 +126,7 @@ export function cashOutLedgerLabel(kind: CashOutKind): string {
   if (kind === CASH_OUT_KIND.expense) return 'Xarajat';
   if (kind === CASH_OUT_KIND.collection) return 'Inkassatsiya';
   if (kind === CASH_OUT_KIND.returnPayout) return 'Vozvrat puli';
+  if (kind === CASH_OUT_KIND.prepayRefund) return 'Avans qaytarildi';
   return 'Изъятие';
 }
 
@@ -121,6 +137,8 @@ export const CASH_OUT_EVENT = {
   collection: 'CASH_COLLECTION',
   /** G1 — vozvrat uchun mijozga naqd qaytarildi. */
   returnPayout: 'RETURN_PAYOUT',
+  /** A3 — mijozning sarflanmagan avansi naqd qaytarildi. */
+  prepayRefund: 'PREPAY_REFUND',
   /** Yashiqda yo'q pul chiqarildi — TAQIQ emas, ko'rinadigan anomaliya. */
   overdrawn: 'CASH_OVERDRAWN',
 } as const;
@@ -147,6 +165,13 @@ export interface CashOutAuditArgs {
   salesReturnName?: string | null;
   agentId?: string | null;
   agentName?: string | null;
+  /**
+   * A3 (`prepay_refund`): hujjatdan OLDINGI mijoz saldosi. `null` =
+   * balans qatori YO'Q (o'lchanmagan) — `0n` bilan aralashtirilmaydi,
+   * aks holda audit «mijoz nol saldodan avans qaytarib oldi» degan
+   * o'lchanmagan da'voni yozardi (A1 ning `balanceBeforeMinor` qarori).
+   */
+  balanceBeforeMinor?: bigint | null;
   description?: string | null;
   /**
    * Hujjatdan OLDINGI kutilgan naqd. `null` = hisoblab bo'lmadi (masalan
@@ -209,6 +234,19 @@ export function planCashOutAuditEvents(args: CashOutAuditArgs): CashOutAuditEven
         agentName: args.agentName ?? null,
       },
     });
+  } else if (args.kind === CASH_OUT_KIND.prepayRefund) {
+    // A3: «kimga va qancha avansidan qaytarildi» — mijoz nomi MUZLATIB
+    // yoziladi (G1 naqshi), saldo esa qaytarishdan OLDINGI holat.
+    events.push({
+      type: CASH_OUT_EVENT.prepayRefund,
+      docId: args.docId,
+      payload: {
+        ...base,
+        agentId: args.agentId ?? null,
+        agentName: args.agentName ?? null,
+        balanceBeforeMinor: args.balanceBeforeMinor?.toString() ?? null,
+      },
+    });
   }
 
   // `null` = noma'lum, `0n` = haqiqatan bo'sh yashiq. Ikkalasini
@@ -244,6 +282,8 @@ export interface CashOutSummary {
   collectionMinor: bigint;
   /** G1 — vozvratlar uchun mijozlarga qaytarilgan naqd jami. */
   returnPayoutMinor: bigint;
+  /** A3 — mijozlarga qaytarilgan sarflanmagan AVANS jami. */
+  prepayRefundMinor: bigint;
   /** Tasniflanmagan eski «Изъятие». */
   otherMinor: bigint;
   /** Barchasi — smena naqdidan chiqqan jami summa. */
@@ -264,6 +304,7 @@ export function summarizeCashOut(rows: ReadonlyArray<CashOutRow>): CashOutSummar
   let expenseMinor = 0n;
   let collectionMinor = 0n;
   let returnPayoutMinor = 0n;
+  let prepayRefundMinor = 0n;
   let otherMinor = 0n;
   const items = new Map<string, { id: string | null; name: string | null; sumMinor: bigint }>();
 
@@ -287,6 +328,11 @@ export function summarizeCashOut(rows: ReadonlyArray<CashOutRow>): CashOutSummar
       // «Изъятие» bo'lib ko'rinar va «qancha vozvrat to'landi» savoli
       // javobsiz qolardi.
       returnPayoutMinor += r.sumMinor;
+    } else if (r.kind === CASH_OUT_KIND.prepayRefund) {
+      // A3: avans qaytarilishi — o'z qatori. `other`ga qo'shilsa Z-hisobotda
+      // «Изъятие» bo'lib ko'rinardi va «bugun qancha avans qaytdi» savoli
+      // javobsiz qolardi (G1 ning aynan sabab-nusxasi).
+      prepayRefundMinor += r.sumMinor;
     } else {
       otherMinor += r.sumMinor;
     }
@@ -296,8 +342,9 @@ export function summarizeCashOut(rows: ReadonlyArray<CashOutRow>): CashOutSummar
     expenseMinor,
     collectionMinor,
     returnPayoutMinor,
+    prepayRefundMinor,
     otherMinor,
-    totalMinor: expenseMinor + collectionMinor + returnPayoutMinor + otherMinor,
+    totalMinor: expenseMinor + collectionMinor + returnPayoutMinor + prepayRefundMinor + otherMinor,
     // Kattadan kichikka: menejer eng katta xarajat moddasini birinchi ko'rsin.
     byExpenseItem: [...items.values()].sort((a, b) =>
       b.sumMinor === a.sumMinor ? 0 : b.sumMinor > a.sumMinor ? 1 : -1,

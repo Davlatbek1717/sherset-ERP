@@ -72,6 +72,12 @@ const ACT_DOC_TYPES = new Set([
   // `−sumMinor`). Reyestrda 2026-08-12 dan beri bor, lekin bu ro'yxatga
   // qo'shilmagani uchun akt qatorida xom `salesReturn` satri chiqardi.
   'salesReturn',
+  // A1/A2/A3 (2026-08-25) — MIJOZ AVANSINING uch harakati. Uchalasi ham
+  // balans jurnaliga yozadi, ya'ni akt-sverkada ALLAQACHON qator bo'lib
+  // chiqardi — faqat yorliqsiz (xom `customerPrepay` satri bilan).
+  'customerPrepay',
+  'salePrepay',
+  'customerPrepayRefund',
   'opening',
 ]);
 

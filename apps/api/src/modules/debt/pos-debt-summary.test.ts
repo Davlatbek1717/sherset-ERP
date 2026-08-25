@@ -105,3 +105,53 @@ describe('F9 — pos summary: qarz sanasi (AUDIT 🟡)', () => {
     expect(s.debts[0]?.orderAt).toEqual(new Date('2026-08-01T00:00:00Z'));
   });
 });
+
+/**
+ * A3 (2026-08-25) — KARTA HOLATI (`standing`) javobda.
+ *
+ * NON-VACUOUS: A3 gacha javobda bu maydon UMUMAN yo'q edi va ekran manfiy
+ * balansda `payableMinor = 0` ni ko'rib «qarzi yo'q» deb chizardi — kassir
+ * mijozning pulimiz turganini bilmasdi (reja §1.3, 3-to'siq).
+ */
+describe('A3 — pos summary: mijoz holati (`standing`)', () => {
+  it('manfiy balans → `prepaid`, summa avansning MODULI', async () => {
+    const { service } = makeService([], [{ currency: 'UZS', balanceMinor: -1_000_000n }]);
+    const s = await service.summary(ACC, CP);
+    expect(s.standing).toEqual({ kind: 'prepaid', amountMinor: '1000000', conflicted: false });
+    // Mavjud maydonlar O'ZGARMADI (orqaga moslik).
+    expect(s.payableMinor).toBe('0');
+    expect(s.prepayAvailableMinor).toBe('1000000');
+  });
+
+  it('musbat balans → `debt`, summa `payableMinor` bilan AYNAN teng', async () => {
+    const { service } = makeService([DEBT], [{ currency: 'UZS', balanceMinor: 100_000n }]);
+    const s = await service.summary(ACC, CP);
+    expect(s.standing.kind).toBe('debt');
+    expect(s.standing.amountMinor).toBe(s.payableMinor);
+  });
+
+  it('balans qatori YO`Q → `unmeasured` (0 EMAS, «avansi yo`q» ham EMAS)', async () => {
+    const { service } = makeService([DEBT], []);
+    const s = await service.summary(ACC, CP);
+    expect(s.standing.kind).toBe('unmeasured');
+    // Reyestrdagi haqiqiy qarz baribir ko'rinadi.
+    expect(s.standing.amountMinor).toBe('40000');
+    expect(s.balanceMinor).toBeNull();
+  });
+
+  it('tekis hisob → `settled`', async () => {
+    const { service } = makeService([], [{ currency: 'UZS', balanceMinor: 0n }]);
+    const s = await service.summary(ACC, CP);
+    expect(s.standing).toEqual({ kind: 'settled', amountMinor: '0', conflicted: false });
+  });
+
+  it('🔴 avans + ochiq reyestr qarzi → `prepaid` VA `conflicted`', async () => {
+    // Ikki daftar zid gapiradi; ekran pul daftariga ergashadi, lekin
+    // ziddiyat JIM emas (mavjud `registryExceedsBalance` ogohlantirishi
+    // bilan bir hodisa).
+    const { service } = makeService([DEBT], [{ currency: 'UZS', balanceMinor: -300_000n }]);
+    const s = await service.summary(ACC, CP);
+    expect(s.standing).toMatchObject({ kind: 'prepaid', amountMinor: '300000', conflicted: true });
+    expect(s.registryExceedsBalance).toBe(true);
+  });
+});

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   CASH_OUT_EVENT,
   CASH_OUT_KIND,
+  cashOutLedgerLabel,
   cashOutPrefix,
   planCashOutAuditEvents,
   summarizeCashOut,
@@ -217,5 +218,111 @@ describe('summarizeCashOut — Z-hisobot guruhlash', () => {
       { kind: 'expense', sumMinor: 1n, expenseItemId: 'ei-1' },
     ]);
     expect(s.expenseMinor).toBe(big + 1n);
+  });
+});
+
+// ── A3 (2026-08-25): AVANSNI QAYTARISH turi ────────────────────────────────
+
+describe('A3 — `prepay_refund` sof qoidalari', () => {
+  it('raqam prefiksi `ВА-` — `АВ-` (kirim) ning JUFTI, alohida hisoblagich', () => {
+    expect(cashOutPrefix(CASH_OUT_KIND.prepayRefund, 2026)).toBe('ВА-2026-');
+    // Boshqa turlarnikidan farq qiladi ⇒ raqamlar bir-birini bosmaydi.
+    const all = [
+      CASH_OUT_KIND.expense,
+      CASH_OUT_KIND.collection,
+      CASH_OUT_KIND.returnPayout,
+      CASH_OUT_KIND.prepayRefund,
+      CASH_OUT_KIND.other,
+    ].map((k) => cashOutPrefix(k, 2026));
+    expect(new Set(all).size).toBe(all.length);
+  });
+
+  it('pul daftari izohi turni AYTADI («Изъятие» bo`lib qolmaydi)', () => {
+    expect(cashOutLedgerLabel(CASH_OUT_KIND.prepayRefund)).toBe('Avans qaytarildi');
+    expect(cashOutLedgerLabel(CASH_OUT_KIND.prepayRefund)).not.toBe(
+      cashOutLedgerLabel(CASH_OUT_KIND.other),
+    );
+  });
+
+  it('hujjat qoidalari: modda ham, qabul qiluvchi ham BO`LMAYDI', () => {
+    expect(validateCashOut({ kind: CASH_OUT_KIND.prepayRefund, sumMinor: 50_000n })).toEqual([]);
+    expect(
+      validateCashOut({
+        kind: CASH_OUT_KIND.prepayRefund,
+        sumMinor: 50_000n,
+        expenseItemId: 'ei-1',
+      }),
+    ).toHaveLength(1);
+    expect(
+      validateCashOut({
+        kind: CASH_OUT_KIND.prepayRefund,
+        sumMinor: 50_000n,
+        recipientId: 'emp-1',
+      }),
+    ).toHaveLength(1);
+    expect(validateCashOut({ kind: CASH_OUT_KIND.prepayRefund, sumMinor: 0n })).toHaveLength(1);
+  });
+
+  it('audit izi: mijoz nomi MUZLATIB, saldo qaytarishdan OLDINGI holatda', () => {
+    const events = planCashOutAuditEvents({
+      docId: 'doc-1',
+      docName: 'ВА-2026-00001',
+      kind: CASH_OUT_KIND.prepayRefund,
+      sumMinor: 40_000n,
+      agentId: 'cp-1',
+      agentName: 'Mijoz Testov',
+      balanceBeforeMinor: -100_000n,
+      cashBeforeMinor: 500_000n,
+    });
+    expect(events).toHaveLength(1);
+    expect(events[0]?.type).toBe('PREPAY_REFUND');
+    expect(events[0]?.payload).toMatchObject({
+      name: 'ВА-2026-00001',
+      kind: 'prepay_refund',
+      sumMinor: '40000',
+      agentId: 'cp-1',
+      agentName: 'Mijoz Testov',
+      balanceBeforeMinor: '-100000',
+    });
+  });
+
+  it('🔴 balans O`LCHANMAGAN bo`lsa auditda `null` — `0` EMAS', () => {
+    const [ev] = planCashOutAuditEvents({
+      docId: 'doc-1',
+      docName: 'ВА-2026-00001',
+      kind: CASH_OUT_KIND.prepayRefund,
+      sumMinor: 10_000n,
+      balanceBeforeMinor: null,
+      cashBeforeMinor: 500_000n,
+    });
+    expect(ev?.payload.balanceBeforeMinor).toBeNull();
+  });
+
+  it('yashiqda pul yetmasa qo`shimcha `CASH_OVERDRAWN` (G1 bilan bir xil)', () => {
+    const events = planCashOutAuditEvents({
+      docId: 'doc-1',
+      docName: 'ВА-2026-00001',
+      kind: CASH_OUT_KIND.prepayRefund,
+      sumMinor: 90_000n,
+      cashBeforeMinor: 10_000n,
+    });
+    expect(events.map((e) => e.type)).toEqual(['PREPAY_REFUND', 'CASH_OVERDRAWN']);
+  });
+
+  it('🔴 Z-hisobotda O`Z QATORI — `other` ga tushmaydi', () => {
+    const s = summarizeCashOut([
+      { kind: 'prepay_refund', sumMinor: 40_000n },
+      { kind: 'return_payout', sumMinor: 15_000n },
+      { kind: 'other', sumMinor: 3_000n },
+    ]);
+    expect(s.prepayRefundMinor).toBe(40_000n);
+    expect(s.returnPayoutMinor).toBe(15_000n);
+    expect(s.otherMinor).toBe(3_000n);
+    // Jami — uchalasining yig'indisi (naqddan chiqqan HAMMA pul).
+    expect(s.totalMinor).toBe(58_000n);
+  });
+
+  it('turi yo`q smenada `prepayRefundMinor` NOL (maydon yo`qolmaydi)', () => {
+    expect(summarizeCashOut([{ kind: 'expense', sumMinor: 5_000n }]).prepayRefundMinor).toBe(0n);
   });
 });

@@ -2991,7 +2991,9 @@
       "unit_economics_card_description": "Выручка, себестоимость и маржа на единицу",
       "unit_economics_card_title": "Юнит-экономика",
       "warehouse_ops_card_description": "Приёмка, размещение и сборка: очередь и выполнение по кладовщикам",
-      "warehouse_ops_card_title": "Складские операции"
+      "warehouse_ops_card_title": "Складские операции",
+      "piece_reconciliation_card_title": "Сверка отрезов",
+      "piece_reconciliation_card_description": "Реестр отрезов кабеля/провода против остатка"
     },
     "factures_out": {
       "col_demand": "Отгрузка",
@@ -9831,6 +9833,38 @@
       "subtitle": "С кого сколько взыскать: срок, ответственный, последний контакт и действие — на одном экране.",
       "title": "Взыскание долгов",
       "truncated": "Показано {shown} из {total}"
+    },
+    "report_piece_reconciliation": {
+      "all_stores": "Все склады",
+      "col_cell": "Ячейка",
+      "col_code": "Код",
+      "col_diff": "Расхождение",
+      "col_pieces": "Отрезов",
+      "col_product": "Товар",
+      "col_registry": "Реестр",
+      "col_status": "Статус",
+      "col_stock": "Остаток",
+      "col_store": "Склад",
+      "col_whole": "Целых бухт",
+      "empty": "Реестр отрезов пуст",
+      "field_store": "Склад",
+      "no_cell": "Без ячейки",
+      "no_diff": "Расхождений нет — реестр отрезов совпадает с остатком.",
+      "only_diff": "Только расхождения",
+      "status_excess": "В реестре больше",
+      "status_missing": "В реестре меньше",
+      "status_ok": "Сходится",
+      "subtitle": "Реестр физических отрезов (кабель, провод, шланг) против остатка — по складам и ячейкам",
+      "sum_diff": "Расхождение",
+      "sum_pieces": "Активных отрезов",
+      "sum_registry": "Реестр",
+      "sum_stock": "Остаток",
+      "sum_tracked": "Товаров с учётом отрезов",
+      "title": "Сверка отрезов",
+      "truncated": "Показаны не все строки: скрыто ещё {count}",
+      "warn_invalid_piece": "{product}: {count} строк(и) нарушают правила модели ({rules})",
+      "warn_pieces_without_flag": "{product}: в реестре {count} отрез(ов), но учёт отрезов у товара ВЫКЛЮЧЕН",
+      "warnings_title": "Предупреждения"
     }
   },
   "print_entity": {

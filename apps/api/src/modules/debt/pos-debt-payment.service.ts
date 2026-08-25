@@ -36,6 +36,7 @@ import {
   usdCentsToSomTiyin,
 } from './debt.schema.js';
 import {
+  customerStanding,
   debtPayable,
   planAdoption,
   prepayAvailable,
@@ -117,6 +118,8 @@ export class PosDebtPaymentService {
     const s = summarize(rows.map(toFifo));
     const split = splitDebtSources(balanceRows, s.outstandingMinor, tillCurrency);
     const payable = debtPayable(split.balanceMinor, s.outstandingMinor);
+    // A3 — ekran holati (yorliq + rang) AYNAN shu sof qoidadan chiqadi.
+    const standing = customerStanding(split.balanceMinor, s.outstandingMinor);
 
     return {
       counterparty: cp,
@@ -140,6 +143,22 @@ export class PosDebtPaymentService {
        * `prepayAvailable` dan yuradi.
        */
       prepayAvailableMinor: prepayAvailable(split.balanceMinor).toString(),
+      /**
+       * 🔴 A3 — KARTA EKRANINING HOLATI: yagona yirik son QAYSI MA'NODA
+       * ko'rsatilishi (`debt` / `prepaid` / `settled` / `unmeasured`) va
+       * uning summasi. Ekran yorliqni va rangni AYNAN shundan tanlaydi —
+       * ilgari u `payableMinor` ni ko'rib manfiy balansda «0» chizardi,
+       * ya'ni kassir mijozning pulimiz turganini bilmasdi (reja §1.3).
+       *
+       * Yangi formula EMAS: `customerStanding` yuqoridagi ikki maydonning
+       * (`payableMinor` va `prepayAvailableMinor`) ustida turadi.
+       */
+      standing: {
+        kind: standing.kind,
+        amountMinor: standing.amountMinor.toString(),
+        /** Ikki daftar zid: avans bor, lekin reyestrda ochiq qarz ham bor. */
+        conflicted: standing.conflicted,
+      },
       /** `Debt` reyestri — FIFO taqsimoti AYNAN shundan boshlanadi. */
       outstandingMinor: s.outstandingMinor.toString(),
       openCount: s.openCount,

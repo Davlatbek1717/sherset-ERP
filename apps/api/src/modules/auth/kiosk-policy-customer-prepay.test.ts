@@ -80,3 +80,29 @@ describe('A1 — kiosk allowlist: `/cash-in` YOPIQ (NEGATIV)', () => {
     expect(KIOSK_ALLOWED.some((r) => r.prefix === '/cash-out')).toBe(true);
   });
 });
+
+/**
+ * A3 (2026-08-25) — AVANSNI QAYTARISH marshruti: AYNI qoida.
+ *
+ * Yangi endpoint (`customer-prepay-refund`) ham `/cashier-sessions` prefiksi
+ * ostida, ya'ni kiosk qamrovi BIR ZARRA ham kengaymaydi. Chek (RKO) sahifasi
+ * `/cashier-sessions/cash-out/:id` dan o'qiydi — u ham o'sha prefiksda.
+ */
+describe('A3 — kiosk allowlist: avansni qaytarish yo`li', () => {
+  it.each([
+    ['POST', `/cashier-sessions/${SESSION}/customer-prepay-refund`],
+    ['GET', `/cashier-sessions/cash-out/${DOC}`],
+  ])('%s %s — ochiq', (method, path) => {
+    expect(isKioskAllowed(method, path)).toBe(true);
+  });
+
+  it('YANGI QATOR QO`SHILMAGAN (qamrov o`lchovi A1 bilan bir xil)', () => {
+    expect(KIOSK_ALLOWED.filter((r) => r.prefix.includes('prepay'))).toEqual([]);
+    expect(KIOSK_ALLOWED.filter((r) => r.prefix.includes('refund'))).toEqual([]);
+  });
+
+  it('🔴 `/cash-in` ham, ПКО daraxti ham HAMON YOPIQ (A1 qo`riqchisi buzilmadi)', () => {
+    expect(isKioskAllowed('POST', '/cash-in')).toBe(false);
+    expect(isKioskAllowed('POST', '/prepayments')).toBe(false);
+  });
+});

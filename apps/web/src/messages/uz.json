@@ -2991,7 +2991,9 @@
       "unit_economics_card_description": "Bir birlik bo‘yicha tushum, tannarx va marja",
       "unit_economics_card_title": "Yunit-iqtisod",
       "warehouse_ops_card_description": "Qabul, joylashtirish va yig'ish: navbat hamda bajarilishi omborchilar kesimida",
-      "warehouse_ops_card_title": "Ombor operatsiyalari"
+      "warehouse_ops_card_title": "Ombor operatsiyalari",
+      "piece_reconciliation_card_title": "Bo'laklar sverkasi",
+      "piece_reconciliation_card_description": "Kabel/sim bo'laklari reyestri qoldiqqa mosmi"
     },
     "factures_out": {
       "col_demand": "Jo'natma",
@@ -9831,6 +9833,38 @@
       "subtitle": "Kimdan qancha undirish kerak: muddat, javobgar, oxirgi aloqa va harakat — bir ekranda.",
       "title": "Qarz undirish",
       "truncated": "{total} tadan {shown} tasi ko'rsatildi"
+    },
+    "report_piece_reconciliation": {
+      "all_stores": "Barcha omborlar",
+      "col_cell": "Yacheyka",
+      "col_code": "Kod",
+      "col_diff": "Farq",
+      "col_pieces": "Bo'laklar",
+      "col_product": "Tovar",
+      "col_registry": "Reyestr",
+      "col_status": "Holat",
+      "col_stock": "Qoldiq",
+      "col_store": "Ombor",
+      "col_whole": "Butun rulonlar",
+      "empty": "Bo'laklar reyestri bo'sh",
+      "field_store": "Ombor",
+      "no_cell": "Yacheykasiz",
+      "no_diff": "Farq yo'q — bo'laklar reyestri qoldiq bilan mos keladi.",
+      "only_diff": "Faqat farqlar",
+      "status_excess": "Reyestrda ortiqcha",
+      "status_missing": "Reyestrda kam",
+      "status_ok": "Mos",
+      "subtitle": "Jismoniy bo'laklar reyestri (kabel, sim, shlang) qoldiq bilan solishtiriladi — ombor va yacheykalar kesimida",
+      "sum_diff": "Farq",
+      "sum_pieces": "Faol bo'laklar",
+      "sum_registry": "Reyestr",
+      "sum_stock": "Qoldiq",
+      "sum_tracked": "Bo'lak hisobi yoqilgan tovarlar",
+      "title": "Bo'laklar sverkasi",
+      "truncated": "Hamma qator ko'rsatilmadi: yana {count} tasi yashirilgan",
+      "warn_invalid_piece": "{product}: {count} ta qator model qoidasini buzadi ({rules})",
+      "warn_pieces_without_flag": "{product}: reyestrda {count} ta bo'lak bor, lekin tovarda bo'lak hisobi O'CHIQ",
+      "warnings_title": "Ogohlantirishlar"
     }
   },
   "print_entity": {

@@ -424,6 +424,33 @@ async function main() {
     if (r.agentId) add(r.accountId, r.agentId, r.currency, r._sum.sumMinor ?? 0n);
   }
 
+  // SOURCE: customer-prepay-refunds — mijozga NAQD QAYTARILGAN avans (A3, 2026-08-25).
+  //
+  // `CashierSessionService.customerPrepayRefund` `RetailDrawerCashOut`
+  // (`kind='prepay_refund'`, `agentId` to'ldirilgan) yozadi va o'sha
+  // tranzaksiyada `applyDelta(+sumMinor)` — A1 yozgan `-sumMinor` avansning
+  // naqd bilan qaytarilishi. `return-payouts` bilan AYNI jadval va AYNI
+  // ishora, lekin BOSHQA `kind` — shuning uchun alohida blok: bittasiga
+  // yig'ilsa «bu qaysi pul edi» savoli hujjat darajasida javobsiz qolardi.
+  //
+  // 🔴 BU BLOK UNUTILGAN BO'LSA nima bo'lardi: hujjat-rekonstruksiyasi
+  // qaytarilgan avansni ko'rmasdi va cross-check har qaytargan mijozda
+  // yolg'on farq ko'rsatardi — reja §2.1 yorig'ining to'rtinchi takrori
+  // (A1 hisobotining 1-eslatmasi va A2 ning aynan shu bandi).
+  const prepayRefunds = await prisma.retailDrawerCashOut.groupBy({
+    by: ['accountId', 'agentId', 'currency'],
+    where: {
+      kind: 'prepay_refund',
+      state: 'posted',
+      deletedAt: null,
+      agentId: ONLY_CP ? ONLY_CP : { not: null },
+    },
+    _sum: { sumMinor: true },
+  });
+  for (const r of prepayRefunds) {
+    if (r.agentId) add(r.accountId, r.agentId, r.currency, r._sum.sumMinor ?? 0n);
+  }
+
   // SOURCE: customer-prepays — kassada qabul qilingan MIJOZ AVANSI (A1, 2026-08-25).
   //
   // `CashierSessionService.customerPrepay` `RetailDrawerCashIn`

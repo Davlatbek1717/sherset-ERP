@@ -230,3 +230,82 @@ describe('P2 — PosDebtPaymentService.history', () => {
     expect(findMany.mock.calls[0]?.[0]?.take).toBeLessThanOrEqual(101);
   });
 });
+
+/**
+ * A3 (2026-08-25, reja A3 vazifasi 3) — AVANS QATORLARI TARIXDA
+ * AVTOMATIK KO'RINADI: yozma tasdiq, test bilan.
+ *
+ * Reja «mavjud `GET /debts/pos/history/:cpId` yangi `docType` larni
+ * AVTOMATIK ko'rsatadi — tekshirilsin va hisobotda yozma tasdiqlansin»
+ * degan edi. Tasdiq shu yerda MEXANIK: `foldPosHistory` (va uni
+ * chaqiradigan `history()`) qatorlarni `docType` bo'yicha UMUMAN
+ * filtrlamaydi, ya'ni A1 (`customerPrepay`), A2 (`salePrepay`) va A3
+ * (`customerPrepayRefund`) turlari kod o'zgarmasdan chiqadi.
+ *
+ * Bu — «chala-ro'yxat» bug-klassining qo'riqchisi: agar kimdir bu yerga
+ * «ma'lum turlar» ro'yxatini kiritsa, test qizil bo'ladi.
+ */
+describe('A3 — avans turlari tarixda filtrlanmaydi', () => {
+  const at = (d: string) => new Date(d);
+
+  it('uchala yangi tur ham ro`yxatda qoladi (docType filtri YO`Q)', () => {
+    const fold = foldPosHistory(
+      [
+        // A1 — avans qabul qilindi (balans manfiy tomonga surildi).
+        {
+          deltaMinor: -100_000n,
+          docType: 'customerPrepay',
+          docId: 'in-1',
+          createdAt: at('2026-08-25T09:00:00Z'),
+        },
+        // A2 — avansdan to'landi.
+        {
+          deltaMinor: 60_000n,
+          docType: 'salePrepay',
+          docId: 'sale-1',
+          createdAt: at('2026-08-25T10:00:00Z'),
+        },
+        // A3 — qolgani naqd qaytarildi.
+        {
+          deltaMinor: 40_000n,
+          docType: 'customerPrepayRefund',
+          docId: 'out-1',
+          createdAt: at('2026-08-25T11:00:00Z'),
+        },
+      ],
+      new Map(),
+      null,
+    );
+    // Tartib — YANGISIDAN eskisiga (kartadagi ro'yxat shunday chiziladi).
+    expect(fold.lines.map((l) => l.docType)).toEqual([
+      'customerPrepayRefund',
+      'salePrepay',
+      'customerPrepay',
+    ]);
+  });
+
+  it('ishora konvensiyasi to`g`ri: qabul KAMAYTIRADI, sarf va qaytarish OSHIRADI', () => {
+    // Kassir ekranda «+» / «−» ni AYNAN shu maydondan oladi (ekran qayta
+    // hisoblamaydi) — avans qabuli mijozning qarzini kamaytiradi.
+    const fold = foldPosHistory(
+      [
+        {
+          deltaMinor: -100_000n,
+          docType: 'customerPrepay',
+          docId: 'in-1',
+          createdAt: at('2026-08-25T09:00:00Z'),
+        },
+        {
+          deltaMinor: 40_000n,
+          docType: 'customerPrepayRefund',
+          docId: 'out-1',
+          createdAt: at('2026-08-25T11:00:00Z'),
+        },
+      ],
+      new Map(),
+      null,
+    );
+    // Ro'yxat yangisidan eskisiga: avval qaytarish (+), keyin qabul (−).
+    expect(fold.lines.map((l) => l.increase)).toEqual([true, false]);
+  });
+});

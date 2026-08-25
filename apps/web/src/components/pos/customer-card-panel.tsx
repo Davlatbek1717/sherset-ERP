@@ -57,6 +57,20 @@ interface DebtSummary {
    * (`max(reyestr, balans)`; manfiy balans qarz sifatida olinmaydi).
    */
   payableMinor: string;
+  /**
+   * 🔴 A3 — KARTA HOLATI: yagona yirik son QAYSI MA'NODA ko'rsatiladi.
+   * Server bilan BITTA sof qoidadan (`pos-customer-debt.ts#customerStanding`)
+   * chiqadi — ekran `balanceMinor` ning ishorasini QAYTA o'qimaydi.
+   *
+   * ⚠️ Ixtiyoriy: eski (A3 dan oldingi) server javobida bu maydon yo'q va
+   * ekran o'sha holda AVVALGIDEK `payableMinor` ni chizadi.
+   */
+  standing?: {
+    kind: 'debt' | 'prepaid' | 'settled' | 'unmeasured';
+    amountMinor: string;
+    /** Balans manfiy, lekin reyestrda ochiq qarz ham bor (ikki daftar zid). */
+    conflicted: boolean;
+  };
   /** `Debt` reyestri — POS FIFO'si yopadigan qism. */
   outstandingMinor: string;
   openCount: number;
@@ -113,6 +127,17 @@ const KNOWN_DOC_TYPES = new Set([
   'cashOut',
   'prepayment',
   'prepaymentReturn',
+  // A1/A2/A3 (2026-08-25) — MIJOZ AVANSINING uch harakati. Ular BOSHQA-BOSHQA
+  // hodisa va shu sababdan alohida yorliq oladi:
+  //   · `customerPrepay`       — kassada avans QABUL qilindi (АВ-, pul kirdi);
+  //   · `salePrepay`           — avansdan TO'LANDI (chek, yashiqqa tegmaydi);
+  //   · `customerPrepayRefund` — avans NAQD QAYTARILDI (ВА-, pul chiqdi).
+  // Ro'yxatga kirmasa qator baribir chizilardi, lekin yorliq o'rniga xom
+  // `customerPrepay` satri ko'rinardi (G1 ning aynan shu sabab bilan
+  // tuzatilgan `returnPayout` bandi).
+  'customerPrepay',
+  'salePrepay',
+  'customerPrepayRefund',
   'adjustment',
 ]);
 
@@ -283,7 +308,13 @@ export function CustomerCardPanel({
 
   // 🔴 P2 — kassir ko'radigan YAGONA son. Server bilan bitta formuladan
   // (`debtPayable`) chiqadi, ya'ni ekran tizim xulqidan ajralib keta olmaydi.
-  const payableMinor = summary?.payableMinor ?? null;
+  // 🔴 A3 — endi son SERVER HOLATIDAN chiqadi: `prepaid` bo'lsa u avans
+  // summasi, aks holda avvalgidek `payableMinor`. Ekran ikkinchi formula
+  // (`-balanceMinor`) yozmaydi — u bir kun server bilan ayrilardi.
+  // Eski javobda `standing` bo'lmasa xulq AYNAN avvalgidek qoladi.
+  const standing = summary?.standing ?? null;
+  const isPrepaid = standing?.kind === 'prepaid';
+  const payableMinor = standing ? standing.amountMinor : (summary?.payableMinor ?? null);
   // Balans qatori yo'qligi YASHIRILMAYDI (NULL ≠ 0) — lekin endi u raqamni
   // «—» qilib bloklamaydi, alohida qator bo'lib aytiladi.
   const balanceMissing = !!summary && summary.balanceMinor === null;
@@ -424,17 +455,25 @@ export function CustomerCardPanel({
                   data-test-id="customer-card-debt"
                   className="rounded-xl border border-[var(--ms-border)] p-3"
                 >
+                  {/* 🔴 A3 — BITTA yirik son, IKKI ma'no. Ikkinchi raqam
+                      qo'shilmaydi (P2 falsafasi): ishoraga qarab YORLIQ,
+                      IZOH va RANG o'zgaradi. Ilgari avansi bor mijozda bu
+                      yerda «0» turardi va kassir mijozning pulimiz
+                      turganini bilmasdi (reja §1.3). */}
                   <p className="text-[var(--ms-text-muted)] text-xs">
-                    {t('customer_card_payable')}
+                    {isPrepaid ? t('customer_card_prepaid') : t('customer_card_payable')}
                   </p>
                   <p
                     data-test-id="customer-card-payable"
-                    className="font-semibold text-2xl text-[var(--ms-text-primary)]"
+                    data-standing={standing?.kind ?? 'legacy'}
+                    className={`font-semibold text-2xl ${
+                      isPrepaid ? 'text-emerald-700' : 'text-[var(--ms-text-primary)]'
+                    }`}
                   >
                     {formatMoney(payableMinor, currency)}
                   </p>
                   <p className="text-[var(--ms-text-muted)] text-xs">
-                    {t('customer_card_payable_hint')}
+                    {isPrepaid ? t('customer_card_prepaid_hint') : t('customer_card_payable_hint')}
                   </p>
 
                   {balanceMissing && (

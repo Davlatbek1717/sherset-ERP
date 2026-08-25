@@ -355,4 +355,65 @@ describe('skript manbalari yozuvchilar semantikasiga mos (DUP-02 fix)', () => {
     expect(block).toMatch(/orphanPrepay/);
     expect(block).toMatch(/throw new Error\(/);
   });
+
+  /**
+   * 🔴 A3 (2026-08-25) — AVANSNI NAQD QAYTARISH TO'RTINCHI YANGI MANBA.
+   *
+   * A1 va A2 hisobotlari ikki marta ogohlantirgan: yangi balans-yozuvchi
+   * qo'shilib, `recompute` manbasi unutilsa cross-check yolg'on farq
+   * ko'rsatadi (va Faza 10 dan oldingi versiyada `APPLY=1` pulni yo'q
+   * qilardi). A1/A2 dagi AYNI uch tomonlama qulf.
+   */
+  it('A3: avansni qaytarish ↔ `customer-prepay-refunds` manbasi birga yuradi', () => {
+    // (a) Yozuvchi: MUSBAT delta + `customerPrepayRefund` docType.
+    const svcSrc = readFileSync(
+      join(API_SRC_ROOT, 'modules', 'cashier-session', 'cashier-session.service.ts'),
+      'utf8',
+    );
+    const start = svcSrc.indexOf('async customerPrepayRefund(');
+    expect(start).toBeGreaterThan(0);
+    const body = svcSrc.slice(
+      start,
+      svcSrc.indexOf(
+        String.raw`
+  /**`,
+        start,
+      ),
+    );
+    expect(body).toMatch(/applyDelta\([^)]*,\s*requested\s*,/);
+    expect(body).toMatch(/docType:\s*BALANCE_DOC_TYPE\.customerPrepayRefund/);
+
+    // (b) Reyestrda e'lon qilingan.
+    const writer = DECLARED_BALANCE_WRITERS.find(
+      (w) => w.file === 'modules/cashier-session/cashier-session.service.ts',
+    );
+    expect(writer?.sources).toContain('customer-prepay-refunds');
+
+    // (c) Skript bloki — da'vo izohga emas, `groupBy` TANASIGA bog'lanadi:
+    // AYNI jadval (`return-payouts` bilan), lekin BOSHQA `kind`.
+    const blockStart = SCRIPT_SRC.indexOf('SOURCE: customer-prepay-refunds');
+    expect(blockStart).toBeGreaterThan(0);
+    const callStart = SCRIPT_SRC.indexOf('prisma.retailDrawerCashOut.groupBy', blockStart);
+    expect(callStart).toBeGreaterThan(blockStart);
+    const block = SCRIPT_SRC.slice(callStart, SCRIPT_SRC.indexOf('});', callStart));
+    expect(block).toMatch(/kind:\s*'prepay_refund'/);
+    expect(block).toMatch(/by:\s*\[[^\]]*'agentId'/);
+    // Ishora MUSBAT — A1 ning `customer-prepays` (manfiy) ko'zgusi.
+    expect(SCRIPT_SRC.slice(callStart, callStart + 900)).toMatch(
+      /add\([^)]*r\._sum\.sumMinor \?\? 0n\)/,
+    );
+  });
+
+  it('A3: `return_payout` va `prepay_refund` bloklari ALOHIDA', () => {
+    // Bitta blokka yig'ilsa hujjat darajasida «bu qaysi pul edi» savoli
+    // javobsiz qolardi, va `kind` filtri kengaytirilsa boshqa turlar ham
+    // jimgina qo'shilib ketishi mumkin edi.
+    const payoutStart = SCRIPT_SRC.indexOf('SOURCE: return-payouts');
+    const refundStart = SCRIPT_SRC.indexOf('SOURCE: customer-prepay-refunds');
+    expect(payoutStart).toBeGreaterThan(0);
+    expect(refundStart).toBeGreaterThan(payoutStart);
+    const payoutBlock = SCRIPT_SRC.slice(payoutStart, refundStart);
+    expect(payoutBlock).toMatch(/kind:\s*'return_payout'/);
+    expect(payoutBlock).not.toMatch(/kind:\s*'prepay_refund'/);
+  });
 });

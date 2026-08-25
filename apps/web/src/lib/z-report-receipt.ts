@@ -66,6 +66,8 @@ export interface ZReportPayload {
   prepayMinor?: string;
   /** A2 — avansdan to'langan summa (naqd EMAS). */
   prepaySpentMinor?: string;
+  /** A3 — mijozlarga naqd qaytarilgan avans; yo'q bo'lsa qator chizilmaydi. */
+  prepayRefundMinor?: string;
   expenseByItem: Array<{ id: string | null; name: string | null; sumMinor: string }>;
   openingCashMinor: string;
   expectedCashMinor: string;
@@ -112,6 +114,7 @@ export interface ZReceiptLabels {
   /** A1 — «Avans (mijozlardan)» qatori. */
   prepay: string;
   prepaySpent: string;
+  prepayRefund: string;
   expenseByItem: string;
   expenseNoItem: string;
   cashBlockUzs: string;
@@ -323,6 +326,12 @@ export function buildZReceipt(z: ZReportPayload, opts: BuildZReceiptOptions): ZR
       ...(z.prepaySpentMinor == null
         ? []
         : [{ key: 'prepay-spent', label: L.prepaySpent, value: bare(z.prepaySpentMinor) }]),
+      // A3 — mijozga NAQD QAYTARILGAN avans. Yuqoridagi ikkala qatordan ham
+      // boshqa hodisa: pul yashiqdan CHIQDI. Kutilgan naqddan `drawerOut`
+      // orqali ALLAQACHON ayirilgan, bu yerda faqat ko'rinish uchun.
+      ...(z.prepayRefundMinor == null
+        ? []
+        : [{ key: 'prepay-refund', label: L.prepayRefund, value: bare(z.prepayRefundMinor) }]),
     ],
   });
 
