@@ -1,0 +1,54 @@
+-- QAYTARISH YO'LI (F-reja 2-bo'lim, 12-qoida) — A1 migratsiyasining TESKARISI.
+--
+-- Reja: `docs/plans/2026-08-25-kassa-qarzi-undirish-reyestri.md` (A1).
+--
+-- Migratsiya `retail_drawer_cash_in` ga BITTA ustun (`kind`, NOT NULL
+-- DEFAULT 'other') va IKKI oddiy indeks qo'shadi. Mavjud qatorlar `'other'`
+-- qiymatini oladi va `sum_minor` ga TEGILMAYDI — bu lokal dev bazada
+-- HAQIQIY jadval ustida zond bilan o'lchandi
+-- (`apps/api/src/scripts/a1-local-drawer-kind-probe.sql`: 777000 → 777000).
+--
+-- 🔴 MA'LUMOT YO'QOLADI: `kind` — pul yashiqqa NEGA kirgani
+--    ('topup' = «Внесение» · 'customer_prepay' = MIJOZ AVANSI). Bularsiz
+--    avans hujjatini oddiy kirimdan ajratib bo'lmaydi.
+--
+--    ⚠️ LEKIN PUL VA BALANS YO'QOLMAYDI. Aniq aytilsin, chunki bu bandni
+--    noto'g'ri o'qish qimmatga tushadi:
+--      · `retail_drawer_cash_in` qatorlarining O'ZI qoladi ⇒ kassa
+--        qoldig'i va smena «kutilgan naqd»i (§8.4) BIR TIYIN ham
+--        o'zgarmaydi — formula `kind` ni UMUMAN o'qimaydi;
+--      · kontragent balansi `counterparty_balance_entries` da
+--        (`doc_type='customerPrepay'`) qoladi ⇒ mijozning avansi
+--        daftarda turaveradi;
+--      · YO'QOLADIGANI faqat YORLIQ: «bu kirim avans edi» belgisi va
+--        `recompute` ning `customer-prepays` manbasi uni ko'rmay qoladi
+--        (cross-check shovqinli bo'ladi, SALDO esa to'g'ri qoladi —
+--        nishon jurnal, Faza 10).
+--
+--    ⇒ Qaytarishdan OLDIN eksport qiling:
+--         \copy (SELECT "id","account_id","name","kind","agent_id","sum_minor"
+--                  FROM "retail_drawer_cash_in" WHERE "kind" <> 'other')
+--               TO 'drawer-cash-in-kind-backup.csv' CSV HEADER
+--
+-- 🔴 KOD BILAN TARTIB: bu skriptni FAQAT A1 kodi jonlidan olingandan KEYIN
+--    yugurtiring. Aks holda `customerPrepay()` mavjud bo'lmagan ustunga
+--    yozib har avans urinishini 500 bilan yiqitadi.
+--
+-- TARTIB MUHIM: avval indekslar, keyin ustun. (Postgres ustun bilan birga
+-- indekslarni o'zi ham tashlaydi, lekin ochiq yozish niyatni ko'rsatadi.)
+--
+-- Yugurtirish:
+--   cd packages/db && npx prisma db execute --schema prisma/schema.prisma \
+--     --file scripts/rollback/20260825220000_drawer_cash_in_kind_down.sql
+--   npx prisma migrate resolve --rolled-back 20260825220000_drawer_cash_in_kind
+--   npx prisma generate
+--
+-- Har qadam idempotent: qayta yugurtirish no-op.
+-- SINALGAN: lokal dev bazada (`sherset_v2_dev`) — aynan shu uch bayonot
+-- zondning 1-bosqichi sifatida yugurtirildi va ustunni muvaffaqiyatli
+-- olib tashladi (zond keyin ROLLBACK qildi, iz qolmadi).
+
+DROP INDEX IF EXISTS "retail_drawer_cash_in_account_id_agent_id_kind_idx";
+DROP INDEX IF EXISTS "retail_drawer_cash_in_account_id_retail_shift_id_kind_idx";
+
+ALTER TABLE "retail_drawer_cash_in" DROP COLUMN IF EXISTS "kind";
