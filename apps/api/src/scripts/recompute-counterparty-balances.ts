@@ -32,6 +32,7 @@
  *   −Prepayment +PrepaymentReturn  CounterpartyAdjustment ±direction
  *   −DebtPayment  +Debt(QRZ- reyestr, `balanceAdopted=false`)
  *   +RetailSale(qarz tender) −RetailSale(qarz qaytarish)
+ *   +RetailDrawerCashOut(return_payout)  −RetailDrawerCashIn(customer_prepay)
  * `applicable: true` is the precise predicate applyDelta gates on (cancel clears it).
  *
  * ⚠️ QAMROV — Faza 8 dan qolgan guard SAQLANADI. Endi u nishonni emas,
@@ -405,6 +406,35 @@ async function main() {
   for (const r of returnPayouts) {
     // `agentId: not null` filtri bor — TS uchun ochiq tekshiruv.
     if (r.agentId) add(r.accountId, r.agentId, r.currency, r._sum.sumMinor ?? 0n);
+  }
+
+  // SOURCE: customer-prepays — kassada qabul qilingan MIJOZ AVANSI (A1, 2026-08-25).
+  //
+  // `CashierSessionService.customerPrepay` `RetailDrawerCashIn`
+  // (`kind='customer_prepay'`, `agentId` to'ldirilgan) yozadi va o'sha
+  // tranzaksiyada `applyDelta(−sumMinor)` — «biz mijozga qarzdormiz»
+  // (`cashIn` semantikasi). Ishora MANFIY: `return-payouts` ning ko'zgusi.
+  //
+  // 🔴 BU BLOK UNUTILGAN BO'LSA nima bo'lardi: hujjat-cross-check har avansli
+  // mijozda «jurnal noto'g'ri» degan YOLG'ON farq ko'rsatardi va keyingi
+  // sessiya haqiqiy signalni shovqin ichida yo'qotardi. Bu — reja §2.1 dagi
+  // mavjud yoriqning aynan takrori bo'lardi (A2 `PREPAY` tenderi uchun ham
+  // AYNI narsa qilinishi SHART — reja 7-vazifasi).
+  //
+  // ⚠️ `kind='topup'` («Внесение») bu yerga TUSHMAYDI va tushmasligi kerak:
+  // u kontragentsiz va balansga UMUMAN tegmaydi.
+  const customerPrepays = await prisma.retailDrawerCashIn.groupBy({
+    by: ['accountId', 'agentId', 'currency'],
+    where: {
+      kind: 'customer_prepay',
+      state: 'posted',
+      deletedAt: null,
+      agentId: ONLY_CP ? ONLY_CP : { not: null },
+    },
+    _sum: { sumMinor: true },
+  });
+  for (const r of customerPrepays) {
+    if (r.agentId) add(r.accountId, r.agentId, r.currency, -(r._sum.sumMinor ?? 0n));
   }
 
   // ══ NISHON — BALANS JURNALI (Faza 10). Hujjat-hisobi yuqorida `target` da

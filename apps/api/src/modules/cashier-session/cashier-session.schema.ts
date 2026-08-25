@@ -130,6 +130,24 @@ export const CustomerPayoutSchema = z.object({
 });
 export type CustomerPayoutInput = z.infer<typeof CustomerPayoutSchema>;
 
+/**
+ * A1 — kassada MIJOZ AVANSINI (oldindan to'lov) qabul qilish.
+ *
+ * `sumMinor` MAJBURIY (`CustomerPayoutSchema` dan farqi): avansda «qolgani
+ * qancha» degan manba yo'q — mijoz qancha bersa, shuncha yoziladi.
+ * Manfiy/nol summa shu yerda kesiladi, qolgan qoidalar (kontragent bormi,
+ * smena ochiqmi) — servisda va `validateCashIn` sof modulida.
+ */
+export const CustomerPrepaySchema = z.object({
+  counterpartyId: z.string().uuid(),
+  sumMinor: z.coerce
+    .string()
+    .regex(/^\d+$/, 'sumMinor must be a non-negative integer')
+    .refine((v) => /[1-9]/.test(v), 'sumMinor must be greater than 0'),
+  description: z.string().trim().max(4000).nullish(),
+});
+export type CustomerPrepayInput = z.infer<typeof CustomerPrepaySchema>;
+
 /** G1 — mijozning to'lanmagan vozvratlari (POS mijoz profili bloki). */
 export const UnpaidReturnsQuerySchema = z.object({
   agentId: z.string().uuid(),

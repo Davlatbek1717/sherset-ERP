@@ -52,6 +52,10 @@ const POS_FILES = [
   join(SRC, 'components', 'pos', 'window-controls.tsx'),
   // F8 (POS redizayn) — kassir-tanlash ekrani (ko'p-kassir).
   join(SRC, 'components', 'pos', 'cashier-select-screen.tsx'),
+  // A1 (2026-08-25) — «Mijozlar» tabi endi PUL YO'LI ham (G1 vozvrat to'lovi,
+  // A1 avans qabuli). Ro'yxatga qo'shilmasa yangi kalitlar va matnlar
+  // qo'riqchidan chetda qolardi — aynan shu fayl uchun mo'ljallangan bug-klass.
+  join(SRC, 'components', 'pos', 'customers-panel.tsx'),
 ];
 
 const rel = (f: string) => f.replace(SRC, 'src').replace(/\\/g, '/');

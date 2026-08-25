@@ -51,6 +51,7 @@ const LABELS: ZReceiptLabels = {
   expense: 'Xarajat',
   collection: 'Inkassatsiya',
   returnPayout: 'Vozvrat puli',
+  prepay: 'Mijozlardan avans',
   expenseByItem: 'Xarajat moddalari',
   expenseNoItem: 'Moddasiz',
   cashBlockUzs: 'Naqd (UZS)',

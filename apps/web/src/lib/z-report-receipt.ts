@@ -57,6 +57,13 @@ export interface ZReportPayload {
   collectionMinor: string;
   /** G1 — vozvratlar uchun mijozlarga kassadan qaytarilgan naqd. */
   returnPayoutMinor: string;
+  /**
+   * A1 — mijozlardan qabul qilingan AVANS. IXTIYORIY: eski (muzlatilgan)
+   * javoblarda maydon yo'q, va uni `'0'` deb o'qish «bugun avans
+   * bo'lmagan» degan ishonarli yolg'on bo'lardi — shuning uchun
+   * qator qiymat bo'lmaganda UMUMAN chizilmaydi.
+   */
+  prepayMinor?: string;
   expenseByItem: Array<{ id: string | null; name: string | null; sumMinor: string }>;
   openingCashMinor: string;
   expectedCashMinor: string;
@@ -100,6 +107,8 @@ export interface ZReceiptLabels {
   collection: string;
   /** G1 — «Vozvrat puli (mijozlarga)» qatori. */
   returnPayout: string;
+  /** A1 — «Avans (mijozlardan)» qatori. */
+  prepay: string;
   expenseByItem: string;
   expenseNoItem: string;
   cashBlockUzs: string;
@@ -295,6 +304,14 @@ export function buildZReceipt(z: ZReportPayload, opts: BuildZReceiptOptions): ZR
       { key: 'collection', label: L.collection, value: bare(z.collectionMinor) },
       // G1 — vozvrat puli o'z qatori (xarajat/inkassatsiyaga aralashmaydi).
       { key: 'return-payout', label: L.returnPayout, value: bare(z.returnPayoutMinor) },
+      // A1 — mijozlardan qabul qilingan avans. ⚠️ Bu KIRIM qatori: u
+      // «Kassa» blokidagi kutilgan naqd ichida ALLAQACHON bor, shuning
+      // uchun bu yerda faqat KO'RINISH uchun turadi va hech qanday
+      // jamiga qo'shilmaydi. Maydon bo'lmasa qator chizilmaydi (eski
+      // muzlatilgan javoblar).
+      ...(z.prepayMinor == null
+        ? []
+        : [{ key: 'prepay', label: L.prepay, value: bare(z.prepayMinor) }]),
     ],
   });
 

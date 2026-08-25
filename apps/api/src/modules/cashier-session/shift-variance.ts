@@ -148,6 +148,16 @@ export interface ZReportInput {
   collectionMinor: bigint;
   /** G1 — vozvratlar uchun mijozlarga kassadan qaytarilgan naqd (§8.5 qatori). */
   returnPayoutMinor: bigint;
+  /**
+   * A1 — mijozlardan qabul qilingan AVANS (§8.5 qatori). Berilmasa 0.
+   *
+   * ⚠️ **Kutilgan naqdga ALOHIDA qo'shilmaydi.** Pul yashiqqa
+   * `RetailDrawerCashIn` hujjati bilan kirgan, ya'ni `expectedCashMinor`
+   * formulasidagi `drawerInMinor` uni ALLAQACHON o'z ichiga oladi. Bu
+   * qator faqat KO'RINISH uchun: «yashiqdagi naqdning qanchasi mijoz
+   * puli edi». Uni jamiga qo'shish avansni IKKI MARTA sanardi.
+   */
+  prepayMinor?: bigint;
   expectedCashMinor: bigint;
   countedCashMinor: bigint | null;
   /** Dollar yashiq — sentda (MK31 · §8.4). Berilmasa 0. */
@@ -168,6 +178,8 @@ export interface ZReport extends ZReportInput {
   /** O'rtacha chek; cheksiz smenada `null` (0 ga bo'lish emas). */
   averageReceiptMinor: bigint | null;
   varianceMinor: bigint | null;
+  /** A1 — avans qatori; kirishda berilmasa `0n` (noma'lum emas — nol). */
+  prepayMinor: bigint;
   expectedUsdCashMinor: bigint;
   countedUsdCashMinor: bigint | null;
   /** Dollar farqi — SENTDA, so'mga o'girilmaydi (§8.4). */
@@ -213,6 +225,9 @@ export function buildZReport(input: ZReportInput): ZReport {
     averageReceiptMinor: input.salesCount > 0 ? revenueMinor / BigInt(input.salesCount) : null,
     varianceMinor:
       input.countedCashMinor == null ? null : input.countedCashMinor - input.expectedCashMinor,
+    // A1: `expectedCashMinor` ga TEGMAYDI (avans `drawerInMinor` ichida) —
+    // faqat hisobot qatori.
+    prepayMinor: input.prepayMinor ?? 0n,
     expectedUsdCashMinor,
     countedUsdCashMinor,
     varianceUsdMinor:

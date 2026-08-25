@@ -16,20 +16,36 @@ import type { CustomerCardRow } from './customer-card-panel';
  * Smena orasida): «mijoz qarzidan pul to'lasa yoki nimadir qaytarsa, qulay
  * ishlash».
  *
- * Panel FAQAT ko'rsatadi va yo'naltiradi — pul amali bajarmaydi:
+ * Yo'naltiruvchi amallar (panel o'zi hech narsa yozmaydi):
  * - qarz to'lash → `onPayDebt` (chaqiruvchi `DebtPaymentDialog`ni shu mijoz
  *   bilan ochadi — qidiruv qadami o'tkazib yuboriladi);
  * - tarix/telefon-tahrir → `onOpenCustomerCard` (`CustomerCardPanel`);
  * - qaytarish → `onOpenChek` (`ChekDetailPanel`, F6 oqimi).
  *
+ * 🔴 «Panel FAQAT ko'rsatadi, pul amali bajarmaydi» degan ESKI DA'VO
+ * BEKOR QILINDI. U F7/P07 da to'g'ri edi; keyin ikki pul yo'li shu yerga
+ * qo'shildi va ular hujjat ham, daftar qatorini ham yozadi:
+ * - **G1** (2026-08-24) — vozvrat pulini kassadan qaytarish
+ *   (`POST /cashier-sessions/:id/customer-payout`, RKO cheki);
+ * - **A1** (2026-08-25) — mijozdan AVANS qabul qilish
+ *   (`POST /cashier-sessions/:id/customer-prepay`, PKO cheki). Pul kassa
+ *   yashig'iga tushadi va mijoz balansi MANFIY tomonga suriladi («biz
+ *   mijozga qarzdormiz»). ⚠️ Bu QARZ EMAS — undirish ro'yxatiga
+ *   tushmaydi (reja invariant 4).
+ * Ikkalasi ham ochiq SMENA talab qiladi: `sessionId` yo'q bo'lsa tugmalar
+ * o'chiq (smenasiz pul-hujjat yozib bo'lmaydi).
+ *
  * Ekrandagi qarz — BITTA HALOL RAQAM: `payableMinor` (server AYNAN shu
  * summagacha qabul qiladi; xotira `pos-customer-card-one-number`).
  * `balanceMinor === null` — O'LCHANMAGAN, 0 emas: alohida qator bo'lib
  * OCHIQ aytiladi, raqam yashirilmaydi.
+ * ⚠️ Manfiy balansda (avansi bor mijoz) `payableMinor` `0` chiqadi va
+ * ekran avansni HOZIRCHA ko'rsatmaydi — bu A3 fazasining ishi
+ * (`customerStanding` sof moduli).
  *
- * Yangi backend YO'Q (reja taqig'i) — uch mavjud endpoint, hammasi
- * kiosk-policy'da ochiq: `GET /counterparties?search=`,
- * `GET /debts/pos/summary/:id`, `GET /retail-sales?agentId=`.
+ * Barcha ishlatiladigan endpointlar kiosk-policy'da ochiq:
+ * `GET /counterparties?search=`, `GET /debts/pos/summary/:id`,
+ * `GET /retail-sales?agentId=`, `/cashier-sessions/*`.
  */
 
 /** `GET /debts/pos/summary/:id` javobining bu panel o'qiydigan qismi. */
@@ -81,6 +97,15 @@ interface PayoutDoc {
   auditTypes: string[];
 }
 
+/** A1 — `POST /cashier-sessions/:id/customer-prepay` javobi. */
+interface PrepayDoc {
+  id: string;
+  name: string;
+  sumMinor: string;
+  /** Hujjatdan KEYINGI saldo; `null` = balans O'LCHANMAGAN edi (0 EMAS). */
+  balanceAfterMinor: string | null;
+}
+
 interface Props {
   /** Kassa valyutasi — qarz AYNAN shu valyuta kesimida o'qiladi. */
   currency?: CurrencyCode;
@@ -124,6 +149,17 @@ export function CustomersPanel({
    */
   const [payingReturnId, setPayingReturnId] = useState<string | null>(null);
   const [payoutAmount, setPayoutAmount] = useState('');
+  /**
+   * A1 — mijozdan AVANS qabul qilish bloki. Naqsh «Hisob-kitob cheki» va
+   * G1 to'lovi bilan bir xil: modal EMAS, ichki ochiluvchi blok (qobiqda
+   * Radix modali ekran-klaviaturasini o'ldiradi — xotira
+   * `radix-modal-kills-shell-osk`).
+   *
+   * Default summa YO'Q va bo'lishi ham kerak emas: avansda «qolgani
+   * qancha» degan manba yo'q, mijoz qancha bersa shuncha yoziladi.
+   */
+  const [prepayOpen, setPrepayOpen] = useState(false);
+  const [prepayAmount, setPrepayAmount] = useState('');
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -188,6 +224,30 @@ export function CustomersPanel({
     onError: (e: Error) => toast.error(e.message),
   });
 
+  /**
+   * A1 — avansni qabul qilish. Pul kassa yashig'iga tushadi, mijoz balansi
+   * MANFIY tomonga suriladi. Muvaffaqiyatda PKO cheki bosiladi (mijoz imzo
+   * qo'yadigan qog'oz) va mijozning raqami yangilanadi.
+   */
+  const takePrepay = useMutation({
+    mutationFn: (sumMinor: bigint) =>
+      api.post<PrepayDoc>(`/cashier-sessions/${sessionId}/customer-prepay`, {
+        counterpartyId: agent?.id,
+        sumMinor: sumMinor.toString(),
+      }),
+    onSuccess: (doc) => {
+      setPrepayOpen(false);
+      setPrepayAmount('');
+      // Mijoz kartasidagi raqam va qarz bloki yangilansin — balans surildi.
+      queryClient.invalidateQueries({ queryKey: ['pos-customers-debt', agent?.id] });
+      toast.success(t('prepay_taken', { name: doc.name }));
+      // PKO cheki — mijoz imzo qo'yadigan qog'oz (RKO sahifasining kirim
+      // varianti).
+      window.open(`/print/cash-in/${doc.id}?auto=1`, '_blank');
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
   const sendReceipt = useMutation({
     mutationFn: () =>
       api.post<{ queued: number }>(`/counterparty-debt-receipts/${agent?.id}/send`, {}),
@@ -205,6 +265,8 @@ export function CustomersPanel({
     setReceiptOpen(false);
     setPayingReturnId(null);
     setPayoutAmount('');
+    setPrepayOpen(false);
+    setPrepayAmount('');
   }
 
   return (
@@ -445,7 +507,59 @@ export function CustomersPanel({
             >
               {t('debt_receipt_btn')}
             </button>
+            {/* ── A1: AVANS QABUL QILISH ─────────────────────────────────
+                Smenasiz pul qabul qilib bo'lmaydi (hujjat smenaga
+                bog'lanadi va kutilgan naqdga kiradi) — `sessionId` yo'q
+                bo'lsa tugma o'chiq, G1 to'lovi bilan bir xil qoida. */}
+            <button
+              type="button"
+              data-test-id="pos-customers-prepay"
+              disabled={!sessionId}
+              onClick={() => {
+                setPrepayOpen((v) => !v);
+                setPrepayAmount('');
+              }}
+              className={`h-[var(--pos-touch-min)] rounded-xl border text-[16px] disabled:opacity-50 ${
+                prepayOpen
+                  ? 'border-[var(--ms-text-brand)] text-[var(--ms-text-brand)]'
+                  : 'border-[var(--ms-border)] hover:bg-[var(--ms-bg-hover)]'
+              }`}
+            >
+              {t('prepay_btn')}
+            </button>
           </div>
+
+          {/* ── A1: avans summasi ──────────────────────────────────────── */}
+          {prepayOpen && (
+            <div
+              data-test-id="pos-prepay"
+              className="flex flex-col gap-2 rounded-xl border border-[var(--ms-border)] p-3"
+            >
+              <p className="text-[14px] text-[var(--ms-text-muted)]">{t('prepay_hint')}</p>
+              <div className="flex items-center gap-2">
+                <Input
+                  type="text"
+                  inputMode="decimal"
+                  data-test-id="pos-prepay-amount"
+                  value={prepayAmount}
+                  onChange={(e) => setPrepayAmount(e.target.value)}
+                  placeholder={t('prepay_amount_placeholder')}
+                  className="h-[48px] flex-1 text-[18px] tabular-nums"
+                />
+                <button
+                  type="button"
+                  data-test-id="pos-prepay-submit"
+                  disabled={
+                    takePrepay.isPending || parseAmountToMinor(prepayAmount, currency) <= 0n
+                  }
+                  onClick={() => takePrepay.mutate(parseAmountToMinor(prepayAmount, currency))}
+                  className="h-[48px] shrink-0 rounded-lg bg-[var(--ms-bg-brand)] px-5 font-semibold text-[16px] text-white disabled:opacity-50"
+                >
+                  {t('prepay_confirm')}
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* ── Hisob-kitob cheki: KO'RIB CHIQIB, keyin yuborish ────────── */}
           {receiptOpen && (

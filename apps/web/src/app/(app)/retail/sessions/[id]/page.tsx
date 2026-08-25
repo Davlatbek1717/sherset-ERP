@@ -96,6 +96,12 @@ interface ZFull {
   collectionMinor: string;
   /** G1 — vozvratlar uchun mijozlarga kassadan qaytarilgan naqd. */
   returnPayoutMinor: string;
+  /**
+   * A1 — mijozlardan qabul qilingan AVANS. IXTIYORIY: maydonsiz javobda
+   * (eski server) qator UMUMAN chizilmaydi — `'0'` deb ko'rsatish «bugun
+   * avans bo'lmagan» degan ishonarli yolg'on bo'lardi.
+   */
+  prepayMinor?: string;
   expenseByItem: Array<{ id: string | null; name: string | null; sumMinor: string }>;
   expectedCashMinor: string;
   /**
@@ -329,6 +335,15 @@ export default function SessionDetailPage() {
               label={tZ('return_payout')}
               value={formatMoney(BigInt(zFull.returnPayoutMinor), currency)}
             />
+            {/* A1 — mijozlardan qabul qilingan avans. ⚠️ KIRIM qatori:
+                kutilgan naqd ichida ALLAQACHON bor, bu yerda faqat
+                ko'rinish uchun. */}
+            {zFull.prepayMinor != null && (
+              <MetaRow
+                label={tZ('prepay')}
+                value={formatMoney(BigInt(zFull.prepayMinor), currency)}
+              />
+            )}
           </div>
 
           {/* Xarajatlar moddalar bo'yicha — §8.5 «xarajatlar (moddalar

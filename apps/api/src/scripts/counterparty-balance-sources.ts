@@ -43,6 +43,7 @@ export const SCRIPT_SOURCES = [
   'retail-credit',
   'retail-credit-refund',
   'return-payouts',
+  'customer-prepays',
 ] as const;
 
 export type ScriptSource = (typeof SCRIPT_SOURCES)[number];
@@ -149,11 +150,15 @@ export const DECLARED_BALANCE_WRITERS: readonly BalanceWriter[] = [
   },
   {
     file: 'modules/cashier-session/cashier-session.service.ts',
-    sources: ['return-payouts'],
+    sources: ['return-payouts', 'customer-prepays'],
     note:
       'customerPayout() +sumMinor (G1, 2026-08-24): vozvrat puli kassadan naqd qaytarildi — ' +
       '`SalesReturn.post()` yozgan −sumMinor kreditning yopilishi. Hujjat: `RetailDrawerCashOut` ' +
-      "(kind='return_payout', agentId bilan), holati doim posted.",
+      "(kind='return_payout', agentId bilan), holati doim posted. " +
+      '🔴 A1 (2026-08-25): customerPrepay() −sumMinor — kassada qabul qilingan MIJOZ AVANSI ' +
+      "(«biz mijozga qarzdormiz»). Hujjat: `RetailDrawerCashIn` (kind='customer_prepay', " +
+      "agentId bilan). `kind='topup'` («Внесение») balansga TEGMAYDI va manbada YO'Q. " +
+      'Bu ikkinchi manba UNUTILSA cross-check har avansli mijozda yolg`on farq ko`rsatardi.',
   },
 ];
 

@@ -50,6 +50,20 @@ export const BALANCE_DOC_TYPE = {
    * `docId` = drawer-hujjat id'si.
    */
   returnPayout: 'returnPayout',
+  /**
+   * A1 (2026-08-25): MIJOZ AVANSI — kassada oldindan qabul qilingan naqd
+   * (`RetailDrawerCashIn`, `kind='customer_prepay'`). `−sumMinor` — «biz
+   * mijozga qarzdormiz», ya'ni `returnPayout` ning teskari ishorasi
+   * (`cashIn` semantikasi: pul oldik ⇒ mijozning qarzi kamayadi; qarzi
+   * bo'lmasa balans MANFIY hududga — avansga — o'tadi).
+   * `docId` = drawer-hujjat id'si.
+   *
+   * ⚠️ MAVJUD `cashIn` turi ATAYLAB qayta ishlatilmadi: u `CashIn` (ПКО)
+   * hujjatiga ishora qiladi, bu esa `RetailDrawerCashIn` qatoriga. Bitta
+   * turga ikki jadval berilsa hujjat-resolveri noto'g'ri jadvaldan qidirib
+   * har avans qatorini raqamsiz ko'rsatardi.
+   */
+  customerPrepay: 'customerPrepay',
   paymentIn: 'paymentIn',
   paymentOut: 'paymentOut',
   cashIn: 'cashIn',

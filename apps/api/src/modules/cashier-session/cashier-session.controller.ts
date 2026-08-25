@@ -70,6 +70,18 @@ export class CashierSessionController {
   }
 
   /**
+   * Bitta pul-kirishi hujjati — PKO cheki uchun (A1).
+   *
+   * `:id` dan OLDIN turishi SHART (fayldagi konventsiya: statik yo'l
+   * birinchi), aks holda `cash-in` smena id'si deb o'qilardi.
+   */
+  @Get('cash-in/:docId')
+  @RequirePermission({ entity: 'cashiersession', action: 'view' })
+  async cashInDoc(@CurrentUser() user: AuthenticatedUser, @Param('docId') docId: string) {
+    return this.sessions.cashInDoc(user.accountId, docId);
+  }
+
+  /**
    * Farq aktlari (kassa TZ §8.4) — default FAQAT ko'rilmaganlar.
    *
    * `:id` dan OLDIN: statik yo'l birinchi (fayldagi konventsiya).
@@ -212,6 +224,27 @@ export class CashierSessionController {
   }
 
   /**
+   * A1 — mijozdan AVANS (oldindan to'lov) qabul qilish. Ruxsat
+   * `customer-payout` bilan AYNAN bir xil: kassir yangi pul-hujjat
+   * yaratadi. Mijoz, summa va valyuta qo'riqchilari servisda.
+   *
+   * ⚠️ Kiosk ro'yxati: `/cashier-sessions` prefiksi ALLAQACHON ochiq
+   * (`kiosk-policy.ts`, `methods: ['*']`) — ya'ni bu marshrut uchun
+   * yangi qator KERAK EMAS va `/cash-in` prefiksi OCHILMAYDI (u butun
+   * ПКО daraxtini kioskka ochardi). Qo'riqchi:
+   * `kiosk-policy-customer-prepay.test.ts`.
+   */
+  @Post(':id/customer-prepay')
+  @RequirePermission({ entity: 'cashiersession', action: 'create' })
+  async customerPrepay(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ) {
+    return this.sessions.customerPrepay(user.accountId, user.sub, id, body);
+  }
+
+  /**
    * F5 — smenani yopishga to'sqinlik qiluvchi cheklar (draft|picking|ready)
    * STRUKTURA sifatida. Mezon `close()` bilan yagona yordamchida; endpoint
    * faqat o'qiydi — yopish qoidalari o'zgarmagan.
@@ -239,6 +272,13 @@ export class CashierSessionController {
   @RequirePermission({ entity: 'cashiersession', action: 'view' })
   async cashOutSummary(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
     return this.sessions.cashOutSummary(user.accountId, id);
+  }
+
+  /** A1 — smenadagi pul kirishi turlar kesimida (Z-hisobot §8.5). */
+  @Get(':id/cash-in-summary')
+  @RequirePermission({ entity: 'cashiersession', action: 'view' })
+  async cashInSummary(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    return this.sessions.cashInSummary(user.accountId, id);
   }
 
   /** Posted drawer Внесение/Изъятие for a shift. */

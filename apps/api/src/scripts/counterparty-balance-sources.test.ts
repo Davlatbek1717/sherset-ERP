@@ -242,4 +242,61 @@ describe('skript manbalari yozuvchilar semantikasiga mos (DUP-02 fix)', () => {
     expect(blockEnd).toBeGreaterThan(blockStart);
     expect(SCRIPT_SRC.slice(blockStart, blockEnd)).toMatch(/balanceAdopted:\s*false/);
   });
+
+  /**
+   * 🔴 A1 (2026-08-25, reja §1.3) — MIJOZ AVANSI YANGI BALANS MANBASI.
+   *
+   * `CashierSessionService.customerPrepay` kassada qabul qilingan avansda
+   * `applyDelta(−sumMinor)` yozadi. Rekonstruksiya manbasi UNUTILSA
+   * cross-check har avansli mijozda «hujjatlar ≠ jurnal» degan YOLG'ON farq
+   * ko'rsatardi — bu reja §2.1 dagi mavjud yoriqning aynan takrori bo'lardi
+   * (A2 `PREPAY` tenderi uchun ham AYNI narsa kerak bo'ladi).
+   *
+   * Uch tomon BITTA testda qulflanadi: (a) yozuvchi rostdan ham MANFIY delta
+   * yozadi, (b) reyestrda `customer-prepays` manbasi e'lon qilingan,
+   * (c) skript blokining TANASI `kind='customer_prepay'` bo'yicha yig'adi va
+   * ishorani TESKARI qo'yadi.
+   */
+  it('A1: mijoz avansi ↔ `customer-prepays` manbasi birga yuradi', () => {
+    // (a) Yozuvchi: manfiy delta + `customerPrepay` docType.
+    const svcSrc = readFileSync(
+      join(API_SRC_ROOT, 'modules', 'cashier-session', 'cashier-session.service.ts'),
+      'utf8',
+    );
+    const prepayStart = svcSrc.indexOf('async customerPrepay(');
+    expect(prepayStart).toBeGreaterThan(0);
+    const prepayBody = svcSrc.slice(prepayStart, svcSrc.indexOf('\n  /**', prepayStart));
+    expect(prepayBody).toMatch(/applyDelta\([^)]*,\s*-sumMinor\s*,/);
+    expect(prepayBody).toMatch(/docType:\s*BALANCE_DOC_TYPE\.customerPrepay/);
+
+    // (b) Reyestrda e'lon qilingan.
+    const writer = DECLARED_BALANCE_WRITERS.find(
+      (w) => w.file === 'modules/cashier-session/cashier-session.service.ts',
+    );
+    expect(writer?.sources).toContain('customer-prepays');
+
+    // (c) Skript bloki — da'vo izohga emas, `groupBy` TANASIGA bog'lanadi.
+    const blockStart = SCRIPT_SRC.indexOf('SOURCE: customer-prepays');
+    expect(blockStart).toBeGreaterThan(0);
+    const callStart = SCRIPT_SRC.indexOf('prisma.retailDrawerCashIn.groupBy', blockStart);
+    expect(callStart).toBeGreaterThan(blockStart);
+    const block = SCRIPT_SRC.slice(callStart, SCRIPT_SRC.indexOf('});', callStart));
+    expect(block).toMatch(/kind:\s*'customer_prepay'/);
+    expect(block).toMatch(/by:\s*\[[^\]]*'agentId'/);
+    // Ishora TESKARI (`return-payouts` musbat, avans manfiy).
+    expect(SCRIPT_SRC.slice(callStart, callStart + 900)).toMatch(/add\([^)]*-\(r\._sum\.sumMinor/);
+  });
+
+  /**
+   * «Внесение» (`kind='topup'`) balansga UMUMAN tegmaydi — u kontragentsiz.
+   * Filtr olib tashlansa yoki kengaytirilsa, kontragentsiz kirimlar ham
+   * manbaga tushib cross-checkni buzardi.
+   */
+  it('A1: `topup` manbaga KIRMAYDI (filtr AYNAN customer_prepay)', () => {
+    const blockStart = SCRIPT_SRC.indexOf('SOURCE: customer-prepays');
+    const callStart = SCRIPT_SRC.indexOf('prisma.retailDrawerCashIn.groupBy', blockStart);
+    const block = SCRIPT_SRC.slice(callStart, SCRIPT_SRC.indexOf('});', callStart));
+    expect(block).not.toMatch(/kind:\s*'topup'/);
+    expect(block).toMatch(/agentId:\s*ONLY_CP\s*\?\s*ONLY_CP\s*:\s*\{\s*not:\s*null\s*\}/);
+  });
 });

@@ -305,3 +305,127 @@ describe('CustomersPanel — G1 to‘lanmagan vozvratlar', () => {
     openSpy.mockRestore();
   });
 });
+
+/**
+ * A1 (2026-08-25) — kassada MIJOZDAN AVANS qabul qilish.
+ *
+ * Egasining shikoyati: «mijozlar oldindan pul berib qo'yishadi, keyin tovar
+ * olishadi — shu mijozlar bilan ishlay olmayapmiz». Kassirning yagona yo'li
+ * shu blok: mijozni tanlaydi → summa → PKO cheki chiqadi.
+ *
+ * ⚠️ Smenasiz pul-hujjat yozib bo'lmaydi (hujjat smenaga bog'lanadi va
+ * kutilgan naqdga kiradi) — tugma o'chiq bo'lishi SHART.
+ */
+describe('CustomersPanel — A1 avans qabul qilish', () => {
+  it('tugma bor, lekin blok BOSILMAGUNCHA yopiq', async () => {
+    const user = userEvent.setup();
+    renderPanel();
+    await pickCustomer(user);
+
+    expect(screen.getByTestId('pos-customers-prepay')).toBeEnabled();
+    expect(screen.queryByTestId('pos-prepay')).toBeNull();
+
+    await user.click(screen.getByTestId('pos-customers-prepay'));
+    expect(await screen.findByTestId('pos-prepay')).toBeInTheDocument();
+  });
+
+  it('SMENASIZ tugma o‘chiq — smenasiz pul-hujjat yozib bo‘lmaydi', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(
+      <CustomersPanel
+        sessionId={null}
+        onOpenCustomerCard={vi.fn()}
+        onPayDebt={vi.fn()}
+        onOpenChek={vi.fn()}
+      />,
+    );
+    await pickCustomer(user);
+    expect(screen.getByTestId('pos-customers-prepay')).toBeDisabled();
+  });
+
+  it('bo‘sh/nol summada tasdiqlash tugmasi o‘chiq (default summa YO‘Q)', async () => {
+    const user = userEvent.setup();
+    renderPanel();
+    await pickCustomer(user);
+    await user.click(screen.getByTestId('pos-customers-prepay'));
+
+    const amount = await screen.findByTestId('pos-prepay-amount');
+    // Avansda «qolgani qancha» manbasi yo'q — maydon BO'SH ochiladi.
+    expect((amount as HTMLInputElement).value).toBe('');
+    expect(screen.getByTestId('pos-prepay-submit')).toBeDisabled();
+
+    await user.type(amount, '0');
+    expect(screen.getByTestId('pos-prepay-submit')).toBeDisabled();
+  });
+
+  it('summa → POST customer-prepay + PKO cheki chop etiladi', async () => {
+    vi.mocked(api.post).mockResolvedValue({
+      id: 'in-1',
+      name: 'АВ-2026-00001',
+      sumMinor: '100000000',
+      balanceAfterMinor: '-100000000',
+    });
+    const openSpy = vi.spyOn(window, 'open').mockReturnValue(null);
+    const user = userEvent.setup();
+    renderPanel();
+    await pickCustomer(user);
+
+    await user.click(screen.getByTestId('pos-customers-prepay'));
+    await user.type(await screen.findByTestId('pos-prepay-amount'), '1000000');
+    await user.click(screen.getByTestId('pos-prepay-submit'));
+
+    await waitFor(() => {
+      expect(api.post).toHaveBeenCalledWith('/cashier-sessions/sess-1/customer-prepay', {
+        counterpartyId: 'cp-1',
+        sumMinor: '100000000',
+      });
+    });
+    // PKO cheki — mijoz imzo qo'yadigan qog'oz (RKO sahifasining kirim varianti).
+    expect(openSpy).toHaveBeenCalledWith('/print/cash-in/in-1?auto=1', '_blank');
+    // Muvaffaqiyatdan keyin blok yopiladi (ikkinchi marta tasodifan
+    // yuborilmasin).
+    await waitFor(() => expect(screen.queryByTestId('pos-prepay')).toBeNull());
+    openSpy.mockRestore();
+  });
+
+  it('🔴 avans QARZ EMAS — hech qanday /debts so‘rovi yoki POST ketmaydi', async () => {
+    // `beforeEach` faqat `api.get` ni tozalaydi; bu yerda POST chaqiruvlari
+    // SONI o'lchanadi, shuning uchun tarix alohida tozalanadi.
+    vi.mocked(api.post).mockReset();
+    vi.mocked(api.post).mockResolvedValue({
+      id: 'in-2',
+      name: 'АВ-2026-00002',
+      sumMinor: '50000000',
+      balanceAfterMinor: '-50000000',
+    });
+    const openSpy = vi.spyOn(window, 'open').mockReturnValue(null);
+    const user = userEvent.setup();
+    renderPanel();
+    await pickCustomer(user);
+
+    await user.click(screen.getByTestId('pos-customers-prepay'));
+    await user.type(await screen.findByTestId('pos-prepay-amount'), '500000');
+    await user.click(screen.getByTestId('pos-prepay-submit'));
+
+    await waitFor(() => expect(api.post).toHaveBeenCalledTimes(1));
+    // Yagona POST — avans yo'li. `/debts` ga bir marta ham yozilmadi
+    // (reja invariant 4 ning FE tomondagi ko'zgusi).
+    const posted = vi.mocked(api.post).mock.calls.map((c) => String(c[0]));
+    expect(posted).toEqual(['/cashier-sessions/sess-1/customer-prepay']);
+    expect(posted.some((u) => u.startsWith('/debts'))).toBe(false);
+    openSpy.mockRestore();
+  });
+
+  it('mijoz almashtirilsa avans bloki YOPILADI (oldingi mijozga yozilmasin)', async () => {
+    const user = userEvent.setup();
+    renderPanel();
+    await pickCustomer(user);
+    await user.click(screen.getByTestId('pos-customers-prepay'));
+    await screen.findByTestId('pos-prepay');
+
+    await user.click(screen.getByTestId('pos-customers-change'));
+    await user.click((await screen.findAllByTestId('pos-customers-result'))[0] as HTMLElement);
+    await screen.findByTestId('pos-customers-debt');
+    expect(screen.queryByTestId('pos-prepay')).toBeNull();
+  });
+});

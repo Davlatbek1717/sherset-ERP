@@ -150,6 +150,13 @@ export interface BalanceDocClient {
       select: { id: true; name: true; moment: true };
     }): Promise<Array<{ id: string; name: string; moment: Date }>>;
   };
+  /** A1 — `customerPrepay` yorlig'i (АВ- raqami) shu jadvaldan o'qiladi. */
+  retailDrawerCashIn: {
+    findMany(args: {
+      where: { accountId: string; id: { in: string[] } };
+      select: { id: true; name: true; moment: true };
+    }): Promise<Array<{ id: string; name: string; moment: Date }>>;
+  };
 }
 
 // `purchaseReturn` — Faza 13 (`PP-02`). `salesReturn` — P14 (`H1`). `invoiceIn`
@@ -332,6 +339,29 @@ export async function resolveBalanceDocs(
         .then((rows) => {
           for (const d of rows) {
             out.set(docKey('returnPayout', d.id), {
+              number: d.name,
+              moment: d.moment,
+              contractId: null,
+              items: [],
+            });
+          }
+        }),
+    );
+  }
+
+  // A1 — mijoz avansi hujjati (АВ- raqami). `returnPayout` ning kirim
+  // tomonidagi ko'zgusi; topilmasa qator raqamsiz chiqadi.
+  const prepayIds = byType.get('customerPrepay');
+  if (prepayIds?.size) {
+    jobs.push(
+      client.retailDrawerCashIn
+        .findMany({
+          where: { accountId, id: { in: [...prepayIds] } },
+          select: { id: true, name: true, moment: true },
+        })
+        .then((rows) => {
+          for (const d of rows) {
+            out.set(docKey('customerPrepay', d.id), {
               number: d.name,
               moment: d.moment,
               contractId: null,

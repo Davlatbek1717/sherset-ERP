@@ -56,6 +56,7 @@ import {
 import {
   CloseSessionSchema,
   CustomerPayoutSchema,
+  CustomerPrepaySchema,
   DrawerCashSchema,
   OpenSessionSchema,
   PosCashOutSchema,
@@ -64,6 +65,16 @@ import {
 } from './cashier-session.schema.js';
 // Yashiq amalining pul-daftari tomoni — sof modul (ishorani FAQAT u qo'yadi).
 import { drawerMoneyDeltas } from './drawer-money-ledger.js';
+// A1 — kassaga pul KIRISHI (Внесение / mijoz avansi) qoidalari, sof modul.
+import {
+  CASH_IN_KIND,
+  type CashInKind,
+  cashInLedgerLabel,
+  cashInPrefix,
+  planCashInAuditEvents,
+  summarizeCashIn,
+  validateCashIn,
+} from './pos-cash-in.js';
 // Xarajat/inkassatsiya qoidalari — sof modul (§8.2/§8.3).
 import {
   CASH_OUT_KIND,
@@ -752,12 +763,18 @@ export class CashierSessionService {
     return session;
   }
 
-  /** Внесение наличных — add cash to the drawer during an open shift. */
+  /**
+   * Внесение наличных — add cash to the drawer during an open shift.
+   *
+   * A1 (2026-08-25): hujjat endi TASNIFLANADI (`kind='topup'`) — mijoz
+   * avansi bilan bir jadvalda turadi va Z-hisobot ikkovini `kind` orqali
+   * ajratadi. Xulq o'zgarmadi: kontragent yo'q, balansga tegilmaydi.
+   */
   async drawerCashIn(accountId: string, cashierId: string, sessionId: string, raw: unknown) {
     const parsed = DrawerCashSchema.parse(raw);
     const session = await this.loadOpenShiftForDrawer(accountId, cashierId, sessionId);
     const year = new Date().getFullYear();
-    const prefix = `ВН-${year}-`;
+    const prefix = cashInPrefix(CASH_IN_KIND.topup, year);
     const n = await allocateDocumentNumber(this.prisma.client, accountId, prefix, async () => {
       const last = await this.prisma.client.retailDrawerCashIn.findFirst({
         where: { accountId, name: { startsWith: prefix } },
@@ -788,6 +805,7 @@ export class CashierSessionService {
           state: 'posted',
           postedAt: new Date(),
           description: parsed.description ?? null,
+          kind: CASH_IN_KIND.topup,
         },
       });
       await this.money.applyDeltas(
@@ -799,7 +817,7 @@ export class CashierSessionService {
           currency: session.cashDesk.currency,
           sumMinor: doc.sumMinor,
           documentId: doc.id,
-          description: `Внесение ${doc.name}`,
+          description: `${cashInLedgerLabel(CASH_IN_KIND.topup)} ${doc.name}`,
         }),
       );
       return doc;
@@ -1117,7 +1135,7 @@ export class CashierSessionService {
     });
     if (!session) throw new NotFoundException(`CashierSession ${sessionId} not found`);
 
-    const [payments, unconverted, sales, refundAgg, debtAgg, cashOut, variances] =
+    const [payments, unconverted, sales, refundAgg, debtAgg, cashOut, cashIn, variances] =
       await Promise.all([
         // To'lov turlari kesimida tushum — `RetailSalePayment` bo'yicha, chunki
         // aralash to'lovda bitta chek bir necha turga bo'linadi (B3).
@@ -1172,6 +1190,8 @@ export class CashierSessionService {
           _sum: { amountMinor: true },
         }),
         this.cashOutSummary(accountId, sessionId),
+        // A1 — pul KIRISHI turlari kesimida (avans alohida qator bo'lsin).
+        this.cashInSummary(accountId, sessionId),
         this.prisma.client.cashierSessionVariance.findMany({
           where: { accountId, sessionId },
           select: {
@@ -1291,6 +1311,11 @@ export class CashierSessionService {
       expenseMinor: BigInt(cashOut.expenseMinor),
       collectionMinor: BigInt(cashOut.collectionMinor),
       returnPayoutMinor: BigInt(cashOut.returnPayoutMinor),
+      // A1 — mijozlardan qabul qilingan avans. Bu KUTILGAN NAQDGA allaqachon
+      // kirgan (`drawerInMinor`); qator faqat «shu naqdning qancha qismi
+      // mijoz puli edi» savoliga javob beradi, jamiga IKKINCHI marta
+      // qo'shilmaydi.
+      prepayMinor: BigInt(cashIn.customerPrepayMinor),
       // `varianceMinor` ni sof modul AYNAN shu qiymatdan hisoblaydi — aks
       // holda farq ikki avlod raqam aralashmasi bo'lib qolardi.
       expectedCashMinor: expectedCash,
@@ -1336,6 +1361,8 @@ export class CashierSessionService {
       expenseMinor: z.expenseMinor.toString(),
       collectionMinor: z.collectionMinor.toString(),
       returnPayoutMinor: z.returnPayoutMinor.toString(),
+      /** A1 — smenada mijozlardan qabul qilingan avans (naqdning tarkibi). */
+      prepayMinor: z.prepayMinor.toString(),
       expenseByItem: cashOut.byExpenseItem,
       // Kutilgan naqd/farq qaysi avloddan — `'frozen'` = yopishda muzlatilgan
       // (kassir imzolagan hujjat), `'live'` = shu so'rovda qayta hisoblangan
@@ -1364,6 +1391,12 @@ export class CashierSessionService {
         openingMinor: cashInputs.openingCashMinor.toString(),
         salesCashMinor: cashInputs.salesCashMinor.toString(),
         debtCashMinor: (cashInputs.debtCashMinor ?? 0n).toString(),
+        // ⚠️ A1 (2026-08-25): mijoz avansi bu yerga ATAYLAB QO'SHILMADI.
+        // U `drawerInMinor` ning TARKIBI (alohida qo'shiluvchi EMAS), va bu
+        // obyekt yuqoridagi izohga ko'ra AYNAN `expectedCashMinor`
+        // formulasining qo'shiluvchilarini saqlaydi — tarkibni ham shu
+        // yerga qo'shish yig'indini ikki barobar qilib ko'rsatardi.
+        // Avans o'z qatorida: Z-hisobotning `prepayMinor` maydoni.
         drawerInMinor: cashInputs.drawerInMinor.toString(),
         drawerOutMinor: cashInputs.drawerOutMinor.toString(),
         returnsCashMinor: cashInputs.returnsCashMinor.toString(),
@@ -1919,6 +1952,257 @@ export class CashierSessionService {
         auditTypes: events.map((e) => e.type),
       };
     });
+  }
+
+  /**
+   * MIJOZDAN AVANS (oldindan to'lov) QABUL QILISH — A1 (2026-08-25).
+   *
+   * Egasining shikoyati: «ba'zi mijozlarimiz bizga oldindan pul berib
+   * qo'yishadi, keyin tovar olishadi — shu mijozlar bilan ishlay
+   * olmayapmiz». Kassada bu pulni tizimga kiritish yo'li YO'Q edi:
+   * `/cash-in` (ПКО) kiosk ro'yxatida yo'q, `drawerCashIn` («Внесение»)
+   * esa kontragentsiz va balansga TEGMAYDI.
+   *
+   * `customerPayout` (G1) ning AYNAN ko'zgusi — o'sha skelet, teskari
+   * ishora: u kassadan pul CHIQARADI, bu KIRITADI.
+   *
+   * Pul izi to'rt joyda birdan ko'rinadi:
+   *   · `CashDesk.balanceMinor` OSHADI (pul daftari orqali — overdraft
+   *     qo'riqchisi kirimda ishlamaydi, ishora musbat);
+   *   · kutilgan-naqd formulasi (§8.4) — hujjat `RetailDrawerCashIn` da
+   *     turgani uchun `collectCashInputs.drawerInMinor` ga O'Z-O'ZIDAN
+   *     kiradi (yangi jadval ochilmagani shuning uchun);
+   *   · Z-hisobot — `summarizeCashIn.customerPrepayMinor` qatori;
+   *   · mijoz balansi `−summa` — «biz mijozga qarzdormiz» (`cashIn`
+   *     semantikasi). Qarzi bor mijozda avval qarz yopiladi, qolgani
+   *     manfiy hududga o'tadi: bu bitta ustunning ikki uchi (reja §1.0).
+   *
+   * 🔴 **`Debt` reyestriga TEGILMAYDI** (reja invariant 4). Avans qarz
+   * EMAS: bu yerdan tug'ilgan qator undirish ro'yxatiga, qo'ng'iroq
+   * jadvaliga va eslatma cron'iga tushmasligi SHART. Kod-shakl testi
+   * (`customer-prepay.test.ts`) buni qulflaydi.
+   *
+   * ⚠️ CAP YO'Q va bo'lishi ham kerak emas: mijoz qancha pul bersa,
+   * shuncha yoziladi. Shuning uchun balans `FOR UPDATE` bilan
+   * QULFLANMAYDI — hech bir QAROR balansning oldingi qiymatiga bog'liq
+   * emas (`applyDelta` ning o'zi `upsert` bilan atomar). Qulf olinsa u
+   * Q2/Q3 ning BALANS → QARZLAR tartibiga yangi ishtirokchi qo'shardi,
+   * foydasi esa nol. `balanceBeforeMinor` faqat AUDIT payloadida —
+   * `null` = qator yo'q (o'lchanmagan), `0n` = haqiqatan nol.
+   *
+   * A1 chegarasi: faqat SO'M kassa (`loadOpenShiftForDrawer` qo'riqchisi).
+   */
+  async customerPrepay(accountId: string, cashierId: string, sessionId: string, raw: unknown) {
+    const parsed = CustomerPrepaySchema.parse(raw);
+    const session = await this.loadOpenShiftForDrawer(accountId, cashierId, sessionId);
+
+    // ⚠️ `archived` bo'yicha FILTR YO'Q (`customerPayout` bilan bir xil
+    // qaror): arxivlangan mijoz pul olib kelsa uni «yo'q» deb rad etish
+    // kassirni boshi berk ko'chaga olib borardi, pul esa qo'lida qolardi.
+    // Ro'yxatdan tanlash yo'li (`GET /counterparties?search=`) baribir
+    // arxivni ko'rsatmaydi — ya'ni bu holat UI'dan tug'ilmaydi.
+    const agent = await this.prisma.client.counterparty.findFirst({
+      where: { id: parsed.counterpartyId, accountId },
+      select: { id: true, name: true },
+    });
+    if (!agent) throw new NotFoundException('Mijoz topilmadi');
+
+    const kind = CASH_IN_KIND.customerPrepay as CashInKind;
+    const sumMinor = BigInt(parsed.sumMinor);
+
+    // Hujjatning O'ZI to'g'rimi — sof modul (zod summani allaqachon
+    // kesadi; bu yerda qoida ikkinchi manbadan EMAS, o'sha manbadan).
+    const problems = validateCashIn({
+      kind,
+      sumMinor,
+      counterpartyId: agent.id,
+      description: parsed.description ?? null,
+    });
+    if (problems.length > 0) {
+      throw new BadRequestException(problems.map((p) => p.message).join('; '));
+    }
+
+    // Audit uchun: hujjatdan OLDINGI saldo. `null` = balans qatori YO'Q
+    // (o'lchanmagan) — 0 deb yozilsa «mijoz nol saldodan avans qoldirdi»
+    // degan o'lchanmagan da'vo bo'lardi.
+    const balanceRow = await this.prisma.client.counterpartyBalance.findFirst({
+      where: { accountId, counterpartyId: agent.id, currency: BASE_CURRENCY },
+      select: { balanceMinor: true },
+    });
+    const balanceBeforeMinor = balanceRow?.balanceMinor ?? null;
+
+    const year = new Date().getFullYear();
+    const prefix = cashInPrefix(kind, year);
+    const n = await allocateDocumentNumber(this.prisma.client, accountId, prefix, async () => {
+      const last = await this.prisma.client.retailDrawerCashIn.findFirst({
+        where: { accountId, name: { startsWith: prefix } },
+        orderBy: { name: 'desc' },
+        select: { name: true },
+      });
+      return last ? Number.parseInt(last.name.slice(prefix.length), 10) || 0 : 0;
+    });
+    const name = `${prefix}${String(n).padStart(5, '0')}`;
+    const creatorGroupId = await resolveCreatorGroupId(this.prisma.client, accountId, cashierId);
+
+    return this.prisma.client.$transaction(async (tx) => {
+      const doc = await tx.retailDrawerCashIn.create({
+        data: {
+          accountId,
+          ownerId: cashierId,
+          groupId: creatorGroupId,
+          name,
+          retailShiftId: sessionId,
+          organizationId: session.organizationId,
+          sumMinor,
+          currency: session.cashDesk.currency,
+          moment: new Date(),
+          applicable: true,
+          state: 'posted',
+          postedAt: new Date(),
+          description: parsed.description ?? null,
+          kind,
+          agentId: agent.id,
+        },
+        select: {
+          id: true,
+          name: true,
+          sumMinor: true,
+          currency: true,
+          kind: true,
+          description: true,
+          createdAt: true,
+        },
+      });
+
+      const events = planCashInAuditEvents({
+        docId: doc.id,
+        docName: doc.name,
+        kind,
+        sumMinor,
+        counterpartyId: agent.id,
+        counterpartyName: agent.name,
+        balanceBeforeMinor,
+        description: parsed.description ?? null,
+      });
+      if (events.length > 0) {
+        await tx.cashierAuditEvent.createMany({
+          data: events.map((e) => ({
+            accountId,
+            sessionId,
+            employeeId: cashierId,
+            type: e.type,
+            docId: e.docId,
+            payload: e.payload as Prisma.InputJsonValue,
+          })),
+        });
+      }
+
+      // Pul daftari — yashiqqa pul KIRDI (ishorani `drawerMoneyDeltas`
+      // qo'yadi; kirimda overdraft qo'riqchisi ishlamaydi).
+      await this.money.applyDeltas(
+        tx,
+        accountId,
+        drawerMoneyDeltas({
+          kind: 'in',
+          cashDeskId: session.cashDeskId,
+          currency: session.cashDesk.currency,
+          sumMinor: doc.sumMinor,
+          documentId: doc.id,
+          description: `${cashInLedgerLabel(kind)} ${doc.name} (${agent.name})`,
+        }),
+      );
+
+      // Mijoz balansi `−summa`: biz unga qarzdor bo'lib qoldik.
+      await this.balance.applyDelta(tx, accountId, agent.id, BASE_CURRENCY, -sumMinor, {
+        docType: BALANCE_DOC_TYPE.customerPrepay,
+        docId: doc.id,
+        organizationId: session.organizationId,
+      });
+
+      return {
+        ...doc,
+        sumMinor: doc.sumMinor.toString(),
+        agent,
+        /**
+         * Hujjatdan KEYINGI saldo — kassir «avans qoldig'i qancha bo'ldi»
+         * ni darhol ko'rsin. `null` = balans o'lchanmagan edi (0 EMAS),
+         * ya'ni yakuniy qoldiq ham noma'lum.
+         */
+        balanceAfterMinor:
+          balanceBeforeMinor === null ? null : (balanceBeforeMinor - sumMinor).toString(),
+        /** Yozilgan audit hodisalari (`CUSTOMER_PREPAY`). */
+        auditTypes: events.map((e) => e.type),
+      };
+    });
+  }
+
+  /** Bitta pul-kirishi hujjati — PKO cheki uchun (A1). */
+  async cashInDoc(accountId: string, docId: string) {
+    const doc = await this.prisma.client.retailDrawerCashIn.findFirst({
+      where: { id: docId, accountId, deletedAt: null },
+      select: {
+        id: true,
+        name: true,
+        kind: true,
+        sumMinor: true,
+        currency: true,
+        description: true,
+        createdAt: true,
+        agent: { select: { id: true, name: true } },
+        owner: { select: { id: true, name: true } },
+        organization: { select: { name: true, legalTitle: true } },
+        retailShift: { select: { id: true, cashDesk: { select: { name: true } } } },
+      },
+    });
+    if (!doc) throw new NotFoundException('Hujjat topilmadi');
+    return { ...doc, sumMinor: doc.sumMinor.toString() };
+  }
+
+  /**
+   * Smenadagi pul KIRISHI — turlar kesimida (Z-hisobot §8.5, A1).
+   *
+   * `totalMinor` `collectCashInputs.drawerInMinor` bilan AYNAN teng
+   * bo'lishi SHART: ikkalasi ham shu jadvalning butun smena kesimini
+   * yig'adi, filtrlari bir xil.
+   */
+  async cashInSummary(accountId: string, sessionId: string) {
+    const rows = await this.prisma.client.retailDrawerCashIn.findMany({
+      where: {
+        accountId,
+        retailShiftId: sessionId,
+        state: 'posted',
+        deletedAt: null,
+        currency: BASE_CURRENCY,
+      },
+      select: {
+        id: true,
+        name: true,
+        kind: true,
+        sumMinor: true,
+        description: true,
+        createdAt: true,
+        agent: { select: { id: true, name: true } },
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    const s = summarizeCashIn(rows.map((r) => ({ kind: r.kind, sumMinor: r.sumMinor })));
+
+    return {
+      topupMinor: s.topupMinor.toString(),
+      customerPrepayMinor: s.customerPrepayMinor.toString(),
+      otherMinor: s.otherMinor.toString(),
+      totalMinor: s.totalMinor.toString(),
+      rows: rows.map((r) => ({
+        id: r.id,
+        name: r.name,
+        kind: r.kind,
+        sumMinor: r.sumMinor.toString(),
+        description: r.description,
+        createdAt: r.createdAt,
+        agent: r.agent,
+      })),
+    };
   }
 
   /**

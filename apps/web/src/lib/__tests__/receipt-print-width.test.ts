@@ -90,6 +90,7 @@ const Z_LABELS = {
   expense: 'e',
   collection: 'col',
   returnPayout: 'rp',
+  prepay: 'pp',
   expenseByItem: 'ei',
   expenseNoItem: 'en',
   cashBlockUzs: 'cu',
