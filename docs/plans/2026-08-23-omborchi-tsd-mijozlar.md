@@ -412,7 +412,7 @@ Ikkala rejani va docs/plans/2026-08-24-split-kassa-hodisasi.md ni to'liq o'qi (a
 > test natijalari (raqamlar), deploy holati (jonli tekshiruv dalili), ochiq qolganlar,
 > keyingi fazaga eslatmalar.
 
-### G5 — TSD auth + APK skeleti · ⚠️ QISMAN (qoida 11) · 2026-08-25 · `<commit>`
+### G5 — TSD auth + APK skeleti · ⚠️ QISMAN (qoida 11) · 2026-08-25 · `623c6a18`
 
 **Holat: QISMAN.** Kod, migratsiya va testlar tayyor; qabul mezoni JONLI
 qurilmada tekshirilmagan (terminal hali yo'q, deploy ham kutilmoqda) ⇒ faza
