@@ -1,6 +1,6 @@
 # Kassada mijoz hisob-kitobi — qarzni undirish ro'yxatiga ulash + avans bilan ishlash
 
-> **Yaratilgan:** 2026-08-25 · **Buyurtmachi:** Ozodbek (egasi) · **Holat:** Q1 QISMAN + Q2 QISMAN + Q3 QISMAN + A1 QISMAN + A2 QISMAN + **A3 QISMAN** (2026-08-25) — **AVANS OQIMI ENDI KODDA TO'LIQ: qabul (A1, `8d1f4a01`) → sarflash (A2, `8178fd87`) → ko'rsatish/tarix/qaytarish (A3, `526dda5c` + `1447a11e`)**. A3: `customerStanding` sof moduli (to'rt holat), POS kartasida «Avansi: N» (ilgari «0» turardi), avans yorliqlari UCH xaritada (POS · akt sahifasi · **Excel akti — reja bilmagan uchinchi joy**), `POST /cashier-sessions/:id/customer-prepay-refund` (kassa −summa / balans +summa, cap = mavjud avans, balans `FOR UPDATE` bilan QULFLANADI, RKO cheki `ВА-`), `recompute` ga **to'rtinchi manba** (`customer-prepay-refunds`), Z-hisobotda uchinchi avans qatori, menejer ro'yxatida avansli mijozlar ajralib turadi. **A3 da migratsiya YO'Q** (`RetailDrawerCashOut.kind` VarChar(20) va `agentId` yetadi). Qarz oqimi (Q1–Q3) o'zgarishsiz. **HECH BIRI DEPLOY QILINMAGAN** — deploy branch'i `kassa-qarzi-q1-q2` @ `456e53af` da Q3, A1, A2, A3 YO'Q (qayta yig'ilishi kerak), push va jonli tasdiq KUTILMOQDA; `opening` manbasi qarori hamon ochiq; A1 topgan 35 bayonotlik sxema DRIFTI (4 ta `DROP TABLE`) — alohida ish; navbat **Q4** (yoki Q5/Q6); A2 ning ikki chegarasi (avansdan to'langan chek TAHRIRLANMAYDI; Z-hisobot `revenueByMethod` vozvrat-nusxalarini sanaydi) va A3 ning ikki qaydi (mijozga «avansdan yechildi» xabari ATAYLAB yozilmadi; Excel akt yorliqlarida `returnPayout`/`salesReturn` hamon yo'q — G1 ning ishi) OCHIQ qoladi
+> **Yaratilgan:** 2026-08-25 · **Buyurtmachi:** Ozodbek (egasi) · **Holat:** Q1 QISMAN + Q2 QISMAN + Q3 QISMAN + A1 QISMAN + A2 QISMAN + A3 QISMAN + **Q4 QISMAN** (2026-08-25) — **AVANS OQIMI ENDI KODDA TO'LIQ: qabul (A1, `8d1f4a01`) → sarflash (A2, `8178fd87`) → ko'rsatish/tarix/qaytarish (A3, `526dda5c` + `1447a11e`)**. A3: `customerStanding` sof moduli (to'rt holat), POS kartasida «Avansi: N» (ilgari «0» turardi), avans yorliqlari UCH xaritada (POS · akt sahifasi · **Excel akti — reja bilmagan uchinchi joy**), `POST /cashier-sessions/:id/customer-prepay-refund` (kassa −summa / balans +summa, cap = mavjud avans, balans `FOR UPDATE` bilan QULFLANADI, RKO cheki `ВА-`), `recompute` ga **to'rtinchi manba** (`customer-prepay-refunds`), Z-hisobotda uchinchi avans qatori, menejer ro'yxatida avansli mijozlar ajralib turadi. **A3 da migratsiya YO'Q** (`RetailDrawerCashOut.kind` VarChar(20) va `agentId` yetadi). Qarz oqimi (Q1–Q3) o'zgarishsiz. **HECH BIRI DEPLOY QILINMAGAN** — deploy branch'i `kassa-qarzi-q1-q2` @ `456e53af` da Q3, A1, A2, A3 YO'Q (qayta yig'ilishi kerak), push va jonli tasdiq KUTILMOQDA; `opening` manbasi qarori hamon ochiq; A1 topgan 35 bayonotlik sxema DRIFTI (4 ta `DROP TABLE`) — alohida ish; navbat **Q5** (jonli backfill — 🔴 jonli ma'lumot). **Q4 (`7ddd4e21`) — MANBA + FILTR + MUDDAT SOZLAMASI kodda TAYYOR:** undirish ro'yxati va `/debts` da «Kassa cheki / Reyestr» belgisi va chek raqami havolasi, manba filtri (sof qatlamda — SQL `<> 'retailsale'` NULL larni yo'qotardi), `CompanySettings.saleDebtTermDays` (migratsiya `20260825235000_…`, NULL ≠ 0, sozlanmagan bo'lsa Q1 defaulti 14 kun, ESKI qarzlar qayta hisoblanmaydi). Q4 ochiq bandlari: lokal dev bazada migratsiya sinovi (parol) + jonli tasdiq. 🔴 Q4 yo'l-yo'lakay A3 ning **20 i18n kalitini tikladi** — ular hech qachon commit qilinmagan ekan va i18n gate shu sababdan qizil edi; A2 ning ikki chegarasi (avansdan to'langan chek TAHRIRLANMAYDI; Z-hisobot `revenueByMethod` vozvrat-nusxalarini sanaydi) va A3 ning ikki qaydi (mijozga «avansdan yechildi» xabari ATAYLAB yozilmadi; Excel akt yorliqlarida `returnPayout`/`salesReturn` hamon yo'q — G1 ning ishi) OCHIQ qoladi
 > **Ikki shikoyat (egasi, 2026-08-25):**
 > 1. «Qarzdorlikni undirish bo'limiga kassadan qo'shilgan yangi qarzdorliklar
 >    ko'rinmayapti.» → fazalar **Q1…Q6**
@@ -3146,3 +3146,396 @@ Deploy oldidan/keyin (qoida 8): `packages/db` da
    qachon tushmaydi, ya'ni backfill ularni ko'rmasligi kerak. Skript
    `retailSalePayment` `TENDER.debt` qatorlaridan yuradi — `PREPAY`
    qatorlari u yerga tushmaydi (A2 da ajratilgan).
+
+### Q4 — Undirish ekranida MANBA va muddat siyosati · 2026-08-25 · **QISMAN** (jonli tasdiq + lokal baza migratsiyasi kutilmoqda)
+
+**Xulq O'ZGARDI (faqat KO'RSATISH va SOZLASH tomonida).** Menejer endi har
+qatorda «bu qarz qayerdan keldi» ni ko'radi (kassa cheki / reyestr), kassa
+qarzini CHEK RAQAMI havolasi bilan ochadi va manba bo'yicha filtrlaydi;
+kassa qarzining muddati akkaunt sozlamasiga chiqdi. **Pul yo'liga, balansga
+va qarz SUMMASIGA bir bayt ham tegilmadi** — Q4 mavjud qatorlarni faqat
+o'qiydi (yagona yozuv — yangi chek qatorining `nextContactAt` i, u ham
+sozlama qo'yilganda).
+
+Commit: **`7ddd4e21`** (branch `yacheyka-inventarizatsiya`, 29 fayl,
++1695/−59).
+
+#### Bog'liqlik holati (qoida 11 — ochiq aytiladi)
+
+Q4 ning sharti — «Q3 dan keyin». Q3 holati **«QISMAN»** (kod va testlar
+to'liq, jonli tasdiq deploy'ga bog'liq holda ochiq). Kod darajasida
+tekshirildi:
+
+| Shart | Holat |
+|---|---|
+| Q1 migratsiyasi (`sourceDocType`/`sourceDocId`) sxemada | ✅ |
+| Q2 yozuvchisi (`writeSaleDebtRegistryRow`) joyida | ✅ |
+| Q3 harakatlantiruvchisi (`moveSaleDebtRegistryRow`) joyida | ✅ |
+| Q1 sof moduli (`saleDebtDueAt`, `DEFAULT_SALE_DEBT_TERM_DAYS`) | ✅ |
+
+**FUNKSIONAL bog'liqlik BAJARILGAN** — Q4 Q1–Q3 ning KODIGA tayanadi, jonli
+tasdig'iga emas. Egasi Q2/Q3/A1/A2/A3 ni ham aynan shu sharoitda davom
+ettirishga ruxsat bergan. Meros ochiq bandlar pastda takrorlanadi.
+
+#### Nima qilindi
+
+| # | Fayl | Nima |
+|---|---|---|
+| 1 | `packages/db/prisma/schema.prisma` (`model CompanySettings`) | `saleDebtTermDays Int? @map("sale_debt_term_days")` + to'liq izoh (nega DB-DEFAULT YO'Q) |
+| 2 | `packages/db/prisma/migrations/20260825235000_company_settings_sale_debt_term/migration.sql` | idempotent DDL: `ADD COLUMN IF NOT EXISTS` ×1 |
+| 3 | `packages/db/scripts/rollback/20260825235000_company_settings_sale_debt_term_down.sql` | **YANGI** — teskari yo'l (qoida 12) |
+| 4 | `apps/api/src/modules/debt/sale-debt-registry.ts` | **YANGI sof qoidalar**: `resolveSaleDebtTermDays`, `isSaleDebtTermDaysCorrupt`, `SALE_DEBT_TERM_DAYS_MIN/MAX` |
+| 5 | `apps/api/src/modules/manager/collection/debt-collection.ts` | **YANGI sof qoidalar**: `CollectionSource`, `collectionSourceOf`, `filterCollectionRowsBySource`; `CollectionDebtInput`/`CollectionRow` ga manba maydonlari; `CollectionSummary` ga `retailSaleCount`/`registryCount` |
+| 6 | `apps/api/src/modules/manager/collection/manager-collection.schema.ts` | `CollectionQuery.source` (yopiq ro'yxat) |
+| 7 | `apps/api/src/modules/manager/collection/debt-collection.service.ts` | manba ustunlarini o'qish, `saleNamesByDebtSource` (bitta yig'ma so'rov), manba filtri |
+| 8 | `apps/api/src/modules/debt/debt.service.ts` | `toDto` ga `source`/`sourceDocId`/`sourceDocNumber`; `list()` ga `saleNamesForDebts` yig'ma so'rovi |
+| 9 | `apps/api/src/modules/company-settings/{schema,service}.ts` | `saleDebtTermDays` sahifa maydoni + default + `get()` da NULL→default chiqarish |
+| 10 | `apps/api/src/modules/retail-sale/retail-sale.service.ts` | **YANGI** `readSaleDebtTermDays()`; Q2 yozuvchisi va Q3 ning «qayta ochilgan qator» tarmog'i sozlamadan yuradi |
+| 11 | `apps/web/src/lib/domain-status-tone.ts` | **YANGI** `DEBT_SOURCE_TONE` + `debtSourceTone()` — UMUMIY lug'at (UI Convention 6) |
+| 12 | `apps/web/src/app/(app)/menejer/undirish/page.tsx` | manba belgisi + chek havolasi + **manba filtri** + «Kassadan: N» sanog'i + manbaga qarab BO'SH holat matni |
+| 13 | `apps/web/src/app/(app)/debts/page.tsx` | **YANGI «Qarz manbasi» ustuni** (AYNI belgi, AYNI lug'at) |
+| 14 | `apps/web/src/lib/debt-api.ts` | `DebtSourceKind` + `DebtRow` ga uch maydon |
+| 15 | `apps/web/src/app/(app)/settings/company/page.tsx` | **«Kassa qarzi» bo'limi** — muddat maydoni + chegara izohi |
+| 16 | `apps/web/src/messages/{ru,uz}.json` | 12 yangi Q4 kaliti + **20 tiklangan A3 kaliti** (pastga qarang) |
+| 17 | `apps/web/src/__tests__/domain-status-tone.test.ts` | `DEBT_SOURCE_TONE` kanoni qulflandi |
+| 18 | 2 yangi test fayli + 6 mavjudga qo'shimcha | pastga qarang |
+
+**Manba xaritasining shakli** (sof, BITTA joyda):
+
+```
+Debt.sourceDocType === 'retailsale'  =>  'retailsale'   (kassa cheki, Q2)
+aks holda (NULL yoki noma'lum tur)   =>  'registry'     (qo'lda / adopsiya)
+```
+
+#### 🔴 Rejadan BESHTA ataylab chekinish
+
+**1. Manba filtri SOF qatlamda, Prisma `where` ida EMAS.** Reja «`CollectionQuery`
+ga `source` filtri» degan edi, joyini aytmagan. SQL'ga qo'yilsa `registry`
+sharti `source_doc_type <> 'retailsale'` bo'lardi va Postgres'da bu **NULL
+larni CHIQARIB TASHLAYDI** (`NULL <> 'x'` — UNKNOWN), ya'ni qo'lda ochilgan
+BARCHA `QRZ-` qarzlari filtr yoqilganda jimgina yo'qolardi. Sof qatlamda
+bunday tuzoq yo'q va u `scope='due'` filtri bilan bitta joyda turadi
+(«nechta qator kesildi» hisobi ham bitta manbadan). Qo'riqchi test:
+«`registry` — NULL li qator ham, noma'lum turli qator ham QOLADI».
+
+**2. MANBA rangi sahifada EMAS, `lib/domain-status-tone.ts` da.** Sahifaga
+`SOURCE_TONE` xaritasi yozilgan edi va **UI Convention 6 ning qo'riqchisi uni
+darhol tutdi** (`domain-status-tone.test.ts` — «har sahifa umumiy lug'atdan
+yursin»). Bu bemaqsad emas: belgi IKKI ekranda ko'rinadi va sahifa-lokal
+nusxa aynan shu faylning tarixidagi 38 ta drift'ning takrori bo'lardi.
+Xarita umumiy lug'atga ko'chdi va kanoni testda qulflandi.
+
+**3. Ustun sarlavhasi `col_source` EMAS, `col_debt_source`.** `pages.debts.col_source`
+ALLAQACHON band va BOSHQA ma'noda: to'lovlar/hisobot ekranlarida u «pul
+qayerdan qabul qilindi» (kassa nomi). Bir kalitni ikki ma'noda ishlatish —
+tarjima bir kun ikkalasidan biriga to'g'ri kelmasligini kafolatlaydi.
+
+**4. Sozlama maydoni O'Z QORALAMASINI ushlaydi.** `<input type="number">` ni
+to'g'ridan-to'g'ri `form` ga bog'lash **o'lchangan xato** berdi: tozalash
+(`''`) `NaN` beradi, uni e'tiborsiz qoldirsak eski son QAYTA chiziladi va
+kiritilgan raqam uning ortidan qo'shiladi — testda `14` + `30` = **`1430`**
+bo'lib chiqdi. Endi maydon satr-qoralama ushlaydi, `form` esa faqat yaroqli
+butun songa yangilanadi, `onBlur` da qoralama oxirgi yaroqli qiymatga
+qaytadi. (`0` — haqiqiy qiymat, shuning uchun «bo'sh => 0» yo'li ataylab yo'q.)
+
+**5. Yaroqsiz sozlama chekni YIQITMAYDI.** Reja bu holatni aytmagan.
+`resolveSaleDebtTermDays` `throw` qilmaydi: default olinadi va **ogohlantirish
+logi** yoziladi. Sabab — 2026-08-24 hodisasining sinfi: sozlamadagi buzuq son
+uchun qarzli chekni 500 bilan qaytarish kassani to'xtatish demakdir. Yozuv
+yo'li (`UpdateCompanySettingsSchema`) yaroqsiz qiymatni allaqachon rad etadi,
+ya'ni bunday qiymat faqat qo'lda SQL bilan paydo bo'ladi.
+
+#### 🔴 Yo'l-yo'lakay topilgan MAVJUD nosozlik — A3 ning 20 i18n kaliti YO'Q edi
+
+**Bu Q4 ning ishi EMAS, lekin Q4 ni bloklab turgan edi** (qabul mezoni:
+«gate'lar yashil»).
+
+`pnpm i18n:gate` **QIZIL** chiqdi va yetishmayotgan 11 kalitning **bittasi ham
+Q4 niki emas** edi — hammasi A3 (`526dda5c`) niki: `pages.pos.customer_card_prepaid`,
+`…_hint`, `prepay_refund_btn`, `…_hint`, `…_confirm`, `prepay_refunded`,
+`pages.z_report.prepay_refund`, `pages.counterparties.balance_prepaid_hint`.
+Ular ustiga `customer_card_doc` va `print.act.doc_types` xaritalarida ham
+uchta avans yorlig'i (`customerPrepay`, `salePrepay`, `customerPrepayRefund`)
+yo'q edi — bularni key-existence gate'i ko'rmaydi (dinamik kalit), lekin
+A3 ning O'Z testi (`customer-card-panel.test.tsx`) ularda qizil edi.
+
+**O'lchov — kalitlar hech qachon COMMIT QILINMAGAN:** `git show <commit>:…/uz.json`
+oxirgi 15 ta commitning HAR BIRIDA `customer_card_prepaid` ni topmadi, ya'ni
+ular tarixda umuman yo'q. A3 sessiyasi hisobotida «18 yangi kalit, i18n gate
+19 test yashil» deb yozgan, lekin `526dda5c` ning `messages/*.json` diff'ida
+**K1 sessiyasining** kalitlari (`report_piece_reconciliation`, …) turibdi —
+ya'ni A3 ning kalitlari commit paytida daraxtda YO'Q edi. Bu A3 hisobotining
+o'zi ogohlantirgan parallel-sessiya to'qnashuvining aynan natijasi.
+
+**Qaror: TIKLANDI (20 kalit, ru+uz).** Sabab: (a) usiz Q4 ning qabul mezoni
+yopilmaydi; (b) kod jonliga chiqsa POS mijoz kartasida yorliq o'rniga xom
+`customerPrepay` satri ko'rinardi — bu repo kurashadigan «xom kalit ekranda»
+sinfi. Matnlar A3 ning O'Z testi va serverdagi `DOC_TYPE_LABEL` (A3 yozgan)
+bilan solishtirib olindi, o'ylab topilmadi. **A3 sessiyasiga eslatma:** bu
+tiklash A3 ning boshqa ochiq bandlarini yopmaydi.
+
+#### Test natijalari (raqam bilan)
+
+| O'lchov | Natija |
+|---|---|
+| `apps/api` **to'liq** vitest | **661 fayl · 9492 test YASHIL**, 1 fayl / 2 test skip |
+| `apps/web` **to'liq** vitest | **331 fayl · 4358 test YASHIL**, 26 skip |
+| `apps/api` typecheck (`tsc --noEmit`, `--max-old-space-size=8192`) | **0 xato** |
+| `apps/web` typecheck | **0 xato** |
+| `node scripts/check-lint.mjs` | **0 error** (1193 warning — siyosat bo'yicha ruxsat) |
+| `pnpm i18n:gate` | **19 test yashil** (1122 fayl, 15 930 statik kalit) |
+| `prisma generate` | qayta yurgizildi (yangi ustun klientda) |
+
+**Yangi testlar — jami 61, fayl kesimida ALOHIDA o'lchandi** (`git show HEAD~:<fayl>`
+bilan solishtirilgan `it(` sanog'i):
+
+| Fayl | Delta | Nimani qulflaydi |
+|---|---|---|
+| `debt/sale-debt-registry.test.ts` | **+12** (40→52) | `resolveSaleDebtTermDays`: sozlanmagan => 14 · **`0` HAQIQIY qiymat** · chegaralar 0…365 · yaroqsiz (manfiy/kasr/NaN/∞) => default, **throw YO'Q** · `isSaleDebtTermDaysCorrupt` (sozlanmagan BUZUQ emas) · `saleDebtDueAt` sozlangan muddat bilan (0 · 30 · default) · **chiqarish funksiyasi `saleDebtDueAt` ni hech qachon yiqitmaydi** |
+| `manager/collection/debt-collection.test.ts` | **+12** (22→34) | `collectionSourceOf` (retailsale · NULL · **noma'lum tur => registry**) · qator manba maydonlarini ko'chiradi · **chek topilmasa raqam `null`, belgi qoladi** · filtr: undefined/retailsale/**registry NULL li qatorni QOLDIRADI**/qatorni o'zgartirmaydi · summary sanoqlari + **ikki sanoq yig'indisi = qatorlar soni** |
+| `manager/collection/debt-collection.service.test.ts` | **+8** (14→22) | so'rov manba ustunlarini o'qiydi · chek raqami hujjatdan + **`accountId` kesimida** · chek topilmasa `null` · **BITTA yig'ma so'rov (N+1 YO'Q)** · kassa qatori yo'q => so'rov YUBORILMAYDI · `source` filtri (ikki tomon) · sanoqlar ajraladi |
+| `company-settings/company-settings.schema.test.ts` | **+6** (4→10) | default = Q1 ning kod-defaulti (**qayta yozilmaydi**) · `0` yaroqli · chegaralar · yaroqsiz rad etiladi · **maydon MAJBURIY** (to'liq sahifa PUT) · ekrandan kelgan satr `coerce` bilan |
+| `retail-sale/retail-sale-debt-registry.test.ts` | **+7** (17→24) | sozlama YO'Q => 14 kun + **`accountId` kesimida o'qiladi** · qator BOR lekin ustun `null` => ham default · sozlangan 3 kun · **`0` => o'sha kun, muddat baribir NULL EMAS** · **yaroqsiz sozlama chekni yiqitmaydi** · **kod-shakl: sof qoidadan yuradi va sozlamaga QULF OLINMAYDI** · uchma-uch: yozilgan qator undirish ro'yxatida MANBA va CHEK RAQAMI bilan chiqadi |
+| `web menejer/undirish/page.test.tsx` | **+7** (4→11) | belgi + chek havolasi (`/retail/sales/:id`) · reyestr qatorida havola YO'Q · **raqam yo'q => xom id chizilmaydi** · «Kassadan: N» (nol bo'lsa chizilmaydi) · **filtr serverga uzatiladi, «Hammasi» da `source` YO'Q** · **filtr yoqilganda BO'SH holat kesimni AYTADI** · xom kalit yo'q |
+| `web debts/page.test.tsx` | **4** (YANGI) | belgi + chek havolasi · reyestr qatorida havola yo'q · raqamsiz holat · ustun sarlavhasi xom kalit emas |
+| `web settings/company/page.test.tsx` | **4** (YANGI) | sozlanmagan akkauntda maydon **bo'sh turmaydi** (14) · **`0` aynan 0** · o'zgartirilgan muddat PUT payload'iga tushadi va **qolgan maydonlar ham yuboriladi** · xom kalit yo'q |
+| `web __tests__/domain-status-tone.test.ts` | **+1** | `DEBT_SOURCE_TONE` kanoni qulflandi (ikkalasi ham neytral turkumda) |
+
+**Ikki konvensiya gate'i ishimni TUTDI va ikkalasi ham to'g'ri edi**
+(chekinish 2 va 4 dagi `raw-element-conventions`): sahifa-lokal tone-xaritasi
+va xom `<input type="number">`. Ikkalasi ham tuzatildi — birinchisi umumiy
+lug'atga ko'chdi, ikkinchisi dizayn-tizimning `Input` iga.
+
+#### 🔴 Migratsiya — LOKAL DEV BAZADA SINALMADI (qabul mezonining ochiq bandi)
+
+Qoida 7 «jonli bazaga yozadigan har qanday skript avval LOKAL dev bazada
+sinaladi» deydi. **Q4 da bu BAJARILMADI: bazaga ulanish paroli yo'q**
+(`packages/db/.env` repoda yo'q — A1/A2/A3 dagi AYNI to'siq; qoida 5 bo'yicha
+parol foydalanuvchidan so'raladi). `psql` bor (`C:\Program Files\PostgreSQL\18\bin`),
+ulanish faqat parol kutmoqda.
+
+Migratsiya idempotentligi KOD darajasida yozilgan (`ADD COLUMN IF NOT EXISTS`),
+ustun nomi Prisma `@map` bilan AYNAN mos, lekin bu **o'lchov emas, da'vo**.
+Yopish sharti (A1 hisobotidagi naqsh):
+
+```
+# 1-marta
+"C:\Program Files\PostgreSQL\18\bin\psql.exe" -h localhost -U postgres \
+  -d sherset_v2_dev -v ON_ERROR_STOP=1 \
+  -f packages/db/prisma/migrations/20260825235000_company_settings_sale_debt_term/migration.sql
+# 2-marta (AYNAN o'sha buyruq — `skipping` NOTICE bilan no-op bo'lishi SHART)
+# so'ng ustun bazadan O'QIB tekshiriladi:
+#   \d company_settings   (yoki information_schema.columns bo'yicha so'rov)
+# va DRIFT tekshiruvi:
+#   npx prisma migrate diff --from-url <dev> --to-schema-datamodel prisma/schema.prisma
+#   -> chiqishda «company_settings» UCHRAMASLIGI shart
+```
+
+**Teskari yo'l (qoida 12) — YOZILDI va repoda:**
+`packages/db/scripts/rollback/20260825235000_company_settings_sale_debt_term_down.sql`
+
+```sql
+ALTER TABLE "company_settings" DROP COLUMN IF EXISTS "sale_debt_term_days";
+```
+
+⚠️ Teskari yo'l **PULGA va QARZLARGA tegmaydi**: allaqachon ochilgan `Debt`
+qatorlarining `next_contact_at` i qayta hisoblanmaydi, kod esa Q1 ning
+kod-defaultiga (14 kun) tushadi. Yo'qoladigan yagona narsa — «egasi boshqa
+muddat tanlagan edi» degan FAKT (skript uni o'qib olishni ham eslatadi).
+⚠️ TARTIB: skript kod eski holatga qaytarilgandan KEYIN yugurtiriladi, aks
+holda `readSaleDebtTermDays` mavjud bo'lmagan ustunni so'rab chekni yiqitardi.
+
+#### Qoida 10 — «bu o'zgarish qaysi mavjud oqimni buzishi mumkin?»
+
+1. **Balans / pul — TEGILMAYDI.** Q4 `applyDelta` ni umuman chaqirmaydi va
+   `DECLARED_BALANCE_WRITERS` ga yangi fayl qo'shmadi. `recompute-counterparty-balances.ts`
+   ga **yangi manba KERAK EMAS**: sozlama pul emas, manba ustunlari esa
+   allaqachon mavjud qatorlarning atributi (Q1 dan beri). Bu — A1/A2/A3 da
+   MAJBURIY bo'lgan bandning Q4 da qo'llanmasligining dalili.
+2. **Qarz SUMMASI — TEGILMAYDI.** Q4 `Debt.totalMinor`/`paidMinor`/`status`
+   ga bir marta ham yozmaydi. Yagona yozuv — YANGI chek qatorining
+   `nextContactAt` i (Q2 yo'li) va Q3 ning «qayta ochilgan qator» tarmog'i.
+3. **🔴 Muddat sozlamasi ESKI qarzlarga TA'SIR QILMAYDI.** Sozlama
+   o'zgartirilganda `Debt.nextContactAt` QAYTA HISOBLANMAYDI — muddat qator
+   yaratilganda bir marta yoziladi. Bu **ataylab**: retroaktiv qayta hisoblash
+   yuzlab qatorni birdan `overdue` qilib eslatma cron'iga bir vaqtda tushirardi
+   (Q5 ning «portlash» xavfi, `pos-customer-debt.ts:137-141`). Ekran matnida ham,
+   sxema izohida ham, rollback skriptida ham OCHIQ yozilgan.
+4. **Eslatma cron'i (`debt-reminder.service.ts`) — xulqi o'zgarmadi.** U
+   `nextContactAt` ni o'qiydi, sozlamani emas. ⚠️ Lekin sozlama KICHIK son
+   (masalan 0–2 kun) qilib qo'yilsa yangi cheklar tezroq `overdue` bo'ladi va
+   operator navbati tezroq to'ladi — bu KUTILGAN xulq, egasiga aytilsin.
+   Q2 hisobotidagi «2026-09-08 da birinchi to'lqin» bashorati sozlama
+   o'zgarmasa o'z kuchida qoladi.
+5. **Undirish ro'yxati — QATORLAR TO'PLAMI O'ZGARMAYDI** (filtr qo'llanmaganda).
+   `where` sharti bir bayt ham o'zgarmadi; qo'shilgani — `select` ga ikki ustun
+   va bitta YIG'MA so'rov. Filtr esa faqat SO'RALGANDA qo'llanadi va bo'sh
+   holatda buni ekranga AYTADI (jimgina yashirmaydi).
+6. **Yig'ma («jam») shartnomasi buzilmadi.** `summarizeCollection` HAMON
+   kesilgandan KEYINGI qatorlar bo'yicha hisoblanadi => ekrandagi son bilan
+   ekrandagi qatorlar mos keladi; manba filtri kesishdan OLDIN qo'llanadi,
+   ya'ni `totalCount` ham filtrdan keyingi haqiqatni aytadi.
+7. **Ishlash (`N+1`) — YO'Q.** Chek raqamlari IKKALA ekranda ham bitta
+   `retailSale.findMany({ id: { in } })` bilan olinadi, `accountId` kesimida;
+   kassa qatori umuman bo'lmasa so'rov YUBORILMAYDI (test bilan qulflangan).
+   Undirish ro'yxati Prisma'da allaqachon sahifalanmaydi (cap sof qatlamda),
+   ya'ni yangi so'rov qo'shimcha o'lchov bermaydi.
+8. **A3 ning invariant 4 qo'riqchisi — YASHIL.** `debt-collection.service.ts`
+   hamon kontragent SALDOSI delegatiga umuman murojaat qilmaydi (test
+   manba-matnini skanerlaydi; shu sabab yangi izohda ham o'sha delegat nomi
+   ATAYLAB yozilmadi). Avansli mijoz undirish ro'yxatiga tusha olmaydi.
+9. **`/debts` ro'yxati — mavjud ustunlar buzilmadi.** Yangi ustun qo'shildi,
+   birortasi ham o'zgartirilmadi/olib tashlanmadi; eksport matni
+   (`cellText`) manba uchun ham berilgan.
+10. **Kompaniya sozlamalari sahifasi — PUT SHARTNOMASI o'zgardi.** Endi
+    payload'da `saleDebtTermDays` MAJBURIY. Sahifa uni har doim yuboradi
+    (to'liq sahifa holati), lekin **eski FE + yangi API** oynasida (deploy
+    oralig'i) saqlash 400 berardi. Amalda bu oyna yo'q: web va api BIR
+    deploy'da chiqadi. ⚠️ Agar kimdir `/company-settings` ga qo'lda PUT
+    yuborsa — maydonni qo'shishi kerak.
+11. **Audit tarixi (`companysettings`) — yangi maydon o'z-o'zidan tushadi.**
+    `update()` diff'i `Object.keys(input)` bo'ylab yuradi; yorlig'i
+    `label_saleDebtTermDays` kaliti orqali topiladi (u i18n'da bor).
+12. **Smena / Z-hisobot / kassa yashig'i — TEGILMAGAN.** Q4 `cashier-session`,
+    `shift-variance`, `money` fayllariga bir qator ham yozmadi.
+13. **Ombor / qoldiq / yacheyka — TEGILMAGAN.** Q4 `stock`, `store-cell`,
+    `retail-allocation` fayllariga bir qator ham yozmadi; `retail-sale.service.ts`
+    da FAQAT qarz-muddati o'qish qo'shildi (ombor kaskadiga tegilmadi).
+    ⚠️ Lekin branch'da G4/G5/G6, Q1–Q3, A1–A3 va K1/K2 ham turibdi — **deploy
+    oynasi ularni ham olib chiqadi**, shuning uchun deploy paytida qoida 8 ning
+    `warehouse-state.ts` qo'shimchasi va qoida 13 ning uchma-uch smoke'i
+    MAJBURIY.
+14. **Deadlock — yangi yuza OCHILMADI.** Sozlama `FOR UPDATE` bilan
+    QULFLANMAYDI (kod-shakl testi buni tekshiradi): u qaror bermaydi, faqat
+    sana beradi. Qulf olinsa BALANS -> QARZLAR tartibiga uchinchi ishtirokchi
+    qo'shilardi — A1 ning «chekinish 1» dagi AYNI dalil.
+15. **Kiosk qamrovi va ruxsat matritsasi — o'zgarmadi.** Yangi marshrut yo'q;
+    `/manager/collection` hamon `debt:view`, `/company-settings` hamon
+    `settings:view|update`.
+
+#### Qabul mezoni bo'yicha holat (qoida 11)
+
+| # | Mezon | Holat |
+|---|---|---|
+| 1 | server: `CollectionRow` ga `source` + `sourceDocNumber` | ✅ test |
+| 2 | server: `CollectionQuery` ga `source` filtri (sof qoidalar sof modulda) | ✅ test |
+| 3 | undirish ekrani: manba belgisi + chek raqami havolasi + filtr | ✅ 7 web test |
+| 4 | `EmptyState` matni manbaga qarab | ✅ web test |
+| 5 | qarzdorlar ro'yxati (`/debts`) va `DebtRow` ham belgini ko'rsatadi | ✅ 4 web test |
+| 6 | muddat sozlamasi (akkaunt sozlamasi, yangi jadval YO'Q) | ✅ test |
+| 7 | sozlama yo'q bo'lsa Q1 defaulti | ✅ test (ikki holat: qator yo'q · ustun `null`) |
+| 8 | sozlama ekrani: mavjud sozlamalar bo'limiga bitta maydon | ✅ web test |
+| 9 | i18n ru + uz; `i18n-key-existence` va `i18n-no-hardcoded` yashil | ✅ 19 test |
+| 10 | testlar: server filtri · sof modul · web sahifa · sozlama defaulti | ✅ 61 yangi test |
+| 11 | api + web to'liq yashil, typecheck 0, lint 0 error | ✅ 9492 + 4358 |
+| 12 | **migratsiya lokal dev bazada ikki marta xatosiz** | ❌ **parol kutilmoqda** (qoida 7) |
+| 13 | **jonlida: menejer kassa qarzlarini filtrlab ko'radi** | ❌ VPS/deploy kerak |
+| 14 | **jonlida: har qatorda chek raqami bor** | ❌ VPS kerak |
+| 15 | **jonlida: muddat sozlamasi o'zgartirilganda YANGI cheklar o'sha muddat bilan tug'iladi** | ❌ VPS kerak |
+| 16 | **jonlida: eskilarining muddati O'ZGARMAYDI** | ❌ VPS kerak |
+
+**Shuning uchun holat «TUGADI» EMAS, «QISMAN».** Yopish sharti: 12–16 bandlari.
+
+#### Deploy holati
+
+**Deploy QILINMADI**, VPS'ga tegilmadi, jonli bazaga tegilmadi.
+
+🔴 **Deploy branch'i YANGILANISHI KERAK.** `kassa-qarzi-q1-q2` @ `456e53af` da
+Q3, A1, A2, A3 ham, **Q4 ham** YO'Q. Hozirgi `yacheyka-inventarizatsiya` da esa
+Q4 bilan bir qatorda **G4 (ombor avto-taqsimoti), G5/G6 (TSD) va K1/K2
+(bo'linadigan tovar)** ham turibdi — `git merge --ff-only` ularni AJRATA
+OLMAYDI. Q2 dagi cherry-pick retsepti bilan yangi branch yig'ilishi kerak
+(`4f5c1750` asosida: Q1 -> Q2 -> Q3 -> A1 -> A2 -> A3 -> **Q4** + onboarding
+kalendar tuzatmasi). **Bu Q4 sessiyasida QILINMADI — buyruq kutilmoqda.**
+
+Migratsiyalar — endi **UCHTA** va hech biri VPS'da BERILMAGAN:
+`20260825120000_debt_source_doc` (Q1) · `20260825220000_drawer_cash_in_kind` (A1)
+· **`20260825235000_company_settings_sale_debt_term` (Q4)**. Uchalasi ham
+KOD'dan OLDIN berilishi SHART (aks holda `readSaleDebtTermDays` mavjud
+bo'lmagan ustunni so'rab qarzli chekni yiqitardi).
+
+#### Jonli tekshiruv retsepti (deploy'dan KEYIN)
+
+Deploy oldidan/keyin (qoida 8): `packages/db` da `npx tsx scripts/warehouse-state.ts`
+— chiqishi shu hisobotga ko'chiriladi.
+
+1. `/menejer/undirish` -> sarlavhada **«Manba»** tanlagichi ko'rinadi, default
+   «Hammasi».
+2. Kassadan qarzga sotilgan qatorda **«Kassa cheki»** belgisi va yonida
+   **chek raqami** (`CHK-…`) havola bo'lib turadi; havola chek sahifasini
+   ochadi.
+3. Qo'lda ochilgan `QRZ-` qatorida **«Reyestr»** belgisi, chek havolasi YO'Q.
+4. Sarlavhada **«Kassadan: N»** sanog'i — egasiga aynan shu son ko'rsatilsin
+   («ro'yxatdagi umumiy son o'sgani — yangi qarz emas, ko'rinmagan qarz endi
+   ko'rinmoqda»).
+5. Filtr **«Kassa cheki»** -> faqat kassa qatorlari; **«Reyestr (qo'lda)»** ->
+   🔴 qo'lda ochilgan qatorlar **YO'QOLMAYDI** (bu — NULL tuzog'ining jonli
+   isboti, eng muhim tekshiruv).
+6. Filtr natijasi bo'sh bo'lsa — matn AYNAN kesimni aytadi («…KASSA CHEKIDAN
+   kelgan qarz topilmadi»), «umuman qarz yo'q» demaydi.
+7. `/debts` (qarzdorlar ro'yxati) -> **«Qarz manbasi»** ustunida AYNI belgi va
+   AYNI chek raqami.
+8. `/settings/company` -> **«Kassa qarzi»** bo'limi, maydon **14** bilan to'la.
+   Uni **3** ga o'zgartirib «Saqlash».
+9. 🔴 Yangi sinov-chek qarzga post -> undirish ro'yxatida muddati **post + 3
+   kun** bo'lishi SHART.
+10. 🔴 **Regressiya:** 9-banddan OLDIN ochilgan qatorlarning muddati
+    **O'ZGARMAGAN** (14 kunlik) — sozlama retroaktiv emas.
+11. Sozlamani **0** ga qo'yib yana bitta chek -> muddat **o'sha kun** (qator
+    darhol `overdue`). Keyin sozlama **14** ga qaytariladi.
+12. `/settings/company` -> «Изменения» (audit) da `saleDebtTermDays`
+    o'zgarishi «Было / Стало» bilan ko'rinadi.
+13. Uchma-uch smoke (qoida 13): bitta sotuv (post -> tekshir -> cancel), bitta
+    yacheyka sanash, bitta ko'chirish — deploy G4/G5/G6/K1 ni ham olib chiqadi.
+14. Izni tozalash: sinov cheklari `refund()` bilan qaytariladi (Q3 dan keyin
+    reyestr qatori o'zi yopiladi); sozlama **14** ga qaytarilgan bo'lsin.
+
+#### Ochiq qolganlar
+
+1. **Q1 dan meros (o'zgarishsiz):** `recompute` cross-check'iga `opening`
+   manbasi qo'shilmagan; jonlida `APPLY=1` yugurtirilgan-yugurtirilmagani
+   tekshirilmagan (VPS kirishi kerak).
+2. **Q2/Q3/A1/A2/A3 dan meros:** jonli tasdiq, deploy branch'i push
+   qilinmagan; A2 ning `edit()` chegarasi (avansdan to'langan chek
+   TAHRIRLANMAYDI) va Z-hisobot `revenueByMethod` kesimi; A3 ning haqiqiy
+   ikki-sessiyali poyga sinovi; mijozga «avansingizdan yechildi» xabari.
+3. **A1 topgan sxema DRIFTI (35 bayonot, 4 ta `DROP TABLE`)** — o'zgarishsiz
+   ochiq, alohida ish.
+4. **Q4 ning O'Z ochiq bandlari:** lokal dev bazada migratsiya sinovi
+   (**parol kutilmoqda**) + jonli tasdiqning 13–16 bandlari.
+5. **Muddat sozlamasi FAQAT kassa chekiga tegishli.** Qo'lda ochiladigan
+   `QRZ-` qarzida muddatni kassir/operator o'zi kiritadi (`nextContactAt`
+   majburiy maydon) — u sozlamadan yurmaydi va bu ataylab: qo'lda ochilgan
+   qarzda muddat kelishuv predmeti.
+6. **A3 ning i18n yo'qotishi tiklandi, LEKIN sabab tuzatilmadi.** Parallel
+   sessiyalar `messages/*.json` ni bir vaqtda qayta yozganda kalitlar
+   jimgina yo'qoladi va **key-existence gate'i buni faqat STATIK kalitlar
+   uchun tutadi** — dinamik xaritalar (`customer_card_doc`, `act.doc_types`)
+   uchun yo'q. Tavsiya (Q6 yoki alohida ish): shu ikki xarita uchun
+   «ro'yxat ↔ i18n» qo'riqchi testi (`KNOWN_DOC_TYPES` dagi HAR turning
+   yorlig'i ru+uz da bo'lishi SHART) — G1 ning `returnPayout` hodisasi va
+   A3 niki AYNI sinf, ikki marta takrorlandi.
+
+#### Keyingi fazaga (Q5) eslatmalar
+
+1. **Backfill `nextContactAt` ni sozlamadan OLMASIN.** Q5 ning 2-vazifasi
+   ataylab `now + N kun` deydi (chek sanasidan EMAS) va **zinapoyali**
+   taqsimot talab qiladi. Akkaunt sozlamasi (`saleDebtTermDays`) YANGI
+   cheklar uchun; backfill uchun u yaramaydi — sozlama 0 bo'lsa butun
+   backfill birdan `overdue` bo'lib eslatma cron'iga tushardi (aynan
+   «portlash»). Skript o'z parametrini olsin.
+2. **Manba filtri Q5 uchun tayyor asbob:** backfill'dan keyin
+   `/menejer/undirish?source=retailsale` bilan AYNAN backfill ochgan
+   qatorlarni ajratib ko'rish mumkin (`sourceDocType='retailsale'`).
+   Rollback skriptining qamrovi ham shu kalit bo'yicha.
+3. `collectionSourceOf` — manba yorlig'ining YAGONA manbai. Q5/Q6 yangi
+   manba turi qo'shsa (masalan `invoiceout`) uni AYNAN shu funksiyaga va
+   `CollectionSource` ga qo'shsin; hozir noma'lum tur `registry` ga tushadi
+   (jim degradatsiya emas — yorliq to'g'ri, faqat tafsilotsiz).
+4. `readSaleDebtTermDays` sozlamaga QULF OLMAYDI (kod-shakl testi buni
+   qulflagan). Q5 skripti ham sozlamani qulflamasin.
+5. `saleNamesByDebtSource` (undirish) va `saleNamesForDebts` (qarzdorlar
+   ro'yxati) — bir xil naqshning IKKI nusxasi, ataylab: ikkalasi ham 12
+   qator va ular boshqa-boshqa servisda yashaydi (bittasi `manager`,
+   ikkinchisi `debt`). Uchinchi chaqiruvchi paydo bo'lsa umumiy sof
+   yordamchiga chiqarilsin.
