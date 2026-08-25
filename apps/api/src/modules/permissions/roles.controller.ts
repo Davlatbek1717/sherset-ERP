@@ -303,6 +303,7 @@ const KNOWN_ENTITIES = [
   'retailsale',
   'retailcontrol',
   'returnacceptance',
+  'piecetracking',
   'saleschannel',
   'onlineorder',
   // CRM
@@ -350,6 +351,7 @@ const CATEGORY_BY_ENTITY: Record<(typeof KNOWN_ENTITIES)[number], (typeof CATEGO
   store: 'Master data',
   storecell: 'Master data',
   warehousenumbering: 'Master data',
+  piecetracking: 'Master data',
   cashdesk: 'Master data',
   bankaccount: 'Master data',
   employee: 'Master data',

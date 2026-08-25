@@ -108,6 +108,12 @@ export type PermissionEntity =
   // `salesreturn.create`+`approve` berish butun `/sales-returns` modulini
   // (mass-edit, delete, ixtiyoriy narxda hujjat) omborchiga ochib yuborardi
   | 'returnacceptance'
+  // K2 (2026-08-25) — BO'LAK REYESTRI (kabel/sim/shlang). Alohida slug, chunki
+  // reyestr ombordagi JISMONIY holatni ta'riflaydi va uni faqat KATTA omborchi
+  // o'zgartiradi (K-Q9). Oddiy omborchi (`storekeeper`) uni O'ZGARTIRMAYDI.
+  // `stock.view` yoki `storecell.update` ga qo'shib yuborish butun
+  // qoldiq/yacheyka sirtini ochib yuborardi.
+  | 'piecetracking'
   | 'saleschannel'
   | 'onlineorder'
   // CRM
@@ -243,6 +249,7 @@ export const PERMISSION_ENTITIES: readonly PermissionEntity[] = [
   'retailsale',
   'retailcontrol',
   'returnacceptance',
+  'piecetracking',
   'saleschannel',
   'onlineorder',
   // CRM

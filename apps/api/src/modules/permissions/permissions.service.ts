@@ -321,6 +321,7 @@ export class PermissionsService {
       'retailsale',
       'retailcontrol',
       'returnacceptance',
+      'piecetracking',
       'saleschannel',
       'onlineorder',
       'pipeline',

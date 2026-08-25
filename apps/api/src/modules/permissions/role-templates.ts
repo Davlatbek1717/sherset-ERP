@@ -309,6 +309,16 @@ export const ROLE_TEMPLATES: Record<RoleTemplateSlug, RoleTemplate> = {
       // yetadi; `salesreturn.create/approve` ATAYLAB berilmaydi — u butun
       // `/sales-returns` modulini (mass-edit, delete, ixtiyoriy narx) ochardi.
       grant(['returnacceptance'], { view: 'ALL', create: 'ALL' }),
+      // K2 (2026-08-25) — BO'LAK REYESTRI (kabel/sim/shlang): ro'yxatni ko'rish
+      // (`view`), bo'lak/butun rulon qo'shish (`create`), uzunlikni tuzatish,
+      // ko'chirish, «tugadi» va bayroq (`update`). K-Q9: huquq KATTA
+      // omborchida. Oddiy omborchi (`storekeeper`) ATAYLAB OLMAYDI — reyestr
+      // ombordagi jismoniy holatning ta'rifi va uni bir kishi yuritadi, aks
+      // holda «kim qo'shdi, kim yopdi» aniqlanmay qolardi
+      // (`piece-tracking-permission.test.ts` qulflaydi). Kesim OQIMI (K4)
+      // oddiy omborchiga picking topshirig'i ichida ochiladi — o'sha faza
+      // shu qatorni qayta ko'rib chiqadi.
+      grant(['piecetracking'], { view: 'ALL', create: 'ALL', update: 'ALL' }),
       grant(['product', 'variant', 'bundle', 'productfolder'], { view: 'ALL', update: 'ALL' }),
       // Yig'ish/jo'natish — realizatsiyani tasdiqlaydi, lekin YARATMAYDI.
       grant(['demand'], { view: 'ALL', update: 'ALL', approve: 'ALL', print: 'ALL' }),

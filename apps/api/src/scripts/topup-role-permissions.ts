@@ -110,6 +110,7 @@ const NEW_ENTITIES = [
   'retailsale',
   'retailcontrol',
   'returnacceptance',
+  'piecetracking',
   'saleschannel',
   'onlineorder',
   'pipeline',

@@ -168,6 +168,10 @@ export const ACCESS_SECTIONS: AccessSection[] = [
       // `store.update`siz beriladigan alohida ruxsat. Qator bo'lmasa admin uni
       // hech qaysi ekrandan bera olmasdi (storecell'dagi I4 saboqlari).
       dict('warehousenumbering', card('access_entity_warehousenumbering')),
+      // K2 (2026-08-25): bo'lak reyestri (kabel/sim/shlang) — katta omborchi
+      // ekrani. Qator bo'lmasa admin bu ruxsatni hech qaysi ekrandan
+      // bera/ola olmasdi (storecell'dagi I4 saboqlari bilan bir klass).
+      dict('piecetracking', card('access_entity_piecetracking')),
     ],
   },
   {

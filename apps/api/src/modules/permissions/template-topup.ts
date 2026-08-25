@@ -90,11 +90,16 @@ export interface ExistingPermissionRow {
 // view+create oladi. YANGI entity ⇒ hech bir rolda qatori yo'q, «tegilmagan
 // entity» qoidasi uni to'liq o'tkazadi. Prod topup'dan keyin DARHOL olib
 // tashlansin.
+// `piecetracking` (K2, 2026-08-25) — bo'lak reyestri: warehouse_manager
+// view+create+update oladi. YANGI entity ⇒ hech bir rolda qatori yo'q,
+// «tegilmagan entity» qoidasi uni to'liq o'tkazadi. Prod topup'dan keyin
+// DARHOL olib tashlansin (yuqoridagi qoida).
 export const TOPUP_ENTITIES: readonly PermissionEntity[] = [
   'storecell',
   'customerorder',
   'retailcontrol',
   'returnacceptance',
+  'piecetracking',
 ];
 
 /**

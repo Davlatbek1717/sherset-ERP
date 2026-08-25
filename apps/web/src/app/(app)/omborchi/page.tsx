@@ -15,6 +15,7 @@ import {
   Printer,
   RefreshCw,
   ScanBarcode,
+  Scissors,
   Warehouse,
 } from 'lucide-react';
 import Link from 'next/link';
@@ -363,6 +364,17 @@ export default function OmborchiPage() {
             >
               <PackageCheck className="h-3.5 w-3.5" />
               Vozvrat qabuli
+            </Link>
+          )}
+          {/* K2 (2026-08-25) — bo'lak reyestri ham faqat katta omborchida
+              (`piecetracking`). Kabel/sim/shlang: butun rulonlar va bo'laklar. */}
+          {can('piecetracking', 'view') && (
+            <Link
+              href="/omborchi/bolaklar"
+              className="flex items-center gap-1.5 rounded-lg border border-violet-300 px-3 py-2 text-xs font-semibold text-violet-700 hover:bg-violet-50"
+            >
+              <Scissors className="h-3.5 w-3.5" />
+              Bo'laklar
             </Link>
           )}
           <a
