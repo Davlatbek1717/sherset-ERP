@@ -1,6 +1,6 @@
 # Kassada mijoz hisob-kitobi — qarzni undirish ro'yxatiga ulash + avans bilan ishlash
 
-> **Yaratilgan:** 2026-08-25 · **Buyurtmachi:** Ozodbek (egasi) · **Holat:** Q1 QISMAN + Q2 QISMAN + Q3 QISMAN + A1 QISMAN + A2 QISMAN + A3 QISMAN + **Q4 QISMAN** (2026-08-25) — **AVANS OQIMI ENDI KODDA TO'LIQ: qabul (A1, `8d1f4a01`) → sarflash (A2, `8178fd87`) → ko'rsatish/tarix/qaytarish (A3, `526dda5c` + `1447a11e`)**. A3: `customerStanding` sof moduli (to'rt holat), POS kartasida «Avansi: N» (ilgari «0» turardi), avans yorliqlari UCH xaritada (POS · akt sahifasi · **Excel akti — reja bilmagan uchinchi joy**), `POST /cashier-sessions/:id/customer-prepay-refund` (kassa −summa / balans +summa, cap = mavjud avans, balans `FOR UPDATE` bilan QULFLANADI, RKO cheki `ВА-`), `recompute` ga **to'rtinchi manba** (`customer-prepay-refunds`), Z-hisobotda uchinchi avans qatori, menejer ro'yxatida avansli mijozlar ajralib turadi. **A3 da migratsiya YO'Q** (`RetailDrawerCashOut.kind` VarChar(20) va `agentId` yetadi). Qarz oqimi (Q1–Q3) o'zgarishsiz. **HECH BIRI DEPLOY QILINMAGAN** — deploy branch'i `kassa-qarzi-q1-q2` @ `456e53af` da Q3, A1, A2, A3 YO'Q (qayta yig'ilishi kerak), push va jonli tasdiq KUTILMOQDA; `opening` manbasi qarori hamon ochiq; A1 topgan 35 bayonotlik sxema DRIFTI (4 ta `DROP TABLE`) — alohida ish; navbat **Q5** (jonli backfill — 🔴 jonli ma'lumot). **Q4 (`7ddd4e21`) — MANBA + FILTR + MUDDAT SOZLAMASI kodda TAYYOR:** undirish ro'yxati va `/debts` da «Kassa cheki / Reyestr» belgisi va chek raqami havolasi, manba filtri (sof qatlamda — SQL `<> 'retailsale'` NULL larni yo'qotardi), `CompanySettings.saleDebtTermDays` (migratsiya `20260825235000_…`, NULL ≠ 0, sozlanmagan bo'lsa Q1 defaulti 14 kun, ESKI qarzlar qayta hisoblanmaydi). Q4 ochiq bandlari: lokal dev bazada migratsiya sinovi (parol) + jonli tasdiq. 🔴 Q4 yo'l-yo'lakay A3 ning **20 i18n kalitini tikladi** — ular hech qachon commit qilinmagan ekan va i18n gate shu sababdan qizil edi; A2 ning ikki chegarasi (avansdan to'langan chek TAHRIRLANMAYDI; Z-hisobot `revenueByMethod` vozvrat-nusxalarini sanaydi) va A3 ning ikki qaydi (mijozga «avansdan yechildi» xabari ATAYLAB yozilmadi; Excel akt yorliqlarida `returnPayout`/`salesReturn` hamon yo'q — G1 ning ishi) OCHIQ qoladi
+> **Yaratilgan:** 2026-08-25 · **Buyurtmachi:** Ozodbek (egasi) · **Holat:** Q1 QISMAN + Q2 QISMAN + Q3 QISMAN + A1 QISMAN + A2 QISMAN + A3 QISMAN + Q4 QISMAN + **Q5 QISMAN** (2026-08-25) — **AVANS OQIMI ENDI KODDA TO'LIQ: qabul (A1, `8d1f4a01`) → sarflash (A2, `8178fd87`) → ko'rsatish/tarix/qaytarish (A3, `526dda5c` + `1447a11e`)**. A3: `customerStanding` sof moduli (to'rt holat), POS kartasida «Avansi: N» (ilgari «0» turardi), avans yorliqlari UCH xaritada (POS · akt sahifasi · **Excel akti — reja bilmagan uchinchi joy**), `POST /cashier-sessions/:id/customer-prepay-refund` (kassa −summa / balans +summa, cap = mavjud avans, balans `FOR UPDATE` bilan QULFLANADI, RKO cheki `ВА-`), `recompute` ga **to'rtinchi manba** (`customer-prepay-refunds`), Z-hisobotda uchinchi avans qatori, menejer ro'yxatida avansli mijozlar ajralib turadi. **A3 da migratsiya YO'Q** (`RetailDrawerCashOut.kind` VarChar(20) va `agentId` yetadi). Qarz oqimi (Q1–Q3) o'zgarishsiz. **HECH BIRI DEPLOY QILINMAGAN** — deploy branch'i `kassa-qarzi-q1-q2` @ `456e53af` da Q3, A1, A2, A3 YO'Q (qayta yig'ilishi kerak), push va jonli tasdiq KUTILMOQDA; `opening` manbasi qarori hamon ochiq; A1 topgan 35 bayonotlik sxema DRIFTI (4 ta `DROP TABLE`) — alohida ish; **Q5 QISMAN** (`23426f15`) — backfill + TESKARI skript kodda TAYYOR va lokal dev bazada TO'LIQ isbotlangan (652 → 885 → 652 qator, balans jurnaliga 0 yozuv, `recompute` cross-check shovqini 759 → 759); DRY-RUN o'lchovi: 271 chek / 133 kontragent → **233 qator, 701 489 130 so'm**, muddat zinapoyali (50/50/50/50/33 — 5 kun). 🔴 **JONLI BOSQICH BAJARILMADI** — Q1 migratsiyasi jonlida yo'q, deploy rad etilgan, egasi «jonliga tegma» dedi (2026-08-25). Q5 ochiq bandlari: jonli 1 kontragent → smoke → qolgani (mezon 3, 4, 5, 7). Navbat **Q6** — lekin Q5 ning jonli bandlarisiz boshlanmaydi (qoida 11). **Q4 (`7ddd4e21`) — MANBA + FILTR + MUDDAT SOZLAMASI kodda TAYYOR:** undirish ro'yxati va `/debts` da «Kassa cheki / Reyestr» belgisi va chek raqami havolasi, manba filtri (sof qatlamda — SQL `<> 'retailsale'` NULL larni yo'qotardi), `CompanySettings.saleDebtTermDays` (migratsiya `20260825235000_…`, NULL ≠ 0, sozlanmagan bo'lsa Q1 defaulti 14 kun, ESKI qarzlar qayta hisoblanmaydi). Q4 ochiq bandlari: lokal dev bazada migratsiya sinovi (parol) + jonli tasdiq. 🔴 Q4 yo'l-yo'lakay A3 ning **20 i18n kalitini tikladi** — ular hech qachon commit qilinmagan ekan va i18n gate shu sababdan qizil edi; A2 ning ikki chegarasi (avansdan to'langan chek TAHRIRLANMAYDI; Z-hisobot `revenueByMethod` vozvrat-nusxalarini sanaydi) va A3 ning ikki qaydi (mijozga «avansdan yechildi» xabari ATAYLAB yozilmadi; Excel akt yorliqlarida `returnPayout`/`salesReturn` hamon yo'q — G1 ning ishi) OCHIQ qoladi
 > **Ikki shikoyat (egasi, 2026-08-25):**
 > 1. «Qarzdorlikni undirish bo'limiga kassadan qo'shilgan yangi qarzdorliklar
 >    ko'rinmayapti.» → fazalar **Q1…Q6**
@@ -3539,3 +3539,505 @@ Deploy oldidan/keyin (qoida 8): `packages/db` da `npx tsx scripts/warehouse-stat
    qator va ular boshqa-boshqa servisda yashaydi (bittasi `manager`,
    ikkinchisi `debt`). Uchinchi chaqiruvchi paydo bo'lsa umumiy sof
    yordamchiga chiqarilsin.
+
+### Q5 — Tarixiy qarzlarni reyestrga olib kirish (backfill) · 2026-08-25 · **QISMAN** (jonli bosqich egasining qarori bilan KEYINGA qoldirildi)
+
+**Xulq O'ZGARMADI** — Q5 hech qanday servis kodiga tegmaydi: na `post()`,
+na `refund()`, na undirish ekrani. Yagona yangilik — IKKI SKRIPT (backfill va
+uning TESKARISI) hamda ularning sof rejasi. Skriptlar qo'lda yugurtiriladi;
+jonli bazaga bu sessiyada **TEGILMADI**.
+
+Commit: **`23426f15`** (branch `yacheyka-inventarizatsiya`, 6 fayl, +1797/−2).
+
+#### Bog'liqlik va JONLI bosqich holati (qoida 11 — ochiq aytiladi)
+
+Q5 ning sharti — «Q4 dan keyin». Q4 holati **«QISMAN»**. Kod darajasida
+tekshirildi va tasdiqlandi:
+
+| Shart | Holat |
+|---|---|
+| Q1 migratsiyasi (`sourceDocType`/`sourceDocId`) sxemada va lokal bazada | ✅ (lokal bazada ustunlar BOR — o'lchandi) |
+| Q1 sof moduli (`saleDebtDueAt`, `DEFAULT_SALE_DEBT_TERM_DAYS`) | ✅ |
+| Q2 yozuvchisining shakli (backfill uni takrorlaydi) | ✅ |
+| Q4 ning `sourceDocType` filtri (backfill qatorlarini ajratish) | ✅ |
+
+🔴 **JONLI BOSQICH BAJARILMADI — bu HALOL yozilmoqda, sabab ikki qatlamli:**
+
+1. **Texnik to'siq.** Q1 migratsiyasi (`20260825120000_debt_source_doc`)
+   jonli bazada **BERILMAGAN**, Q1–Q4 kodi ham **deploy qilinmagan**.
+   Backfill `debts.source_doc_type/source_doc_id` ustunlariga yozadi — ular
+   yo'q bazada skript birinchi so'rovdayoq to'xtaydi (`preflight()`).
+2. **Egasining qarori (2026-08-25, shu sessiyada so'raldi):** «Jonliga tegma
+   — kutamiz». Deploy 2026-08-25 da egasi tomonidan rad etilgan
+   (G1 hisoboti, «C yo'li»), ya'ni jonli bandlar deploy oynasiga qoldirildi.
+
+Shuning uchun qabul mezonining **3, 4, 5, 7-bandlari OCHIQ** va faza
+**YOPILMAYDI**. 1, 2 va 6-bandlari esa **YOPILDI** — lokal dev bazada,
+raqamlari bilan (pastda).
+
+#### Nima qilindi
+
+| # | Fayl | Nima |
+|---|---|---|
+| 1 | `apps/api/src/scripts/q5-backfill-plan.ts` | **YANGI sof modul** — butun taqsimot, sana zinapoyasi, o'tkazib yuborish qoidalari (DB yo'q, Nest yo'q, `Date.now()` yo'q) |
+| 2 | `apps/api/src/scripts/ops-q5-backfill-sale-debts.ts` | **YANGI** backfill skripti (DRY-RUN default · `APPLY=1` · `LIMIT` · `ONLY_CP` · `RUN` · `TERM_DAYS`/`STEP_*`) |
+| 3 | `apps/api/src/scripts/ops-q5-backfill-rollback.ts` | **YANGI teskari skript** (qoida 12) — `RUN` yorlig'i bo'yicha |
+| 4 | `apps/api/src/modules/debt/sale-debt-registry.ts` | `saleDebtComment(saleName)` ALOHIDA funksiyaga chiqarildi — Q2 yozuvchisi va Q5 backfill'i BITTA matn manbasidan yursin |
+| 5 | `apps/api/src/scripts/q5-backfill-plan.test.ts` | **YANGI**, 35 test |
+| 6 | `apps/api/src/scripts/q5-backfill-scripts-guard.test.ts` | **YANGI**, 23 kod-shakl qo'riqchisi |
+
+**Backfill'ning shakli:**
+
+```
+preflight()                      Q1 ustunlari bormi? (yo'q ⇒ tushunarli xato)
+cheklar   ← RetailSalePayment(DEBT, UZS, posted, refundedFromId=null)
+qarzdor   ← CashierAuditEvent(SOLD_ON_CREDIT).payload.agentId ?? sale.agentId
+                                 (mijozsiz chek ⇒ skript TO'XTAYDI)
+qaytarish ← Σ mirror.debtReturnMinor  (refundedFromId = original.id)
+mavjud    ← Debt.sourceDocId ∈ cheklar
+cap       ← max(0, balans − reyestrning ochiq qoldig'i)   ← unregisteredMinor
+reja      ← planQ5Backfill(...)  — yangisidan eskisiga, cap tugaguncha
+APPLY:    har kontragent ALOHIDA tranzaksiyada:
+            allocateDocumentNumber('QRZ-YYYY-')  → createMany({skipDuplicates})
+            → DebtNote(kind:'debt_issue', matnda `[Q5-BACKFILL run=…]`)
+```
+
+#### 🔴 Rejadan OLTITA ataylab chekinish
+
+**1. Taqsimot manbasi — chek EMAS, KONTRAGENT cap'i.**
+Reja «`retailSalePayment` `TENDER.debt` qatorlari, `sourceDocId` bo'yicha
+qatori borlari chiqarib tashlanadi» degan edi. Sodda o'qish — HAR chekning
+qarz ulushiga qator ochish — **allaqachon TO'LANGAN qarzni qayta ochardi**:
+chek qarzi mijozning balansiga yozilgan, lekin mijoz o'shandan beri kassaga
+pul olib kelgan bo'lishi mumkin va balans BITTA yig'ma son, chek kesimi YO'Q.
+
+O'lchov: lokal bazada 271 ta qarz-chekining jami qarzi reyestrdan tashqari
+qarzdan **KATTA** — 16 ta chek cap tugagani uchun qator OLMADI, yana 16
+tasi qisman KESILDI. Sodda qoida bilan bu 32 ta chekda menejer mijozdan
+allaqachon to'langan pulni so'ragan bo'lardi.
+
+Shuning uchun cap kontragent darajasida:
+`max(0, balans − reyestrning ochiq qoldig'i)` — ya'ni AYNAN
+`pos-customer-debt.ts#splitDebtSources().unregisteredMinor`, kassir ekranida
+allaqachon ko'rinadigan son. Ikkinchi formula yozilmadi.
+
+**2. Tartib — YANGISIDAN ESKISIGA.** Reja tartibni aytmagan. To'lov kelganda
+POS avval REYESTR FIFO'sini (eng eski qarzlar), so'ng balansdan adopsiyani
+yopadi (`planAdoption`) — ya'ni eski qarzlar birinchi to'lanadi. Demak
+balansda qolgan qoldiq ehtimol ENG YANGI cheklarniki. Eskisidan boshlansa
+backfill to'langan cheklarni «ochiq qarz» qilardi.
+
+**3. Balansi O'LCHANMAGAN kontragent — CHETLAB O'TILADI (Q2 dan FARQLI).**
+Q2 `null` balansda to'liq qator ochadi (ehtiyotkor tanlov: bitta jonli chek,
+menejer darhol ko'radi). Q5 esa OMMAVIY jonli yozuv, va u yerda `null`
+balans **anomaliya belgisi**: chek post qilinganda `applyDelta` balans
+qatorini YARATADI, ya'ni `DEBT` tenderi bo'lgan kontragentda qator BO'LISHI
+kerak. Ommaviy yozuvda ehtiyotkor tomon — yozmaslik va ro'yxatga chiqarish.
+(Lokal bazada bunday kontragent **0 ta** chiqdi — ya'ni premise tasdiqlandi.)
+
+**4. Qarzdor CHEK QATORIDAN emas, AUDIT HODISASIDAN o'qiladi.**
+Reja buni aytmagan. `post()` chek qatoridagi `agentId` ni faqat u BO'SH
+bo'lsa to'ldiradi — chekda boshqa kontragent turgan va to'lov payload'ida
+boshqasi yuborilgan holatda DAFTARGA payload'dagi yozilgan. Backfill chek
+qatoridan yursa qarzni **BOSHQA mijozga** ochib qo'yardi; jonli ma'lumotda
+bu tuzatib bo'lmaydigan xato. `recompute-counterparty-balances.ts` bu
+qoidani allaqachon o'rnatgan (`loadCreditEventAgents`) — AYNAN o'sha
+tartib ko'chirildi (hodisa → chek qatori zaxira sifatida).
+
+**5. `LIMIT` — kontragent ichida emas, GLOBAL.** Kontragent ichida kesilsa
+cap allaqachon sarflangan bo'lib ko'rinardi va keyingi yugurish o'sha
+kontragentga qator ochmasdi. Endi kesim `planQ5Backfill` da, va kesilgan
+qatorlar `truncatedRows` da SANALADI — jimgina yo'qolmaydi.
+
+**6. Rollback'da `RUN` MAJBURIY.** Reja «backfill ochgan qatorlarni
+o'chiradi» degan edi. Yorliqsiz butun Q5 backfill'ini o'chirish juda oson
+bo'lmasligi kerak: bir kunda ikki yugurish bo'lsa, ikkalasini birga
+o'chirish ONGLI qaror bo'lsin. `RUN=` yoki ataylab `ALL_RUNS=1`.
+
+#### 🔴 Eslatma cron'ini muzlatish — YOZMA JAVOB (reja vazifa 4)
+
+**Qo'shimcha chora KERAK EMAS, dalil bilan.**
+
+`debt-reminder.service.ts:47` operator bildirishnomasini
+`nextContactAt: { lte: now } AND callRemindedAt IS NULL` bo'yicha yuboradi.
+Backfill `nextContactAt` ni **kelajakka** qo'yadi (`now + 14 kun` va undan
+ham narisi), ya'ni yozuv paytida birorta qator ham cron'ning shartiga
+tushmaydi. Toshqin bo'lishi uchun 14 kun kerak.
+
+Zinapoya esa 14-kunlik to'lqinning O'ZINI ham yoyadi. Lokal o'lchov (233
+qator, default `STEP_ROWS=50`):
+
+```
+2026-09-08: 50 qator · 09-09: 50 · 09-10: 50 · 09-11: 50 · 09-12: 33
+```
+
+Ya'ni operator navbatiga kuniga ~50 tadan tushadi. `MAX_STAIRCASE_DAYS=30`
+yuqori chegara — 1500 dan ortiq qator bo'lsa ham zinapoya cheksiz
+cho'zilmaydi (undan keyin hammasi 30-kunga to'planadi; bu ONGLI chegara,
+kerak bo'lsa `STEP_ROWS` kichraytiriladi).
+
+⚠️ **Mijozga AVTOMATIK Telegram xabari yo'q** — `lastTgReminderAt` cron'i
+kodda MAVJUD EMAS (Q0 da tekshirilgan, faqat sxema maydoni). Ya'ni backfill
+mijozlarga hech qanday xabar yubormaydi.
+
+#### Test natijalari (raqam bilan)
+
+| O'lchov | Natija |
+|---|---|
+| `apps/api` **to'liq** vitest | **663 fayl · 9600 test YASHIL**, 1 fayl / 2 test skip — **ketma-ket IKKI to'liq yugurish, ikkalasi ham TO'LIQ yashil** |
+| ...ning halol qaydi | ⚠️ Shu ikkitadan OLDINGI yugurishda 2 faylda 4 test yiqilgan edi; reporter chiqishi kesilgani uchun **qaysi fayl ekani QAYD ETILMADI**. Keyingi ikki yugurish 0 xato berdi ⇒ yuk ostidagi beqarorlik (A1/A3 hisobotlari `auth/{pos,tsd}-device.service.test.ts` argon2 timeout sinfini allaqachon qayd etgan; bu **taxmin, o'lchov emas**) |
+| Q5 ning O'Z testlari | `q5-backfill-plan.test.ts` **35** + `q5-backfill-scripts-guard.test.ts` **23** = **58 yangi test** |
+| tegilgan kesim (`scripts`+`debt`+`retail-sale`) | **82 fayl · 1203 test YASHIL** |
+| `apps/api` typecheck (`tsc --noEmit`, `--max-old-space-size=8192`) | **0 xato** |
+| `node scripts/check-lint.mjs` | **mening fayllarimda 0 error** (qolgan 4 format xatosi — parallel K3 sessiyasining tugallanmagan fayllari: `stock-piece/*`, `retail-sale.service.ts`; TEGILMADI) |
+| `i18n-key-existence` | **4 test yashil** (Q5 da yangi UI matni YO'Q) |
+| `i18n-no-hardcoded` | ⚠️ **QIZIL, lekin MENIKI EMAS**: `components/pos/piece-offer-panel.tsx` — K3 sessiyasining ro'yxatga qo'shilmagan yangi POS fayli |
+
+⚠️ **Bazaviy o'lchov IZOLYATSIYALANMAGAN.** Sessiya davomida daraxtda parallel
+K3 sessiyasi (bo'linadigan tovar — `stock-piece/*`, `piece-offer-*`,
+`retail-sale.service.ts`) faol ishlayotgan edi. Q3 dagidek worktree
+ochilmadi (Q5 `retail-sale.service.ts` ga UMUMAN tegmaydi, ya'ni to'qnashuv
+yuzasi yo'q edi); commit `git add <aniq yo'llar>` bilan qilindi va
+`git show --stat` bilan tasdiqlandi — **begona fayl commit'ga TUSHMADI**
+(yagona qo'shimcha — hook yozadigan `docs/progress.json`).
+
+**58 yangi test nimani qulflaydi:**
+
+| Guruh | Testlar |
+|---|---|
+| Chek qoldig'i | qaytarishsiz to'liq · qisman ayiriladi · to'liq qaytarilgan 0 · **qaytarish qarzdan KO'P (anomaliya) → manfiy emas** |
+| Cap formulasi | reyestr bo'sh/qisman/to'liq qoplagan · **reyestr balansdan katta (nomuvofiqlik) → 0** · **AVANS (manfiy balans) → 0, invariant 4** · **`null` → `null`, «0» EMAS** |
+| Zinapoya | chelaklar · yuqori chegara · **`stepRows`/`stepDays`=0 ⇒ o'chirish yo'li** |
+| Taqsimot | **invariant: Σ cap dan OSHMAYDI** · **tartib yangisidan eskisiga** · **teng sanada DETERMINISTIK** · oxirgi qator KESILADI va bu izohda yoziladi · allaqachon reyestrda → OCHILMAYDI · to'liq qaytarilgan → OCHILMAYDI · avansli → OCHILMAYDI · reyestr qoplagan → OCHILMAYDI |
+| Shakl | izoh matni Q2 bilan BITTA manbadan (`saleDebtComment`) · **muddat chek sanasidan EMAS** · zinapoya GLOBAL indeksdan · izohda `run=` belgisi |
+| Butun yugurish | jamlar · **zinapoya kontragentlar bo'ylab davom etadi** · **`LIMIT` GLOBAL kesadi va SANALADI** · `LIMIT` kontragent ichida jamlarni tuzatadi · o'lchanmaganlar sanaladi · **IDEMPOTENTLIK** · **DETERMINIZM** |
+| Kod-shakl (backfill) | **`applyDelta` CHAQIRILMAYDI** · `counterpartyBalance` ga YOZILMAYDI · `balanceAdopted: true` · manba ustunlari · **`createMany({skipDuplicates})`, `create` EMAS** · `allocateDocumentNumber` · `DebtNote(debt_issue)` · `problem:false`/`ownerId:null` · valyuta · **DRY-RUN default** · `LIMIT`/`ONLY_CP` · **`preflight()`** · mijozsiz chek TO'XTATADI · **qarzdor HODISADAN** · qaytarish ayiriladi · **muddat `now` dan** |
+| Kod-shakl (rollback) | belgi bo'yicha topadi · **`deleteMany`, soft-delete EMAS** · **izohlar QARZDAN OLDIN (FK)** · **`applyDelta` yo'q** · **TO'LOV tushgan qator O'CHIRILMAYDI** · DRY-RUN default · `RUN` siz ommaviy o'chirish TAQIQ |
+
+#### 🔴 LOKAL DEV BAZADA ISBOT (qoida 7 + 12) — BAJARILDI
+
+Baza: `sherset_v2_dev` @ localhost (PostgreSQL 18). Parol egasidan so'raldi
+va **shu sessiyadan tashqariga yozilmadi** (qoida 5).
+
+**Boshlang'ich holat:** `debts` = **652** qator, `source_doc_type='retailsale'`
+= **0**, `retail_sale_payments(method='DEBT')` = **271**, Q1 ustunlari BOR.
+
+##### 1. DRY-RUN — o'lchov (reja vazifa 1, qabul mezoni 1)
+
+```
+Q5 — tarixiy kassa qarzlarini undirish reyestriga olib kirish
+rejim: 🟢 DRY-RUN (hech narsa yozilmaydi) | RUN=2026-08-25
+muddat: 14 kun | zinapoya: har 50 qatorda +1 kun (maks 30 kun)
+
+── O'LCHOV ────────────────────────────────────────────────────
+qarzga sotilgan chek (jami)        : 271
+eng eski chek                      : 2026-08-16T06:58:47.490Z
+kontragent (filtrdan keyin)        : 133
+  · balansi o'lchanmagan (chetlab) : 0
+  · reyestrdan tashqari qarzi yo'q : 18
+OCHILADIGAN QATOR                  : 233
+OCHILADIGAN JAMI SUMMA             : 701 489 130 so'm
+o'tkazib yuborilgan chek (cap-exhausted)  : 16
+o'tkazib yuborilgan chek (fully-returned) : 1
+```
+
+Qo'shimcha kesimlar: **16 qator cap bilan KESILDI** (chekning qoldig'i
+kontragentning reyestrdan tashqari qarzidan katta); **3 kontragentda cap
+dan qoldiq taqsimlanmadi** (chek yetmadi — qarzning bir qismi `InvoiceOut` /
+`CashOut` / qo'lda tuzatishdan kelgan; eng kattasi 14 375 447 so'm).
+
+Zinapoya taqsimoti (233 qator):
+
+```
++0 kun → 50 qator (muddat 2026-09-08)   +3 kun → 50 (09-11)
++1 kun → 50 qator (09-09)               +4 kun → 33 (09-12)
++2 kun → 50 qator (09-10)
+```
+
+⚠️ **Bu raqamlar LOKAL dev bazaniki.** U jonli bazadan 2026-08-16 atrofida
+klonlangan (eng eski chek sanasi shundan) — jonlida son ham, summa ham
+BOSHQACHA bo'ladi va **jonli DRY-RUN qayta o'lchanadi**.
+
+##### 2. BITTA kontragent — jonli tartibning mashqi (qabul mezoni 3 ning lokal ko'zgusi)
+
+`ONLY_CP=04f605f9…` («Muxriddin elektr», cap 202 500 so'm, 1 chek):
+
+```
+✅ Yozildi: 1 qator
+```
+
+Bazadan O'QIB tekshirildi:
+
+```
+name           | total_minor | paid | status | balance_adopted | source_doc_type | next_contact_at        | owner_id | issued_by_id
+QRZ-2026-00655 |    20250000 |    0 | unpaid | t               | retailsale      | 2026-09-08 09:00:00+05 | (null)   | (null)
+
+kontragent balansi OLDIN : 556 060 000
+kontragent balansi KEYIN : 556 060 000        ← 🔴 BIR TIYIN HAM O'ZGARMADI
+balans jurnalidagi yangi yozuv (5 daqiqa) : 0 ← 🔴 invariant 1
+```
+
+Muddat **09:00 (+05)** — Toshkent kalendar kuni, Q1 ning `saleDebtDueAt`
+qoidasi HAQIQIY bazada tasdiqlandi.
+
+##### 3. `recompute` DRY-RUN (qabul mezoni 6) — **shovqin OSHMADI**
+
+```
+mode: DRY-RUN (no writes)
+(account,counterparty,currency) pairs: 799 | changed: 0 | unchanged: 799
+cross-check: ⚠️ 759 kalitda hujjat-rekonstruksiyasi jurnaldan farq qiladi
+```
+
+**759 — Q1 va A1 o'lchagan raqamning AYNAN o'zi.** Ya'ni Q1 ning
+`balanceAdopted: false` filtri backfill qatorlarini hujjat-hisobidan
+CHIQARIB tashlaydi va Q5 diagnostikaga bir zarra ham shovqin qo'shmaydi.
+(Bu 233 qatorlik to'liq yugurishdan KEYIN ham qayta o'lchandi — o'sha 759.)
+
+##### 4. TESKARI SKRIPT (qoida 12) — to'lov himoyasi ZOND bilan
+
+Avval to'lov himoyasi HAQIQIY qator ustida sinaldi
+(`UPDATE debts SET paid_minor = 100000` → rollback → `paid_minor = 0`):
+
+```
+── TOPILDI ──
+backfill qatori (jami)   : 1
+o'chiriladi              : 0
+SAQLANADI (to'lov bor)   : 1
+  · QRZ-2026-00655  Muxriddin elektr: to'lov tushgan (paidMinor = 1 000 so'm)
+
+APPLY=1 bilan: «O'chiriladigan qator yo'q.»     ← 🔴 to'lov YO'Q QILINMADI
+```
+
+`paid_minor` 0 ga qaytarilgach:
+
+```
+✅ O'chirildi: 1 qarz qatori, 1 izoh.
+debts = 652 | source_doc_type='retailsale' = 0 | yetim izoh = 0
+kontragent balansi = 556 060 000   ← 🔴 O'ZGARMADI
+```
+
+##### 5. TO'LIQ MIQYOS — 233 qator → tekshiruv → rollback
+
+```
+APPLY (RUN=q5-local-full)  → ✅ Yozildi: 233 qator
+
+debts_total = 885 | from_sale = 233 | Σ = 70 148 913 052 tiyin | muddat kunlari = 5
+balans jurnalidagi yangi yozuv           : 0      ← 🔴 invariant 1
+hammasi balanceAdopted / muddatli / javobgarsiz : t / t / t
+takrorlangan source_doc_id                : 0      ← 🔴 invariant 3
+
+undirish ro'yxati (deleted_at IS NULL AND status IN (unpaid,partial)):
+   812 qator, shundan 233 tasi KASSA CHEKIDAN, 617 mijoz   ← 🔴 MAQSAD
+avansli (manfiy balansli) mijozga ochilgan qator : 0        ← 🔴 invariant 4
+
+IDEMPOTENTLIK — qayta APPLY: OCHILADIGAN QATOR 0, «Yozildi: 0 qator»
+recompute: changed 0 | cross-check 759 (o'zgarmadi)
+
+ROLLBACK (RUN=q5-local-full) → ✅ O'chirildi: 233 qarz qatori, 233 izoh
+debts_total = 652 | from_sale = 0 | yetim izoh = 0 | yangi balans yozuvi = 0
+recompute: changed 0 | cross-check 759
+```
+
+**Aylanma to'liq yopildi: 652 → 885 → 652**, va butun aylanma davomida
+kontragent balanslariga **bir bayt ham yozilmadi**.
+
+⚠️ **Bitta halol qayd — HUJJAT RAQAMIDA TESHIK QOLADI.** Rollback'dan keyin:
+
+```
+document_sequences['QRZ-2026-'] = 888   ·   max(debts.name) = QRZ-2026-00654
+```
+
+Ya'ni 234 ta raqam sarflanib bo'sh qoldi. Bu **zararsiz** (hisoblagich
+monoton, keyingi raqam 889 dan davom etadi va mavjud nomlar bilan
+to'qnashmaydi), lekin `QRZ-` ketma-ketligida ko'zga tashlanadigan sakrash
+bo'ladi. Jonlida rollback qilinsa egasiga oldindan aytilsin.
+
+#### Qoida 10 — «bu o'zgarish qaysi mavjud oqimni buzishi mumkin?»
+
+1. **Balans / pul — TEGILMAYDI (invariant 1).** Ikkala skript ham
+   `applyDelta` ni UMUMAN chaqirmaydi (kod-shakl testi izohsiz matnda
+   tekshiradi) va `counterpartyBalance` ga faqat `findMany` bilan murojaat
+   qiladi. Lokal bazada 233 qator yozilib o'chirilganda balans jurnaliga
+   **0 yozuv** tushdi. `DECLARED_BALANCE_WRITERS` ga yangi fayl
+   QO'SHILMADI va `recompute` ga yangi manba KERAK EMAS — qator
+   `balanceAdopted = true`, ya'ni Q1 filtri uni hujjat-hisobidan chiqaradi
+   (bu A1/A2/A3 da MAJBURIY bo'lgan bandning Q5 da qo'llanmasligining dalili).
+2. **Servis kodi — BIR QATOR HAM O'ZGARMADI.** Q5 `post()`, `refund()`,
+   `edit()`, undirish servisi va ekranlarga tegmaydi. Yagona modul-o'zgarishi
+   — `saleDebtComment` ning ALOHIDA funksiyaga chiqarilishi, u ham
+   xulq-neytral (matn AYNAN o'sha, `planSaleDebtRow` testlari yashil).
+3. **🔴 Undirish ro'yxati / qo'ng'iroq jadvali / menejer navbati — HAJMI
+   KESKIN O'SADI. Bu MAQSAD, lekin egasiga OLDINDAN aytilsin.** Lokal
+   o'lchovda ro'yxat 579 → **812** qatorga (233 ta yangi), `outstandingMinor`
+   esa 701 mln so'mga o'sdi. Egasi ko'radigan son «birdan sakraydi» —
+   **bu yangi qarz EMAS, ko'rinmagan qarz endi ko'rinmoqda.** Q4 ning
+   «Kassadan: N» sanog'i va manba filtri aynan shu suhbat uchun qurilgan.
+   `manager-queue` ning `DEBT_CAP` i yangi nomzodlar oladi.
+4. **Eslatma cron'i — 14 KUN JIM, keyin ZINAPOYALI.** Yuqoridagi yozma
+   javob. Yozuv paytida birorta qator ham cron shartiga tushmaydi.
+5. **POS «Qarz to'lovi» oynasi — SON O'ZGARMAYDI, lekin TARKIBI o'zgaradi.**
+   `payableMinor = max(reyestr, balans)`; backfill reyestrni balansga
+   TENGLASHTIRADI, ya'ni maksimum o'sha qoladi. `unregisteredMinor` esa 0 ga
+   tushadi va **P1 adopsiya yo'li kamdan-kam ishlaydi** — bu to'g'ri
+   (adopsiya `InvoiceOut` kabi boshqa manbalar uchun qoladi), lekin
+   `pos-debt-payment.balance-adoption.test.ts` yo'lining jonli qamrovi
+   kamayadi. FIFO endi tarixiy cheklarni ham yopadi — bu ham maqsad.
+6. **Akt-sverka — O'ZGARMAYDI.** `counterparty-settlement.util.ts`
+   `debtRegistryOutstandingMinor` ni «saldoning TARKIBI, qo'shiluvchi EMAS»
+   deb ta'riflaydi va `balanceAdopted` qatori uchun bu premise TO'G'RI.
+7. **Q3 simmetriyasi — YANGI QATORLAR UNGA ULANADI.** Backfill qatori
+   `sourceDocType/sourceDocId` bilan ochiladi, ya'ni o'sha chek keyin
+   qaytarilsa `moveSaleDebtRegistryRow` uni TOPADI va kamaytiradi.
+   ⚠️ Nozik joy: backfill qatori cap bilan KESILGAN bo'lishi mumkin
+   (`totalMinor` < chek qarzi), va Q3 ning `delta` rejimi
+   `newRemaining − oldRemaining` ni qo'llaydi — bu qatorni noldan pastga
+   tushirishi mumkin. `planSaleDebtDelta` da bu ALLAQACHON qoplangan
+   («1-chegara — NOL», Q1 izohi aynan shu holatni tasvirlaydi). Test bilan
+   qulflangan (`avans qisman qoplagan qator noldan pastga tushmaydi`).
+8. **Mijozga Telegram xabari — KETMAYDI.** `applyDelta` chaqirilmaydi ⇒
+   `source` yo'li umuman ochilmaydi. `debt-source-wiring` qo'riqchisi yashil.
+9. **Q4 manba filtri — Q5 uchun tayyor asbob.** Backfill qatorlari
+   `sourceDocType='retailsale'`, ya'ni `/menejer/undirish?source=retailsale`
+   bilan AYNAN ular ajratib ko'riladi. Reja §Q5 eslatmasi bajarildi.
+10. **Hujjat raqami** — `allocateDocumentNumber` orqali, `adoptBalanceDebt`
+    va Q2 bilan BITTA hisoblagichdan. Race-safe. Rollback teshik qoldiradi
+    (yuqorida qayd etilgan).
+11. **Smena hisobi / kutilgan naqd / Z-hisobot — TEGILMAGAN.** Reyestr
+    qatori pul emas; `cashier-session`, `shift-variance`, `money`
+    fayllariga bir qator ham yozilmadi.
+12. **Ombor / qoldiq / yacheyka — TEGILMAGAN.** Q5 `stock`, `store-cell`,
+    `retail-allocation`, `retail-sale` fayllariga bir qator ham yozmadi.
+    H-, G- va K-rejalar hududiga kirilmadi. Jonli o'zgarish BO'LMAGANI
+    uchun qoida 8 ning `warehouse-state.ts` qo'shimchasi va qoida 13 ning
+    uchma-uch smoke'i bu sessiyada QO'LLANMADI — ular **jonli yugurish
+    kuniga** qoldirildi va pastdagi retseptda MAJBURIY band.
+13. **Kiosk qamrovi / ruxsat matritsasi — o'zgarmadi.** Yangi marshrut yo'q;
+    skriptlar HTTP orqali emas, box'da qo'lda yuritiladi.
+
+#### Qabul mezoni bo'yicha holat (qoida 11)
+
+| # | Mezon | Holat |
+|---|---|---|
+| 1 | DRY-RUN chiqishi hisobotda | ✅ (lokal dev baza, to'liq ko'chirildi) |
+| 2 | lokal dev bazada backfill + rollback ikkalasi ham ishladi | ✅ **652 → 885 → 652**, to'lov himoyasi zond bilan |
+| 3 | **jonlida avval 1 kontragent** — ro'yxatda chiqdi, balans O'ZGARMADI, `payableMinor` O'ZGARMADI | ❌ **VPS/deploy kerak; egasi «jonliga tegma» dedi** |
+| 4 | **uchma-uch smoke (qoida 13)**: sinov sotuv · yacheyka sanash · ko'chirish | ❌ jonli o'zgarish bo'lmadi ⇒ qo'llanmadi |
+| 5 | **keyin qolgan kontragentlar bosqichma-bosqich** | ❌ VPS kerak |
+| 6 | `recompute` DRY-RUN backfill'dan keyin ham farq ko'rsatmaydi | ✅ **759 → 759, `changed: 0`** (lokal) |
+| 7 | javobgar shaxs va vaqt hisobotda | ❌ jonli yugurish bo'lmadi ⇒ yozilmadi |
+| 8 | testlar (skript sof qismlari, teskari skript qamrovi) | ✅ 58 yangi test |
+
+**Shuning uchun holat «TUGADI» EMAS, «QISMAN».** Yopish sharti: 3, 4, 5, 7-bandlari.
+
+#### Deploy holati
+
+**Deploy QILINMADI**, VPS'ga tegilmadi, **jonli bazaga tegilmadi**.
+Q5 da **yangi migratsiya YO'Q** — skriptlar mavjud ustunlarga yozadi.
+
+🔴 **Deploy branch'i YANGILANISHI KERAK.** `kassa-qarzi-q1-q2` @ `456e53af`
+da Q3, A1, A2, A3, Q4 ham, **Q5 ham** YO'Q. Hozirgi
+`yacheyka-inventarizatsiya` da esa Q5 bilan bir qatorda **G4 (ombor
+avto-taqsimoti), G5/G6 (TSD) va K1/K2/K3 (bo'linadigan tovar)** ham turibdi.
+Q2 dagi cherry-pick retsepti bilan branch qayta yig'ilishi kerak
+(`4f5c1750` asosida: Q1 → Q2 → Q3 → A1 → A2 → A3 → Q4 → **Q5** + onboarding
+kalendar tuzatmasi). **Bu Q5 sessiyasida QILINMADI — buyruq kutilmoqda.**
+
+Migratsiyalar — hamon **UCHTA** va hech biri VPS'da BERILMAGAN:
+`20260825120000_debt_source_doc` (Q1) · `20260825220000_drawer_cash_in_kind` (A1)
+· `20260825235000_company_settings_sale_debt_term` (Q4).
+
+⚠️ **TARTIB SHART:** Q1 migratsiyasi backfill'dan OLDIN berilishi kerak.
+Backfill buni O'ZI tekshiradi (`preflight()`) va ustunsiz bazada tushunarli
+xato bilan to'xtaydi — jimgina yiqilmaydi.
+
+#### Jonli yugurish retsepti (deploy'dan KEYIN, bosqichma-bosqich)
+
+Har qadam OLDIDAN va KEYIN (qoida 8): `packages/db` da
+`npx tsx scripts/warehouse-state.ts` — chiqishi shu hisobotga ko'chiriladi.
+**Ish soatidan TASHQARIDA** (qoida 13), javobgar shaxs va vaqt yoziladi.
+
+```bash
+cd /var/www/sherset-v2/apps/api && set -a && . ./.env && set +a
+```
+
+1. **O'LCHASH (yozmaydi):**
+   `./node_modules/.bin/tsx src/scripts/ops-q5-backfill-sale-debts.ts`
+   → chiqish TO'LIQ hisobotga; **egasiga ko'rsatiladi** (nechta qator,
+   qancha summa, «ro'yxatdagi son shunga o'sadi»).
+2. 🔴 **BITTA kontragent** (ro'yxatdan kichik summali bittasi tanlanadi):
+   `APPLY=1 ONLY_CP=<uuid> RUN=<sana>-01 ./node_modules/.bin/tsx …`
+3. **Tekshirish:** `/menejer/undirish` → mijoz `upcoming` chelagida,
+   manbasi **«Kassa cheki»**, chek raqami havolasi ishlaydi (Q4);
+   kontragent kartasida balans **O'ZGARMAGAN**; POS «Qarz to'lovi» oynasida
+   `payableMinor` **O'ZGARMAGAN**.
+4. **`recompute` DRY-RUN** (`APPLY` SIZ): `changed: 0` va cross-check
+   shovqini backfill'dan OLDINGI son bilan **AYNAN teng** bo'lishi SHART.
+5. 🔴 **Uchma-uch smoke (qoida 13):** bitta sotuv (post → tekshir → cancel),
+   bitta yacheyka sanash, bitta ko'chirish.
+6. **10 kontragent:** `APPLY=1 LIMIT=10 RUN=<sana>-02 …` → 3–5 bandlar takror.
+7. **Qolgani:** `APPLY=1 RUN=<sana>-03 …` → 3–5 bandlar takror.
+8. **Savdo boshlanishidan oldin (ertalab)** takroriy smoke + `warehouse-state.ts`.
+9. **Kuzatuv:** 14 kundan keyin (zinapoya boshlanishi) operator navbatining
+   to'lishi — KUTILGAN xulq, nosozlik emas.
+
+**Teskari yo'l (qoida 12) — HAR QADAMDAN keyin tayyor turadi:**
+
+```bash
+# Ro'yxatni ko'rish
+RUN=<sana>-01 ./node_modules/.bin/tsx src/scripts/ops-q5-backfill-rollback.ts
+# O'chirish
+APPLY=1 RUN=<sana>-01 ./node_modules/.bin/tsx src/scripts/ops-q5-backfill-rollback.ts
+```
+
+⚠️ Rollback **to'lov tushgan qatorni O'CHIRMAYDI** (ro'yxatga chiqaradi) va
+**balansga tegmaydi**. `QRZ-` ketma-ketligida teshik qoladi (yuqorida).
+
+#### Ochiq qolganlar
+
+1. **Q1 dan meros (o'zgarishsiz):** `recompute` cross-check'iga `opening`
+   manbasi qo'shilmagan; jonlida `APPLY=1` yugurtirilgan-yugurtirilmagani
+   tekshirilmagan (VPS kirishi kerak).
+2. **Q2/Q3/A1/A2/A3/Q4 dan meros:** jonli tasdiq, deploy branch'i push
+   qilinmagan; A2 ning `edit()` chegarasi va Z-hisobot `revenueByMethod`
+   kesimi; A3 ning haqiqiy ikki-sessiyali poyga sinovi; mijozga
+   «avansingizdan yechildi» xabari; Q4 ning lokal migratsiya sinovi.
+3. **A1 topgan sxema DRIFTI (35 bayonot, 4 ta `DROP TABLE`)** — o'zgarishsiz
+   ochiq, alohida ish. 🔴 **Q5 uchun alohida ahamiyatli:** kimdir jonlida
+   `prisma migrate dev` yugurtirsa `debts` jadvali ham diffga tushishi
+   mumkin — backfill kunidan OLDIN tekshirilsin.
+4. **Q5 ning O'Z ochiq bandlari:** jonli yugurishning HAMMASI (mezon 3, 4,
+   5, 7). Kod va lokal isbot TAYYOR.
+5. 🔴 **Cap dan taqsimlanmagan qoldiq — CHEGARA.** Lokal o'lchovda 3
+   kontragentda cap'ning bir qismi (eng kattasi 14,4 mln so'm)
+   taqsimlanmadi: bu qarz POS chekidan EMAS, boshqa hujjatdan
+   (`InvoiceOut`, `CashOut`, qo'lda tuzatish) kelgan. Ular reyestrda
+   ko'rinmasdan qoladi va faqat P1 adopsiyasi orqali (mijoz kassaga pul
+   olib kelganda) kiradi. **Bu reja §2.3 ning ochiq chegarasi** — Q5 uni
+   kengaytirmaydi, faqat O'LCHADI va chiqishda ⚠️ bilan ko'rsatadi.
+6. **Cap tugagani uchun qator olmagan cheklar (lokal: 16 ta).** Ular
+   «allaqachon to'langan» deb qaraladi — bu FARAZ (FIFO odati), o'lchov
+   emas. Agar egasi biror chek bo'yicha «bu to'lanmagan» desa, qator
+   qo'lda ochiladi (`QRZ-`, mavjud yo'l). Skript chiqishida ular
+   `cap-exhausted` sinfida ochiq ko'rinadi — jim emas.
+7. **Rollback `QRZ-` ketma-ketligida teshik qoldiradi** (yuqorida
+   o'lchandi: 234 raqam). Zararsiz, lekin egasiga aytilsin.
+
+#### Keyingi fazaga (Q6) eslatmalar
+
+1. **Q6 ning verify skripti Q5 qatorlarini AJRATA olsin:** ular
+   `sourceDocType='retailsale'` + `DebtNote` matni `[Q5-BACKFILL run=…]`
+   bilan boshlanadi. Jonli yozuvchi (Q2) ochgan qatorlarda bu belgi YO'Q.
+2. **Egasiga yakuniy hisobotda ROQAM tayyorlansin:** «undirish ro'yxatidagi
+   jami son N ga o'sdi — bu yangi qarz EMAS, ko'rinmagan qarz endi
+   ko'rinmoqda». Manba: backfill DRY-RUN chiqishi (`OCHILADIGAN QATOR` /
+   `OCHILADIGAN JAMI SUMMA`) — uni o'chirmasdan saqlang.
+3. **Izohlar auditi (Q6 vazifa 3) ga QO'SHIMCHA:** `pos-customer-debt.ts:137-141`
+   dagi «butun qoldiqni adopsiya qilsak … eslatma cron / Telegram oqimi
+   kutilmaganda portlardi» ogohlantirishi endi **QISMAN eskirgan** — Q5
+   aynan shuni qildi, lekin zinapoya bilan. Izoh yangilanmasa keyingi
+   o'quvchi «demak backfill qilib bo'lmaydi» degan xulosaga keladi.
+4. **`ops-q5-backfill-rollback.ts` ni Q6 dan KEYIN ham repoda qoldiring** —
+   u faqat backfill kunining asbobi emas: `RUN` yorlig'i bo'yicha istalgan
+   vaqtda bitta yugurishni qaytarish yo'li.
+5. **Q6 `docs/ops/jonli-holat.md` ga backfill izini yozsin** (qoida 14):
+   qaysi `RUN`, qachon, nechta qator, kim yugurtirgan.
