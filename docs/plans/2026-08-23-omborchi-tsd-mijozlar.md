@@ -1,6 +1,6 @@
 # Omborchi va TSD mijozlari — kontrol, vozvrat, TSD APK
 
-> **Yaratilgan:** 2026-08-23 · **Buyurtmachi:** Ozodbek (egasi) · **Holat:** G1+G2+G3 KOD TAYYOR · **G4 2-BOSQICH (backend) TAYYOR — kassa endi ko'p ombordan avtomatik sotadi; POS UI qoldi** (yadro + migratsiya + 07 bayrog'i; `retail-sale.service` simlari — 2-bosqich) (deploy kutilmoqda — egasi «keyinroq» dedi VA 2026-08-24 hodisasi hal bo'lmagan: `docs/plans/2026-08-24-split-kassa-hodisasi.md`; deploy'da `topup-role-permissions.ts` MAJBURIY — `retailcontrol` + `returnacceptance`; ikkita migratsiya: G1 `…120000_drawer_cash_out_sales_return`, G3 `…170000_sales_return_retail_sale`)
+> **Yaratilgan:** 2026-08-23 · **Buyurtmachi:** Ozodbek (egasi) · **Holat:** G1+G2+G3 KOD TAYYOR · **G4 2a (backend) TAYYOR** — kassa endi ko'p ombordan AVTOMATIK sotadi (tasdiq-to'sig'i olib tashlandi); 2b qoldi: POS UI, yig'ish topshiriqlari, H2/H3 (E5). **Deploy kutilmoqda** — egasi «keyinroq» dedi VA 2026-08-24 hodisasi hal bo'lmagan (`docs/plans/2026-08-24-split-kassa-hodisasi.md`). Deploy'da: `topup-role-permissions.ts` MAJBURIY (`retailcontrol` + `returnacceptance`); **UCHTA migratsiya** — G1 `…120000_drawer_cash_out_sales_return`, G3 `…170000_sales_return_retail_sale`, **G4 `20260825020000_retail_sale_position_allocation`**; **egasi qo'lida:** Ombor 07 kartasiga «Kassa oldidagi ombor» checkbox'i (busiz «07 bo'linishda oxirida» qoidasi ishlamaydi). ⚠️ Bu deploy JONLI XULQNI o'zgartiradi — 2a hisobotidagi «Jonli sozlash» ni o'qing
 > **Ijro tartibi:** har faza ALOHIDA sessiyada. Agent shu faylni va
 > `docs/plans/2026-08-23-ombor-restrukturizatsiya.md` ni (F-reja) TO'LIQ o'qiydi,
 > O'Z fazasini bajaradi, testlardan o'tkazadi, pastdagi «Hisobotlar»ga yozadi va TO'XTAYDI.
@@ -70,6 +70,17 @@ qobig'i ichida ochiladi; G4 faza F5+F6 tugaganini kutadi.
 
   **Kassir huquqi:** tizim o'zi taqsimlaydi, kassir ekranda yacheykalarni KO'RADI
   va kerak bo'lsa boshqa yacheyka/omborni tanlaydi (o'zgartira oladi).
+
+  > 🔴 **Q1-v2 ISTISNOSI — BO'LINADIGAN TOVAR (egasi, 2026-08-25).**
+  > `pieceTracked = true` tovarlarda (kabel, sim, shlang — rulondan metrlab
+  > sotiladigan) **3-holat QO'LLANMAYDI**: 180 m ni «100 + 80» deb ikki
+  > yacheykadan taqsimlash mijozga yaroqsiz, chunki unga UZLUKSIZ bo'lak kerak.
+  > Bunday tovarda avto-taqsimot butunlay o'chadi — tizim bo'laklarni ko'rsatadi,
+  > qarorni kassir mijoz bilan kelishib qabul qiladi.
+  > To'liq tavsif, model va fazalar:
+  > **`docs/plans/2026-08-25-bolinadigan-tovar-bolak-hisobi.md`** (K-reja, 7-bo'lim).
+  > G4 yoki taqsimot mantiqiga tegadigan har qanday faza SHU FAYLNI ham o'qiydi.
+  > Diqqat: K-reja shtrix unikalligi qoidasiga ham istisno kiritadi (7.3).
 
 **Tayyor poydevor (qayta qurilmaydi):** RetailSale FSM `draft→picking→ready→posted`;
 `send-to-picking` yacheyka-prefiks bo'yicha sklad-kesim `RestockTask`lar ochib
