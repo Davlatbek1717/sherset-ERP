@@ -68,6 +68,10 @@ const ACT_DOC_TYPES = new Set([
   'retailsale',
   // G1: vozvrat pulining kassadan qaytarilishi balans jurnaliga yozadi.
   'returnPayout',
+  // G1 (2026-08-25): to'lovning JUFTI — vozvratning o'zi (`salesReturn`,
+  // `−sumMinor`). Reyestrda 2026-08-12 dan beri bor, lekin bu ro'yxatga
+  // qo'shilmagani uchun akt qatorida xom `salesReturn` satri chiqardi.
+  'salesReturn',
   'opening',
 ]);
 

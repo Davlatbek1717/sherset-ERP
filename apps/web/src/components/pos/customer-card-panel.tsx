@@ -100,6 +100,13 @@ const KNOWN_DOC_TYPES = new Set([
   'invoiceIn',
   'supply',
   'purchaseReturn',
+  // G1 (2026-08-25 tuzatildi): `returnPayout` yorlig'i i18n'da G1 sessiyasida
+  // qo'shilgan edi, lekin SHU ro'yxatga kirmagani uchun o'lik kalit bo'lib
+  // qolgandi — vozvrat to'lovi qatorida yorliq o'rniga xom `returnPayout`
+  // satri chiqardi. `salesReturn` (vozvratning O'ZI, to'lovning juftligi) ham
+  // shu yerda yo'q edi — G1 hisobotining «ochiq qolganlar» bandi.
+  'returnPayout',
+  'salesReturn',
   'paymentIn',
   'paymentOut',
   'cashIn',

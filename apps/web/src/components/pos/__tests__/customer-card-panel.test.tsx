@@ -335,6 +335,74 @@ describe('P2 — qarz TARIXI (balans jurnalidan)', () => {
     expect(await screen.findByTestId('customer-card-history-empty')).toBeInTheDocument();
   });
 
+  /**
+   * G1 (2026-08-25) — VOZVRAT JUFTLIGINING YORLIQLARI.
+   *
+   * G1 sessiyasi `pages.pos.customer_card_doc.returnPayout` kalitini
+   * qo'shgan, lekin komponentdagi `KNOWN_DOC_TYPES` ro'yxatiga tegmagan edi:
+   * kalit O'LIK qoldi va vozvrat to'lovi qatorida yorliq o'rniga xom
+   * `returnPayout` satri chiqardi. Vozvratning O'ZI (`salesReturn`,
+   * to'lovning jufti) esa umuman yorliqsiz edi — G1 hisobotining «ochiq
+   * qolganlar» bandi. Ikkalasi ham shu test bilan qulflandi.
+   */
+  it('🔴 vozvrat to`lovi (`returnPayout`) YORLIQ bilan chiziladi — xom kalit emas', async () => {
+    vi.mocked(api.get).mockImplementation(
+      routes(
+        {},
+        {
+          history: {
+            entries: [
+              {
+                at: '2026-08-24T10:00:00.000Z',
+                docType: 'returnPayout',
+                docId: 'rp-1',
+                number: 'ВВ-2026-00001',
+                deltaMinor: '50000',
+                increase: true,
+              },
+            ],
+          },
+        },
+      ),
+    );
+    const user = userEvent.setup();
+    renderPanel();
+    await pick(user);
+
+    const row = await screen.findByTestId('customer-card-history-rp-1');
+    expect(row).toHaveTextContent('Vozvrat puli');
+    expect(row).not.toHaveTextContent('returnPayout');
+  });
+
+  it('🔴 vozvratning O`ZI (`salesReturn`) ham YORLIQ bilan chiziladi', async () => {
+    vi.mocked(api.get).mockImplementation(
+      routes(
+        {},
+        {
+          history: {
+            entries: [
+              {
+                at: '2026-08-24T09:00:00.000Z',
+                docType: 'salesReturn',
+                docId: 'sr-1',
+                number: 'ВЗВ-00004',
+                deltaMinor: '50000',
+                increase: false,
+              },
+            ],
+          },
+        },
+      ),
+    );
+    const user = userEvent.setup();
+    renderPanel();
+    await pick(user);
+
+    const row = await screen.findByTestId('customer-card-history-sr-1');
+    expect(row).toHaveTextContent('Mijozdan qaytarish');
+    expect(row).not.toHaveTextContent('salesReturn');
+  });
+
   it('kesilgan tarixda «yana bor» belgisi chiqadi', async () => {
     vi.mocked(api.get).mockImplementation(
       routes({}, { history: { hasMore: true, totalCount: 120 } }),
