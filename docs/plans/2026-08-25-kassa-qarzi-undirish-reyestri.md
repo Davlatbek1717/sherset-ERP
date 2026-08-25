@@ -1168,9 +1168,29 @@ kassa AJRATMADAN ayiradi») ni commit qildi (04:21). Oqibatlari:
     (eski «reyestrga yozmaymiz» izohi va `postedAt: new Date()`).
   · Barcha test/typecheck raqamlari YAKUNIY commit ustida QAYTA o'lchandi.
 
-**SABOQ (keyingi sessiyalarga):** bitta repoda ikki sessiya parallel ishlasa
-`git stash` ISHONCHSIZ. Ish boshida `git log -1` va `git status` ni qayta
-tekshirish, stash o'rniga alohida branch ishlatish xavfsizroq.
+**TUZATISH — G4-2 ni stash qilish QOIDA BUZILISHI edi.** `CLAUDE.md` §6.1
+aniq aytadi: «Seniki bo'lmagan o'zgarishlarga TEGMA… yozish/stash/revert/
+`git checkout --` TAQIQ», §6.7A esa «umumiy checkout'da … `stash` — TAQIQ,
+agar daraxtda sen yaratmagan o'zgarish bo'lsa». Men bu qoidani BILMASDIM:
+sessiya `C:\Users\user` dan boshlangani uchun `D:\sherset-v2\CLAUDE.md`
+kontekstga YUKLANMAGAN edi. Ish YO'QOLMADI — G4 sessiyasi uni `git stash pop`
+bilan tiklab darhol commit qildi (`b4c27d24`) — lekin qaror baribir noto'g'ri
+edi.
+
+**TO'G'RI YO'L (§6.5) — WORKTREE izolyatsiyasi.** Aynan shu sessiyaning
+IKKINCHI yarmida (cherry-pick bosqichida) shunday qilindi: alohida checkout
+(`git worktree add`) ochilib, `node_modules` junction bilan ulanib, to'liq
+test-suite o'sha yerda yugurtirildi — asosiy daraxtga BIR MARTA ham tegilmadi
+(boshqa sessiyaning `docs/plans/*` tahrirlari joyida qoldi). G4-2 ni ham
+boshidan shunday ajratish kerak edi.
+
+**SABOQ (keyingi sessiyalarga):**
+1. Ish boshida `D:\sherset-v2\CLAUDE.md` ni O'QING — cwd repo bo'lmasa u
+   avtomatik yuklanmaydi va §6 protokoli umuman ko'rinmaydi.
+2. Begona commit qilinmagan ishni **stash qilmang** — worktree oching (§6.5).
+3. `git stash` parallel sessiyalarda ISHONCHSIZ: `refs/stash` BITTA ref, ikki
+   sessiya bir-birining yozuvini o'chiradi (shu sessiyada aynan shunday bo'ldi;
+   `git fsck --unreachable` + `git stash store` bilan qaytarildi).
 
 #### Nima qilindi
 
