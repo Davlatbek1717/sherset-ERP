@@ -110,6 +110,14 @@ npx tsx scripts/warehouse-state.ts --no-registry # faqat o'lchov
 Chiqish kodi: `0` = mos, `2` = farq bor (`xato` darajali drift).
 `ogohlantirish` darajali driftlar kodni o'zgartirmaydi.
 
+🔴 **DIQQAT — skript hozircha FAQAT LOKALDA bor.** 2026-08-26 da o'lchandi:
+jonli HEAD (`62a27024`) da na `scripts/warehouse-state.ts`, na shu reyestr
+fayli mavjud — H2 fazasi hali deploy qilinmagan va u serverga birinchi
+deploy bilan yetib boradi. Ya'ni **birinchi deploy'dan OLDIN uni jonlida
+yugurtirib bo'lmaydi**; u deploy'dan KEYINGI smoke'da birinchi marta
+yuriladi (dossier B5). Undan keyingi har bir ombor-deploy'ida — ikkala
+tomonda ham.
+
 **Qachon yugurtiriladi:**
 
 1. ombor / qoldiq / kassaga tegadigan **har deploy'dan keyin** — natijasi faza

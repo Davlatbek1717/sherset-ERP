@@ -1,20 +1,25 @@
 # Omborchi va TSD mijozlari — kontrol, vozvrat, TSD APK
 
-> **Yaratilgan:** 2026-08-23 · **Buyurtmachi:** Ozodbek (egasi) · **Holat:** **G1 ⚠️ QISMAN** (kod tayyor va HEAD'da butunligi 2026-08-25 da qayta tasdiqlandi; qabul mezoni jonli tasdiqni kutmoqda — egasi 2026-08-25 da deploy'ni «hozir yo'q» dedi; `9fe25d15` da bitta o'lik i18n kaliti tuzatildi) · G2+G3 KOD TAYYOR · **G4 2a (backend) TAYYOR** — kassa endi ko'p ombordan AVTOMATIK sotadi (tasdiq-to'sig'i olib tashlandi); 2b qoldi: POS UI, yig'ish topshiriqlari, H2/H3 (E5) · **G5 QISMAN** — TSD auth + APK skeleti · **G6 QISMAN** — TSD ish ekranlari (yig'ish + yetishmovchilik, joylashtirish, sanash) tayyor, **APK ENDI HAQIQATAN QURILADI** (`BUILD SUCCESSFUL`), lekin jonli qurilmada tekshirilmagan (qoida 11). **Deploy kutilmoqda** — egasi «keyinroq» dedi VA 2026-08-24 hodisasi hal bo'lmagan (`docs/plans/2026-08-24-split-kassa-hodisasi.md`). Deploy'da: `topup-role-permissions.ts` MAJBURIY (`retailcontrol` + `returnacceptance`); **BESHTA migratsiya** — G1 `…120000_drawer_cash_out_sales_return`, G3 `…170000_sales_return_retail_sale`, **G4 `20260825020000_retail_sale_position_allocation`**, **G5 `20260825170000_tsd_device`**, **G6 `20260825200000_tsd_work_screens`**; **egasi qo'lida:** Ombor 07 kartasiga «Kassa oldidagi ombor» checkbox'i (busiz «07 bo'linishda oxirida» qoidasi ishlamaydi). ⚠️ Bu deploy JONLI XULQNI o'zgartiradi — G4 2a hisobotidagi «Jonli sozlash» NI VA G6 hisobotining 1-bandini (omborchiga yacheyka ko'chirish OCHILADI) o'qing
+> **Yaratilgan:** 2026-08-23 · **Buyurtmachi:** Ozodbek (egasi) · **Holat:** **G1 ⚠️ QISMAN** (kod tayyor va HEAD'da butunligi 2026-08-25 da qayta tasdiqlandi; qabul mezoni jonli tasdiqni kutmoqda — egasi 2026-08-25 da deploy'ni «hozir yo'q» dedi; `9fe25d15` da bitta o'lik i18n kaliti tuzatildi) · G2+G3 KOD TAYYOR · **G4 2a (backend) TAYYOR** — kassa endi ko'p ombordan AVTOMATIK sotadi (tasdiq-to'sig'i olib tashlandi); 2b qoldi: POS UI, yig'ish topshiriqlari, H2/H3 (E5) · **G5 QISMAN** — TSD auth + APK skeleti · **G6 QISMAN** — TSD ish ekranlari (yig'ish + yetishmovchilik, joylashtirish, sanash) tayyor, **APK ENDI HAQIQATAN QURILADI** (`BUILD SUCCESSFUL`), lekin jonli qurilmada tekshirilmagan (qoida 11). **Deploy kutilmoqda** — egasi «keyinroq» dedi VA 2026-08-24 hodisasi hal bo'lmagan (`docs/plans/2026-08-24-split-kassa-hodisasi.md`). Deploy'da: `topup-role-permissions.ts` MAJBURIY (`retailcontrol` + `returnacceptance` + **`piecetracking`**); G-rejaning O'Z migratsiyalari BESHTA (G1 `…120000_drawer_cash_out_sales_return`, G3 `…170000_sales_return_retail_sale`, G4 `20260825020000_retail_sale_position_allocation`, G5 `20260825170000_tsd_device`, G6 `20260825200000_tsd_work_screens`), lekin **BUTUN DELTA — 12 migratsiya** (Q/A/K bilan birga; tartib dossierda); **egasi qo'lida:** Ombor 07 kartasiga «Kassa oldidagi ombor» checkbox'i (busiz «07 bo'linishda oxirida» qoidasi ishlamaydi). ⚠️ Bu deploy JONLI XULQNI o'zgartiradi — G4 2a hisobotidagi «Jonli sozlash» NI VA G6 hisobotining 1-bandini (omborchiga yacheyka ko'chirish OCHILADI) o'qing
 >
 > 📋 **DEPLOY DOSSIERI — `docs/ops/2026-08-25-deploy-dossieri.md` (2026-08-26 da QAYTA YOZILDI).**
-> Yuqoridagi «BESHTA migratsiya» ham, dossierning birinchi tahriridagi «YETTITA»
-> ham ESKIRGAN. **Joriy raqamlar: delta `62a27024..HEAD` = 69 commit, 12 migratsiya**
-> (G1–G6 + Q1–Q6 + A1–A3 + K1–K6 + H2/H5). Dossierda 6 ta bloklovchi kamchilik,
-> 12 migratsiyaning TARTIBI va qadamma-qadam retsept bor.
-> 🔴 **B0: 33 commit `mirfayz` remote'ga PUSH QILINMAGAN** — deploy manbasi
-> o'sha remote, ya'ni push qilinmasa server ESKI kodni oladi.
-> 🔴 **B3: `/deploy` va `deploy-smart.sh` bu delta uchun ISHLATILMAYDI** — ular
-> `origin/climart-adoption` ga `reset --hard` qiladi, u esa jonlidan 8 commit
-> ORQADA (F6/F7/F8 ni produksiyadan o'chirib tashlardi). Faqat qo'lda F-reja 2.8.
-> ✅ **E5 (D1) 2026-08-26 da YOPILDI** — `warehouse-state-core.ts` endi G4-2a
-> haqiqatida (`needs_approval` bekor, `reachable` = kaskaddagi hammasi,
-> reyestrda `posFront`). G4 2b ning qolgan bandlari: POS UI + yig'ish topshiriqlari.
+> Sarlavhadagi «BESHTA» — G-rejaning O'Z migratsiyalari; dossierning birinchi
+> tahriridagi «YETTITA» esa ESKIRGAN. **Joriy raqamlar: delta
+> `62a27024..HEAD` = 73 commit, 12 migratsiya** (G1–G6 + Q1–Q6 + A1–A3 +
+> K1–K6 + H2/H5 + E5). Dossierda migratsiyalarning TARTIBI va qadamma-qadam
+> retsept bor.
+> ✅ **B0 (push), B1 (12/12 migratsiya lokal isbotlangan), B2 (down skriptlar
+> sinalgan), B3 (deploy qo'riqchisi) va E5 — 2026-08-26 da YOPILDI.**
+> 🔴 **B3 tuzog'i endi MEXANIK:** `deploy-smart.sh` `reset --hard` HEAD ni
+> ORQAGA suradigan bo'lsa TO'XTAYDI (`origin/climart-adoption` jonlidan
+> 8 commit orqada — F6/F7/F8 aynan o'sha 8 tada). Baribir faqat qo'lda
+> ff-merge (F-reja 2.8) — `/deploy` ISHLATILMAYDI.
+> 🔴 **B5: `warehouse-state.ts` jonli HEAD'da YO'Q** (H2 hali deploy
+> qilinmagan) ⇒ «deploy'dan OLDIN yugurtir» qadami bu BIRINCHI deploy uchun
+> bajarilmaydi; u deploy'dan KEYINGI smoke'ga ko'chirildi.
+> ✅ **E5 (D1)** — `warehouse-state-core.ts` endi G4-2a haqiqatida
+> (`needs_approval` bekor, `reachable` = kaskaddagi hammasi, reyestrda
+> `posFront`). G4 2b ning qolgan bandlari: POS UI + yig'ish topshiriqlari.
 >
 > **Ijro tartibi:** har faza ALOHIDA sessiyada. Agent shu faylni va
 > `docs/plans/2026-08-23-ombor-restrukturizatsiya.md` ni (F-reja) TO'LIQ o'qiydi,
@@ -511,7 +516,12 @@ G1–G6 + Q1–Q3 + A1 + A2 aralash (dossier B5). Egasiga uch yo'l berildi
 (A — butun branch, B — tor branch G4siz, C — deploy yo'q); **egasi C ni tanladi.**
 ⇒ jonli tekshiruv qilinmadi, `warehouse-state.ts` yugurtirilmadi (jonli baza
 ochilmadi), VPS HEAD tekshirilmadi. Deploy retsepti o'z holicha kuchda:
-`docs/ops/2026-08-25-deploy-dossieri.md` (5-bo'lim).
+`docs/ops/2026-08-25-deploy-dossieri.md`.
+
+> ⏳ **TARIXIY RAQAMLAR** — «43 commit / 7 migratsiya» 2026-08-25 kunidagi
+> o'lchov. Joriy holat: **73 commit / 12 migratsiya** (sarlavhadagi dossier
+> blokiga qarang). Dossierning bo'lim raqamlari ham o'zgargan: deploy
+> retsepti endi **6-bo'lim**.
 
 **6. QABUL MEZONI — bandma-band (qoida 11):**
 
@@ -523,7 +533,7 @@ ochilmadi), VPS HEAD tekshirilmadi. Deploy retsepti o'z holicha kuchda:
 | 4 | ikkinchi to'lov urinishi rad etiladi | ❌ deploy yo'q (testda ✅: cap 400 + poyga 409) |
 
 **To'rttadan biri ham jonlida bajarilmagan ⇒ G1 «QISMAN».** Yopish sharti —
-deploy + dossier 5-bo'lim 7-qadamidagi G1 zanjiri.
+deploy + dossier **6-bo'lim 8-qadamidagi** G1 zanjiri (bo'lim/qadam raqamlari 2026-08-26 tahririda o'zgardi).
 
 **7. QOIDA 10 — «bu o'zgarish qaysi mavjud oqimni buzishi mumkin?»**
 

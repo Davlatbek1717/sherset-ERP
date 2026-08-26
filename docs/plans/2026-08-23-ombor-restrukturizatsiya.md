@@ -73,6 +73,11 @@
    jonli holat reyestrdan (`docs/ops/jonli-holat.md`) chetda: sabab
    aniqlanmaguncha davom etilmaydi. «Sahifa 200» verify qoida 13 dagi
    uchma-uch smoke'ni ALMASHTIRMAYDI.
+   ⚠️ **BIRINCHI deploy uchun «OLDIN» yarmi BAJARILMAYDI** (2026-08-26 da
+   o'lchandi): skript ham, reyestr ham jonli HEAD'da (`62a27024`) YO'Q —
+   H2 fazasining o'zi hali chiqmagan va u serverga AYNAN o'sha deploy bilan
+   yetib boradi. Shu sabab birinchi deploy'da faqat «KEYIN» bajariladi
+   (dossier B5). Keyingi HAR BIR ombor-deploy'ida ikkala yarmi ham majburiy.
 9. Ishlar faqat `D:\sherset-v2` da. Boshqa loyihalarga (VPS'dagi biznesjon,
    global-erp, sherset-servis, akademiya…) TEGILMAYDI.
 

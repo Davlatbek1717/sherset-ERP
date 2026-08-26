@@ -361,15 +361,26 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 > - **B1** G6 `…tsd_work_screens` va Q4 `…sale_debt_term` migratsiyalari
 >   `sherset_v2_dev` da **UP×2 → zond → DOWN×2 → UP** bilan isbotlandi
 >   ⇒ **12/12 migratsiya endi lokal bazada sinalgan**;
-> - **B2** G1/G3/G4/Q1 ning 4 down skripti sinaldi; tuzilma DOWN→UP dan keyin
->   AYNAN tiklandi (FK siyosatlari: RESTRICT / SET NULL / CASCADE — baseline
->   bilan belgi-belgi bir xil). Ma'lumot yo'qolishi 0 edi (o'lchandi);
+> - **B2** down skriptlar sinaldi: G1/G3/G4/Q1 + yo'l-yo'lakay **A1** ham
+>   (u ilgari faqat qisman yugurtirilgan edi) ⇒ **12/12 down skript isbotlangan**.
+>   Tuzilma DOWN→UP dan keyin AYNAN tiklandi (FK siyosatlari RESTRICT /
+>   SET NULL / CASCADE — baseline bilan belgi-belgi bir xil). Ma'lumot
+>   yo'qolishi 0 edi (o'lchandi). Halol chegara: `retail_drawer_cash_in`
+>   lokalda BO'SH ⇒ A1 ning «pul yo'qolmaydi» da'vosi tuzilma darajasida
+>   tekshirildi, ma'lumot bilan emas;
 > - **B3** `deploy-smart.sh` da orqaga-ketish qo'riqchisi.
 >
-> **🔴 QOLGAN IKKI TO'SIQ — IKKALASI HAM VPS KIRISHINI TALAB QILADI:**
-> **B4** — VPS HEAD tasdiqlanmagan (`62a27024` kutiladi, Davlatbek reset tuzog'i) ·
-> **B5** — jonli holat 2026-08-24 dan beri o'lchanmagan
-> (`npx tsx scripts/warehouse-state.ts`, faqat o'qish).
+> **✅ B4 va B5 — egasining qarori (2026-08-26, C yo'li): DEPLOY OYNASIGA
+> ko'chirildi va retseptning ICHIGA yozildi** — B4 = 2-qadam (VPS HEAD
+> `62a27024` bo'lishi, aks holda TO'XTA), B5 = 8-qadam (deploy'dan keyingi
+> smoke). ⇒ **deploy oldidan yopilishi kerak bo'lgan to'siq QOLMADI.**
+>
+> 🔴 **B5 haqida o'lchangan HAQIQAT (retseptdagi ziddiyat tuzatildi):**
+> `warehouse-state.ts` ham, `docs/ops/jonli-holat.md` ham jonli HEAD'da
+> (`62a27024`) **YO'Q** — H2 fazasining o'zi deploy qilinmagan va skript
+> serverga AYNAN shu deploy bilan yetib boradi. Ya'ni qoida 8 ning
+> «deploy'dan OLDIN yugurtir» yarmi bu BIRINCHI deploy uchun bajarilmaydi.
+> Bu F-reja qoida 8 ga, `jonli-holat.md` §3 ga va dossier retseptiga yozildi.
 >
 > **Yo'l-yo'lakay o'lchandi (dossier D8):** dev bazaning sxema drifti **31
 > bayonot**, uch sinf — 10× `updated_at DROP DEFAULT`, 4× `DROP TABLE "_*_bak*"`,

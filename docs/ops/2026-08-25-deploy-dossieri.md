@@ -5,7 +5,7 @@
 >
 > **Yaratilgan:** 2026-08-25 (delta `62a27024..8d1f4a01`, 37 commit, 7 migratsiya).
 > 🔴 **QAYTA YOZILDI: 2026-08-26** — delta o'shandan beri deyarli ikki baravar
-> o'sdi (**69 commit, 12 migratsiya**) va eski raqamlar deploy'ni xato yo'lga
+> o'sdi (**73 commit, 12 migratsiya**) va eski raqamlar deploy'ni xato yo'lga
 > boshlardi. Eski matn git tarixida (`17dc7f43`).
 >
 > **DEPLOY QILINMAGAN** (egasining 2026-08-25 dagi «C — hozir deploy YO'Q» qarori).
@@ -16,11 +16,11 @@
 
 | | |
 |---|---|
-| **Delta** | `62a27024..HEAD` — **69 commit** |
+| **Delta** | `62a27024..HEAD` — **73 commit** |
 | **Migratsiya** | **12 ta** (2-bo'limdagi TARTIB majburiy) |
 | **Push holati** | ✅ **2026-08-26 da push qilindi** (`61780120..9f05c712`). Ilgari 33 commit qolib ketgan edi — A1–A3, Q4–Q6, K1–K6 serverga yetib bormasdi |
-| **Texnik gate (HEAD'da o'lchandi)** | ✅ typecheck 10/10 · ✅ lint 0 error / 1272 warning · ✅ api **684 fayl / 9907 passed / 0 failed** · ✅ web **339 fayl / 4427 passed / 0 failed** (i18n gate'lar ichida) |
-| **Bloklovchi kamchilik** | **2 ta ochiq — B4 va B5, ikkalasi ham VPS kirishini talab qiladi.** B0, B1, B2, B3 2026-08-26 da yopildi. Hech biri KOD emas edi |
+| **Texnik gate (HEAD'da o'lchandi)** | ✅ typecheck 10/10 · ✅ lint 0 error / 1272 warning · ✅ api **684 fayl / 9912 passed / 0 failed** · ✅ web **339 fayl / 4427 passed / 0 failed** (i18n gate'lar ichida) |
+| **Bloklovchi kamchilik** | **0 ta ochiq.** B0, B1, B2, B3 2026-08-26 da yopildi; **B4 va B5 esa egasining qarori bilan (C yo'li) deploy retseptining ICHIGA ko'chirildi** — B4 = 2-qadam, B5 = 8-qadam. Hech biri KOD emas edi |
 | **Jonli xulq o'zgaradimi** | **HA, uch joyda** (5-bo'lim) |
 
 **Delta ichidagi ish oqimlari — UCHTA, hammasi «QISMAN»:**
@@ -58,7 +58,7 @@ Oxirida BIR MARTA: `pnpm exec prisma generate`
 | 4 | `20260825120000_debt_source_doc` | Q1 | ✅ | ✅ **sinalgan** (2026-08-26) |
 | 5 | `20260825170000_tsd_device` | G5 | ✅ 2× | ✅ sinalgan |
 | 6 | `20260825200000_tsd_work_screens` | G6 | ✅ **UP×2→zond→DOWN×2→UP** (2026-08-26) | ✅ **sinalgan** |
-| 7 | `20260825220000_drawer_cash_in_kind` | A1 | ✅ | ✅ |
+| 7 | `20260825220000_drawer_cash_in_kind` | A1 | ✅ | ✅ **sinalgan** (2026-08-26) |
 | 8 | `20260825230000_stock_piece_registry` | K1 | ✅ UP×2→zond→DOWN×2→UP | ✅ |
 | 9 | `20260825235000_company_settings_sale_debt_term` | Q4 | ✅ **UP×2→zond→DOWN×2→UP** (2026-08-26) | ✅ **sinalgan** |
 | 10 | `20260826000000_stock_piece_cut` | K4 | ✅ UP×2→zond→DOWN×2→UP | ✅ |
@@ -130,14 +130,23 @@ belgi-belgi bir xil):
 | G4 `retail_sale_position_allocations` | 9 ustun; FK: account **CASCADE**, position **CASCADE**, store **RESTRICT**, cell **SET NULL** |
 | Q1 `debts` | 2 ustun + **unikal indeks** `(account_id, source_doc_type, source_doc_id)` |
 
-⇒ **12 migratsiyaning HAMMASI endi lokal bazada isbotlangan, 12 down skriptning
-6 tasi sinalgan** (G5/G6/Q4 + G1/G3/G4/Q1 — jami 7; K1/K4/K5/K6 va A1 niki
-o'z sessiyalarida). Qoida 12 ning «yoziladi VA sinaladi» sharti yopildi.
+⇒ **12/12 migratsiya VA 12/12 down skript endi lokal bazada isbotlangan** —
+G1/G3/G4/Q1/G6/Q4/**A1** (2026-08-26, shu sessiya) + G5 (o'z sessiyasi)
++ K1/K4/K5/K6 (o'z sessiyalari, `UP×2→zond→DOWN×2→UP` zanjiri ichida).
+
+**A1 (`20260825220000_drawer_cash_in_kind`)** ham to'liq zanjirdan o'tkazildi
+(ilgari faqat «zondning 1-bosqichi» sifatida qisman yugurtirilgan edi):
+`DOWN → DOWN (no-op) → UP` — `kind` ustuni va IKKI indeks aynan tiklandi,
+qator soni va `Σ sum_minor` o'zgarmadi.
+⚠️ **Halol chegara:** lokal `retail_drawer_cash_in` jadvali BO'SH (0 qator),
+shuning uchun skriptning «pul va balans yo'qolmaydi» da'vosi **tuzilma
+darajasida** tekshirildi, ma'lumot bilan EMAS. Jonlida qaytarish kerak
+bo'lsa fayl boshidagi eksport buyrug'i baribir bajarilsin.
 
 > 2026-08-24 hodisasidan keyin kassaga tegadigan deploy'ni sinalgan qaytarish
 > yo'lisiz chiqarish — aynan IS-4. Endi bu qarz yo'q.
 
-### B3 — 🔴 `/deploy` VA `deploy-smart.sh` BU DELTA UCHUN ISHLATILMAYDI
+### ✅ B3 — `/deploy` VA `deploy-smart.sh` ISHLATILMAYDI · **QO'RIQCHI QO'YILDI 2026-08-26**
 
 `deploy/deploy-smart.sh` → `git fetch origin climart-adoption` + **`git reset --hard`**.
 
@@ -160,16 +169,51 @@ Ongli rollback: `DS_ALLOW_ROLLBACK=1`. Tarixlar bog'lanmagan bo'lsa
 ogohlantirish bilan. ⚠️ Qo'riqchi VPS'dagi nusxada ishlaydi, ya'ni u
 **deploy bilan birga yetib boradi** — hozircha jonlidagi skriptda YO'Q.
 
-### B4 — Jonli VPS HEAD tasdiqlanmagan (Davlatbek reset tuzog'i)
+### ⏭️ B4 — Jonli VPS HEAD (Davlatbek reset tuzog'i) · **DEPLOY RETSEPTIGA KO'CHIRILDI (C yo'li)**
 
-Kutilishi: `62a27024` (F8 hisoboti). Tekshirilmagan — SSH paroli berilmagan.
-HEAD boshqa bo'lsa butun delta hisobi noto'g'ri.
+Kutilishi: `62a27024` (F8 hisoboti). **Egasining qarori (2026-08-26): C yo'li —
+B4 deploy oynasiga qoldirildi**, u yerda baribir 2-qadam sifatida bajariladi.
+HEAD boshqa bo'lsa butun delta hisobi noto'g'ri ⇒ deploy TO'XTAYDI.
 
-### B5 — Jonli holat 2026-08-24 dan beri O'LCHANMAGAN
+Buyruq (faqat o'qish):
 
-`docs/ops/jonli-holat.md` reyestri o'sha kungi o'lchov. Deploy'dan OLDIN
-qoida 8 talab qiladi: `cd packages/db && npx tsx scripts/warehouse-state.ts`
-(faqat o'qish). Chiqish kodi 2 bo'lsa TO'XTA.
+    git -C /var/www/sherset-v2 rev-parse HEAD          # kutilgan: 62a27024
+    git -C /var/www/sherset-v2 log --oneline -3
+    git -C /var/www/sherset-v2 status --short          # bo'sh bo'lishi kerak
+
+### ⏭️ B5 — deploy'dan OLDIN O'LCHASH MUMKIN EMAS · **8-QADAMGA KO'CHIRILDI (C yo'li)**
+
+Bu band avval «jonli holat 2026-08-24 dan beri o'lchanmagan» deb yozilgan edi
+va retseptning 1-qadami `warehouse-state.ts` ni deploy'dan OLDIN yugurtirishni
+talab qilardi. **Bu bajarib bo'lmaydi va sabab o'lchandi:**
+
+    git cat-file -e 62a27024:packages/db/scripts/warehouse-state.ts  → YO'Q
+    git cat-file -e 62a27024:docs/ops/jonli-holat.md                 → YO'Q
+    1d3ccbb6 (H2) — 62a27024 dan KEYIN
+
+Ya'ni **H2 fazasining o'zi hali deploy qilinmagan**: skript ham, reyestr ham
+serverga aynan SHU deploy bilan yetib boradi. Qoida 8 ning «deploy'dan OLDIN va
+KEYIN» talabi bu BIRINCHI deploy uchun bajarilmaydi — keyingilari uchun
+bajariladi.
+
+**Qaror (egasi, 2026-08-26 — C yo'li):** B5 deploy oynasiga qoldiriladi va
+u yerda **deploy'dan KEYINGI** qadam bo'ladi (qoida 13 baribir shuni talab
+qiladi). Deploy'dan oldingi o'lchov SHART emas, chunki:
+
+- jonli holat 2026-08-24 dan beri o'zgarmagan (hech qanday deploy va hech
+  qanday jonli skript yurmagan — `jonli-holat.md` o'zgarishlar jurnali bo'sh);
+- reyestrdagi kutilayotgan holat o'sha kungi o'lchovga tayanadi.
+
+Agar deploy'dan OLDINGI o'lchov BARIBIR kerak bo'lsa (masalan orada kimdir
+jonli bazaga tegdi degan shubha bo'lsa), yagona yo'l — uch faylni vaqtincha
+VPS'ga nusxalash:
+
+    /var/www/sherset-v2/packages/db/scripts/_tmp_state_check/
+        warehouse-state.ts · warehouse-state-core.ts · warehouse-split-core.ts
+
+va `--no-registry` bilan yugurtirish (reyestr fayli yo'q). 🔴 **Yugurtirgach
+DARHOL O'CHIRING** — aks holda keyingi `git merge --ff-only` «untracked working
+tree files would be overwritten» bilan yiqiladi.
 
 ---
 
@@ -289,16 +333,22 @@ guruhiga yoqilsin, bir kunda butun «м» katalogiga emas.
 
 ## 6. DEPLOY RETSEPTI (qadamma-qadam)
 
-> Old shart: B0–B5 yopilgan. `/deploy` va `deploy-smart.sh` **ISHLATILMAYDI** (B3).
+> Old shart: **B0–B3 YOPILGAN** (2026-08-26). B4 va B5 shu retseptning
+> ichida bajariladi (egasining C qarori). `/deploy` va `deploy-smart.sh`
+> **ISHLATILMAYDI** (B3).
 
-**0. Push** — `git push mirfayz yacheyka-inventarizatsiya` (B0).
+**0. Push** — ✅ bajarilgan (`5ecd24a0`). Yangi commit qo'shilsa qayta push.
 
-**1. Deploy'dan OLDIN o'lchov** — `packages/db` ichida
-`npx tsx scripts/warehouse-state.ts` (faqat o'qish). Chiqish kodi 2 bo'lsa
-TO'XTA. Natija hisobotga ko'chiriladi.
+**1. ~~Deploy'dan OLDIN `warehouse-state.ts`~~ — BU QADAM OLIB TASHLANDI.**
+🔴 Skript jonli HEAD'da (`62a27024`) YO'Q — H2 fazasining o'zi hali deploy
+qilinmagan, ya'ni u serverga aynan SHU deploy bilan yetib boradi (B5, o'lchov
+bilan). Shuning uchun qoida 8 ning «OLDIN» yarmi **bu birinchi deploy uchun
+bajarilmaydi**; keyingi har bir ombor-deploy'ida bajariladi.
+O'rniga 8-qadamdagi **deploy'dan KEYINGI** o'lchov majburiy.
 
-**2. VPS HEAD tekshiruvi:** `git -C /var/www/sherset-v2 rev-parse HEAD` →
-`62a27024` kutiladi. Farq bo'lsa TO'XTA (B4).
+**2. VPS HEAD tekshiruvi (B4):** `git -C /var/www/sherset-v2 rev-parse HEAD` →
+`62a27024` kutiladi. Farq bo'lsa **TO'XTA** — delta hisobi noto'g'ri bo'ladi.
+`git status --short` ham bo'sh bo'lishi kerak.
 
 **3. Kodni olib kelish:**
 `git fetch <mirfayz-url> yacheyka-inventarizatsiya:tmp && git merge --ff-only tmp`
@@ -331,7 +381,12 @@ Keyin follow-up commit: uchalasini `TOPUP_ENTITIES` dan olib tashlash.
 
 **8. Uchma-uch smoke (qoida 13 — «sahifa 200» buni ALMASHTIRMAYDI):**
 sinov sotuv (post → tekshir → cancel) + yacheyka sanash + ko'chirish +
-`npx tsx scripts/warehouse-state.ts` (natijasi hisobotga). Qo'shimcha zanjirlar:
+🔴 **B5 shu yerda yopiladi:** `cd packages/db && npx tsx scripts/warehouse-state.ts`
+— endi skript serverda BOR (shu deploy olib keldi). **Chiqish kodi 0 kutiladi**
+va natija hisobotga ko'chiriladi. Kod 2 bo'lsa sabab aniqlanmaguncha davom
+etilmaydi. ⚠️ Reyestrdagi `Ombor 02 → posPriority 2` (R1) hamon jonlidagi
+haqiqat — u H6/1-bandda olib tashlanganda reyestr ham `null` ga o'zgartiriladi.
+Qo'shimcha zanjirlar:
 
 * **G1** — sinov vozvrat → POS mijoz profilida qaytim → to'lov → expected-cash
   aynan shu summaga kamayadi → ikkinchi to'lov RAD etiladi;
