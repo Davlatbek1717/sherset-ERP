@@ -29,6 +29,11 @@ interface NotificationsResponse {
 }
 
 function entityHref(kind: string, entity: string | null, entityId: string | null): string | null {
+  // K6 — kunlik bo'lak sverkasi signali. Uning `entityId` si YO'Q (hujjat
+  // emas, HISOBOT), shuning uchun shart `entityId` tekshiruvidan OLDIN
+  // turadi — aks holda xabar havolasiz qolardi va katta omborchi qayerga
+  // borishni bilmasdi.
+  if (kind === 'piece_reconciliation_diff') return '/reports/piece-reconciliation';
   if (!entityId) return null;
   if (kind.startsWith('task_') || entity === 'Task') return `/tasks/${entityId}`;
   if (kind.startsWith('opportunity_') || entity === 'Opportunity')

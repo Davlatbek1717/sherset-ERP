@@ -52,7 +52,10 @@ function makePrisma(rows: Rows = {}) {
         ? { id: PRODUCT, name: 'UzKabel VVG 2x2.5', code: 'K-1', uom: 'м', pieceTracked: true }
         : rows.product,
     );
-  const productUpdate = vi.fn().mockResolvedValue({ id: PRODUCT, pieceTracked: true });
+  // K6: javobda `pieceTrackedDecidedAt` ham bor (qaror muhri).
+  const productUpdate = vi
+    .fn()
+    .mockResolvedValue({ id: PRODUCT, pieceTracked: true, pieceTrackedDecidedAt: new Date() });
   const storeFindFirst = vi
     .fn()
     .mockResolvedValue(rows.store === undefined ? { id: STORE, name: 'Ombor 07' } : rows.store);
@@ -367,15 +370,31 @@ describe('lookup — yorliq skaneri (7.3)', () => {
 
 // ---------------------------------------------------------------------------
 
-describe('bayroq (K-Q9 — K2 doirasidagi minimal enabler)', () => {
-  it('bayroqni yoqadi', async () => {
+describe('bayroq (K-Q9 — K2 enabler, K6 dan boshlab QAROR muhri bilan)', () => {
+  // ⚠️ Bu blok K6 da YANGILANDI (o'chirilmadi): `setFlag` endi bayroq bilan
+  // birga QARORNI ham yozadi (`piece_tracked_decided_at` + `..._by_id`).
+  // Sabab K6/3 da: bayroqning O'ZI uch holatni ifodalay olmaydi va «yo'q»
+  // degan javob «hali hech kim qaramagan» dan farq qilmasdi ⇒ tovar «Hal
+  // qilinmagan» ro'yxatidan hech qachon chiqmasdi.
+  it('bayroqni yoqadi va qarorni MUHRLAYDI (kim + qachon)', async () => {
     const { svc, productUpdate } = makePrisma();
-    await svc.setFlag('acc-1', { assortmentId: PRODUCT, pieceTracked: true });
-    expect(productUpdate).toHaveBeenCalledWith({
-      where: { id: PRODUCT },
-      data: { pieceTracked: true },
-      select: { id: true, pieceTracked: true },
-    });
+    await svc.setFlag('acc-1', { assortmentId: PRODUCT, pieceTracked: true }, 'emp-7');
+
+    const call = productUpdate.mock.calls[0]?.[0];
+    expect(call.where).toEqual({ id: PRODUCT });
+    expect(call.data.pieceTracked).toBe(true);
+    expect(call.data.pieceTrackedDecidedAt).toBeInstanceOf(Date);
+    expect(call.data.pieceTrackedDecidedById).toBe('emp-7');
+    expect(call.select).toEqual({ id: true, pieceTracked: true, pieceTrackedDecidedAt: true });
+  });
+
+  it('🔴 «yo`q» ham QAROR — u ham muhrlanadi', async () => {
+    const { svc, productUpdate } = makePrisma();
+    await svc.setFlag('acc-1', { assortmentId: PRODUCT, pieceTracked: false }, 'emp-7');
+
+    const data = productUpdate.mock.calls[0]?.[0]?.data;
+    expect(data.pieceTracked).toBe(false);
+    expect(data.pieceTrackedDecidedAt).toBeInstanceOf(Date);
   });
 
   it('yo`q tovarda — 404', async () => {

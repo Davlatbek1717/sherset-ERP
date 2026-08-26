@@ -30,6 +30,9 @@ const ROW_BY_KIND: Partial<Record<NotificationKindValue, string>> = {
   // G2 — kontrol oqimi kassir-signallari ham «Розница» qatorida.
   sale_edited: 'retail',
   sale_ready: 'retail',
+  // K6 — kunlik bo'lak sverkasi signali ham «Розница» qatorida (ombor/savdo
+  // oilasi). Ya'ni katta omborchi uni xodim kartochkasidan o'chira oladi.
+  piece_reconciliation_diff: 'retail',
 };
 
 export function notificationRowForKind(kind: NotificationKindValue): string | undefined {

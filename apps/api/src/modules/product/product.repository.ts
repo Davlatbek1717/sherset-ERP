@@ -3,6 +3,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { tashkentRangeBounds } from '../report/report-date-bounds.util.js';
 import { searchTokenGroups } from '../shared/search-tokens.js';
+import { defaultPieceTrackedForUom } from '../stock-piece/piece-flag-policy.js';
 import {
   StockInTransitService,
   inTransitAssortmentKey,
@@ -574,6 +575,17 @@ export class ProductRepository {
         volumeML: input.volumeML,
         weighed: input.weighed,
         uom: input.uom,
+        // K6 (K-Q9) — birligi «m» bo'lgan YANGI tovar «Bo'lak hisobi
+        // yuritilsin» bayrog'i YOQILGAN holda keladi. Egasining sababi:
+        // «jim ishlamaslikdan ko'ra shovqinli ishlamaslik yaxshi».
+        // Bayroq FOYDALANUVCHI KIRITMASIDAN olinmaydi (sxemada bunday
+        // maydon YO'Q va ataylab): uni o'zgartirish `piecetracking.update`
+        // ruxsatini talab qiladigan ALOHIDA yo'l (`POST /stock-pieces/flag`),
+        // aks holda `product.update` ruxsati bo'lgan har kim kassa
+        // taqsimotini (K3 ning 7.1 istisnosi) jimgina o'zgartira olardi.
+        // `piece_tracked_decided_at` ATAYLAB to'ldirilmaydi ⇒ tovar «Hal
+        // qilinmagan» ro'yxatida ko'rinadi (K6/3).
+        pieceTracked: defaultPieceTrackedForUom(input.uom),
         vat: input.vat ?? null,
         vatEnabled: input.vatEnabled,
         useParentVat: input.useParentVat,
@@ -791,6 +803,12 @@ export class ProductRepository {
         volumeML: src.volumeML,
         weighed: src.weighed,
         uom: src.uom,
+        // K6 — NUSXA ham YANGI nomenklatura: bayroq manbadan KO'CHIRILMAYDI,
+        // birlikdan qayta hisoblanadi va qaror MUHRLANMAYDI. Manbaning
+        // qarorini ko'chirish yolg'on bo'lardi — nusxa boshqa tovar
+        // (masalan boshqa kesim/o'ram) va u ham «Hal qilinmagan» ro'yxatidan
+        // o'tishi kerak.
+        pieceTracked: defaultPieceTrackedForUom(src.uom),
         vat: src.vat,
         vatEnabled: src.vatEnabled,
         useParentVat: src.useParentVat,

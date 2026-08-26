@@ -398,6 +398,7 @@ model Employee {
 
   ownedProducts              Product[]                  @relation("ProductOwner")
   modifiedProducts           Product[]                  @relation("ProductModifiedBy")
+  pieceFlagDecisions         Product[]                  @relation("ProductPieceFlagDecidedBy")
   ownedCounterparties        Counterparty[]             @relation("CounterpartyOwner")
   modifiedCounterparties     Counterparty[]             @relation("CounterpartyModifiedBy")
   ownedSavedFilters          SavedFilter[]              @relation("SavedFilterOwner")
@@ -5493,6 +5494,21 @@ model Product {
   // K6 (birligi «m» bo'lgan YANGI tovarda yoqilgan holda keladi, K-Q9).
   pieceTracked Boolean @default(false) @map("piece_tracked")
 
+  // K6 — BAYROQ SIYOSATI (K-Q9). `pieceTracked` ning O'ZI uch holatni ifodalay
+  // olmaydi: `false` bir vaqtda ham «yo'q dedik», ham «hali hech kim
+  // qaramagan» degani bo'lardi. «Hal qilinmagan» ro'yxati (K6/3-vazifa) esa
+  // aynan ikkinchisini ko'rsatishi kerak — aks holda yangi nomenklatura
+  // jimgina o'tib ketadi.
+  //
+  //   `piece_tracked_decided_at IS NULL`  ⇒ QAROR YO'Q (ro'yxatda turadi)
+  //   `piece_tracked_decided_at` to'lgan  ⇒ odam ha/yo'q dedi (ro'yxatdan chiqdi)
+  //
+  // Birligi «m» bo'lgan YANGI tovar `piece_tracked = true` bilan keladi, lekin
+  // qaror MUHRLANMAYDI: bayroq shovqinli ishlaydi (K-Q9 sababi) va tovar
+  // baribir ro'yxatda ko'rinib turadi.
+  pieceTrackedDecidedAt   DateTime? @map("piece_tracked_decided_at") @db.Timestamptz()
+  pieceTrackedDecidedById String?   @map("piece_tracked_decided_by_id") @db.Uuid
+
   // Discount policy
   discountProhibited Boolean @default(false) @map("discount_prohibited")
 
@@ -5535,6 +5551,7 @@ model Product {
   account                 Account                  @relation(fields: [accountId], references: [id], onDelete: Cascade)
   owner                   Employee?                @relation("ProductOwner", fields: [ownerId], references: [id], onDelete: SetNull)
   modifiedBy              Employee?                @relation("ProductModifiedBy", fields: [modifiedById], references: [id], onDelete: SetNull)
+  pieceTrackedDecidedBy   Employee?                @relation("ProductPieceFlagDecidedBy", fields: [pieceTrackedDecidedById], references: [id], onDelete: SetNull)
   productFolder           ProductFolder?           @relation(fields: [productFolderId], references: [id], onDelete: SetNull)
   group                   Group?                   @relation(fields: [groupId], references: [id], onDelete: SetNull)
   supplier                Counterparty?            @relation("ProductSupplier", fields: [supplierId], references: [id], onDelete: SetNull)

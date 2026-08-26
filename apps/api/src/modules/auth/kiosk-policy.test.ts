@@ -396,6 +396,8 @@ describe('K3 — `/stock-pieces/availability` AYNAN bitta yo`l', () => {
     expect(isKioskAllowed('PATCH', '/stock-pieces/abc')).toBe(false);
     expect(isKioskAllowed('POST', '/stock-pieces/abc/close')).toBe(false);
     expect(isKioskAllowed('GET', '/stock-pieces/reconciliation')).toBe(false);
+    // K6 — «hal qilinmagan» ro'yxati ham katta omborchiniki (K-Q9).
+    expect(isKioskAllowed('GET', '/stock-pieces/pending-decisions')).toBe(false);
   });
 
   it('faqat GET — yozish metodlari yopiq', () => {

@@ -47,6 +47,8 @@ describe('isTsdAllowed — omborchi ishi OCHIQ', () => {
     expect(isTsdAllowed('GET', '/stock-pieces/lookup')).toBe(false);
     expect(isTsdAllowed('POST', '/stock-pieces/flag')).toBe(false);
     expect(isTsdAllowed('GET', '/stock-pieces/reconciliation')).toBe(false);
+    // K6 — bayroq bo'yicha QAROR terminalda qabul qilinmaydi.
+    expect(isTsdAllowed('GET', '/stock-pieces/pending-decisions')).toBe(false);
   });
 
   it('narxsiz skan-qidiruv va yacheyka yorlig`i', () => {

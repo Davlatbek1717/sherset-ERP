@@ -2,6 +2,7 @@ import { BadRequestException, Inject, Injectable, NotFoundException } from '@nes
 import { z } from 'zod';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { compareDecimals } from '../shared/decimal.js';
+import { buildFlagDecisionPatch } from './piece-flag-policy.js';
 import { PIECE_STATUS, isPieceLabel } from './stock-piece-core.js';
 import {
   MAX_CREATE_COUNT,
@@ -260,15 +261,22 @@ export class StockPieceRegistryService {
   /**
    * «Bo'lak hisobi yuritilsin» bayrog'i (K-Q9).
    *
-   * ⚠️ K2 doirasidan ONGLI CHETLASHISH, hisobotda yozilgan: bayroqning TO'LIQ
-   * siyosati (tovar kartochkasidagi joyi, «m» birligidagi yangi tovarda
-   * yoqilgan kelishi, «hal qilinmagan» ro'yxati) — K6. Bu yerda faqat shu
-   * ekrandagi tugma bor, chunki bayroqsiz sverka tovarni UMUMAN ko'rmaydi
-   * (`buildPieceReconciliation` mezoni) va K2 ning qabul mezonini — «reyestr
-   * `StockByCell.qty` bilan mos kelgani KO'RSATILGAN» — bajarib bo'lmasdi.
    * Ruxsat `piecetracking.update` (K-Q9: katta omborchi + egasi/menejer).
+   * Bayroqni o'zgartiradigan UCHALA sirt ham (K2 reyestr ekrani, K6 tovar
+   * kartochkasi, K6 «hal qilinmagan» ro'yxati) SHU metodni chaqiradi — ya'ni
+   * qoida ham, muhr ham, ruxsat ham bitta joyda.
+   *
+   * 🔴 **K6 — har o'zgarish QAROR sifatida muhrlanadi**
+   * (`piece_tracked_decided_at` + `..._by_id`, `buildFlagDecisionPatch`).
+   * Busiz «yo'q» degan javob ma'lumotda «hali hech kim qaramagan» dan farq
+   * qilmasdi va tovar «Hal qilinmagan» ro'yxatidan hech qachon chiqmasdi
+   * (K6/3: «Ha yoki yo'q deyilgach ro'yxatdan chiqadi»).
    */
-  async setFlag(accountId: string, raw: unknown): Promise<{ id: string; pieceTracked: boolean }> {
+  async setFlag(
+    accountId: string,
+    raw: unknown,
+    actorEmployeeId: string | null = null,
+  ): Promise<{ id: string; pieceTracked: boolean; decidedAt: string | null }> {
     const input = this.parse(SetPieceFlagSchema, raw);
     const product = await this.prisma.client.product.findFirst({
       where: { accountId, id: input.assortmentId, deletedAt: null },
@@ -278,10 +286,14 @@ export class StockPieceRegistryService {
 
     const updated = await this.prisma.client.product.update({
       where: { id: product.id },
-      data: { pieceTracked: input.pieceTracked },
-      select: { id: true, pieceTracked: true },
+      data: buildFlagDecisionPatch(input.pieceTracked, actorEmployeeId, new Date()),
+      select: { id: true, pieceTracked: true, pieceTrackedDecidedAt: true },
     });
-    return updated;
+    return {
+      id: updated.id,
+      pieceTracked: updated.pieceTracked,
+      decidedAt: updated.pieceTrackedDecidedAt?.toISOString() ?? null,
+    };
   }
 
   // -------------------------------------------------------------------------

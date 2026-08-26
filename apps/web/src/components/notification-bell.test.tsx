@@ -144,6 +144,33 @@ describe('NotificationBell', () => {
     expect(pushMock).toHaveBeenCalledWith('/invoices-out/inv-1');
   });
 
+  /**
+   * K6 (2026-08-26) — kunlik bo'lak sverkasi signali. Uning `entityId` si
+   * YO'Q (hujjat emas, HISOBOT), shuning uchun havola shartida `entityId`
+   * tekshiruvidan OLDIN turishi kerak — aks holda xabar havolasiz qolardi
+   * va katta omborchi qayerga borishni bilmasdi.
+   */
+  it('opens the piece-reconciliation report for the daily piece digest', async () => {
+    mockedGet.mockResolvedValue({
+      items: [
+        {
+          ...baseItem,
+          kind: 'piece_reconciliation_diff',
+          entity: 'PieceReconciliation',
+          entityId: null,
+        },
+      ],
+      unreadCount: 1,
+      total: 1,
+      nextCursor: undefined,
+    });
+    const user = userEvent.setup();
+    renderWithProviders(<NotificationBell />);
+    await user.click(screen.getByTestId('notification-bell-trigger'));
+    await user.click(await screen.findByTestId('notification-bell-item-n-1'));
+    await waitFor(() => expect(pushMock).toHaveBeenCalledWith('/reports/piece-reconciliation'));
+  });
+
   it('does not call mark-read when the item is already read', async () => {
     const readItem = { ...baseItem, readAt: new Date().toISOString() };
     mockedGet.mockResolvedValue({

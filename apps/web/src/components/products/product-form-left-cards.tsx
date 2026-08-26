@@ -17,6 +17,7 @@
 
 import { ProductFormCard } from '@/components/product-form-layout';
 import { CellMoveModal, type CellMoveSource } from '@/components/products/cell-move-modal';
+import { PieceTrackingCard } from '@/components/products/piece-tracking-card';
 import { ProductCutCard } from '@/components/products/product-cut-card';
 import {
   BARCODE_TYPES,
@@ -824,6 +825,12 @@ export function ProductFormLeftCards({
         live stock, plus the «Раскрой…» action. Edit form only — a new product
         has no stock to cut yet. */}
       {productId && <ProductCutCard productId={productId} />}
+
+      {/* K6 (K-reja) — «Bo'lak hisobi» bayrog'i. Tahrir formasidagina: bayroq
+        forma bilan SAQLANMAYDI, `POST /stock-pieces/flag` orqali darhol
+        yoziladi va `piecetracking.update` ruxsatini talab qiladi (K-Q9).
+        Yangi tovarda birligi «м» bo'lsa u SERVERDA yoqilgan holda keladi. */}
+      {productId && <PieceTrackingCard productId={productId} />}
 
       {/* Особенности учёта — Фасовка / Тип учёта (structural) · ИКПУ · ТАСНИф ·
         Маркировка → Тип продукции. */}

@@ -27,6 +27,11 @@ export const NotificationKind = z.enum([
   'sale_ready',
   // Debts (Sherset KEEP — B3): operator call-due reminder.
   'debt_call_due',
+  // K6 (2026-08-26) — kunlik bo'lak sverkasi farq topdi. KATTA OMBORCHIGA
+  // boradi (`piecetracking.view` ruxsati borlarga). Farq YO'Q bo'lsa xabar
+  // ham YO'Q: har kunlik «hammasi joyida» signalni «bo'ri keldi» ga
+  // aylantirardi.
+  'piece_reconciliation_diff',
 ]);
 export type NotificationKindValue = z.infer<typeof NotificationKind>;
 

@@ -10,6 +10,7 @@ import {
   ClipboardCheck,
   Clock,
   ExternalLink,
+  HelpCircle,
   Package,
   PackageCheck,
   Printer,
@@ -375,6 +376,17 @@ export default function OmborchiPage() {
             >
               <Scissors className="h-3.5 w-3.5" />
               Bo'laklar
+            </Link>
+          )}
+          {/* K6 (2026-08-26) — bayroq bo'yicha qaror kutayotgan tovarlar.
+              Yangi «m» nomenklatura shu ro'yxatdan o'tmasa unutilib ketadi. */}
+          {can('piecetracking', 'view') && (
+            <Link
+              href="/omborchi/hal-qilinmagan"
+              className="flex items-center gap-1.5 rounded-lg border border-amber-300 px-3 py-2 text-xs font-semibold text-amber-700 hover:bg-amber-50"
+            >
+              <HelpCircle className="h-3.5 w-3.5" />
+              Hal qilinmagan
             </Link>
           )}
           <a

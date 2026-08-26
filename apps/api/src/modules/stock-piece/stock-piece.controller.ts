@@ -14,11 +14,13 @@ import { CurrentUser } from '../auth/current-user.decorator.js';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
 import { RequirePermission } from '../permissions/require-permission.decorator.js';
 import { StockPieceAvailabilityService } from './stock-piece-availability.service.js';
+import { StockPieceDecisionService } from './stock-piece-decision.service.js';
 import { StockPieceReconcileService } from './stock-piece-reconcile.service.js';
 import { StockPieceRegistryService } from './stock-piece-registry.service.js';
 
 /**
- * Bo'lak reyestri sirti — K-reja K1 (sverka) + K2 (boshqaruv).
+ * Bo'lak reyestri sirti — K-reja K1 (sverka) + K2 (boshqaruv) + K3 (kassir
+ * ko'rinishi) + K6 (bayroq siyosati: «hal qilinmagan» ro'yxati va qaror muhri).
  *
  * Ruxsat ikki xil ATAYLAB:
  *
@@ -46,6 +48,7 @@ export class StockPieceController {
     @Inject(StockPieceRegistryService) private readonly registry: StockPieceRegistryService,
     @Inject(StockPieceAvailabilityService)
     private readonly availabilityService: StockPieceAvailabilityService,
+    @Inject(StockPieceDecisionService) private readonly decisions: StockPieceDecisionService,
   ) {}
 
   @Get('reconciliation')
@@ -92,11 +95,29 @@ export class StockPieceController {
     return this.registry.create(user.accountId, body);
   }
 
-  /** «Bo'lak hisobi yuritilsin» bayrog'i (K-Q9; to'liq siyosat — K6). */
+  /**
+   * K6/3 — «Hal qilinmagan» ro'yxati: birligi «m» (yoki reyestrda bo'lagi
+   * bor), lekin bayroq bo'yicha QAROR QILINMAGAN tovarlar. FAQAT O'QIYDI.
+   */
+  @Get('pending-decisions')
+  @RequirePermission({ entity: 'piecetracking', action: 'view' })
+  async pendingDecisions(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: Record<string, unknown>,
+  ) {
+    return this.decisions.pending(user.accountId, query);
+  }
+
+  /**
+   * «Bo'lak hisobi yuritilsin» bayrog'i (K-Q9).
+   *
+   * K6 dan boshlab bu yo'l QARORNI ham muhrlaydi (kim va qachon) — «ha» ham,
+   * «yo'q» ham tovarni «Hal qilinmagan» ro'yxatidan CHIQARADI.
+   */
   @Post('flag')
   @RequirePermission({ entity: 'piecetracking', action: 'update' })
   async setFlag(@CurrentUser() user: AuthenticatedUser, @Body() body: unknown) {
-    return this.registry.setFlag(user.accountId, body);
+    return this.registry.setFlag(user.accountId, body, user.sub);
   }
 
   /** Uzunlikni tuzatish / boshqa yacheykaga ko'chirish. */
