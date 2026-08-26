@@ -20,7 +20,7 @@
 | **Migratsiya** | **12 ta** (2-bo'limdagi TARTIB majburiy) |
 | **Push holati** | ✅ **2026-08-26 da push qilindi** (`61780120..9f05c712`). Ilgari 33 commit qolib ketgan edi — A1–A3, Q4–Q6, K1–K6 serverga yetib bormasdi |
 | **Texnik gate (HEAD'da o'lchandi)** | ✅ typecheck 10/10 · ✅ lint 0 error / 1272 warning · ✅ api **684 fayl / 9907 passed / 0 failed** · ✅ web **339 fayl / 4427 passed / 0 failed** (i18n gate'lar ichida) |
-| **Bloklovchi kamchilik** | **4 ta ochiq** (B1, B2, B4, B5) — B0 va B3 2026-08-26 da yopildi; hech biri KOD emas |
+| **Bloklovchi kamchilik** | **2 ta ochiq — B4 va B5, ikkalasi ham VPS kirishini talab qiladi.** B0, B1, B2, B3 2026-08-26 da yopildi. Hech biri KOD emas edi |
 | **Jonli xulq o'zgaradimi** | **HA, uch joyda** (5-bo'lim) |
 
 **Delta ichidagi ish oqimlari — UCHTA, hammasi «QISMAN»:**
@@ -52,18 +52,21 @@ Oxirida BIR MARTA: `pnpm exec prisma generate`
 
 | # | Migratsiya | Faza | Lokal dev bazada | down skript |
 |---|---|---|---|---|
-| 1 | `20260824120000_drawer_cash_out_sales_return` | G1 | ✅ 2× | ✅ (sinalmagan) |
-| 2 | `20260824170000_sales_return_retail_sale` | G3 | ✅ 2× | ✅ (sinalmagan) |
-| 3 | `20260825020000_retail_sale_position_allocation` | G4 | ✅ 2× | ✅ (sinalmagan) |
-| 4 | `20260825120000_debt_source_doc` | Q1 | ✅ | ✅ (sinalmagan) |
+| 1 | `20260824120000_drawer_cash_out_sales_return` | G1 | ✅ 2× | ✅ **sinalgan** (2026-08-26) |
+| 2 | `20260824170000_sales_return_retail_sale` | G3 | ✅ 2× | ✅ **sinalgan** (2026-08-26) |
+| 3 | `20260825020000_retail_sale_position_allocation` | G4 | ✅ 2× | ✅ **sinalgan** (2026-08-26) |
+| 4 | `20260825120000_debt_source_doc` | Q1 | ✅ | ✅ **sinalgan** (2026-08-26) |
 | 5 | `20260825170000_tsd_device` | G5 | ✅ 2× | ✅ sinalgan |
-| 6 | `20260825200000_tsd_work_screens` | G6 | ❌ **HECH QACHON** | ✅ (sinalmagan) |
+| 6 | `20260825200000_tsd_work_screens` | G6 | ✅ **UP×2→zond→DOWN×2→UP** (2026-08-26) | ✅ **sinalgan** |
 | 7 | `20260825220000_drawer_cash_in_kind` | A1 | ✅ | ✅ |
 | 8 | `20260825230000_stock_piece_registry` | K1 | ✅ UP×2→zond→DOWN×2→UP | ✅ |
-| 9 | `20260825235000_company_settings_sale_debt_term` | Q4 | ❌ **HECH QACHON** (Q6 ning DRY yugurishi o'lchadi) | ✅ (sinalmagan) |
+| 9 | `20260825235000_company_settings_sale_debt_term` | Q4 | ✅ **UP×2→zond→DOWN×2→UP** (2026-08-26) | ✅ **sinalgan** |
 | 10 | `20260826000000_stock_piece_cut` | K4 | ✅ UP×2→zond→DOWN×2→UP | ✅ |
 | 11 | `20260826120000_stock_piece_intake` | K5 | ✅ UP×2→zond→DOWN×2→UP | ✅ |
 | 12 | `20260826170000_piece_tracking_decision` | K6 | ✅ UP×2→zond→DOWN×2→UP | ✅ |
+
+✅ **12/12 migratsiya lokal dev bazada isbotlangan** (2026-08-26 da oxirgi
+ikkitasi va to'rtta down skript yopildi — B1/B2).
 
 **Qaytarish TARTIBI — teskarisi (12 → 1).** Skriptlar
 `packages/db/scripts/rollback/*_down.sql`, buyrug'i har faylning boshida.
@@ -89,28 +92,50 @@ ularni ishlatadigan KOD yo'q bo'lib qolardi.
 
 Endi remote HEAD = lokal HEAD. **Keyingi commit'dan keyin QAYTA push kerak.**
 
-### B1 — Ikki migratsiya lokal dev bazada YUGURTIRILMAGAN (qoida 7)
+### ✅ B1 — Ikki migratsiya lokal dev bazada · **BAJARILDI 2026-08-26**
 
 `20260825200000_tsd_work_screens` (G6) va
-`20260825235000_company_settings_sale_debt_term` (Q4). Ikkalasining SQL'i
-isbotlangan naqshda (`ADD COLUMN IF NOT EXISTS`, `CREATE TABLE IF NOT EXISTS`,
-`DO $$ … EXCEPTION WHEN duplicate_object`) va `prisma validate` yashil —
-**lekin naqsh isbot emas**, qolgan 10 tasi lokal bazada yugurtirilgan.
+`20260825235000_company_settings_sale_debt_term` (Q4) — ikkalasi ham
+`sherset_v2_dev` da to'liq zanjir bilan isbotlandi: **UP → UP (no-op) → zond →
+DOWN → DOWN (no-op) → UP**.
 
-**To'siq:** `packages/db/.env` bu mashinada yo'q, `sherset_v2_dev` paroli
-foydalanuvchidan so'raladi (qoida 5).
-**Kerak:** `db execute` → qayta `db execute` (no-op) → ustun/indeks/FK ni SQL
-bilan tasdiqlash.
+**G6 zondi:** `restock_task_lines` ga 5 ta NULLABLE ustun
+(`shortage_qty` numeric, `shortage_note` text, `shortage_at` timestamptz,
+`shortage_by_id` uuid, `shortage_by_name` varchar) + `client_operations`
+jadvali (6 ustun) + **unikal indeks** `(account_id, client_op_id)` +
+indeks `(account_id, created_at)` + FK `account_id` CASCADE. Hammasi G6
+hisobotidagi tavsifga AYNAN mos.
 
-### B2 — To'rt down skript lokal bazada SINALMAGAN (qoida 12)
+**Q4 zondi:** `company_settings.sale_debt_term_days` — `integer`, **nullable**,
+**default YO'Q**; mavjud qator NULL bo'lib tug'ildi (1 qatordan 0 tasi
+to'ldirilgan). Ya'ni Q4 ning «NULL ≠ 0, sozlanmagan bo'lsa Q1 defaulti 14 kun»
+qoidasi baza darajasida tasdiqlandi.
+
+### ✅ B2 — To'rt down skript lokal bazada · **BAJARILDI 2026-08-26**
 
 `20260824120000` (G1), `20260824170000` (G3), `20260825020000` (G4),
-`20260825120000` (Q1) — retrospektiv yozilgan, hech biri yugurtirilmagan.
-Qoida 12 «teskarisi yoziladi **VA sinaladi**» deydi. B1 bilan bir sessiyada
-yopiladi: har biri uchun `DOWN → DOWN (no-op) → UP`.
+`20260825120000` (Q1) — har biri `DOWN → DOWN (no-op) → UP` zanjiridan o'tdi.
+
+**Ma'lumot yo'qolishi o'lchandi (down'dan OLDIN):** `g1_payout=0`,
+`g3_bogliq=0`, `g4_ajratma=0`, `q1_manba=0` — ya'ni lokal bazada bu
+ustunlarda ma'lumot YO'Q edi va sinov hech nima yo'qotmadi.
+
+**Tuzilma AYNAN tiklandi** (DOWN→UP dan keyingi zond baseline bilan
+belgi-belgi bir xil):
+
+| Obyekt | Tiklangan holat |
+|---|---|
+| G1 `retail_drawer_cash_out.sales_return_id` | FK **RESTRICT** + indeks `(account_id, sales_return_id)` |
+| G3 `sales_returns.retail_sale_id` | FK **SET NULL** + indeks `(account_id, retail_sale_id)` |
+| G4 `retail_sale_position_allocations` | 9 ustun; FK: account **CASCADE**, position **CASCADE**, store **RESTRICT**, cell **SET NULL** |
+| Q1 `debts` | 2 ustun + **unikal indeks** `(account_id, source_doc_type, source_doc_id)` |
+
+⇒ **12 migratsiyaning HAMMASI endi lokal bazada isbotlangan, 12 down skriptning
+6 tasi sinalgan** (G5/G6/Q4 + G1/G3/G4/Q1 — jami 7; K1/K4/K5/K6 va A1 niki
+o'z sessiyalarida). Qoida 12 ning «yoziladi VA sinaladi» sharti yopildi.
 
 > 2026-08-24 hodisasidan keyin kassaga tegadigan deploy'ni sinalgan qaytarish
-> yo'lisiz chiqarish — aynan IS-4.
+> yo'lisiz chiqarish — aynan IS-4. Endi bu qarz yo'q.
 
 ### B3 — 🔴 `/deploy` VA `deploy-smart.sh` BU DELTA UCHUN ISHLATILMAYDI
 
@@ -199,6 +224,22 @@ esa `store_id` + `cell_id` bor. Bu **deployni bloklamaydi** (jadval bo'sh,
 bayroq yoqilmagan), lekin **K-reja jonliga chiqqan kundan boshlab H4 va H5
 uchun BLOKLOVCHI** bo'ladi. To'liq talab va yopish retsepti:
 `docs/plans/2026-08-24-split-kassa-hodisasi.md` → H4 → «T1» bandi.
+
+### D8 — Lokal dev bazaning sxema DRIFTI o'lchandi (31 bayonot, 3 sinf)
+
+B1/B2 dan keyin `prisma migrate diff --from-url <dev> --to-schema-datamodel`
+yugurtirildi. **31 bayonot** — hech biri bizning 12 migratsiyamiz sababli
+EMAS, uchala sinf ham repo bo'ylab MAVJUD:
+
+| Sinf | Soni | Nima |
+|---|---|---|
+| `ALTER COLUMN "updated_at" DROP DEFAULT` | 10 | Migratsiya SQL'i `DEFAULT now()` yozadi, sxema esa `@updatedAt` (bazada default kutmaydi). `driver_cash_handovers`, `equipment`, `expense_budgets`, `manager_*` … va shu qatorda bizning `retail_sale_position_allocations` + `stock_pieces`. |
+| `DROP TABLE "_*_bak*"` | 4 | Dev bazadagi zaxira jadvallar (`_cp_prewipe_bak`, `_golive_bak_20260816`, `_price_prefix_bak_20260816`, `_tg_relink_bak`) — sxemada yo'q. A1 hisoboti «35 bayonotlik drift» deb qayd etgan narsa aynan shu. 🔴 `prisma migrate dev` ularni O'CHIRIB yuboradi — dev bazada u BUYRUQ ISHLATILMAYDI. |
+| `ALTER INDEX … RENAME` | 17 | Postgres identifikatorni **63 belgiga kesadi**, migratsiya SQL'i esa to'liq nomni yozadi ⇒ Prisma kutgan nom bilan farq qiladi. `cashier_session_*`, `employee_*`, `ms_pick_lists`, `retail_drawer_cash_out` … va bizning G4 indeksi (`…_cell_id_idx` → bazada `…_cell_id_id`). **Indeks MAVJUD va to'g'ri ustunlarda** — farq faqat NOMDA, kosmetik. |
+
+⇒ **Deploy uchun ta'siri yo'q** (migratsiyalar `db execute` bilan beriladi,
+`migrate dev` bilan emas). Lekin bu drift bir kun kelib `migrate dev` ishlatgan
+odamni 4 ta zaxira jadvalidan ayiradi — alohida tozalash ishi.
 
 ### D7 — `preflight.mjs` yolg'on anomaliya beradi
 

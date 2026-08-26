@@ -356,14 +356,26 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 >    holbuki `stock_pieces` da `store_id`+`cell_id` bor. K-reja jonliga chiqqan
 >    kundan boshlab bu **H4 va H5 uchun BLOKLOVCHI**. Manzil: hodisa rejasi → H4 → «T1».
 >
-> **✅ B0 (push) va B3 (deploy qo'riqchisi) shu sessiyada YOPILDI.**
-> Push: `61780120..9f05c712` — endi remote HEAD = lokal HEAD.
+> **✅ B0, B1, B2, B3 shu sessiyada YOPILDI.**
+> - **B0** push: `61780120..9f05c712` — remote HEAD = lokal HEAD;
+> - **B1** G6 `…tsd_work_screens` va Q4 `…sale_debt_term` migratsiyalari
+>   `sherset_v2_dev` da **UP×2 → zond → DOWN×2 → UP** bilan isbotlandi
+>   ⇒ **12/12 migratsiya endi lokal bazada sinalgan**;
+> - **B2** G1/G3/G4/Q1 ning 4 down skripti sinaldi; tuzilma DOWN→UP dan keyin
+>   AYNAN tiklandi (FK siyosatlari: RESTRICT / SET NULL / CASCADE — baseline
+>   bilan belgi-belgi bir xil). Ma'lumot yo'qolishi 0 edi (o'lchandi);
+> - **B3** `deploy-smart.sh` da orqaga-ketish qo'riqchisi.
 >
-> **🔴 DEPLOY'GACHA QOLGAN TO'SIQLAR (dossier 3-bo'limi):**
-> **B1 — 2 migratsiya lokal bazada HECH QACHON yugurtirilmagan** (G6
-> `…tsd_work_screens`, Q4 `…sale_debt_term`) · **B2 — 4 down skript sinalmagan**
-> (G1/G3/G4/Q1) · **B4 — VPS HEAD tasdiqlanmagan** · **B5 — jonli holat
-> 2026-08-24 dan beri o'lchanmagan**. B1/B2 uchun `sherset_v2_dev` paroli kerak.
+> **🔴 QOLGAN IKKI TO'SIQ — IKKALASI HAM VPS KIRISHINI TALAB QILADI:**
+> **B4** — VPS HEAD tasdiqlanmagan (`62a27024` kutiladi, Davlatbek reset tuzog'i) ·
+> **B5** — jonli holat 2026-08-24 dan beri o'lchanmagan
+> (`npx tsx scripts/warehouse-state.ts`, faqat o'qish).
+>
+> **Yo'l-yo'lakay o'lchandi (dossier D8):** dev bazaning sxema drifti **31
+> bayonot**, uch sinf — 10× `updated_at DROP DEFAULT`, 4× `DROP TABLE "_*_bak*"`,
+> 17× `ALTER INDEX … RENAME` (63-belgi kesimi). Hech biri 12 migratsiya sababli
+> EMAS. 🔴 `prisma migrate dev` zaxira jadvallarni o'chirib yuboradi — dev
+> bazada u buyruq ishlatilmaydi.
 >
 > **🔴 ENG KATTA XAVF — HAJM, texnika emas:** 21 faza (G1–G6, Q1–Q6, A1–A3,
 > K1–K6, H2, H5) jonlida bir marta ham tekshirilmasdan bir-birining ustiga

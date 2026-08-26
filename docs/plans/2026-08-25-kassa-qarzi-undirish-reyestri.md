@@ -3428,7 +3428,7 @@ holda `readSaleDebtTermDays` mavjud bo'lmagan ustunni so'rab chekni yiqitardi.
 | 9 | i18n ru + uz; `i18n-key-existence` va `i18n-no-hardcoded` yashil | ✅ 19 test |
 | 10 | testlar: server filtri · sof modul · web sahifa · sozlama defaulti | ✅ 61 yangi test |
 | 11 | api + web to'liq yashil, typecheck 0, lint 0 error | ✅ 9492 + 4358 |
-| 12 | **migratsiya lokal dev bazada ikki marta xatosiz** | ❌ **parol kutilmoqda** (qoida 7) |
+| 12 | **migratsiya lokal dev bazada ikki marta xatosiz** | ✅ **BAJARILDI 2026-08-26** (deploy-tayyorlik sessiyasi, dossier B1): UP×2 → zond → DOWN×2 → UP. Zond: `sale_debt_term_days` = `integer`, **nullable**, **default YO'Q**, mavjud qator NULL bo'lib tug'ildi (1 dan 0 tasi to'ldirilgan) ⇒ «NULL ≠ 0» qoidasi baza darajasida tasdiqlandi. Down skript ham sinaldi |
 | 13 | **jonlida: menejer kassa qarzlarini filtrlab ko'radi** | ❌ VPS/deploy kerak |
 | 14 | **jonlida: har qatorda chek raqami bor** | ❌ VPS kerak |
 | 15 | **jonlida: muddat sozlamasi o'zgartirilganda YANGI cheklar o'sha muddat bilan tug'iladi** | ❌ VPS kerak |
@@ -3499,10 +3499,16 @@ Deploy oldidan/keyin (qoida 8): `packages/db` da `npx tsx scripts/warehouse-stat
    qilinmagan; A2 ning `edit()` chegarasi (avansdan to'langan chek
    TAHRIRLANMAYDI) va Z-hisobot `revenueByMethod` kesimi; A3 ning haqiqiy
    ikki-sessiyali poyga sinovi; mijozga «avansingizdan yechildi» xabari.
-3. **A1 topgan sxema DRIFTI (35 bayonot, 4 ta `DROP TABLE`)** — o'zgarishsiz
-   ochiq, alohida ish.
-4. **Q4 ning O'Z ochiq bandlari:** lokal dev bazada migratsiya sinovi
-   (**parol kutilmoqda**) + jonli tasdiqning 13–16 bandlari.
+3. **A1 topgan sxema DRIFTI** — 2026-08-26 da QAYTA O'LCHANDI: endi **31
+   bayonot**, uch sinf — 10× `updated_at DROP DEFAULT`, **4× `DROP TABLE
+   "_*_bak*"`** (aynan A1 ko'rgan zaxira jadvallar) va 17× `ALTER INDEX …
+   RENAME` (Postgres identifikatorni 63 belgiga kesadi). Hech biri Q/A/G/K
+   migratsiyalari sababli emas — hammasi repo bo'ylab mavjud sinflar.
+   🔴 `prisma migrate dev` zaxira jadvallarni O'CHIRIB yuboradi ⇒ dev bazada
+   u buyruq ISHLATILMAYDI. Tafsilot: dossier D8. Alohida tozalash ishi.
+4. **Q4 ning O'Z ochiq bandlari:** ~~lokal dev bazada migratsiya sinovi~~
+   ✅ **BAJARILDI 2026-08-26** (12-band) + jonli tasdiqning 13–16 bandlari
+   (VPS kutilmoqda).
 5. **Muddat sozlamasi FAQAT kassa chekiga tegishli.** Qo'lda ochiladigan
    `QRZ-` qarzida muddatni kassir/operator o'zi kiritadi (`nextContactAt`
    majburiy maydon) — u sozlamadan yurmaydi va bu ataylab: qo'lda ochilgan

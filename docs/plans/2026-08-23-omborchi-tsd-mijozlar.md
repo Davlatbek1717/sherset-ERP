@@ -771,14 +771,19 @@ o'lchab tekshirildi).
 buyrug'i faylning boshida, ikkita SHARTI ham u yerda yozilgan (terminallar
 ishlamayotgan payt + ochiq topshiriqlarda yetishmovchilik belgisi bo'lmasin).
 
-⚠️ **BAJARILMAGAN QADAM (halol qayd — qoida 7):** migratsiya **lokal dev
-bazada YUGURTIRILMAGAN**, chunki bu sessiyada `sherset_v2_dev` paroli
-berilmagan (maxfiylik qoidasi bo'yicha so'ralishi kerak). G5 va G3
-migratsiyalari lokal bazada 2 marta yugurtirilib isbotlangan edi — bu
-migratsiya SHU tekshiruvni **deploy'dan OLDIN kutadi**. SQL o'sha
-isbotlangan naqshning aynan o'zi (`ADD COLUMN IF NOT EXISTS`,
-`CREATE TABLE IF NOT EXISTS`, `DO $$ … EXCEPTION WHEN duplicate_object`),
-lekin naqsh — isbot emas.
+~~⚠️ **BAJARILMAGAN QADAM (halol qayd — qoida 7):** migratsiya **lokal dev
+bazada YUGURTIRILMAGAN**…~~
+
+✅ **YOPILDI 2026-08-26 (deploy-tayyorlik sessiyasi, dossier B1/B2).**
+`20260825200000_tsd_work_screens` `sherset_v2_dev` da to'liq zanjirdan o'tdi:
+**UP → UP (no-op) → zond → DOWN → DOWN (no-op) → UP.**
+Zond tasdiqladi: `restock_task_lines` ga 5 ta NULLABLE ustun
+(`shortage_qty` numeric · `shortage_note` text · `shortage_at` timestamptz ·
+`shortage_by_id` uuid · `shortage_by_name` varchar) + `client_operations`
+jadvali (6 ustun) + **unikal indeks `(account_id, client_op_id)`** + indeks
+`(account_id, created_at)` + FK `account_id` CASCADE — hisobotdagi tavsifga
+AYNAN mos. Down skript ham sinaldi (DOWN×2 idempotent, UP tuzilmani aynan
+tiklaydi).
 
 **Deploy holati: KUTILMOQDA** — G1+G2+G3+G4+G5 bilan bir deltada boradi.
 Deploy'da **BESHINCHI migratsiya** qo'shiladi: `20260825200000_tsd_work_screens`
@@ -795,7 +800,8 @@ tovar kartasidagi «Переместить по ячейкам» ni HAQIQATAN is
   chek TSD bilan yig'ilib kontrolga tushishi, vozvrat tovarining yacheykaga
   joylanishi, yacheykaning TSD'da sanalishi. 8 bandli qo'lda smoke
   `android/tsd-app/README.md` da (javobgar/vaqt maydonlari bilan).
-- **Migratsiya lokal bazada sinalmagan** (yuqorida) — parol kerak.
+- ✅ ~~Migratsiya lokal bazada sinalmagan~~ — **2026-08-26 da isbotlandi**
+  (yuqorida; down skript ham sinaldi).
 - **TSD qurilmalarini boshqarish EKRANI hamon yo'q** (G5 dan qolgan):
   juftlash/bekor qilish faqat API orqali.
 - **Sanash oflayn ishlamaydi** (ataylab, yuqorida) — kerak bo'lsa
