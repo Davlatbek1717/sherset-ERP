@@ -30,6 +30,17 @@
  * saldoning QAYSI QISMI qarz kartochkalaridan kelganini ko'rsatadigan
  * TARKIB («shundan …»), qo'shiluvchi emas.
  *
+ * 🔴 Q2 (2026-08-25) — XULOSA O'ZGARMADI, MEXANIZM O'ZGARDI. Yuqoridagi
+ * «QRZ- qarz bosh daftarga `DebtService.create` → `applyDelta(+total)` orqali
+ * tushadi» jumlasi endi reyestrning FAQAT bir qismi haqida. Kassa chekidan
+ * tug'ilgan qator (`Debt.sourceDocType = 'retailsale'`) `balanceAdopted = true`
+ * bilan ochiladi va `applyDelta` ni CHAQIRMAYDI — qarz balansga chekning O'Z
+ * yo'lidan (`retail-sale.service.ts#post`) tushgan. Ya'ni bu yerdagi premise
+ * («reyestr qoldig'i saldoning ICHIDA») HAR IKKI sinf uchun ham TO'G'RI, lekin
+ * sabab boshqa-boshqa. Kim bu izohdan «demak har `Debt` qatorining o'z
+ * `applyDelta` si bor» degan xulosa chiqarsa — adashadi (F5 saboqi).
+ * Reja: `docs/plans/2026-08-25-kassa-qarzi-undirish-reyestri.md`.
+ *
  * Shu sababli ilgari bu yerda bo'lgan `combinedMinor = ledger + registry`
  * maydoni OLIB TASHLANDI: 2026-08-05 dan keyin u har ochiq QRZ- qarzni IKKI
  * marta sanardi (eski premise — «`create` balansga umuman tegmaydi» — o'sha

@@ -809,10 +809,25 @@ export class DebtService {
       // (+) va to'lanishi (−) bir jurnalda, ya'ni to'liq to'langan qarz
       // saldoni AYNAN nolga qaytaradi.
       //
-      // ⚠️ Nega bu ikki marta sanashga olib kelmaydi: hujjatdan kelgan qarz
-      // (kassa qarzga sotuvi) reyestrga YOZILMAYDI — u faqat balansga
-      // tushadi (`retail-sale.service.ts` §7.1 izohi). Reyestr esa faqat
-      // qo'lda ochiladigan, hujjatsiz qarzlar uchun. Bitta qarz — bitta yo'l.
+      // ⚠️ Nega bu ikki marta sanashga olib kelmaydi.
+      //
+      // 🔴 ESKI DALIL BEKOR QILINDI (Q2, 2026-08-25). U shunday deyardi:
+      // «hujjatdan kelgan qarz (kassa qarzga sotuvi) reyestrga YOZILMAYDI —
+      // u faqat balansga tushadi; reyestr esa faqat qo'lda ochiladigan,
+      // hujjatsiz qarzlar uchun». Endi POS chekidan ham reyestrga qator
+      // ochiladi (`retail-sale.service.ts#writeSaleDebtRegistryRow`), ya'ni
+      // «reyestrda faqat qo'lda ochilgan qarz bo'ladi» premise'i YOLG'ON.
+      //
+      // YANGI DALIL — ISHORA `create` YO'LIDA: bu yerdagi `applyDelta` FAQAT
+      // shu metodda, ya'ni QO'LDA ochilgan qarzda chaqiriladi. Chekdan
+      // tug'ilgan qator esa `balanceAdopted = true` bilan yaratiladi va
+      // `applyDelta` ni UMUMAN chaqirmaydi — qarz balansga chekning O'Z
+      // yo'lidan allaqachon tushgan. Ya'ni har qarz uchun daftarga AYNAN
+      // BITTA yozuv tushadi, faqat uni YOZUVCHI boshqa.
+      //
+      // ⚠️ SIMMETRIYA: `remove()` ham `balanceAdopted` qatoriga `−total`
+      // yozmasligi shart (sxema izohi, `schema.prisma → Debt.balanceAdopted`).
+      // Reja: `docs/plans/2026-08-25-kassa-qarzi-undirish-reyestri.md`.
       await this.balances.applyDelta(
         tx,
         accountId,

@@ -320,10 +320,25 @@ async function main() {
   // SOURCE: retail-credit — POS qarzga sotuv (DUP-02).
   //
   // `RetailSale.post` qarz ulushini mijozning UMUMIY balansiga yozadi
-  // (`+debtAmount`, retail-sale.service.ts §7.1) — reyestrga EMAS, shuning
-  // uchun debt-issue bilan ikki marta sanalmaydi. Summa va valyuta `DEBT`
+  // (`+debtAmount`, retail-sale.service.ts §7.1). Summa va valyuta `DEBT`
   // tender qatoridan olinadi: u aynan `applyDelta` olgan qiymat bilan bir
   // tranzaksiyada, kassa valyutasida yoziladi.
+  //
+  // 🔴 ESKI DALIL BEKOR QILINDI (Q2, 2026-08-25). Bu yerda ilgari
+  // «reyestrga EMAS, shuning uchun debt-issue bilan ikki marta sanalmaydi»
+  // deb yozilgan edi. Endi `post()` reyestrga ham qator ochadi
+  // (`writeSaleDebtRegistryRow`), ya'ni premise'ning O'ZI yolg'on.
+  //
+  // YANGI DALIL — YUQORIDAGI `balanceAdopted: false` FILTRI: chekdan
+  // tug'ilgan qator `balanceAdopted = true` bilan ochiladi va `applyDelta`
+  // ni UMUMAN chaqirmaydi, ya'ni debt-issue manbasi uni allaqachon
+  // chiqarib tashlagan. Ikki marta sanash shu FILTR tufayli yo'q, chekdan
+  // reyestrga yozilmagani uchun EMAS.
+  //
+  // ⚠️ Shu sababdan filtr O'CHIRILSA yoki `balanceAdopted` yozuvchisi
+  // buzilsa — `APPLY=1` mijoz saldosini SHISHIRADI. Qo'riqchi:
+  // `counterparty-balance-sources.test.ts` (Q1).
+  // Reja: `docs/plans/2026-08-25-kassa-qarzi-undirish-reyestri.md`.
   const creditLines = await prisma.retailSalePayment.findMany({
     where: { method: TENDER.debt, sale: { state: { in: [...POSTED_SALE_STATES] } } },
     select: {

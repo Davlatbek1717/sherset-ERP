@@ -331,6 +331,67 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-08-26a (KASSA QARZI → UNDIRISH REYESTRI + KASSADA AVANS — Q1…Q6 va A1…A3;
+> 🔴 **KOD TAYYOR, DEPLOY QILINMAGAN, JONLI ISBOT YO'Q**) — reja:
+> `docs/plans/2026-08-25-kassa-qarzi-undirish-reyestri.md`.**
+>
+> **Yoriq (egasining IKKI shikoyati, 2026-08-25 da kod bilan o'lchandi):**
+> 1. «Qarzdorlikni undirish bo'limiga kassadan qo'shilgan yangi qarzdorliklar ko'rinmayapti.»
+>    Sabab: qarz IKKI mustaqil daftarda yashaydi — `CounterpartyBalance` (POS chekining qarz
+>    ulushi shu yerga tushadi) va `Debt` reyestri (`QRZ-…`). Undirish ro'yxati
+>    (`GET /manager/collection`) FAQAT ikkinchisini o'qiydi, ya'ni kassadan berilgan qarz
+>    qo'ng'iroq jadvalida, eslatma oqimida va menejer navbatida UMUMAN ko'rinmasdi.
+> 2. «Ba'zi mijozlarimiz oldindan pul berib qo'yishadi — shu mijozlar bilan ishlay olmayapmiz.»
+>    Sabab: manfiy balans («biz mijozga qarzdormiz») MODEL sifatida bor edi, kassada esa uch to'siq:
+>    `/cash-in` kiosk allowlist'da yo'q (qabul yo'li yo'q) · `TENDER` da avans turi yo'q (sarflash
+>    yo'li yo'q) · `debtPayable` manfiy balansda `0` qaytarardi (kassir avansni KO'RMASDI ham).
+>
+> **Qaror — B varianti (egasi tanladi):** POS cheki post qilinganda `Debt` reyestriga ham qator
+> ochiladi, lekin `balanceAdopted = true` bilan — ya'ni `applyDelta` CHAQIRILMAYDI. Pul daftari
+> HAMON bir marta harakatlanadi (balans), reyestr esa o'sha qarzning KO'RINADIGAN yuzi;
+> undirish/eslatma/qo'ng'iroq/FIFO oqimlari o'zgarishsiz ishlaydi. Bog'lam — yangi
+> `Debt.sourceDocType/sourceDocId` + `@@unique` (idempotentlik + vozvrat manzili).
+> **Kesishuv qoidasi (§2.2):** qator summasi chekning qarz ulushi EMAS, balki chek balansni
+> musbat hududga QANCHAGA olib kirgani — `max(0, min(debtAmount, balansKeyin))`. Avansi bor
+> mijoz shu sabab undirish ro'yxatiga TUSHMAYDI (invariant 4).
+>
+> **Rad etilgan A varianti:** undirish ro'yxatiga balansdan IKKINCHI manba qo'shish. Sabab:
+> bunday qatorlarda `debtId`, muddat va javobgar yo'q; eslatma yo'li qarz-ID ga bog'langan
+> (`sendBulkReminders`) — uni kontragent-ID ga moslashtirish butun modul bo'ylab yangi `null`
+> shoxlari ochardi. **Avans tomonida rad etilgan variant:** yangi pul-yo'li ochish — kerak
+> emas edi, `PREPAY` tenderining balansga deltasi `DEBT` bilan AYNAN bir xil (`+summa`), farq
+> faqat natijaning ishorasida va chekning to'langan sanalishida.
+>
+> **Nima qurildi (9 faza, hammasi «QISMAN»):** Q1 poydevor (`ff2db056`) · Q2 chekdan qator
+> (`7ef30b61`) · Q3 vozvrat/tahrir simmetriyasi (`633e2ebd`) · A1 avans qabul (`8d1f4a01`) ·
+> A2 `PREPAY` tenderi (`8178fd87`) · A3 ko'rsatish/tarix/naqd qaytarish (`526dda5c`, `1447a11e`) ·
+> Q4 manba+filtr+muddat sozlamasi (`7ddd4e21`) · Q5 tarixiy backfill + TESKARI skript (`23426f15`) ·
+> Q6 jonli verify skripti + izohlar auditi (shu sessiya).
+> **Uch migratsiya:** `20260825120000_debt_source_doc` · `20260825220000_drawer_cash_in_kind` ·
+> `20260825235000_company_settings_sale_debt_term`.
+>
+> **Yo'l-yo'lakay tuzatilgan MAVJUD yoriq (§2.1):** `recompute-counterparty-balances.ts`
+> `Debt.totalMinor` ni `balanceAdopted` filtrsiz qo'shardi — ya'ni P1 adopsiya qatorlari uchun
+> `APPLY=1` mijoz saldosini SHISHIRARDI. Q1 filtrni qo'ydi va qo'riqchi testda qulfladi.
+>
+> 🔴 **JONLI DALIL YO'Q — halol yoziladi.** Deploy egasi tomonidan 2026-08-25 da RAD
+> ETILGAN (G1 hisoboti, «C yo'li»), so'ng «jonliga tegma — kutamiz» dedi. Uch migratsiya ham
+> VPS'da BERILMAGAN, kod deploy qilinmagan, Q5 backfill'i jonlida YUGURTIRILMAGAN. Ya'ni
+> egasining ikkala shikoyati ham **jonlida hamon OCHIQ** — yopilgani faqat KODDA.
+> Lokal isbot bor: Q5 backfill dev bazada 652 → 885 → 652 qator (rollback bilan), balans
+> jurnaliga **0** yozuv, `recompute` DRY farqi 759 → 759 (`changed: 0`).
+>
+> **Deploy oynasi kelganda:** retsept `docs/ops/2026-08-25-deploy-dossieri.md`; qadamlar
+> rejaning har faza hisobotidagi «Jonli tekshiruv retsepti» bo'limlarida; yakuniy o'lchov —
+> `apps/api/src/scripts/ops-q6-live-verify.ts` (**DRY default**, `--live` yozadi va o'zi
+> tozalaydi; hukmlar sof `q6-verify-plan.ts` da va testlar bilan qulflangan). DRY rejim
+> deploy'dan OLDIN ham foydali — u «jonlida qaysi faza bor» qamrov jadvalini chiqaradi.
+>
+> **Egasiga aytiladigan ikki gap (deploy kunida):** (1) qarzdorlar ro'yxatidagi JAMI son
+> birdan sakraydi — bu **yangi qarz EMAS, ko'rinmagan qarz endi ko'rinmoqda** (lokal
+> o'lchov: 233 qator / 701 489 130 so'm); (2) avansi bor mijozlar balansda **MANFIY** turadi
+> va bu TO'G'RI — u qarz emas, bizning ularga qarzimiz.
+
 > **🕒 2026-08-23a (TOVAR QO'SHISH — audit + tuzatishlar, ✅ DEPLOYED) —**
 > Egasi: «tovar qo'shish bilan bog'liq barcha xatoliklarni top» → «hammasini bitta bitta
 > to'g'irla» → «DEPLOY QIL».
@@ -5541,6 +5602,9 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 > kelgan qarz **ikki marta** sanalardi (xotira: `debt-ledger-asymmetry`). Mijozsiz qarzga sotish
 > bloklanadi. Yangi audit hodisasi **`SOLD_ON_CREDIT`** — payload'da o'sha ondagi **yangi balans**
 > (keyin «kimning qarzi tez o'sadi» deb so'rash uchun).
+> 🔴 **BU BAND BEKOR QILINDI (Q2, 2026-08-25)** — yuqoridagi `2026-08-26a` yozuviga qarang: chekdan
+> endi reyestrga ham qator ochiladi (`balanceAdopted = true`, `applyDelta` CHAQIRILMAYDI), ya'ni
+> ikki karra sanash xavfi boshqa yo'l bilan yopilgan. Matn tarix uchun qoldirildi.
 >
 > **🔴 YO'L-YO'LAKAY IKKI PUL XATOSI TUZATILDI:**
 > 1. **Qaytim kassadan chegirilmasdi.** 100 000 berib 90 000 lik tovar olgan mijozga 10 000

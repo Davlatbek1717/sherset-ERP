@@ -34,15 +34,27 @@
  * uchun qoladi. `debtPayable = max(reyestr, balans)` formulasi O'ZGARMAYDI —
  * ikki son shunchaki tenglashadi, ya'ni kassir ekranidagi raqam ham o'sha.
  *
- * NEGA BU YERDA UCHRASHTIRILMAYDI (F9 qarori — P1 da BEKOR qilindi, quyidagi
- * «ADOPSIYA» bo'limiga qarang): ikkalasini bitta raqamga
- * qo'shib qo'yish yoki chekdan `Debt` yozib yuborish — ikkisi ham balansda
- * IKKI KARRA sanashga olib boradi (2-manba `Debt.create` ham xuddi shu
- * balansga `+total` yozadi). To'g'ri yechim — daftarni bitta qilish, ya'ni
- * to'lov yo'lini balansdan yuritish; u alohida faza ishi (migratsiya +
- * `DebtPayment` shartnomasi o'zgaradi). Bu fazada esa farq **yashirilmaydi**:
- * kassir ekranda «reyestrsiz qarz» ni ko'radi va uni POS'da yopolmasligini
- * biladi — jim 400 xatosidan ko'ra halolroq.
+ * NEGA BU YERDA UCHRASHTIRILMAYDI (F9 qarori — P1 va Q2 da BOSQICHMA-BOSQICH
+ * BEKOR QILINDI; quyidagi «ADOPSIYA» bo'limiga qarang). Eski matn:
+ * «ikkalasini bitta raqamga qo'shib qo'yish yoki chekdan `Debt` yozib
+ * yuborish — ikkisi ham balansda IKKI KARRA sanashga olib boradi (2-manba
+ * `Debt.create` ham xuddi shu balansga `+total` yozadi)».
+ *
+ * 🔴 IKKINCHI YARMI ENDI YOLG'ON (Q2, 2026-08-25) — va farqni ochiq
+ * aytish SHART (F5 saboqi):
+ *   · «ikkalasini QO'SHIB qo'yish» — hamon TO'G'RI, taqiq o'z kuchida
+ *     (`counterparty-settlement.util.ts` dagi `combinedMinor` shu sababdan
+ *     olib tashlangan);
+ *   · «chekdan `Debt` YOZIB yuborish» — endi AYNAN shunday qilinadi va
+ *     xavfsiz, chunki qator `balanceAdopted = true` bilan ochiladi va
+ *     `applyDelta` ni CHAQIRMAYDI. Ikki karra sanash `Debt.create` ning
+ *     `applyDelta` sidan kelardi, `Debt` qatorining O'ZIDAN emas.
+ *
+ * Ya'ni pul daftari BITTA bo'lib qoladi (balans), reyestr esa o'sha qarzning
+ * KO'RINADIGAN yuzi. Bu fazada farq **yashirilmaydi**: kassir ekranda
+ * «reyestrsiz qarz» ni ko'radi (Q2 dan OLDINGI eski cheklar va boshqa hujjat
+ * manbalari uchun u hamon > 0) — jim 400 xatosidan ko'ra halolroq.
+ * Reja: `docs/plans/2026-08-25-kassa-qarzi-undirish-reyestri.md`.
  */
 
 export interface BalanceRow {
@@ -150,6 +162,20 @@ export function splitDebtSources(
 // qarzdorlar ro'yxati / eslatma cron / Telegram oqimi kutilmaganda portlardi.
 // To'lanayotgan qism esa o'sha tranzaksiyada `paid` bo'lib yopiladi — u faqat
 // TARIX (kim, qachon, qancha), yangi dunning nishoni emas.
+//
+// 🔴 Q5 (2026-08-25) YANGILANISHI — yuqoridagi «portlardi» ogohlantirishi endi
+// QISMAN ESKIRGAN, va farqni ochiq aytish SHART (F5 saboqi). U «BU YERDA,
+// to'lov yo'lida, jimgina, muddatsiz» ma'nosida O'Z KUCHIDA qoladi. Lekin
+// «tarixiy qoldiqni reyestrga umuman olib kirib bo'lmaydi» degan ma'noda
+// EMAS: Q5 aynan shuni qildi — ommaviy backfill bilan
+// (`../../scripts/ops-q5-backfill-sale-debts.ts`), va portlashni UCH chora
+// ushlab turadi: (1) muddat chek sanasidan EMAS, `now + N kun` dan olinadi;
+// (2) ZINAPOYA — har N qatorda muddat +1 kun, ya'ni operator navbatiga
+// kuniga ~50 tadan tushadi; (3) teskari skript
+// (`ops-q5-backfill-rollback.ts`) `RUN` yorlig'i bo'yicha bitta yugurishni
+// qaytaradi. To'g'ri xulosa: «adopsiya YO'LIDA butun qoldiq olinmaydi» ✅ ·
+// «backfill qilib bo'lmaydi» ❌.
+// Reja: `docs/plans/2026-08-25-kassa-qarzi-undirish-reyestri.md` (Q5).
 
 /** `debtPayable` natijasi — ekran ham, server ham AYNAN shu qoidadan yuradi. */
 export interface DebtPayablePlan {

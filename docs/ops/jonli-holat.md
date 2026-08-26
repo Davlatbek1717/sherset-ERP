@@ -121,6 +121,56 @@ savdo boshlanishidan OLDIN: `warehouse-state.ts` + bitta sinov sotuv
 to'xtatib qo'yishi mumkin (qoida 13). Default imzo-oralig'i 9 000–11 000 — faqat
 soxta sonlarni oladi, haqiqiy qoldiqqa tegmaydi. Batafsil: H5 hisoboti.
 
+## 3.2. Kassa qarzi backfill'i (Q5) — 🔴 HALI YUGURTIRILMAGAN
+
+> **Nega bu yerda tursa-yu, jurnalda qator yo'q.** Qoida 14 jonli holatga
+> TEGILGANDA jurnalga qator yozishni talab qiladi. Q5 backfill'i jonlida
+> **yugurtirilmagan** (kod tayyor, deploy 2026-08-25 da egasi tomonidan rad
+> etilgan, so'ng «jonliga tegma» qarori), ya'ni jurnalga yozadigan hodisa
+> hali YO'Q — soxta qator yozilmaydi. Bu bo'lim esa yugurtirish kuni
+> nimani qayd etish kerakligini OLDINDAN belgilaydi, aks holda o'sha kuni
+> shoshilinch ishda qayd tushib qolardi (IS-7 naqshi).
+
+**Nima qiladi:** Q2 dan OLDIN post qilingan kassa cheklarining balans-qarzlarini
+`Debt` reyestriga olib kiradi (`balanceAdopted = true`, `sourceDocType =
+'retailsale'`), ya'ni ular undirish ro'yxatida ko'rinadi. **Balansga va
+kassaga TEGMAYDI** — `applyDelta` umuman chaqirilmaydi.
+
+**Oldindan shart (tartib MAJBURIY):** `20260825120000_debt_source_doc`
+migratsiyasi berilgan bo'lishi kerak. Skript buni O'ZI tekshiradi
+(`preflight()`) va ustunsiz bazada tushunarli xato bilan to'xtaydi.
+
+**Skriptlar** (`apps/api`, box'da qo'lda; DRY-RUN default):
+
+    ./node_modules/.bin/tsx src/scripts/ops-q5-backfill-sale-debts.ts              # o'lchash
+    APPLY=1 ONLY_CP=<uuid> RUN=<sana>-01 ./node_modules/.bin/tsx src/scripts/ops-q5-backfill-sale-debts.ts
+    RUN=<sana>-01 ./node_modules/.bin/tsx src/scripts/ops-q5-backfill-rollback.ts  # teskarisi
+
+**Yugurtirish kuni yoziladigan iz (har bosqichdan keyin):**
+
+| Maydon | Qayerdan |
+|---|---|
+| `RUN` yorlig'i | skript argumenti (`RUN=<sana>-NN`) — rollback AYNAN shu bo'yicha ishlaydi |
+| qator soni / summa | skript chiqishi (`OCHILADIGAN QATOR` / `OCHILADIGAN JAMI SUMMA`) |
+| kontragent soni | o'sha chiqish |
+| kim yugurtirgan, qachon | qo'lda — ish soatidan TASHQARIDA (qoida 13) |
+| `warehouse-state.ts` oldin/keyin | qoida 8 — ikkalasi ham faza hisobotiga |
+| uchma-uch smoke | qoida 13 — sinov sotuv (post→tekshir→cancel), yacheyka sanash, ko'chirish |
+
+**Yakuniy o'lchov:** `apps/api/src/scripts/ops-q6-live-verify.ts` (DRY default —
+«jonlida qaysi faza bor» qamrov jadvali; `--live` esa besh invariantni sinov
+cheki bilan isbotlaydi va izini O'ZI tozalaydi).
+
+🔴 **Kutilgan yon ta'sir — nosozlik EMAS:** undirish ro'yxati va menejer
+navbati HAJMI keskin o'sadi (lokal o'lchov: 579 → 812 qator). Bu **yangi qarz
+emas, ko'rinmagan qarz endi ko'rinmoqda**. Eslatma cron'i 14 kun JIM turadi,
+so'ng zinapoya bo'yicha kuniga ~50 qatordan ochiladi.
+
+Reja va to'liq retsept: `docs/plans/2026-08-25-kassa-qarzi-undirish-reyestri.md`
+(Q5 hisoboti — «Jonli yugurish retsepti»).
+
+---
+
 ## 4. O'zgarishlar jurnali (qoida 14)
 
 | Sana | Nima o'zgardi | Kim / nima bilan | Reyestr yangilandimi |
@@ -133,3 +183,9 @@ soxta sonlarni oladi, haqiqiy qoldiqqa tegmaydi. Batafsil: H5 hisoboti.
 
 > Yangi qator qo'shganda: sana, nima, kim/nima bilan, va reyestr (1-bo'lim JSON +
 > 2-bo'lim jadval) yangilanganini belgilang.
+
+> 🔴 **Kutilayotgan, lekin HALI BO'LMAGAN o'zgarish:** Q5 kassa-qarzi
+> backfill'i (3.2-bo'lim). Yugurtirilgan kuni shu jadvalga qator qo'shiladi:
+> «`RUN=<sana>-NN` · N qator / X so'm reyestrga · `ops-q5-backfill-sale-debts.ts`
+> · balans va yacheyka reyestri TEGILMAGAN». Ombor tuzilmasiga tegmagani uchun
+> 1-bo'lim JSON'i va 2-bo'lim jadvali O'ZGARMAYDI — buni ham qatorda ayting.
