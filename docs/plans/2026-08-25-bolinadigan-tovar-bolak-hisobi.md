@@ -1,6 +1,6 @@
 # Bo'linadigan tovar — bo'lak hisobi (kabel, sim, shlang)
 
-> **Yaratilgan:** 2026-08-25 · **Buyurtmachi:** Ozodbek (egasi) · **Holat:** **K1 ⚠️ QISMAN** (`bc92330a`) + **K2 ⚠️ QISMAN** + **K3 ⚠️ QISMAN** — poydevor (model, migratsiya, sverka) va bo'lak reyestri boshqaruvi ekrani + yorliq tayyor; K1 migratsiyasi LOKAL dev bazada to'liq isbotlangan (UP×2 → zond → DOWN×2 → UP), K2 esa migratsiya QO'SHMAYDI. **Uchalasi ham jonli tasdiq kutmoqda** — egasi 2026-08-25 da deploy'ni rad etdi, shu sabab uchala faza BIRGA, bitta deploy bilan yopiladi. 🔴 **Deploy'da `topup-role-permissions.ts` MAJBURIY** (yangi entity `piecetracking`). Jonli xulq HOZIRCHA o'zgarmaydi: bayroq hech qayerda yoqilmagan, jadval bo'sh. **K3 (kassir ko‘rinishi + 7.1 avto-taqsimot istisnosi) KOD TAYYOR** — migratsiyasiz, yangi ruxsatsiz, jonli xulq bayroq yoqilmaguncha o‘zgarmaydi. **K4 ⚠️ QISMAN (2026-08-26)** — omborchi KESIM oqimi + posting: migratsiya `20260826000000_stock_piece_cut` LOKAL bazada to‘liq isbotlangan (UP×2 → zond → DOWN×2 → UP) va TSD APK qurilgan (`BUILD SUCCESSFUL`), lekin jonli tasdiq kutmoqda. 🔴 **Kesim STOK-NEYTRAL** — egasining 2026-08-25 qarori bo‘yicha chiqindi ham, kesim yo‘qotishi ham FAQAT reyestrdan chiqadi, QOLDIQQA TEGILMAYDI (tuzatish K5 da). **K-S3 YOPILDI**: chekda BITTA qator «180 m (150+30)». **K5 ⚠️ QISMAN (2026-08-26, `2c3bf228`)** — ommaviy kiritish: SANASH (inventarizatsiya) reyestrni sanoq natijasiga tenglashtiradi (mutlaq, lekin o'zgarish MINIMAL — o'zgarmagan bo'lakning yorlig'i qayta BOSILMAYDI), PRIYOMKA kelgan rulonlarni qo'shadi (faqat BUTUN rulon), VOZVRAT qaytgan bo'lakni AYNAN o'sha qator bilan tiklaydi; uchalasi BITTA matn formati bilan («250x3+BLK-000041:200+?:150») va uchalasi ham STOK-NEYTRAL. Migratsiya `20260826120000_stock_piece_intake` LOKAL bazada to'liq isbotlangan (UP×2 → zond → DOWN×2 → UP; qoldiq har qadamda AYNAN o'zgarmagan). **K6 boshlanmagan.**
+> **Yaratilgan:** 2026-08-25 · **Buyurtmachi:** Ozodbek (egasi) · **Holat:** **K1 ⚠️ QISMAN** (`bc92330a`) + **K2 ⚠️ QISMAN** + **K3 ⚠️ QISMAN** — poydevor (model, migratsiya, sverka) va bo'lak reyestri boshqaruvi ekrani + yorliq tayyor; K1 migratsiyasi LOKAL dev bazada to'liq isbotlangan (UP×2 → zond → DOWN×2 → UP), K2 esa migratsiya QO'SHMAYDI. **Uchalasi ham jonli tasdiq kutmoqda** — egasi 2026-08-25 da deploy'ni rad etdi, shu sabab uchala faza BIRGA, bitta deploy bilan yopiladi. 🔴 **Deploy'da `topup-role-permissions.ts` MAJBURIY** (yangi entity `piecetracking`). Jonli xulq HOZIRCHA o'zgarmaydi: bayroq hech qayerda yoqilmagan, jadval bo'sh. **K3 (kassir ko‘rinishi + 7.1 avto-taqsimot istisnosi) KOD TAYYOR** — migratsiyasiz, yangi ruxsatsiz, jonli xulq bayroq yoqilmaguncha o‘zgarmaydi. **K4 ⚠️ QISMAN (2026-08-26)** — omborchi KESIM oqimi + posting: migratsiya `20260826000000_stock_piece_cut` LOKAL bazada to‘liq isbotlangan (UP×2 → zond → DOWN×2 → UP) va TSD APK qurilgan (`BUILD SUCCESSFUL`), lekin jonli tasdiq kutmoqda. 🔴 **Kesim STOK-NEYTRAL** — egasining 2026-08-25 qarori bo‘yicha chiqindi ham, kesim yo‘qotishi ham FAQAT reyestrdan chiqadi, QOLDIQQA TEGILMAYDI (tuzatish K5 da). **K-S3 YOPILDI**: chekda BITTA qator «180 m (150+30)». **K5 ⚠️ QISMAN (2026-08-26, `2c3bf228`)** — ommaviy kiritish: SANASH (inventarizatsiya) reyestrni sanoq natijasiga tenglashtiradi (mutlaq, lekin o'zgarish MINIMAL — o'zgarmagan bo'lakning yorlig'i qayta BOSILMAYDI), PRIYOMKA kelgan rulonlarni qo'shadi (faqat BUTUN rulon), VOZVRAT qaytgan bo'lakni AYNAN o'sha qator bilan tiklaydi; uchalasi BITTA matn formati bilan («250x3+BLK-000041:200+?:150») va uchalasi ham STOK-NEYTRAL. Migratsiya `20260826120000_stock_piece_intake` LOKAL bazada to'liq isbotlangan (UP×2 → zond → DOWN×2 → UP; qoldiq har qadamda AYNAN o'zgarmagan). **K6 ⚠️ QISMAN (2026-08-26)** — bayroq siyosati: tovar kartochkasidagi karta, birligi «m» YANGI tovarda bayroq YOQILGAN kelishi (K-Q9), «Hal qilinmagan» ro'yxati (`/omborchi/hal-qilinmagan`) va KUNLIK sverka signali (cron 20:00, savdodan KEYIN; farq yo'q ⇒ xabar ham yo'q). Migratsiya `20260826170000_piece_tracking_decision` — `products` ga IKKI ustun (`piece_tracked_decided_at` + `..._by_id`), chunki boolean «yo'q dedik» bilan «hali hech kim qaramagan» ni ajrata olmaydi; LOKAL bazada to'liq isbotlangan (UP×2 → zond → DOWN×2 → UP, qoldiq har qadamda AYNAN o'zgarmagan). 🔴 **JONLI PILOT (K6/4) BOSHLANMAGAN** — u kod emas, operatsiya va deploy'ni kutadi. 🔴 **K1…K6 OLTALASI HAM «QISMAN» va OLTALASI BITTA deploy bilan yopiladi (11 migratsiya) — deploy RAD ETILGAN.**
 >
 > **Ijro tartibi:** har faza ALOHIDA sessiyada. Agent shu faylni, F-rejani
 > (`2026-08-23-ombor-restrukturizatsiya.md`), G-rejani
@@ -433,6 +433,363 @@ tizimli farq yo'q; kassirlardan «bo'laklar to'g'ri ko'rinyapti» tasdig'i oling
 ---
 
 ## 10. HISOBOTLAR (har faza o'z hisobotini SHU YERGA yozadi)
+
+### K6 — Bayroq siyosati + jonli pilot · ⚠️ QISMAN (qoida 11) · 2026-08-26
+
+**Holat: QISMAN.** Kod, migratsiya, sirt, i18n va testlar tayyor; migratsiya
+**LOKAL dev bazada TO'LIQ isbotlangan** (UP ×2 → zond → DOWN ×2 → UP) va har
+qadamdan keyin qoldiq o'lchandi. Qabul mezonining **jonli** bandi — «kabel
+guruhi jonlida 1 hafta ishlagan; sverkada tizimli farq yo'q; kassirlardan
+tasdiq» — BAJARILMAGAN (deploy yo'q ⇒ pilot ham yo'q). Faza «TUGADI» deb
+yopilmaydi. **K6 deploy deltasiga O'N BIRINCHI migratsiyani qo'shadi**
+(`20260826170000_piece_tracking_decision`). Yangi ruxsat-entity YO'Q ⇒
+`topup-role-permissions.ts` ga K6 hech narsa qo'shmaydi (u K2 uchun baribir
+MAJBURIY).
+
+🔴 **K6 — K-rejaning OXIRGI fazasi. Endi reja FAZA emas, DEPLOY OYNASINI
+kutadi:** K1…K6 oltalasi ham «QISMAN» va oltalasi ham BITTA deploy bilan
+yopiladi.
+
+---
+
+**0. Egasining qarori qanday o'qildi (K-Q9 ↔ K-Q10 tarangligi).**
+
+K-Q9 «birligi «m» bo'lgan YANGI tovarda bayroq YOQILGAN holda keladi» deydi,
+K-Q10 esa «yoyish bosqichma-bosqich, avval FAQAT kabel guruhi». Ikkalasi bir
+qarashda zid: avto-yoqish yangi «m» tovarlarni pilotdan tashqarida ham
+yoqadi.
+
+**Qanday hal qilindi:** K-Q10 MAVJUD katalogni yoyish haqida (4583 tovar
+qo'lda ko'rib chiqiladi), K-Q9 esa YANGI nomenklatura haqida. Ikkalasi ham
+bajarildi va ular kesishmaydi: avto-yoqish faqat SHU DEPLOYDAN KEYIN
+yaratiladigan tovarlarga tegadi, mavjud 4583 tasiga TEGMAYDI (migratsiya
+birorta `UPDATE "products"` yozmaydi — test bilan qulflangan).
+
+**Avto-yoqishning xavfi va uni yumshatuvchi uchta narsa** (ochiq yozilgan):
+bayroq yoqilgan tovarda kassa taqsimoti boshqacha ishlaydi (K3 ning 7.1
+istisnosi) va qoldiq ko'p yacheykaga sochilgan bo'lsa chek 400 oladi.
+(a) YANGI tovarda qoldiq NOL — ya'ni bayroq savdoga ta'sir qila boshlaguncha
+oradan priyomka o'tadi; (b) tovar o'sha zahoti «Hal qilinmagan» ro'yxatida
+ko'rinadi va qaror bir bosishda qabul qilinadi; (c) o'chirish deploy ham,
+skript ham talab qilmaydi — tovar kartochkasidagi bitta tugma.
+
+---
+
+**1. Ikki tomonlama bog'liqlik javobi (qoida 10 — «bu o'zgarish qaysi mavjud
+oqimni buzishi mumkin?»).**
+
+| Oqim | Ta'sir | Dalil |
+|---|---|---|
+| **Qoldiq (`Stock`/`StockByCell`)** | **YO'Q** | Uch qavat qulf: (a) migratsiyada `stocks` / `stock_by_cell` / `stock_pieces` so'zlari UMUMAN uchramaydi va yagona tegilgan jadval — `products` (test SQL matnini o'qib tekshiradi); (b) yangi servislarning manbasida birorta `create/update/upsert/executeRaw` yo'q (test manbani o'qiydi); (c) **lokal zond**: qaror muhri qo'yilganda `stocks` (5354 / 52 524 230.387857), `stock_by_cell` (273 / 2 949 085) va `stock_pieces` (0) — TO'RTALASI ham bir grammga o'zgarmadi. |
+| **Bo'lak reyestri (K1…K5)** | **YO'Q** | `stock_pieces` ga yozadigan uchala yo'l (K2 reyestr, K4 kesim, K5 ommaviy kiritish) tegilmagan. K6 faqat `products` bayrog'ini va uning QARORINI yozadi. |
+| **Kassa sotuvi — TAQSIMOT** | 🔴 **O'ZGARISHI MUMKIN, lekin FAQAT bayroq yoqilgan tovarda** | K6 taqsimot KODIGA bir bayt ham tegmaydi (`retail-allocation.ts` o'z holicha); u bayroqni YOQADIGAN sirtni ochadi, xolos. Jonlida hozir bayroq hech bir tovarda yoqilmagan (lokal o'lchov: 4583 tovarning hammasida `false`) ⇒ deploy kuni jonli xulq O'ZGARMAYDI. Yangi «m» tovar yaratilgandagina bayroq yoqilgan keladi (0-band). |
+| **Tovar YARATISH (`POST /products`)** | Additiv sukut | `pieceTracked` endi `uom` dan hisoblanadi. Sxemaga (`CreateProductSchema`) YANGI MAYDON QO'SHILMADI — bayroq foydalanuvchi kiritmasidan olinmaydi (test bilan qulflangan), aks holda `product.update` ruxsati bo'lgan har kim kassa taqsimotini jimgina o'zgartira olardi. |
+| **Tovar NUSXALASH** | Ayni qoida | Nusxa manbaning bayrog'ini ham, QARORINI ham ko'chirmaydi — u yangi nomenklatura va ro'yxatdan o'tishi kerak. |
+| **Tovar kartochkasi (`PATCH /products/:id`)** | **YO'Q** | Bayroq forma bilan saqlanmaydi; karta alohida yo'lga (`POST /stock-pieces/flag`) boradi. Test: kartani bosganda `api.patch`/`api.put` CHAQIRILMAYDI. |
+| **Bildirishnomalar** | Yangi tur | `piece_reconciliation_diff` — «Розница» qatorida (`notification-settings-filter`), ya'ni xodim uni o'z kartochkasidan o'chira oladi. Mavjud turlarning birortasining marshruti ham, matni ham o'zgarmagan. |
+| **Kiosk / TSD** | **YOPIQ** | Yangi yo'l (`GET /stock-pieces/pending-decisions`) ikkala allowlist'da ham YO'Q — ikkala qo'riqchi testiga alohida assert qo'shildi. |
+| **Ruxsat matritsasi / rollar** | **YO'Q** | Yangi entity qo'shilmadi: ro'yxat `piecetracking.view`, qaror `piecetracking.update` (K2 dan mavjud). ⇒ `topup-role-permissions.ts`, seed va snapshotlar TEGILMAGAN. |
+| **G2 kontrol / G3 vozvrat / G4 taqsimoti / Q-A rejalari** | **YO'Q** | Bu modullarga tegilmagan; to'liq to'plamlar yashil. |
+| **H2/H3 (jonli holat reyestri)** | **YO'Q** | Ombor TUZILMASIGA (`Store`, `__posPriority`, `__posFrontStore`, `__brakStore`) tegilmadi ⇒ `docs/ops/jonli-holat.md` ga qo'shiladigan yangi JONLI HOLAT yo'q. Bayroq — TOVAR xossasi, ombor holati emas. |
+| **Eng yomon holat** | Ro'yxat noto'g'ri to'ldiriladi yoki signal shovqin qiladi | Kassa avvalgidek ishlayveradi: K6 ning birorta yo'li savdoni TO'XTATA olmaydi. Cron xatosi ham hisob kesimida yutiladi. |
+
+🔴 **Bitta ochiq xavf, ochiq yozilgan.** Kunlik cron har kecha 20:00 da
+HAMMA hisobni aylanadi va har biri uchun sverkani hisoblaydi. Bayroq ko'p
+tovarga yoyilsa bu so'rov og'irlashadi (K1 hisobotining «ish unumdorligi»
+bandi). K6 pilotida (faqat kabel guruhi) muammo yo'q; butun «m» katalogiga
+yoyilsa o'lchash kerak.
+
+---
+
+**2. Nima qilindi.**
+
+**Sxema + migratsiya `20260826170000_piece_tracking_decision`** (idempotent
+DDL, faqat QO'SHADI):
+
+| Jadval | Qo'shildi | Nega |
+|---|---|---|
+| `products` | `piece_tracked_decided_at` (timestamptz, NULL) | 🔴 **Bayroqning O'ZI uch holatni ifodalay olmaydi.** `false` bir vaqtda ham «bo'lak hisobi kerak emas deb QAROR QILINDI», ham «hali hech kim qaramagan» degani. K6/3 aynan ikkinchisini ko'rsatishi kerak — aks holda yangi nomenklatura jimgina o'tib ketardi. |
+| `products` | `piece_tracked_decided_by_id` (uuid, FK → **SET NULL**) | Kim qaror qildi. SET NULL ataylab: xodim ishdan ketsa QAROR kuchda qoladi. CASCADE bo'lsa tovar qayta «hal qilinmagan» bo'lib ro'yxatga qaytardi va pilotning hisobi buzilardi. |
+
+**Indeks ATAYLAB qo'shilmadi:** ro'yxatning so'rovi QISMAN indeks talab
+qilardi, Prisma sxemasi esa `WHERE` li indeksni ifodalay olmaydi ⇒
+`prisma migrate diff` da abadiy drift qatori paydo bo'lardi (K1 hisobotining
+«yangi drift-klass YO'Q» intizomi). Sabab migratsiya faylida yozilgan.
+
+**Sof yadro `piece-flag-policy.ts`** (Prisma yo'q):
+
+- `isMeterUom` / `METER_UOM_NAMES` — 🔴 **YOPIQ va TOR ro'yxat**: `мм`, `м2`,
+  `м3`, `мл` metr EMAS. Prefiks bo'yicha tekshirish bu to'rttasini ham
+  bo'lak hisobiga tortardi va millimetrli tovar kassada «uzluksiz bo'lak»
+  talab qila boshlardi. Kirill «м» va lotin «m» ikkalasi ham bor — bir xil
+  ko'rinadi, kod nuqtasi boshqa;
+- `defaultPieceTrackedForUom` — K-Q9 sukuti;
+- `classifyFlagDecision` / `buildPendingDecisionList` — uch holat
+  (`decided` · `pending-on` · `pending-off`) va saralash: avval bayrog'i
+  YOQILGANLAR (ular jonli xulqni ALLAQACHON o'zgartirgan), so'ng reyestrda
+  bo'lagi ko'plari, so'ng nom;
+- `buildFlagDecisionPatch` — qaror muhri BITTA joydan;
+- `summarizePieceDigest` — kunlik signal matni;
+- `resolveDigestRecipients` — rol qatlami + xodim OVERRIDE qatlami (MK26).
+
+**`StockPieceDecisionService` + `GET /stock-pieces/pending-decisions`**
+(`piecetracking.view`, FAQAT O'QIYDI). Ro'yxatga tushish mezoni IKKI shoxli:
+birligi «m» **yoki** reyestrda faol bo'lagi bor. Ikkinchi shox K1
+sverkasidagi `pieces-without-flag` ogohlantirishining JUFTI — busiz o'sha
+ogohlantirishni yopadigan tugma hech qayerda bo'lmasdi.
+
+🔴 **Birlik mezoni SQL da EMAS, `isMeterUom` da.** `Product.uom` — erkin matn
+(«м», «M», «Metr»); SQL tomonida registr-sezgir `IN` bilan tekshirilsa bir
+qism tovar JIMGINA ro'yxatga tushmasdi va aynan unutilishi kerak bo'lmagan
+nomenklatura yo'qolardi. Baza faqat «qaror qilinmagan» kesimini beradi
+(`SCAN_LIMIT = 20 000`, unga yetilsa javobda `scanTruncated` — jim kesish
+YO'Q).
+
+**Qaror muhri — `setFlag` kengaytirildi** (K2 dan mavjud yo'l): endi bayroq
+bilan birga `decided_at` + `decided_by_id` yoziladi. **«Yo'q» ham QAROR** va
+u ham muhrlanadi. Bayroqni o'zgartiradigan UCHALA sirt (K2 reyestr ekrani,
+K6 tovar kartochkasi, K6 ro'yxati) SHU metodni chaqiradi — qoida ham, muhr
+ham, ruxsat ham bitta joyda.
+
+**Yangi tovar sukuti (K6/2)** — `product.repository.create` va `clone` da:
+`pieceTracked = defaultPieceTrackedForUom(uom)`, qaror esa MUHRLANMAYDI.
+
+**Kunlik sverka signali (K6/5)** — `StockPieceDigestService` +
+`StockPieceDigestCron` (`@Cron('0 20 * * *', Asia/Tashkent`)):
+
+- 🔴 **20:00, ATAYLAB SAVDODAN KEYIN** — H5 hisobotidagi «muntazam yuritish
+  tartibi» bilan bir qoida: kunduzi omborchi sanaydi va kesadi, ya'ni farq
+  kun bo'yi normal holat. Savdo davomida signal har kuni yolg'on qizil
+  berardi;
+- 🔴 **farq YO'Q — xabar ham YO'Q.** Har kunlik «hammasi joyida» signalni
+  «bo'ri keldi» ga aylantirardi (G3/H2 dagi AYNI xato-klass) va ikkinchi
+  haftada hech kim qaramay qo'yardi. Farq bo'lmasa ruxsat so'rovi ham
+  ketmaydi;
+- ogohlantirishlar (`pieces-without-flag`, `invalid-piece`) ham signal
+  beradi: ular «farq» ustunida ko'rinmaydi, lekin reyestr haqiqatdan
+  uzilganini bildiradi;
+- farq BOR, lekin ruxsatli xodim YO'Q — bu ham nosozlik va log'ga
+  ogohlantirish bo'lib chiqadi (jim qolmaydi);
+- cron **yupqa o'ram** (jadval + hisoblarni aylanish + ustma-ust tushish
+  qo'riqchisi), qoida servisda ⇒ cron'siz ham testlanadi
+  (`shift-acceptance.cron.ts` naqshi).
+
+**Bildirishnoma turi `piece_reconciliation_diff`** — `NotificationKind` +
+`ROW_BY_KIND` («Розница») + qo'ng'iroqdagi havola. 🔴 Havola sharti
+`entityId` tekshiruvidan OLDIN turadi: bu signalning `entityId` si YO'Q
+(hujjat emas, HISOBOT) va aks holda xabar havolasiz qolib, katta omborchi
+qayerga borishni bilmasdi.
+
+**Web:** `components/products/piece-tracking-card.tsx` (tovar kartochkasidagi
+karta — `ProductCutCard` naqshi, faqat tahrir formasida), yangi ekran
+`/omborchi/hal-qilinmagan`, `/omborchi` panelida havola, i18n **ru+uz**
+(2 bo'lim, 35 kalit).
+
+**Ruxsati yo'q foydalanuvchi holatni KO'RADI, lekin o'zgartira olmaydi** —
+«yashirish» emas, «o'chirish»: bayroq nima uchun yoqilganini tushunish
+kassirga ham, menejerga ham kerak.
+
+---
+
+**3. Rejadan ONGLI CHETLASHISHLAR (ikkita).**
+
+1. **Bayroq forma maydoni EMAS, alohida karta.** Reja «tovar kartochkasida
+   bayroq (permission bilan)» deydi. Formaning o'z saqlash yo'liga qo'shilsa
+   ruxsat `product.update` bo'lardi, K-Q9 esa huquqni katta omborchiga
+   beradi. Shuning uchun karta o'z API chaqiruvini qiladi va bayroq forma
+   «Saqlash» tugmasiga bog'liq EMAS (repodagi `ProductCutCard` naqshi).
+2. **«Hal qilinmagan» ro'yxatiga IKKINCHI shox qo'shildi** (reyestrda
+   bo'lagi bor, lekin birligi boshqacha). Reja faqat «birligi «m»» deydi.
+   Sabab yuqorida: K1 ning `pieces-without-flag` ogohlantirishini yopadigan
+   tugma bo'lmasdi.
+
+**Bajarilmagan band — 4-vazifa (jonli pilot).** U kod emas, OPERATSIYA:
+bayroqni kabel guruhiga yoqish va 1–2 hafta kuzatish. Deploy bo'lmagani
+uchun boshlanmadi. Vositalar tayyor (ekran, ro'yxat, kunlik signal).
+
+---
+
+**4. Testlar.**
+
+| Gate | Natija |
+|---|---|
+| Yangi `piece-flag-policy.test.ts` | **25** (birlik 5, qaror holati 4, ro'yxat 5, muhr 2, signal 4, qabul qiluvchilar 5) |
+| Yangi `stock-piece-decision.service.test.ts` | **11** (faqat-o'qish 2, mezon 5, qidiruv/chegara 4) |
+| Yangi `stock-piece-digest.test.ts` | **18** (xulq 8, cron 3, simlar 7) |
+| Yangi `piece-flag-decision-schema.test.ts` | **12** (sxema 4, migratsiya 5, rollback 3) |
+| Yangi `product-piece-flag-default.test.ts` | **6** |
+| Yangi web `hal-qilinmagan/page.test.tsx` | **9** |
+| Yangi web `piece-tracking-card.test.tsx` | **6** |
+| `stock-piece-registry.service.test.ts` | **+1** (qayta yozilgan: `setFlag` endi muhr qo'yadi) |
+| `kiosk-policy.test.ts` · `tsd-policy.test.ts` | +1 assert (yangi yo'l ikkalasida ham YOPIQ) |
+| `notification-bell.test.tsx` | **+1** (signal hisobotga olib boradi) |
+| **Jami yangi** | **+88** |
+| `apps/api` vitest TO'LIQ | 684 fayl (1 skip) · **9907 passed** · 2 skipped · **0 failed** ✅ |
+| `apps/web` vitest TO'LIQ | 339 fayl · **4427 passed** · 26 skipped · **0 failed** ✅ |
+| `turbo typecheck` (10 paket) | ✅ **10/10 successful** |
+| i18n gate'lar (`apps/web/src/__tests__`) | ✅ 92 fayl / **1517 passed** |
+| `node scripts/check-lint.mjs` | ✅ 0 error, 1272 warning (siyosat: warning ruxsat) |
+| biome — YANGI fayllar (13 ta) | ✅ **0 xato, 0 ogohlantirish** |
+| biome — `omborchi/page.tsx` | 20 ogohlantirish — **mening ishimdan OLDIN ham AYNI 20 ta** (stash bilan o'lchab solishtirildi) |
+| biome — `notification-bell.tsx` | 2 ogohlantirish — **oldin ham AYNI 2 ta** (o'lchandi) |
+
+**Mavjud testga ATAYLAB tegilgan joylar (o'chirilmadi, sabab bilan):**
+`stock-piece-registry.service.test.ts` dagi «bayroq» bloki — `setFlag` endi
+qaror muhrini ham yozadi (izoh o'sha yerda); `kiosk-policy` / `tsd-policy` /
+`notification-bell` ga faqat YANGI assert qo'shildi.
+
+---
+
+**5. LOKAL ISBOT (`sherset_v2_dev` @ localhost, PG 18 — qoida 7 va 12).**
+
+Baza jonli nusxa: 4583 faol tovar (bayrog'i yoqilgani **0**), 5354 `stocks`,
+273 `stock_by_cell`, `stock_pieces` 0 qator.
+
+| Qadam | Natija |
+|---|---|
+| Migratsiya, 1-yugurish | EXIT=0 |
+| Migratsiya, 2-yugurish | EXIT=0, **to'liq no-op** |
+| Ustunlar | `piece_tracked_decided_at` — `timestamp with time zone`, NULLABLE, sukutsiz; `piece_tracked_decided_by_id` — `uuid`, NULLABLE ✅ |
+| FK siyosati | `products_piece_tracked_decided_by_id_fkey` → `confdeltype = n` (**SET NULL**) ✅ |
+| **Qoldiq** | `stocks` 5354 / `sum(qty)` **52 524 230.387857** — migratsiyadan keyin ham AYNAN o'sha |
+
+**Zond (`apps/api/src/scripts/k6-local-piece-flag-probe.sql`, o'zi ROLLBACK qiladi):**
+
+```
+USTUNLAR              : piece_tracked(NO,false) · _decided_at(YES,∅) · _decided_by_id(YES,∅)
+FK                    : products_piece_tracked_decided_by_id_fkey · confdeltype = n  ✅ SET NULL
+BOSHLANGICH           : tovarlar 4583 · bayrogi_yoqilgan 0 · qaror_qilingan 0
+ROYXATDA_MUHRDAN_OLDIN: 1      ← «hal qilinmagan» so`rovi tovarni TOPADI
+ROYXATDA_MUHRDAN_KEYIN: 0      ← muhrdan keyin TOPMAYDI (K6/3 ning yuragi)
+MUHR                  : piece_tracked=t · sana_bor=t · xodim_bor=t
+QOLDIQ                : stocks_qatorlar/jami · sbc_qatorlar/jami · bolaklar — BESHALASI `t` 🔴✅
+ZONDDAN_KEYIN         : qaror_qilingan 0   (ROLLBACK izsiz)
+```
+
+Ya'ni **qaror muhri jismoniy bazada o'lchandi: tovar ro'yxatdan CHIQDI va
+qoldiq ham, bo'lak reyestri ham bir grammga o'zgarmadi.**
+
+**Qaytarish yo'li (qoida 12) — YOZILDI VA SINALDI:**
+`packages/db/scripts/rollback/20260826170000_piece_tracking_decision_down.sql`
+
+```
+cd packages/db && npx prisma db execute --schema prisma/schema.prisma \
+  --file scripts/rollback/20260826170000_piece_tracking_decision_down.sql
+npx prisma migrate resolve --rolled-back 20260826170000_piece_tracking_decision
+npx prisma generate
+```
+
+Sikl lokal bazada: **DOWN** (ikkala ustun ham ketdi, `piece_tracked` JOYIDA)
+→ **DOWN 2-marta** (to'liq no-op) → **UP** (ustunlar qaytdi, FK 1 ta). Har
+qadamdan keyin qoldiq o'lchandi — **o'zgarmadi**.
+
+🔴 **Rollback'ning ma'nosi ochiq yozilgan:** u BAYROQNI o'chirmaydi
+(yoqilgan tovar yoqilganicha qoladi va kassa xulqi o'zgarmaydi), faqat QAROR
+TARIXI yo'qoladi ⇒ «Hal qilinmagan» ro'yxati butun «m» katalogini qaytadan
+ko'rsatadi. Eksport buyrug'i va tekshiruv so'rovi fayl boshida.
+
+**Drift:** `prisma migrate diff` da `piece_tracked` bo'yicha bironta qator
+YO'Q. Yangi drift-klass qo'shilmadi.
+
+---
+
+**6. Deploy holati: ⛔ BAJARILMADI.**
+
+Egasining 2026-08-25 dagi «Deploy YO'Q» qarori kuchda (G1 sessiyasidagi «C
+yo'li», K1…K5 sessiyalarida takrorlangan). Jonli baza ochilmadi,
+`warehouse-state.ts` yugurtirilmadi, VPS HEAD tekshirilmadi.
+
+**K6 deploy deltasiga qo'shadigan narsa:** faqat **migratsiya**
+(`prisma db execute --file …/20260826170000_piece_tracking_decision/migration.sql`
+→ `prisma migrate resolve --applied 20260826170000_piece_tracking_decision`
+→ oxirida `prisma generate`). Yangi ruxsat-entity, yangi topup qadami, yangi
+jonli sozlama YO'Q. **Jonli XULQ K6 dan o'zgarmaydi**: bayroq hech qayerda
+yoqilmagan, yangi ustunlar NULL, cron esa farq topmasa jim turadi.
+
+---
+
+**7. QABUL MEZONI — bandma-band (qoida 11).**
+
+| # | Mezon | Holat |
+|---|---|---|
+| 1 | tovar kartochkasida bayroq (permission bilan) | ⚠️ QISMAN — kod + test ✅ (6 web testi), **jonlida ❌** |
+| 2 | birligi «m» YANGI tovarda bayroq yoqilgan keladi | ⚠️ QISMAN — test ✅ (6 test, `мм`/`м2` tuzog'i bilan), **jonlida ❌** |
+| 3 | «Hal qilinmagan» ro'yxati; ha/yo'q deyilgach chiqadi | ⚠️ QISMAN — **lokal bazada zond bilan** ✅ (topildi → muhr → topilmadi) + test ✅, **jonlida ❌** |
+| 4 | **kabel guruhi jonlida 1 hafta ishlagan** | ❌ deploy yo'q ⇒ pilot boshlanmagan |
+| 5 | sverka hisobotida tizimli farq yo'q | ❌ pilot yo'q |
+| 6 | kassirlardan «bo'laklar to'g'ri ko'rinyapti» tasdig'i (javobgar + sana) | ❌ pilot yo'q |
+| 7 | kunlik sverka hisoboti — farq chiqsa signal | ⚠️ QISMAN — kod + 18 test ✅ (jumladan «farq yo'q ⇒ xabar yo'q» va cron simlari), **jonlida ❌** |
+| 8 | i18n ru+uz, testlar | ✅ |
+
+**Oltitasi jonli tasdiq kutmoqda ⇒ K6 «QISMAN».** Yopish sharti: deploy +
+8-banddagi smoke + 1 haftalik pilot.
+
+---
+
+**8. Qoida 13 — uchma-uch smoke.** Bajarilmadi (deploy yo'q). Deploy kunida
+bajariladigan minimal ro'yxat (K1…K5 ro'yxatlariga QO'SHIMCHA):
+
+1. **RO'YXAT:** `/omborchi/hal-qilinmagan` ochilsin — birligi «m» tovarlar
+   ko'rinsin, «Qaror qilingan» ustuni **0** bo'lsin (deploy kuni haqiqat);
+2. **QAROR:** bitta kabelga «Ha» → tovar ro'yxatdan CHIQSIN va tovar
+   kartochkasida «Yoqilgan» ko'rinsin; boshqasiga «Yo'q» → u ham CHIQSIN
+   (ikkalasi ham qaror);
+3. **RUXSAT:** oddiy omborchi (`storekeeper`) bilan `/omborchi/hal-qilinmagan`
+   → 403, tovar kartochkasida esa holat KO'RINSIN, tugma bo'lmasin;
+4. **YANGI TOVAR:** birligi «м» yangi tovar yaratilsin → bayroq YOQILGAN
+   kelsin va tovar «Hal qilinmagan» ro'yxatida chiqsin; birligi «шт»
+   tovarda — o'chiq;
+5. **SIGNAL:** bilib turib farq yasalsin (K2 ekranida bitta bo'lak «tugadi»)
+   → o'sha kuni 20:00 dan keyin katta omborchining qo'ng'irog'ida xabar
+   chiqsin va u `/reports/piece-reconciliation` ga olib borsin; farq
+   tuzatilgach ertasi kuni xabar KELMASIN;
+6. **PILOT:** bayroq FAQAT kabel guruhiga yoqilsin (K-Q10) — bir kunda butun
+   «m» katalogiga yoqish 2026-08-24 kabi bir zarbali o'zgarish bo'lardi;
+7. **bayrog'i O'CHIQ oddiy tovar bilan** bitta sotuv (post → tekshir →
+   cancel), bitta yacheyka **sanash**, bitta **ko'chirish** — avvalgidek;
+8. `packages/db` da `npx tsx scripts/warehouse-state.ts` — chiqish kodi 0.
+
+Javobgar shaxs va vaqt deploy sessiyasida shu yerga yoziladi.
+
+---
+
+**9. ⚠️ Parallel sessiya va halol qaydlar (CLAUDE.md §6).**
+
+- Sessiya boshida daraxt SOF EMAS edi:
+  `docs/plans/2026-08-23-ombor-restrukturizatsiya.md` (F-reja) o'zgargan,
+  `docs/ops/2026-08-25-deploy-dossieri.md` va uchta eski rollback `.sql`
+  untracked turardi — **hech biriga tegilmadi** (§6.1). Commit aniq
+  pathspec bilan qilindi.
+- **Lokal dev baza paroli** shu sessiyada foydalanuvchidan so'ralib olindi.
+  Parol repoga YOZILMADI: `packages/db/.env` yaratilmadi, buyruqlar
+  `DATABASE_URL` / `PGPASSWORD` env bilan yuritildi (qoida 5).
+- Biome bazaviy o'lchovlari uchun `git stash` IKKI marta ishlatildi, har
+  safar BITTA fayl bilan cheklanib darhol qaytarildi (§6.7 A).
+
+---
+
+**10. Ochiq qolganlar / keyingi ishlarga.**
+
+- **🔴 K1+K2+K3+K4+K5+K6 ni yopish uchun:** BITTA deploy (11 migratsiya) +
+  `topup-role-permissions.ts` (K2 uchun) + oltala fazaning smoke ro'yxati +
+  1 haftalik pilot.
+- **Jonli pilot boshlanmagan** (K6/4) — bu kod emas, operatsiya. Kuzatiladi:
+  Σ shartidan chiqqan 400 lar soni (K5), `no-single-source` 400 lar soni
+  (K3), omborchilar yorliq bosishni unutmayaptimi.
+- **Cron faqat 20:00 da yuradi** — qo'lda ishga tushirish sirti YO'Q
+  (endpoint qo'shilmadi: yangi yozuv sirti = yangi ruxsat savoli). Sinov
+  uchun `StockPieceDigestService.runForAccount` ni `tsx` skriptidan chaqirsa
+  bo'ladi.
+- **Signal faqat ichki bildirishnoma** (bell + SSE). Telegram/SMS kanali
+  qo'shilmadi — kerak bo'lsa `NotificationService` ning «Почта» kanali
+  allaqachon bor (xodim kartochkasidan yoqiladi).
+- **Katalog skani chegarasi 20 000** — jonlida 4583 tovar, ya'ni zaxira
+  ~4×. Katalog o'sib ketsa `scanTruncated` ekranda ko'rinadi va qismli
+  indeks/sahifalash masalasi qayta ko'riladi.
+- **Egasiga savollar:** **K-S1**, **K-S2** va **K-S4** hamon OCHIQ. K-S4
+  (nechta kabel nomenklaturasi, taxminan nechta bo'lak) endi pilotning
+  BIRINCHI qadami: «Hal qilinmagan» ro'yxati deploy'dan keyin bu savolga
+  o'zi javob beradi — ro'yxatdagi qatorlar soni aynan shu raqam.
 
 ### K5 — Ommaviy kiritish: inventarizatsiya + priyomka + vozvrat · ⚠️ QISMAN (qoida 11) · 2026-08-26 · `2c3bf228`
 
