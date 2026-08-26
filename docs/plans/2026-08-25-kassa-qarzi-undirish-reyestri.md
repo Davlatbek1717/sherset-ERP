@@ -1,6 +1,6 @@
 # Kassada mijoz hisob-kitobi — qarzni undirish ro'yxatiga ulash + avans bilan ishlash
 
-> **Yaratilgan:** 2026-08-25 · **Buyurtmachi:** Ozodbek (egasi) · **Holat:** Q1 QISMAN + Q2 QISMAN + Q3 QISMAN + A1 QISMAN + A2 QISMAN + A3 QISMAN + Q4 QISMAN + **Q5 QISMAN** (2026-08-25) — **AVANS OQIMI ENDI KODDA TO'LIQ: qabul (A1, `8d1f4a01`) → sarflash (A2, `8178fd87`) → ko'rsatish/tarix/qaytarish (A3, `526dda5c` + `1447a11e`)**. A3: `customerStanding` sof moduli (to'rt holat), POS kartasida «Avansi: N» (ilgari «0» turardi), avans yorliqlari UCH xaritada (POS · akt sahifasi · **Excel akti — reja bilmagan uchinchi joy**), `POST /cashier-sessions/:id/customer-prepay-refund` (kassa −summa / balans +summa, cap = mavjud avans, balans `FOR UPDATE` bilan QULFLANADI, RKO cheki `ВА-`), `recompute` ga **to'rtinchi manba** (`customer-prepay-refunds`), Z-hisobotda uchinchi avans qatori, menejer ro'yxatida avansli mijozlar ajralib turadi. **A3 da migratsiya YO'Q** (`RetailDrawerCashOut.kind` VarChar(20) va `agentId` yetadi). Qarz oqimi (Q1–Q3) o'zgarishsiz. **HECH BIRI DEPLOY QILINMAGAN** — deploy branch'i `kassa-qarzi-q1-q2` @ `456e53af` da Q3, A1, A2, A3 YO'Q (qayta yig'ilishi kerak), push va jonli tasdiq KUTILMOQDA; `opening` manbasi qarori hamon ochiq; A1 topgan 35 bayonotlik sxema DRIFTI (4 ta `DROP TABLE`) — alohida ish; **Q5 QISMAN** (`23426f15`) — backfill + TESKARI skript kodda TAYYOR va lokal dev bazada TO'LIQ isbotlangan (652 → 885 → 652 qator, balans jurnaliga 0 yozuv, `recompute` cross-check shovqini 759 → 759); DRY-RUN o'lchovi: 271 chek / 133 kontragent → **233 qator, 701 489 130 so'm**, muddat zinapoyali (50/50/50/50/33 — 5 kun). 🔴 **JONLI BOSQICH BAJARILMADI** — Q1 migratsiyasi jonlida yo'q, deploy rad etilgan, egasi «jonliga tegma» dedi (2026-08-25). Q5 ochiq bandlari: jonli 1 kontragent → smoke → qolgani (mezon 3, 4, 5, 7). Navbat **Q6** — lekin Q5 ning jonli bandlarisiz boshlanmaydi (qoida 11). **Q4 (`7ddd4e21`) — MANBA + FILTR + MUDDAT SOZLAMASI kodda TAYYOR:** undirish ro'yxati va `/debts` da «Kassa cheki / Reyestr» belgisi va chek raqami havolasi, manba filtri (sof qatlamda — SQL `<> 'retailsale'` NULL larni yo'qotardi), `CompanySettings.saleDebtTermDays` (migratsiya `20260825235000_…`, NULL ≠ 0, sozlanmagan bo'lsa Q1 defaulti 14 kun, ESKI qarzlar qayta hisoblanmaydi). Q4 ochiq bandlari: lokal dev bazada migratsiya sinovi (parol) + jonli tasdiq. 🔴 Q4 yo'l-yo'lakay A3 ning **20 i18n kalitini tikladi** — ular hech qachon commit qilinmagan ekan va i18n gate shu sababdan qizil edi; A2 ning ikki chegarasi (avansdan to'langan chek TAHRIRLANMAYDI; Z-hisobot `revenueByMethod` vozvrat-nusxalarini sanaydi) va A3 ning ikki qaydi (mijozga «avansdan yechildi» xabari ATAYLAB yozilmadi; Excel akt yorliqlarida `returnPayout`/`salesReturn` hamon yo'q — G1 ning ishi) OCHIQ qoladi
+> **Yaratilgan:** 2026-08-25 · **Buyurtmachi:** Ozodbek (egasi) · **HOLAT (2026-08-26): TO'QQIZ FAZANING HAMMASI YOZILDI — Q1…Q6 va A1…A3, hammasi «QISMAN».** Reja endi yangi faza KUTMAYDI, u **deploy oynasini** kutadi. **Q6 (`4d294947`)** — jonli verify skripti (`ops-q6-live-verify.ts`, **DRY default**, hukmlar sof `q6-verify-plan.ts` da va 86 test bilan qulflangan), eskirgan premise'larning MEXANIK qo'riqchisi (`sale-debt-premise-guard.test.ts`), `NEXT.md` **2026-08-26a** qaror yozuvi va `docs/ops/jonli-holat.md` **§3.2**. Lokal DRY yugurish skriptning ISHLASHINI isbotladi va UCH nosozlikni ochdi (hammasi tuzatildi): «API javob bermadi» «kod deploy qilinmagan» deb yozilardi · invariant 5 ning ataylab rad etilgan cheki CHERNOVIK qoldirardi va u SMENANI bloklardi (F5 sinfi) · undirish ro'yxatining 500 qatorlik KESIMI «topilmadi» ni «yo'q» deb o'qitardi (Q5 dan keyin ro'yxat 812 qator). 🔴 **JONLI VERIFY YUGURTIRILMAGAN va egasi tasdig'i YO'Q** — deploy 2026-08-25 da RAD ETILGAN. Uch migratsiya hamon VPS'da BERILMAGAN; Q6 ning DRY yugurishi Q4 migratsiyasi **lokal bazada ham yo'qligini** o'lchadi. Deploy tartibi Q6 hisobotining oxirida. — Eski sarlavha (fazalar tafsiloti): Q1 QISMAN + Q2 QISMAN + Q3 QISMAN + A1 QISMAN + A2 QISMAN + A3 QISMAN + Q4 QISMAN + **Q5 QISMAN** (2026-08-25) — **AVANS OQIMI ENDI KODDA TO'LIQ: qabul (A1, `8d1f4a01`) → sarflash (A2, `8178fd87`) → ko'rsatish/tarix/qaytarish (A3, `526dda5c` + `1447a11e`)**. A3: `customerStanding` sof moduli (to'rt holat), POS kartasida «Avansi: N» (ilgari «0» turardi), avans yorliqlari UCH xaritada (POS · akt sahifasi · **Excel akti — reja bilmagan uchinchi joy**), `POST /cashier-sessions/:id/customer-prepay-refund` (kassa −summa / balans +summa, cap = mavjud avans, balans `FOR UPDATE` bilan QULFLANADI, RKO cheki `ВА-`), `recompute` ga **to'rtinchi manba** (`customer-prepay-refunds`), Z-hisobotda uchinchi avans qatori, menejer ro'yxatida avansli mijozlar ajralib turadi. **A3 da migratsiya YO'Q** (`RetailDrawerCashOut.kind` VarChar(20) va `agentId` yetadi). Qarz oqimi (Q1–Q3) o'zgarishsiz. **HECH BIRI DEPLOY QILINMAGAN** — deploy branch'i `kassa-qarzi-q1-q2` @ `456e53af` da Q3, A1, A2, A3 YO'Q (qayta yig'ilishi kerak), push va jonli tasdiq KUTILMOQDA; `opening` manbasi qarori hamon ochiq; A1 topgan 35 bayonotlik sxema DRIFTI (4 ta `DROP TABLE`) — alohida ish; **Q5 QISMAN** (`23426f15`) — backfill + TESKARI skript kodda TAYYOR va lokal dev bazada TO'LIQ isbotlangan (652 → 885 → 652 qator, balans jurnaliga 0 yozuv, `recompute` cross-check shovqini 759 → 759); DRY-RUN o'lchovi: 271 chek / 133 kontragent → **233 qator, 701 489 130 so'm**, muddat zinapoyali (50/50/50/50/33 — 5 kun). 🔴 **JONLI BOSQICH BAJARILMADI** — Q1 migratsiyasi jonlida yo'q, deploy rad etilgan, egasi «jonliga tegma» dedi (2026-08-25). Q5 ochiq bandlari: jonli 1 kontragent → smoke → qolgani (mezon 3, 4, 5, 7). Navbat **Q6** — lekin Q5 ning jonli bandlarisiz boshlanmaydi (qoida 11). **Q4 (`7ddd4e21`) — MANBA + FILTR + MUDDAT SOZLAMASI kodda TAYYOR:** undirish ro'yxati va `/debts` da «Kassa cheki / Reyestr» belgisi va chek raqami havolasi, manba filtri (sof qatlamda — SQL `<> 'retailsale'` NULL larni yo'qotardi), `CompanySettings.saleDebtTermDays` (migratsiya `20260825235000_…`, NULL ≠ 0, sozlanmagan bo'lsa Q1 defaulti 14 kun, ESKI qarzlar qayta hisoblanmaydi). Q4 ochiq bandlari: lokal dev bazada migratsiya sinovi (parol) + jonli tasdiq. 🔴 Q4 yo'l-yo'lakay A3 ning **20 i18n kalitini tikladi** — ular hech qachon commit qilinmagan ekan va i18n gate shu sababdan qizil edi; A2 ning ikki chegarasi (avansdan to'langan chek TAHRIRLANMAYDI; Z-hisobot `revenueByMethod` vozvrat-nusxalarini sanaydi) va A3 ning ikki qaydi (mijozga «avansdan yechildi» xabari ATAYLAB yozilmadi; Excel akt yorliqlarida `returnPayout`/`salesReturn` hamon yo'q — G1 ning ishi) OCHIQ qoladi
 > **Ikki shikoyat (egasi, 2026-08-25):**
 > 1. «Qarzdorlikni undirish bo'limiga kassadan qo'shilgan yangi qarzdorliklar
 >    ko'rinmayapti.» → fazalar **Q1…Q6**
@@ -4041,3 +4041,485 @@ APPLY=1 RUN=<sana>-01 ./node_modules/.bin/tsx src/scripts/ops-q5-backfill-rollba
    vaqtda bitta yugurishni qaytarish yo'li.
 5. **Q6 `docs/ops/jonli-holat.md` ga backfill izini yozsin** (qoida 14):
    qaysi `RUN`, qachon, nechta qator, kim yugurtirgan.
+
+---
+
+### Q6 — Jonli verify, hujjatlar, izohlar auditi · 2026-08-26 · **QISMAN** (jonli verify YUGURTIRILMAGAN — deploy yo'q)
+
+**Xulq O'ZGARMADI** — Q6 birorta servis yo'liga tegmaydi: na `post()`, na
+`refund()`, na undirish ekrani, na kassa. Yangilik uchta: **jonli verify
+asbobi** (skript + sof hukm moduli), **eskirgan premise'larning MEXANIK
+qo'riqchisi** va **hujjatlar**. Migratsiya YO'Q.
+
+Commit: **`4d294947`** (branch `yacheyka-inventarizatsiya`, 11 fayl + hook'ning
+`docs/progress.json` i, +2224/−16).
+
+#### 🔴 Sessiya boshidagi holat — halol qayd
+
+Daraxtda **avvalgi, tugallanmagan Q6 sessiyasining** ishi turgan edi: to'rt
+untracked fayl (`ops-q6-live-verify.ts`, `q6-verify-plan.ts` va ikki test,
+2026-08-25 21:56) va `NEXT.md`/`debt.service.ts`/`counterparty-settlement.util.ts`
+dagi izoh tuzatmalari — **hisobotsiz va commit'siz**. O'sha sessiya
+`sale-debt-premise-guard.test.ts` ni ham yozgan, lekin u **QIZIL** edi:
+test `recompute-counterparty-balances.ts` dan tuzatma kutardi, tuzatma esa
+qilinmagan edi.
+
+Shu sessiya o'sha ishni **o'z zimmasiga oldi**: to'liq o'qildi, HTTP
+shartnomalari kod bilan qayta tekshirildi, uchta nosozlik topilib tuzatildi
+(pastda), qolgan qarz yopildi va hammasi BITTA commit'ga qo'yildi.
+Yozilmagan ish — yo'q ish; shuning uchun bu yerda ochiq aytiladi.
+
+Ayni paytda daraxtda **parallel K4 sessiyasi** (bo'linadigan tovar kesimi) ham
+ishlayotgan edi. Commit `git add <aniq yo'llar>` bilan qilindi va
+`git show --stat` bilan tasdiqlandi — **begona fayl commit'ga TUSHMADI**
+(K4 o'z ishini `82169252` + `7f352e90` bilan mustaqil commit qildi).
+
+#### Bog'liqlik holati (qoida 11 — ochiq aytiladi)
+
+Q6 ning sharti — «Q5 dan keyin». Q5 holati **«QISMAN»** va uning JONLI
+bandlari (mezon 3, 4, 5, 7) OCHIQ. Qoida 11 bo'yicha bu Q6 ni **bloklashi
+kerak edi**. Nega baribir boshlandi — va nima QILINMADI:
+
+| Q6 vazifasi | Q5 ning jonli bandiga bog'liqmi | Holat |
+|---|---|---|
+| 1. Verify SKRIPTINI yozish | ❌ yo'q — asbob deploy'dan OLDIN kerak | ✅ bajarildi |
+| 1b. Skriptni **jonlida yugurtirish** | ✅ **ha** | ❌ **QILINMADI** |
+| 2. `NEXT.md` qaror yozuvi | ❌ yo'q | ✅ bajarildi |
+| 2b. `jonli-holat.md` ga backfill **izi** | ✅ ha — iz hodisadan tug'iladi | ⚠️ **soxta qator YOZILMADI**, o'rniga OLDINDAN retsept (pastda) |
+| 3. Izohlar auditi | ❌ yo'q | ✅ bajarildi |
+| 4. Xotira yozuvi | ❌ yo'q | ✅ bajarildi |
+| 5. Egasiga yakuniy hisobot | ✅ ha — «yopildimi» degan gap jonli dalilni talab qiladi | ⚠️ **«yopildi» DEYILMADI**, «kodda tayyor, jonlida ochiq» deyildi |
+
+Ya'ni Q6 ning **asbob va bilim** qismi bajarildi, **isbot** qismi esa deploy
+oynasiga qoldi. Shu sababdan holat **«QISMAN»**.
+
+#### Nima qilindi
+
+| # | Fayl | Nima |
+|---|---|---|
+| 1 | `apps/api/src/scripts/q6-verify-plan.ts` | **YANGI sof modul** — barcha HUKM qoidalari (DB yo'q, Nest yo'q, HTTP yo'q, `Date.now()` yo'q) |
+| 2 | `apps/api/src/scripts/ops-q6-live-verify.ts` | **YANGI** jonli verify skripti (**DRY default** · `--live` · `--only=debt\|prepay`) |
+| 3 | `apps/api/src/scripts/q6-verify-plan.test.ts` | **YANGI**, **54 test** — har hukm MUTATSIYA bilan sinaladi |
+| 4 | `apps/api/src/scripts/q6-live-verify-guard.test.ts` | **YANGI**, **21 kod-shakl qo'riqchisi** |
+| 5 | `apps/api/src/modules/debt/sale-debt-premise-guard.test.ts` | **YANGI**, **11 test** — eskirgan premise'larning MEXANIK qulfi |
+| 6 | `apps/api/src/scripts/recompute-counterparty-balances.ts` | «reyestrga EMAS» dalili BEKOR qilindi, yangi dalil (`balanceAdopted: false` FILTRI) yozildi |
+| 7 | `apps/api/src/modules/debt/pos-customer-debt.ts` | F9 sarlavhasidagi «chekdan `Debt` yozib yuborish» taqiqi BEKOR belgilandi |
+| 8 | `apps/api/src/modules/debt/debt.service.ts` | (avvalgi sessiyadan) «reyestrda faqat qo'lda ochilgan qarz» dalili BEKOR |
+| 9 | `apps/api/src/modules/counterparty-settlement/counterparty-settlement.util.ts` | (avvalgi sessiyadan) «xulosa o'zgarmadi, MEXANIZM o'zgardi» |
+| 10 | `NEXT.md` | **2026-08-26a** qaror yozuvi (P1 uslubi) + 5541-qatordagi eski band BEKOR belgilandi |
+| 11 | `docs/ops/jonli-holat.md` | **3.2-bo'lim** — Q5 backfill'ining OLDINDAN yozilgan izi + jurnalga qo'shimcha |
+
+**Skriptning shakli:**
+
+```
+argumentsiz  → DRY: faqat O'QIYDI, «jonlida qaysi faza bor» qamrov jadvali
+--live       → sinov cheki bilan yozadi, oxirida HAMMASINI qaytaradi
+--only=      → zanjirni ajratish (qarz / avans)
+
+QARZ ZANJIRI:   qarzga sotuv → qator bor · balans BIR marta o'sdi · ro'yxatda
+                chiqdi → qisman to'lov → ikkala daftar TENG kamaydi → vozvrat
+                → qator yopildi va ro'yxatdan yo'qoldi        (11 hukm)
+AVANS ZANJIRI:  qabul → kassa `+`, balans `−`, Debt qatori YO'Q → avansdan
+                to'lov → kassa qimirlamadi, chek TO'LANGAN → ortiq urinish 400
+                → §2.2 kesishuvi → qolgan avans naqd qaytdi     (10 hukm)
+```
+
+#### 🔴 HUKM QOIDALARI SKRIPTDAN AJRATILDI — asosiy dizayn qarori
+
+P1 ning `ops-p1-live-verify.ts` ida hukm shartlari skript ichida, `checks`
+massivida yozilgan. U ishlagan, lekin **hech qachon tekshirilmagan**: shartning
+O'ZI noto'g'ri bo'lsa skript baribir «O'TDI» deb chiqardi va «jonlida
+tasdiqlandi» degan yozuv YOLG'ON bo'lardi.
+
+Q6 rejaning BESH invariantini isbotlashi kerak, ya'ni hukmning ishonchliligi
+o'lchovning o'zidan MUHIMROQ. Shuning uchun barcha shartlar sof modulga
+chiqarildi va har biri **mutatsiya bilan** sinaladi: to'g'ri o'lchov ✅,
+BUZILGAN o'lchov ❌ berishi SHART.
+
+⚠️ **IKKINCHI FORMULA YOZILMADI.** Reyestr qatorining kutilgan summasi Q1 ning
+`receivablePortion` idan olinadi (§2.2). Agar verify «max(0, min(…))» ni QAYTA
+yozsa, u tekshirayotgan kodning xatosini takrorlab, hech nimani isbotlamasdi.
+Buni kod-shakl testi qulflaydi.
+
+#### 🔴 LOKAL DRY YUGURISH (2026-08-26) — skript ROSTDAN ishlaydi
+
+Baza: `sherset_v2_dev` @ `localhost:5432` (parol egasidan so'raldi va **shu
+sessiyadan tashqariga yozilmadi**, qoida 5). Skript **hech nima yozmaydi** —
+DRY rejim faqat `SELECT`.
+
+```
+════════ Q6 JONLI VERIFY ════════
+Rejim:   DRY (hech nima yozilmaydi)
+API:     http://localhost:4001/api/v1
+Akkaunt: Demo Organization · token: Admin User
+
+── QAMROV (jonlida qaysi faza bor) ──
+  OK   Q1 (migratsiya: debts.source_doc_type/source_doc_id) — ustunlar BOR
+  OK   A1 (migratsiya: retail_drawer_cash_in.kind) — ustun BOR
+  YO`Q Q4 (migratsiya: company_settings.sale_debt_term_days) — ustun YO'Q — migratsiya berilmagan
+  YO`Q A2 (kod: summary.prepayAvailableMinor) — O'LCHANMADI — API javob bermadi (server ko'tarilganmi? `Q6_API_BASE`)
+  YO`Q A3 (kod: summary.standing) — O'LCHANMADI — API javob bermadi (server ko'tarilganmi? `Q6_API_BASE`)
+  YO`Q Q2/Q5 (ma`lumot: reyestrda kassa cheki qatorlari) — jami 0 qator · shundan Q5 backfill'i 0
+
+DRY — `--live` berilmadi, hech nima yozilmadi.
+`--live` yugurtirish MUMKIN EMAS (yuqoridagi «YO`Q» qatorlari).
+```
+
+**Bu yugurish uchta narsani O'LCHADI (taxmin emas):**
+
+1. **Skript ishlaydi** — import zanjiri, Prisma so'rovlari, JWT imzolash,
+   `information_schema` zondi va qamrov jadvali. Ilgari u faqat
+   «typecheck'dan o'tgan» edi; hech qachon YUGURTIRILMAGAN skript deploy
+   kechasi birinchi marta ishga tushirilsa — aynan o'sha kechada yiqiladi.
+2. 🔴 **Q4 migratsiyasi LOKAL BAZADA HAM YO'Q.** Q4 hisoboti buni
+   «ochiq band» deb yozgan edi; endi bu **o'lchangan fakt**. Q1 va A1
+   migratsiyalari esa lokal bazada BOR — ya'ni Q4 ning migratsiyasi hech
+   qayerda sinalmagan. (Uni Q4 ning qarzi sifatida qoldirdim: Q6 boshqa
+   fazaning qabul mezonini o'zi yopmaydi.)
+3. **Q2/Q5 qatorlari 0** — Q5 ning lokal backfill'i rollback bilan tozalab
+   ketgani (652 → 885 → 652) va Q2 yozuvchisi lokalda hech qachon chek
+   post qilmagani bilan MOS. Ya'ni lokal baza kutilgan holatda.
+
+#### 🔴 UCHTA NOSOZLIK TOPILDI VA TUZATILDI
+
+Uchalasi ham **faqat skript yugurtirilganda yoki kod diqqat bilan o'qilganda**
+ko'rinadi va uchalasi ham deploy kechasida ZARAR keltirardi.
+
+**1. «O'LCHANMADI» «KOD YO'Q» deb yozilardi.**
+Yuqoridagi chiqishning A2/A3 qatorlari birinchi yugurishda
+«**maydon YO'Q — kod deploy qilinmagan**» deb chiqdi. Aslida `:4001` da
+server umuman ko'tarilmagan edi — skript hech nima O'LCHAMAGAN edi.
+Deploy kechasida bu xulosa odamni butunlay boshqa ishga (qayta deploy,
+build tekshirish) yuborardi, holbuki kerak bo'lgani — API ni ishga tushirish.
+
+Tuzatildi: `DeploymentProbe` ga **`apiReachable`** qo'shildi va u
+`HttpError` (API JAVOB berdi — eski kod 404/400 qaytarishi mumkin) ni
+tarmoq xatosidan (`ECONNREFUSED`, DNS, timeout) AJRATADI. Endi jadval
+«**O'LCHANMADI — API javob bermadi**» deydi va `isLiveVerifyPossible`
+ham `apiReachable` ni ALOHIDA shart sifatida talab qiladi.
+Qulflandi: 4 test.
+
+**2. ATAYLAB rad etilgan chek CHERNOVIK qoldirardi — va u SMENANI BLOKLARDI.**
+Invariant 5 («avansdan ortiq urinish 400 bilan rad etiladi») ni o'lchash
+uchun skript ortiqcha chek POST qiladi. Lekin `POST /retail-sales`
+(chernovik yaratish) 400 dan OLDIN muvaffaqiyatli o'tadi — post rad etilsa
+chek **`draft`** holatida QOLADI.
+
+🔴 `draft` — smenani yopishga to'sqinlik qiluvchi holatlardan biri
+(`unresolved-sales.ts` → «savatda»; F5 ning `close()` to'sig'i). Ya'ni
+verify skripti kassirning smenasini yopolmaydigan qilib qo'yardi —
+**aynan shu sinfdagi hodisa 2026-08-24 da kassani 46 daqiqa to'xtatgan.**
+Verify asbobi hodisa manbaiga aylanishi mumkin emas.
+
+Tuzatildi: alohida `expectPostRejected()` — chernovikni O'ZI yaratadi,
+post'ni sinaydi va `finally` blokida `POST :id/cancel` bilan **har holda**
+tozalaydi (`draft` dan `cancel` — `retail-sale-fsm.ts#CANCELLABLE` bo'yicha
+ruxsat etilgan o'tish). `finally` ataylab: hukm QIZIL bo'lganda ham,
+kutilmaganda post O'TIB ketganda ham iz qolmaydi.
+Qulflandi: 2 kod-shakl testi.
+
+**3. KESILGAN RO'YXAT «YO'Q» deb o'qilardi** (kod o'qib topildi, eng jimi).
+
+`GET /manager/collection` javobni **`COLLECTION_ROW_CAP = 500`** da kesadi va
+buni `truncated: true` bilan oshkora aytadi. Skript esa `truncated` ni
+umuman o'qimasdan «ro'yxatda topilmadi» ni «ro'yxatda YO'Q» deb yozardi.
+
+**Nega bu jiddiy:** Q5 backfill'idan keyin ro'yxat 500 dan OSHADI — lokal
+o'lchov **579 → 812 qator**. Ya'ni bu chalkashlik nazariy emas, backfill
+kunining ERTASIGA sodir bo'lardi. Va u IKKI XIL yolg'on berardi:
+
+| Holat | Kesim borligida eski xulq | To'g'ri xulq |
+|---|---|---|
+| Qarz zanjiri (`q4-collection`) — qator ro'yxatda BO'LISHI shart | yolg'on **QIZIL** — odam bor bo'lmagan nosozlikni qidirardi | XATO, lekin SABABI bilan |
+| Avans qoplagan chek — qator ro'yxatda BO'LMASLIGI shart | yolg'on **YASHIL** — kesim invariant 4 ni BEPUL tasdiqlardi | XATO |
+
+Ikkinchisi xavfliroq: verify o'zi tekshirayotgan invariantni tasdiqlab
+qo'yardi. Tuzatildi — `inCollection` endi **uch qiymatli**:
+
+```
+topildi            → true    (haqiqiy o'lchov)
+topilmadi + butun  → false   (haqiqiy o'lchov)
+topilmadi + kesik  → null    O'LCHANMADI ⇒ hukmda XATO, sababi yozilgan
+```
+
+Yo'l-yo'lakay so'rov `source=retailsale` (Q4 filtri) bilan toraytirildi —
+kesim ehtimoli kamayadi VA Q4 filtrining O'ZI ham o'lchovga kiradi: qator
+manba filtridan O'TISHI shart. Qulflandi: 6 hukm testi + 2 kod-shakl testi.
+
+#### Izohlar auditi (reja vazifasi 3) — GREP bilan isbot
+
+Reja beshta joyni nomma-nom aytgan. Hammasi ko'rildi; qo'shimcha ikkitasi
+(`retail-sale.service.ts`, `schema.prisma`) Q2/Q5 tomonidan allaqachon
+tuzatilgan ekan.
+
+| Fayl | Eskirgan da'vo | Holat |
+|---|---|---|
+| `debt.service.ts` | «reyestrda faqat qo'lda ochilgan qarz bo'ladi» | ✅ BEKOR (avvalgi Q6 sessiyasi) |
+| `counterparty-settlement.util.ts` | «har `Debt` qatorining o'z `applyDelta` si bor» | ✅ BEKOR (avvalgi Q6 sessiyasi) |
+| `recompute-counterparty-balances.ts` | «reyestrga EMAS, shuning uchun ikki marta sanalmaydi» | ✅ **BEKOR (shu sessiya)** |
+| `pos-customer-debt.ts` (F9 sarlavhasi) | «chekdan `Debt` yozib yuborish ikki karra sanashga olib boradi» | ✅ **BEKOR (shu sessiya)** |
+| `pos-customer-debt.ts` («portlardi») | «tarixiy qoldiqni backfill qilib bo'lmaydi» | ✅ BEKOR (avvalgi Q6 sessiyasi, Q5 ning eslatmasi bo'yicha) |
+| `retail-sale.service.ts:1630` | «bu yerda ATAYLAB reyestrga YOZMAYMIZ» | ✅ Q2 da bekor qilingan |
+| `schema.prisma → Debt.balanceAdopted` | «faqat to'lov paytida ochiladi» | ✅ Q2/Q5 da uchta yozuvchi sanalgan |
+| `NEXT.md:5541` | o'sha «ATAYLAB yozmaymiz» bandi | ✅ BEKOR (avvalgi Q6 sessiyasi) |
+
+**Grep isboti (2026-08-26, HEAD `4d294947`):**
+
+```
+$ grep -rn "reyestrga.*YOZMAYMIZ\|reyestrga.*YOZILMAYDI\|reyestrga EMAS" \
+        --include=*.ts --include=*.tsx --include=*.prisma apps packages | grep -v BEKOR
+
+apps/api/src/modules/debt/debt.service.ts:815                 ← BEKOR blokining ICHIDA (ko'chirma)
+apps/api/src/scripts/recompute-counterparty-balances.ts:328   ← BEKOR blokining ICHIDA (ko'chirma)
+apps/api/src/modules/debt/sale-debt-premise-guard.test.ts:34,72,80  ← QO'RIQCHINING O'ZI
+```
+
+Ya'ni **eski da'vo TIRIK holda hech qayerda qolmagan** — uchtasi qo'riqchi
+testining o'zi, ikkitasi esa bekor qilish blokining ichidagi ko'chirma.
+
+#### 🔴 NEGA ESKI MATN O'CHIRILMADI, BALKI KO'CHIRMA QILINDI
+
+Bu ONGLI qaror va u qo'riqchi testda QOIDA bo'lib yozilgan.
+
+Eski dalilni **jimgina o'chirish** keyingi o'quvchiga «bu yerda hech qachon
+boshqacha bo'lmagan» degan taassurot qoldiradi — va u xuddi shu xatoni
+qaytadan qiladi (F5 sabog'ining ikkinchi yarmi). To'g'ri naqsh: eski matnni
+KO'CHIRMA qilib saqlash va yoniga nega bekor qilinganini yozish.
+
+Shuning uchun qo'riqchi «jumla umuman bo'lmasin» demaydi, balki:
+
+```
+expectCancelledQuote(src, phrase):
+   · jumla FAYLDA bo'lishi shart      (yo'q bo'lsa — qo'riqchi ko'r bo'lib qolgan)
+   · «BEKOR QILINDI» belgisidan KEYIN kelishi shart
+   · faqat BIR marta uchrashi shart    (ikkinchi nusxa — TIRIK da'vo)
+```
+
+⚠️ Yo'l-yo'lakay topildi: `debt.service.ts` ning qo'riqchisi **TASODIFAN
+yashil** edi — qidirilgan satr izohda qator sinishi bilan bo'lingani uchun
+`not.toContain` hech qachon topmasdi, ya'ni test hech nimani qulflamasdi.
+Endi matn `flat()` bilan normallashtiriladi (izoh prefikslari olib
+tashlanadi, bo'shliqlar bittaga keltiriladi) — qo'riqchi qator sinishidan
+MUSTAQIL.
+
+#### Test natijalari (raqam bilan)
+
+| O'lchov | Natija |
+|---|---|
+| `apps/api` **to'liq** vitest | **674 fayl · 9740 test** — **9735 yashil, 2 skip, 3 YIQILDI** |
+| ...yiqilganlarning tahlili | `auth/pos-device.service.test.ts` (2) + `auth/pos-pin.service.test.ts` (1), hammasi `Test timed out in 5000ms`. **ALOHIDA yugurtirilganda 27/27 YASHIL** (`Duration 5.00s`) ⇒ argon2 ning to'liq yuk ostidagi beqarorligi. Bu sinf A1/A3/Q5 hisobotlarida ALLAQACHON qayd etilgan; Q5 da u «taxmin» edi, endi **izolyatsiya bilan o'lchandi**. Q6 fayllariga aloqasi yo'q |
+| Q6 ning O'Z testlari | `q6-verify-plan.test.ts` **54** + `q6-live-verify-guard.test.ts` **21** + `sale-debt-premise-guard.test.ts` **11** = **86 yangi test** |
+| tegilgan kesim (`scripts`+`debt`+`counterparty-settlement`+`manager/collection`+`retail-sale`) | **91 fayl · 1388 test YASHIL** |
+| `apps/api` typecheck (`tsc --noEmit`, `--max-old-space-size=8192`) | **0 xato** (K4 ning commit'idan KEYIN ham qayta o'lchandi) |
+| `node scripts/check-lint.mjs` | **0 error** (1271 ogohlantirish — siyosat bo'yicha ruxsat) |
+| `i18n:gate` | **19 test YASHIL** (Q5 da qizil edi — K3 ning fayli o'shandan beri ro'yxatga qo'shilgan; Q6 da yangi UI matni YO'Q) |
+| lokal DRY yugurish | ✅ skript ishladi, chiqish yuqorida |
+
+**86 yangi test nimani qulflaydi:**
+
+| Guruh | Testlar |
+|---|---|
+| Yordamchilar | `rowRemaining` (qator yo'q ⇒ 0, manfiy emas) · `balanceDelta` (**`null` = O'LCHANMAGAN, 0 EMAS**) |
+| Qarz zanjiri | 11 hukm chiqishi · har biri MUTATSIYA bilan: balans ikki marta o'sdi ❌ · qator ochilmadi ❌ · `balanceAdopted=false` ❌ · muddat NULL ❌ · manba `retailsale` emas ❌ · ro'yxatda chiqmadi ❌ · to'lovda bitta daftar kamaydi ❌ · vozvratda reyestr qimirlamadi ❌ · qaytarilgan chek ro'yxatda qoldi ❌ |
+| §2.2 kesishuvi | avans TO'LIQ qopladi ⇒ qator BO'LMASLIGI shart · avans QISMAN qopladi ⇒ qator FARQGA teng · avansli mijozda qator paydo bo'lsa ❌ (invariant 4) |
+| Avans zanjiri | 10 hukm · kassa qimirladi ❌ · chek to'langan sanalmadi ❌ · ortiq urinish 400 bermadi ❌ · **kesishuv qatori kutilgandan KAM** ❌ (A2 ning «40 000 ko'rinmay qolardi» holati) |
+| **Kesilgan ro'yxat** | qarz yo'lida `null` ⇒ XATO · **avans qoplagan chekda ham `null` ⇒ XATO** (yolg'on yashil yo'li) · vozvratdan keyin `null` ⇒ XATO · avans zanjirida `null` invariant 4 ni buzmaydi (dalil — qator YO'Qligi) · matn uch holatni ajratadi |
+| **Qamrov (DRY)** | to'liq ⇒ MUMKIN · migratsiya yo'q ⇒ MUMKIN EMAS · kod yo'q ⇒ MUMKIN EMAS · **API javob bermasa «kod yo'q» EMAS, «O'LCHANMADI»** · **API javob berdi-yu maydon yo'q ⇒ O'SHANDA «deploy qilinmagan»** · **API'ga yetib borilmasa `--live` MUMKIN EMAS** · ma'lumot qatori jonli verify SHARTI EMAS |
+| Bo'sh ro'yxat | **`summarizeVerdicts([])` «o'tdi» EMAS** — yarim yo'lda to'xtagan skript YASHIL chiqmaydi |
+| Kod-shakl (skript) | DRY default · `!LIVE` da ERTA QAYTISH · to'liq bo'lmasa `--live` TO'XTAYDI · hukmni SOF MODUL chiqaradi · **yiqilganda `exit(1)`** · **`NestFactory` UMUMAN yo'q** (prodda cron ikki marta ketardi) · marshrutlar `fetch` orqali · ro'yxat HTTP dan (Prisma'dan EMAS) · **`truncated` o'qiladi** · **`source=retailsale` filtri** · `applyDelta` YO'Q · `debt.create/update/delete` YO'Q · **har chek vozvrat qilinadi (≥4 chaqiruv)** · **rad etilgan chekning chernovigi `finally` da bekor qilinadi** · qolgan avans qaytariladi · sinov summalari ≤ 10 000 so'm |
+| Kod-shakl (sof modul) | DB/Nest/HTTP import YO'Q · `Date.now()`/`new Date()` YO'Q · **kesishuv summasi `receivablePortion` dan — ikkinchi formula YO'Q** |
+| Premise qo'riqchisi | besh faylda eski da'vo BEKOR blokining ICHIDA · bir marta · belgi bilan · filtr o'chirilsa saldo shishishi izohda OCHIQ · sxemada uch yozuvchi NOMI bilan |
+
+#### Qoida 10 — «bu o'zgarish qaysi mavjud oqimni buzishi mumkin?»
+
+1. **Servis kodi — BIR QATOR HAM O'ZGARMADI.** Q6 `post()`, `refund()`,
+   `edit()`, undirish servisi, kassa va ekranlarga tegmaydi. O'zgargan
+   to'rt faylda (`recompute-…`, `pos-customer-debt.ts`, `debt.service.ts`,
+   `counterparty-settlement.util.ts`) **faqat IZOHLAR** o'zgardi — `git show`
+   da bitta bayonot ham yo'q. Xulq-neytral.
+2. **Pul / balans — TEGILMAYDI.** Skript `applyDelta` ni chaqirmaydi va
+   `Debt` ga QO'LDA yozmaydi (kod-shakl testi izohsiz matnda tekshiradi).
+   `DECLARED_BALANCE_WRITERS` ga yangi fayl QO'SHILMADI, `recompute` ga
+   yangi manba KERAK EMAS.
+3. 🔴 **`--live` OMBORGA TEGADI — bu eng katta xavf va u OCHIQ aytiladi.**
+   Sinov cheki HAQIQIY tovarni sotadi va vozvrat bilan qaytaradi. Ya'ni
+   `--live` — **jonli o'zgarish**: qoida 8 (`warehouse-state.ts` oldin/keyin)
+   va qoida 13 (uchma-uch smoke) MAJBURIY, ish soatidan TASHQARIDA.
+   Yumshatuvchilar: summalar ≤ 10 000 so'm (testda qulflangan), har chek
+   qaytariladi, chernovik `finally` da bekor qilinadi, qolgan avans naqd
+   qaytariladi, va `--only=` bilan zanjirni ajratish mumkin.
+4. **Kassir smenasi — ENDI BLOKLANMAYDI.** Yuqoridagi 2-nosozlik.
+   Tuzatilmaganida `--live` kassirning smenasini yopolmaydigan qilardi.
+5. **Prod cron'lari — QO'ZG'ATILMAYDI.** `NestFactory.createApplicationContext`
+   ATAYLAB ishlatilmaydi (P1 dan meros qoida): u ikkinchi jarayonda barcha
+   `@Cron`larni ro'yxatdan o'tkazib, rejalangan ishlarni ikki marta
+   yubordirardi. Hammasi HTTP orqali — va bu ustiga-ustak guard/DTO
+   qatlamini ham o'lchaydi. Kod-shakl testi bilan qulflangan.
+6. **Izoh o'zgarishlari keyingi QARORLARNI o'zgartiradi — bu MAQSAD.**
+   `recompute` ning yangi izohi «filtrni olib tashlasa saldo SHISHADI» deb
+   ochiq aytadi. Ilgari o'sha filtr «ortiqcha» bo'lib ko'rinardi va uni
+   olib tashlash `APPLY=1` da mijozlar saldosini buzardi.
+7. **Qo'riqchi testlar KELAJAKDAGI refaktorni QIZIL qiladi.** Kimdir eski
+   premise'ni qaytarsa yoki bekor belgisini o'chirsa —
+   `sale-debt-premise-guard.test.ts` yiqiladi. Bu ATAYLAB: izohni bir marta
+   tuzatish yetmaydi.
+8. **`NEXT.md` / `jonli-holat.md` — faqat QO'SHILDI**, mavjud yozuvlar
+   o'chirilmadi. `jonli-holat.md` ning **1-bo'lim JSON'i va 2-bo'lim
+   jadvali TEGILMADI** ⇒ `warehouse-state.ts` ning reyestr solishtiruvi
+   o'zgarmaydi (chiqish kodi o'sha).
+9. **Ombor / qoldiq / yacheyka — KODDA tegilmagan.** H-, G- va K-rejalar
+   hududiga kirilmadi. Jonli o'zgarish BO'LMAGANI uchun qoida 8 va 13 bu
+   sessiyada QO'LLANMADI — ular `--live` kuniga qoldirildi va pastdagi
+   retseptda MAJBURIY band.
+10. **Kiosk qamrovi / ruxsat matritsasi — o'zgarmadi.** Yangi marshrut yo'q;
+    skript MAVJUD marshrutlarni MAVJUD ruxsatlar bilan chaqiradi (token
+    eng eski xodimdan imzolanadi).
+11. **Parallel K4 sessiyasi — to'qnashuv YO'Q.** Q6 `stock-piece`,
+    `retail-sale`, `tsd` fayllariga bir qator ham yozmadi; K4 esa
+    `debt`/`scripts` ga tegmadi. Ikkala commit mustaqil, typecheck ikkalasi
+    ustida birga o'lchandi.
+
+#### Qabul mezoni bo'yicha holat (qoida 11)
+
+| # | Mezon | Holat |
+|---|---|---|
+| 1 | verify skripti **barcha hukmlarda ✅** | ❌ **YUGURTIRILMAGAN** — `--live` deploy'ni talab qiladi; DRY yugurish ✅ (skript ishlaydi) |
+| 2 | egasi undirish ekranida kassa qarzlarini KO'RGANI tasdiqlangan | ❌ deploy yo'q |
+| 3 | egasi avansli mijoz bilan kassada ISHLAB KO'RGANI tasdiqlangan | ❌ deploy yo'q |
+| 4 | eskirgan izohlar qolmagan (**grep bilan isbot hisobotda**) | ✅ **BAJARILDI** — grep yuqorida + 11 mexanik qo'riqchi |
+| 5 | `NEXT.md` qaror yozuvi (P1 uslubi) | ✅ **2026-08-26a** |
+| 6 | `docs/ops/jonli-holat.md` ga backfill izi (qoida 14) | ⚠️ **QISMAN** — hodisa bo'lmagani uchun jurnalga qator YOZILMADI (soxta iz yozilmaydi); o'rniga **3.2-bo'lim** — oldindan retsept va yozilishi kerak bo'lgan maydonlar |
+| 7 | xotira yozuvi | ✅ `sherset-loyiha.md` yangilandi |
+| 8 | testlar | ✅ **86 yangi test** |
+
+**Shuning uchun holat «TUGADI» EMAS, «QISMAN».** Yopish sharti: 1, 2, 3-bandlar
+(hammasi deploy'ga bog'liq) va 6-bandning jurnal qatori.
+
+#### Deploy holati
+
+**Deploy QILINMADI**, VPS'ga tegilmadi, **jonli bazaga tegilmadi**.
+Q6 da **migratsiya YO'Q**.
+
+Migratsiyalar hamon **UCHTA** va hech biri VPS'da BERILMAGAN:
+`20260825120000_debt_source_doc` (Q1) · `20260825220000_drawer_cash_in_kind` (A1)
+· `20260825235000_company_settings_sale_debt_term` (Q4).
+🔴 Q6 ning lokal DRY yugurishi **Q4 ning migratsiyasi LOKAL bazada ham
+yo'qligini** o'lchadi — ya'ni u hech qayerda sinalmagan.
+
+Deploy branch'i `kassa-qarzi-q1-q2` @ `456e53af` da Q3, A1, A2, A3, Q4, Q5 va
+endi **Q6 ham** YO'Q. Q2 dagi cherry-pick retsepti bilan qayta yig'ilishi
+kerak. **Bu Q6 sessiyasida QILINMADI — buyruq kutilmoqda.**
+
+#### Jonli yugurish retsepti (deploy'dan KEYIN)
+
+Har qadam OLDIDAN va KEYIN (qoida 8): `packages/db` da
+`npx tsx scripts/warehouse-state.ts` — chiqishi shu hisobotga ko'chiriladi.
+**Ish soatidan TASHQARIDA** (qoida 13), javobgar shaxs va vaqt yoziladi.
+
+```bash
+cd /var/www/sherset-v2/apps/api && set -a && . ./.env && set +a
+```
+
+1. **DRY (yozmaydi) — deploy'dan OLDIN ham yugurtirish mumkin:**
+   `./node_modules/.bin/tsx src/scripts/ops-q6-live-verify.ts`
+   → qamrov jadvalidagi HAMMA qator `OK` bo'lishi SHART. Bittasi
+   «O'LCHANMADI» bo'lsa — API ko'tarilmagan, bu deploy muammosi EMAS.
+2. **Q5 backfill'i** (`docs/ops/jonli-holat.md` §3.2 + Q5 hisoboti) —
+   bosqichma-bosqich, oxirida jurnal qatori yoziladi.
+3. 🔴 **`--live` (OMBORGA TEGADI):**
+   `./node_modules/.bin/tsx src/scripts/ops-q6-live-verify.ts --live`
+   → 21 hukmning HAMMASI ✅ bo'lishi SHART. Chiqish TO'LIQ hisobotga.
+   Zanjirni ajratish kerak bo'lsa: `--only=debt` / `--only=prepay`.
+   ⚠️ Sinov kontragenti va tovarini QO'LDA ko'rsating: `Q6_DEBT_CP`,
+   `Q6_PREPAY_CP`, `Q6_PRODUCT` (pastdagi 7-ochiq band).
+4. **Uchma-uch smoke (qoida 13):** bitta sotuv (post → tekshir → cancel),
+   bitta yacheyka sanash, bitta ko'chirish.
+5. **Smena YOPILISHINI tekshirish** — `--live` dan keyin sinov smenasi
+   yopilishi SHART (chernovik qolmaganining jonli dalili).
+6. **Egasi bilan brauzerda:** `/menejer/undirish` da kassa qarzlari
+   (manba «Kassa cheki», chek raqami havolasi) VA kassada avansli mijoz
+   bilan bitta haqiqiy chek.
+7. **Ertalab, savdo boshlanishidan oldin:** takroriy smoke + `warehouse-state.ts`.
+
+#### Egasiga yakuniy hisobot (reja vazifasi 5)
+
+**Ikkala shikoyat ham KODDA yopildi, JONLIDA hamon ochiq.**
+
+| Shikoyat | Kodda | Jonlida |
+|---|---|---|
+| «Kassadan qo'shilgan qarzdorliklar undirish bo'limida ko'rinmayapti» | ✅ yangi cheklar (Q2) + tarixiy qarzlar (Q5) + manba/filtr/muddat (Q4) + vozvrat simmetriyasi (Q3) | ❌ deploy yo'q |
+| «Oldindan pul beradigan mijozlar bilan ishlay olmayapmiz» | ✅ qabul (A1) + avansdan to'lash (A2) + ko'rsatish/tarix/naqd qaytarish (A3) | ❌ deploy yo'q |
+
+**Deploy kunida egasi NIMAGA E'TIBOR BERSIN — ikki gap:**
+
+1. 🔴 **Qarzdorlar ro'yxatidagi JAMI son birdan sakraydi.**
+   Lokal o'lchov bo'yicha **+233 qator / +701 489 130 so'm** (ro'yxat
+   579 → 812). **Bu YANGI QARZ EMAS — ko'rinmagan qarz endi ko'rinmoqda.**
+   O'sha pul mijozlar balansida ALLAQACHON turgan edi, faqat undirish
+   moduliga ulanmagan edi. Q4 ning «manba» belgisi va filtri aynan shu
+   suhbat uchun qurilgan: `/menejer/undirish?source=retailsale` bilan
+   kassadan kelganlarini AJRATIB ko'rish mumkin.
+2. **Avansi bor mijozlar balansda MANFIY turadi — va bu TO'G'RI.**
+   Manfiy balans «biz mijozga qarzdormiz» degani, ya'ni uning oldindan
+   bergan puli. Bunday mijoz undirish ro'yxatiga **TUSHMAYDI** va unga
+   eslatma **KETMAYDI** (invariant 4, §2.2 kesishuv qoidasi).
+
+**Uchinchi, kichikroq gap:** eslatma cron'i backfill'dan keyin **14 kun
+JIM** turadi, so'ng zinapoya bo'yicha operator navbatiga kuniga ~50
+qatordan tushadi. Bu KUTILGAN xulq, nosozlik emas.
+
+#### Ochiq qolganlar
+
+1. 🔴 **Q6 ning O'Z bandlari:** `--live` yugurish (mezon 1) va egasining
+   ikki tasdig'i (mezon 2, 3). Asbob TAYYOR va lokal DRY bilan sinalgan.
+2. **`jonli-holat.md` jurnal qatori** — Q5 backfill'i yugurtirilgan kuni
+   yoziladi (§3.2 da maydonlar tayyor).
+3. 🔴 **Q4 migratsiyasi hech qayerda sinalmagan** — endi bu o'lchangan
+   fakt (lokal bazada ham ustun YO'Q). Bu Q4 ning qarzi; Q6 uni o'zi
+   yopmadi (boshqa fazaning qabul mezoni).
+4. **Q1 dan meros:** `recompute` cross-check'iga `opening` manbasi
+   qo'shilmagan; jonlida `APPLY=1` yugurtirilgan-yugurtirilmagani noma'lum.
+5. **Q2/Q3/A1/A2/A3/Q4/Q5 dan meros:** jonli tasdiq, deploy branch'i push
+   qilinmagan; A2 ning `edit()` chegarasi va Z-hisobot `revenueByMethod`
+   kesimi; A3 ning ikki sessiyali poyga sinovi; mijozga «avansingizdan
+   yechildi» xabari; Excel akt yorliqlarida `returnPayout`/`salesReturn`.
+6. **A1 topgan sxema DRIFTI (35 bayonot, 4 ta `DROP TABLE`)** — o'zgarishsiz
+   ochiq, alohida ish.
+7. ⚠️ **`--live` ning zaif joyi — SINOV MATERIALI TANLOVI.** Skript
+   kontragentni va tovarni O'ZI tanlaydi (balansi ≥ 0 bo'lgan eng
+   kichigi; qoldig'i bor eng arzon tovar). Jonlida bu HAQIQIY mijozga
+   sinov cheki yozadi (keyin qaytariladi). `Q6_DEBT_CP` / `Q6_PREPAY_CP` /
+   `Q6_PRODUCT` bilan qo'lda ko'rsatish MUMKIN — **jonlida shundan
+   foydalanish TAVSIYA ETILADI** (maxsus sinov kontragenti).
+8. ⚠️ **`inv4-no-debt-row` hukmi QISMAN TAVTOLOGIYA.** `afterPrepay.row`
+   `sourceDocId` bo'yicha qidiriladi, avans qabulida esa chek umuman yo'q
+   ⇒ `row` har doim `null`. Ya'ni hukm «avansdan `Debt` qatori
+   tug'ilmadi» ni to'liq isbotlamaydi — u faqat «SHU chekdan tug'ilmadi»
+   deydi. To'liq isbot: kontragent kesimida `Debt` sanog'ini avans
+   QABULIDAN oldin va keyin solishtirish. **Kiritilmadi** (o'lchov bir
+   qator, lekin `LedgerSnapshot` shartnomasi o'zgarardi va uning ustidagi
+   54 test qayta yozilardi) — keyingi sessiyaga ochiq band.
+9. ⚠️ **Avans zanjiri A1…A3 ni talab qiladi.** Reja «A-fazalar tugagan
+   bo'lsa» degan edi; ular tugagani uchun ikkala zanjir ham yozildi.
+   Lekin jonlida A-fazalar deploy qilinmasa `--live` umuman boshlanmaydi
+   (`isLiveVerifyPossible`) — ya'ni qarz zanjirini YOLG'IZ o'lchash uchun
+   ham A1/A2/A3 deploy bo'lishi kerak. Bu ONGLI: yarim deploy qilingan
+   jonlida verify yugurtirish o'zi xavf.
+
+#### Reja bo'yicha keyingi qadam
+
+**Q1…Q6 va A1…A3 ning KOD qismi TUGADI** — to'qqiz fazaning hammasi
+yozilgan, testlangan va commit qilingan. Reja endi yangi FAZA kutmaydi;
+u **deploy oynasini** kutadi.
+
+Deploy buyrug'i kelganda tartib:
+
+1. deploy branch'ini qayta yig'ish (Q2 ning cherry-pick retsepti,
+   `4f5c1750` asosida: Q1 → Q2 → Q3 → A1 → A2 → A3 → Q4 → Q5 → **Q6**);
+2. uch migratsiya (tartib: `debt_source_doc` BIRINCHI);
+3. `ops-q6-live-verify.ts` DRY — qamrov jadvali TO'LIQ `OK`;
+4. Q5 backfill'i bosqichma-bosqich (§3.2 + Q5 retsepti);
+5. `ops-q6-live-verify.ts --live` — 21 hukm;
+6. egasi bilan brauzerda ikkala oqim;
+7. shu faylning Q4, Q5, Q6 hisobotlaridagi ochiq bandlar YOPILADI va
+   fazalar «QISMAN» dan «TUGADI» ga o'tadi.
