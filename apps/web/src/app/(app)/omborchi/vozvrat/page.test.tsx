@@ -158,8 +158,11 @@ describe('vozvrat qabuli — qabul so‘rovi', () => {
     await user.click(screen.getByTestId('vozvrat-accept'));
 
     await waitFor(() => expect(api.post).toHaveBeenCalledTimes(1));
+    // K5 — `pieceEntry` har qatorda yuboriladi; bo'linmaydigan tovarda `null`
+    // (bayroq o'chiq ⇒ ekranda maydon ham chizilmagan). Server uni NULL deb
+    // qabul qiladi va bo'lak reyestriga umuman bormaydi.
     expect(api.post).toHaveBeenCalledWith(`/sales-returns/acceptance/from-retail-sale/${SALE_ID}`, {
-      positions: [{ productId: P1, quantity: '2', cellId: CELL_GOOD }],
+      positions: [{ productId: P1, quantity: '2', cellId: CELL_GOOD, pieceEntry: null }],
     });
     const body = vi.mocked(api.post).mock.calls[0]?.[1] as {
       positions: Array<Record<string, unknown>>;

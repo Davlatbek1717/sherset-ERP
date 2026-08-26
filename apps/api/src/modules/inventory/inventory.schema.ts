@@ -21,6 +21,13 @@ export const InventoryPositionInputSchema = z.object({
   // and the variance delta carries cellId (Stock + StockByCell move together).
   cellId: z.string().uuid().nullish(),
   cell: z.string().max(255).nullish(),
+  // K5 (bo'linadigan tovar) — omborchi SANAGAN bo'lak tarkibi:
+  // «250x3 + BLK-000041:200 + ?:150» (butun rulonlar × soni, mavjud bo'laklar
+  // yorlig'i bo'yicha, yangilari «?» bilan). Faqat `pieceTracked` tovarlarda
+  // ma'noli; post paytida bo'lak reyestri shu tarkibga TENGLASHTIRILADI.
+  // Σ tarkib === actualQty bo'lishi SHART (`matchQuantity`), aks holda reyestr
+  // va qoldiq post bo'lgan zahoti bir-biriga zid bo'lardi.
+  pieceEntry: z.string().max(4000).nullish(),
 });
 export type InventoryPositionInput = z.infer<typeof InventoryPositionInputSchema>;
 

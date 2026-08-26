@@ -62,6 +62,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
 import { Fragment, useCallback, useMemo, useState } from 'react';
+import { PieceEntryField } from '../stock-piece/piece-entry-field';
 import { type AddCellOption, InventoryAddCell } from './add-cell-picker';
 
 export interface InventoryPanelRow {
@@ -83,6 +84,13 @@ export interface InventoryPanelRow {
   cellId?: string | null;
   /** Denormalized cell label (survives cell deletion). */
   cell?: string | null;
+  /**
+   * K5 — omborchi SANAGAN bo'lak tarkibi («250x3+BLK-000041:200+?:150»).
+   * Faqat `pieceTracked` tovarlarda ma'noli; post paytida bo'lak reyestri
+   * shu tarkibga tenglashadi. Σ tarkib === `actualQty` bo'lishi SHART
+   * (serverda ham tekshiriladi).
+   */
+  pieceEntry?: string | null;
 }
 
 interface MetaItem {
@@ -100,6 +108,10 @@ interface MetaItem {
   stockQty: string;
   unitCostMinor: string | null;
   cells: Array<{ cellId: string; name: string; qty: string }>;
+  /** K5 — «Bo'lak hisobi yuritilsin» bayrog'i (o'chiq bo'lsa grid o'zgarmaydi). */
+  pieceTracked?: boolean;
+  /** K5 — joriy reyestr («Reyestrdan olish» tugmasi shundan to'ldiradi). */
+  pieces?: Array<{ cellId: string | null; length: string; whole: boolean; label: string | null }>;
 }
 
 interface ProductItem {
@@ -485,6 +497,50 @@ export function InventoryPositionsPanel({
   };
 
   /**
+   * K5 — sanalgan bo'lak tarkibi (`pieceEntry`) va uning yig'indisi.
+   *
+   * Yig'indi sanoq maydoniga AVTOMAT tushadi: server Σ === `actualQty`
+   * bo'lishini TALAB qiladi (aks holda reyestr va qoldiq post bo'lgan zahoti
+   * bir-biriga zid bo'lardi), qo'lda qo'shish esa arifmetik xatoga
+   * to'g'ridan-to'g'ri taklif bo'lardi.
+   *
+   * Qator hali yo'q bo'lsa (yacheyka sanalmagan) u SHU YERDA ochiladi —
+   * omborchi avval tarkibni yozib, sanoqni keyin ko'radi.
+   */
+  const setCellPieceEntry = (g: CellGridRow, entry: string, total?: string) => {
+    if (!onRowsChange || !g.cellId) return;
+    const idx = rows.findIndex((r) => r.assortmentId === g.assortmentId && r.cellId === g.cellId);
+    const next = [...rows];
+    const cur = idx >= 0 ? next[idx] : undefined;
+    if (cur) {
+      next[idx] = {
+        ...cur,
+        pieceEntry: entry === '' ? null : entry,
+        ...(total !== undefined ? { actualQty: total } : {}),
+      };
+    } else {
+      next.push({
+        id: uid(),
+        assortmentId: g.assortmentId,
+        productLabel: g.name,
+        productCode: g.productCode,
+        productUom: g.productUom,
+        actualQty: total ?? '0',
+        cellId: g.cellId,
+        cell: g.cellName,
+        pieceEntry: entry === '' ? null : entry,
+      });
+      // setCellActual dagi AYNI double-count guard: birinchi yacheyka qatori
+      // ochilganda tegilmagan (actual = 0) ombor-qatori tushiriladi.
+      const sIdx = next.findIndex(
+        (r) => r.assortmentId === g.assortmentId && !r.cellId && Number(r.actualQty || '0') === 0,
+      );
+      if (sIdx >= 0) next.splice(sIdx, 1);
+    }
+    onRowsChange(next);
+  };
+
+  /**
    * F2 «+ Yacheyka» (reja 2026-08-23-ombor-restrukturizatsiya): tizim bilmagan
    * yacheykaga sanash — tanlangan (tovar × yacheyka) yangi qator bo'ladi,
    * expected post'da StockByCell'dan olinadi (yo'q bo'lsa 0). Store-level
@@ -517,6 +573,22 @@ export function InventoryPositionsPanel({
       onRowsChange(next);
     },
     [rows, metaMap, onRowsChange],
+  );
+
+  /**
+   * K5 — tovarda bo'lak hisobi yuritiladimi (`position-meta` javobidan).
+   * O'chiq bo'lsa grid qatorlari bir bayt ham o'zgarmaydi.
+   */
+  const pieceTrackedOf = useCallback(
+    (assortmentId: string): boolean => metaMap.get(assortmentId)?.pieceTracked === true,
+    [metaMap],
+  );
+
+  /** K5 — (tovar × yacheyka) doirasidagi joriy FAOL bo'laklar. */
+  const registryOf = useCallback(
+    (assortmentId: string, cellId: string | null) =>
+      (metaMap.get(assortmentId)?.pieces ?? []).filter((p) => p.cellId === cellId),
+    [metaMap],
   );
 
   /** Grid'da ko'rinib turgan (tovar × yacheyka) id'lar — dublikatga aniq xato. */
@@ -1143,6 +1215,24 @@ export function InventoryPositionsPanel({
                             )}`}
                       </td>
                     </tr>
+                    {/* K5 — bo'linadigan tovar (kabel/sim/shlang): yacheyka
+                        tarkibi. Bayroq O'CHIQ bo'lsa qator UMUMAN chizilmaydi,
+                        ya'ni bugungi grid bir bayt ham o'zgarmaydi. */}
+                    {pieceTrackedOf(g.assortmentId) && g.cellId ? (
+                      <tr className="border-[var(--ms-border-default)] border-b last:border-0">
+                        <td className="px-2 py-1.5" />
+                        <td colSpan={7} className="px-2 py-1.5">
+                          <PieceEntryField
+                            id={`piece-entry-${g.key}`}
+                            value={g.row?.pieceEntry ?? ''}
+                            quantity={g.row?.actualQty ?? '0'}
+                            disabled={!editable}
+                            registry={registryOf(g.assortmentId, g.cellId)}
+                            onChange={(v, total) => setCellPieceEntry(g, v, total ?? undefined)}
+                          />
+                        </td>
+                      </tr>
+                    ) : null}
                     {canEdit && groupEnd && (
                       <tr className="border-[var(--ms-border-default)] border-b last:border-0">
                         <td className="px-2 py-1.5" />

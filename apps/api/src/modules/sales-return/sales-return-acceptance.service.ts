@@ -142,6 +142,7 @@ export class SalesReturnAcceptanceService {
           productName: p?.name ?? '—',
           barcode: p?.barcode ?? null,
           article: p?.article ?? null,
+          pieceTracked: p?.pieceTracked === true,
         };
       }),
     };
@@ -187,6 +188,9 @@ export class SalesReturnAcceptanceService {
       productId: p.productId,
       quantity: p.quantity,
       cellId: p.cellId,
+      // K5 — qaytgan bo'lak tarkibi. `SalesReturnService.create` uni
+      // tekshiradi (Σ === quantity) va post reyestrga qaytaradi.
+      pieceEntry: p.pieceEntry ?? null,
     }));
     const plan = planAcceptance(lines, returnable, targets);
     if (!plan.ok) throw new BadRequestException(plan.error);
@@ -230,6 +234,7 @@ export class SalesReturnAcceptanceService {
           discount: p.discount,
           cellId: p.cellId,
           cell: p.cellName,
+          pieceEntry: p.pieceEntry,
         })),
       });
       created.push({
@@ -344,7 +349,17 @@ export class SalesReturnAcceptanceService {
 
     const productRows = await this.prisma.client.product.findMany({
       where: { id: { in: returnable.map((r) => r.productId) }, accountId },
-      select: { id: true, name: true, code: true, article: true, barcodes: true },
+      // K5 — `pieceTracked`: qabul ekrani bo'lak yorlig'i maydonini FAQAT
+      // bayrog'i yoqilgan tovarda chizadi. Mavjud `select` ga qo'shilgan
+      // maydon — yangi so'rov kerak emas.
+      select: {
+        id: true,
+        name: true,
+        code: true,
+        article: true,
+        barcodes: true,
+        pieceTracked: true,
+      },
     });
     const products = new Map(
       productRows.map((p) => [
@@ -355,6 +370,7 @@ export class SalesReturnAcceptanceService {
           // Yorliq shtrixi — mahsulotning BIRINCHI shtrixi, bo'lmasa kodi
           // (`labels/print` va `qr-price-tag-print` bilan bir xil tartib).
           barcode: p.barcodes?.[0] ?? p.code ?? null,
+          pieceTracked: p.pieceTracked,
         },
       ]),
     );

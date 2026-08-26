@@ -136,6 +136,8 @@ export interface AcceptanceRequestLine {
   productId: string;
   quantity: string;
   cellId: string;
+  /** K5 — qaytgan bo'lak tarkibi («BLK-000041:180»). Bo'linmaydigan tovarda bo'sh. */
+  pieceEntry?: string | null;
 }
 
 /** Yacheykaning qaysi omborga tegishli ekani va o'sha ombor BRAK'mi. */
@@ -153,6 +155,8 @@ export interface PlannedPosition {
   cellName: string;
   priceMinor: string;
   discount: string;
+  /** K5 — qaytgan bo'lak tarkibi (hujjat qatoriga shundoq ko'chadi). */
+  pieceEntry: string | null;
 }
 
 export interface PlannedDocument {
@@ -230,6 +234,7 @@ export function planAcceptance(
       cellName: cell.cellName,
       priceMinor: row.priceMinor,
       discount: row.discount,
+      pieceEntry: line.pieceEntry ?? null,
     });
   }
 

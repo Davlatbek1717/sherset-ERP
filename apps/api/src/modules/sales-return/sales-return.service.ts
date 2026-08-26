@@ -31,6 +31,13 @@ import {
 } from '../shared/org-account.js';
 import { searchTokenGroups } from '../shared/search-tokens.js';
 import { withSerializationRetry } from '../shared/serialization-retry.js';
+import {
+  intakeErrorMessage,
+  matchQuantity,
+  parsePieceEntry,
+  quantityMismatchMessage,
+} from '../stock-piece/piece-intake-core.js';
+import { applyReturnPieceIntake } from '../stock-piece/stock-piece-intake.service.js';
 import { type StockDelta, StockService } from '../stock/stock.service.js';
 import { WebhookFireService } from '../webhook/webhook-fire.service.js';
 import {
@@ -344,7 +351,11 @@ export class SalesReturnService {
         status: { select: { id: true, name: true, color: true } },
         positions: {
           include: {
-            product: { select: { id: true, name: true, code: true, uom: true } },
+            product: {
+              // K5 — `pieceTracked`: mavjud `select` ga QO'SHILGAN maydon,
+              // post yo'li uchun qo'shimcha so'rov kerak emas.
+              select: { id: true, name: true, code: true, uom: true, pieceTracked: true },
+            },
             // moysklad «Страна» — resolve country name for the position row.
             country: { select: { id: true, name: true, code: true } },
           },
@@ -412,6 +423,7 @@ export class SalesReturnService {
       parsed.storeId,
       parsed.positions.map((p) => p.cellId),
     );
+    this.assertPieceEntries(parsed.positions);
     // «Счёт контрагента» must belong to THIS tenant + agent (else a crafted payload
     // routes a refund to a foreign account). Mirror purchase-return / customer-order.
     await assertAgentAccountMatchesAgent(
@@ -546,6 +558,7 @@ export class SalesReturnService {
               countryId: p.countryId ?? null,
               cellId: p.cellId ?? null,
               cell: p.cell ?? null,
+              pieceEntry: p.pieceEntry ?? null,
             })),
           },
         },
@@ -695,6 +708,7 @@ export class SalesReturnService {
         parsed.storeId ?? existing.storeId,
         parsed.positions.map((p) => p.cellId),
       );
+      this.assertPieceEntries(parsed.positions);
     }
 
     const data: Prisma.SalesReturnUpdateInput = {};
@@ -812,6 +826,7 @@ export class SalesReturnService {
           countryId: p.countryId ?? null,
           cellId: p.cellId ?? null,
           cell: p.cell ?? null,
+          pieceEntry: p.pieceEntry ?? null,
         })),
       };
     }
@@ -1089,6 +1104,14 @@ export class SalesReturnService {
       throw new BadRequestException(`Only draft → posted allowed (current: ${existing.state})`);
     }
 
+    // K5 — qaytgan bo'laklarning reyestrga qaytish natijasi (audit + javob).
+    const pieceReturn = {
+      restored: 0,
+      created: 0,
+      labels: [] as string[],
+      alreadyActive: [] as string[],
+    };
+
     const posted = await this.prisma.client.$transaction(
       async (tx) => {
         // TOCTOU guard: atomically claim draft→posted as the first op so a
@@ -1210,6 +1233,38 @@ export class SalesReturnService {
 
         await this.stock.applyDeltas(tx, accountId, userId, deltas);
 
+        // ── K5 — qaytgan BO'LAK reyestrga qaytadi ──────────────────────────
+        //
+        // 🔴 Qoldiq deltalari bilan BIR TRANZAKSIYADA (yuqorida): tovar
+        // qoldiqqa qaytib bo'lak reyestrda `consumed` qolsa sverka o'sha
+        // zahoti yolg'on farq berardi.
+        //
+        // Yorlig'i tanilsa AYNAN o'sha qator `active` ga qaytadi va
+        // qaytarilayotgan yacheykaga ko'chadi (`applyReturnPieceIntake`) —
+        // mijozdagi yorliq raqami tizimdagi o'sha bo'lakka ishora qilib
+        // qolishi SHART (K-reja 7.3), aks holda skaner boshqa bo'lakni
+        // ochardi. Faqat bayrog'i YOQILGAN tovarda va faqat tarkib
+        // KIRITILGAN qatorda ⇒ bugungi jonli xulq o'zgarmaydi.
+        for (const p of existing.positions) {
+          if (!p.pieceEntry || !p.product?.pieceTracked) continue;
+          const entry = this.parsePieceEntryOrThrow(p.pieceEntry, String(p.quantity));
+          const outcome = await applyReturnPieceIntake(
+            tx,
+            {
+              accountId,
+              storeId: existing.storeId,
+              cellId: p.cellId ?? null,
+              assortmentKind: p.assortmentKind,
+              assortmentId: p.assortmentId,
+            },
+            entry,
+          );
+          pieceReturn.restored += outcome.restored;
+          pieceReturn.created += outcome.created;
+          pieceReturn.labels.push(...outcome.labels);
+          pieceReturn.alreadyActive.push(...outcome.alreadyActive);
+        }
+
         const updated = await tx.salesReturn.update({
           where: { id, accountId },
           data: { state: 'posted', applicable: true, postedAt: new Date() },
@@ -1282,6 +1337,11 @@ export class SalesReturnService {
             action: 'transition:posted',
             fieldChanges: {
               from: { before: 'draft', after: 'posted' },
+              // K5: qaytgan bo'laklar (0 lar — bayroq o'chiq yoki tarkib yo'q).
+              pieceReturn: {
+                restored: pieceReturn.restored,
+                created: pieceReturn.created,
+              },
             } as Prisma.InputJsonValue,
           },
         });
@@ -1301,7 +1361,9 @@ export class SalesReturnService {
       postedAt: posted.postedAt ?? new Date(),
     };
     this.events.emit(HR_EVENT.SALES_RETURN_POSTED, payload);
-    return posted;
+    // `pieceReturn` ADDITIV maydon: bosilishi kerak bo'lgan yorliqlarni va
+    // «allaqachon omborda» ogohlantirishini ekran shundan oladi.
+    return { ...posted, pieceReturn };
   }
 
   private async unpost(
@@ -1659,6 +1721,36 @@ export class SalesReturnService {
       },
     );
     return String(n).padStart(5, '0');
+  }
+
+  // =====================================================================
+  // K5 — qaytgan bo'lak tarkibi (`pieceEntry`)
+  // =====================================================================
+
+  /**
+   * Qaytgan bo'lak tarkibini o'qiydi va qator MIQDORIGA solishtiradi.
+   *
+   * Σ === quantity SHART: 180 m qaytarilib «BLK-000041:150» yozilgan bo'lsa
+   * qoldiq 180 ga, reyestr esa 150 ga oshardi — sverka o'sha zahoti farq
+   * berardi va uning sababi hech qayerda ko'rinmasdi.
+   */
+  private parsePieceEntryOrThrow(raw: string, quantity: string) {
+    const { entry, error, groupIndex } = parsePieceEntry(raw);
+    if (!entry) throw new BadRequestException(intakeErrorMessage(error ?? 'bad-group', groupIndex));
+    if (matchQuantity(entry.total, quantity) !== 'exact') {
+      throw new BadRequestException(quantityMismatchMessage(entry.total, quantity));
+    }
+    return entry;
+  }
+
+  /** Hujjatdagi HAMMA `pieceEntry` li qatorni tekshiradi (bayroqdan qat'i nazar). */
+  private assertPieceEntries(
+    positions: ReadonlyArray<{ quantity: string; pieceEntry?: string | null }>,
+  ): void {
+    for (const p of positions) {
+      if (!p.pieceEntry) continue;
+      this.parsePieceEntryOrThrow(p.pieceEntry, p.quantity);
+    }
   }
 
   private computeTotals(

@@ -1650,6 +1650,17 @@
       "spiska_form": "Yig'ish varag'i",
       "title": "Yig'ish ro'yxatlari"
     },
+    "piece_entry": {
+      "bad_group": "{n}-guruh noto'g'ri yozilgan",
+      "from_registry": "Reyestrdan olish",
+      "hint": "Butun rulonlar — «250x3», yorlig'i bor bo'lak — «BLK-000041:200», yangi bo'lak — «?:150»",
+      "label": "Bo'laklar tarkibi",
+      "mismatch": "Bo'laklar yig'indisi ({total}) qator miqdoriga ({quantity}) teng emas",
+      "placeholder": "250x3 + BLK-000041:200 + ?:150",
+      "placeholder_whole": "250x5",
+      "total": "Jami: {total} · bo'laklar: {count}",
+      "whole_only": "Priyomkada faqat BUTUN rulon qabul qilinadi («250x5»). Qoldiq bo'lak omborchi ekranida yorliq bilan qo'shiladi"
+    },
     "supplyApproval": {
       "action_admin_confirm": "Yakuniy tasdiq → omborga",
       "action_label_admin_ok": "Admin tasdiqladi",

@@ -22,6 +22,13 @@ import { resolveCreatorGroupId } from '../shared/group-stamp.js';
 import { mapVersionedUpdateError } from '../shared/optimistic-lock.js';
 import { PlacementSource, allocatePlacement, totalTakenMicro } from '../shared/pool-placement.js';
 import { withSerializationRetry } from '../shared/serialization-retry.js';
+import {
+  intakeErrorMessage,
+  matchQuantity,
+  parsePieceEntry,
+  quantityMismatchMessage,
+} from '../stock-piece/piece-intake-core.js';
+import { applyPieceRecount } from '../stock-piece/stock-piece-intake.service.js';
 import { findPoolStore, sumAssignedByAssortment } from '../stock/pool-store.util.js';
 import { type StockDelta, StockService } from '../stock/stock.service.js';
 import { WebhookFireService } from '../webhook/webhook-fire.service.js';
@@ -255,6 +262,10 @@ export class InventoryService {
           buyPrice: true,
           supplierId: true,
           productFolderId: true,
+          // K5 — bo'lak hisobi yuritiladigan tovarda sanoq gridi «tarkib»
+          // maydonini ochadi (bayroq o'chiq bo'lsa ekran bir bayt ham
+          // o'zgarmaydi). Mavjud so'rovga QO'SHILGAN maydon — yangi so'rov yo'q.
+          pieceTracked: true,
           supplier: { select: { name: true } },
           productFolder: { select: { name: true } },
         },
@@ -283,6 +294,39 @@ export class InventoryService {
         select: { id: true, name: true },
       }),
     ]);
+
+    // K5 — bayrog'i YOQILGAN tovarlarning joriy reyestri (ekran «hozir nima
+    // yozilgan» ni ko'rsatib, omborchiga tayyor tarkibni beradi — u faqat
+    // farqni tuzatadi). Bayroqli tovar bo'lmasa so'rov UMUMAN ketmaydi
+    // (K3 `stock-piece-availability` dagi bilan AYNI qoida).
+    const trackedIds = products.filter((p) => p.pieceTracked).map((p) => p.id);
+    const registryPieces =
+      trackedIds.length > 0
+        ? await this.prisma.client.stockPiece.findMany({
+            where: {
+              accountId,
+              storeId,
+              assortmentKind: 'product',
+              assortmentId: { in: trackedIds },
+              status: 'active',
+            },
+            select: { assortmentId: true, cellId: true, length: true, whole: true, label: true },
+          })
+        : [];
+    const piecesByAssortment = new Map<
+      string,
+      Array<{ cellId: string | null; length: string; whole: boolean; label: string | null }>
+    >();
+    for (const row of registryPieces) {
+      const list = piecesByAssortment.get(row.assortmentId) ?? [];
+      list.push({
+        cellId: row.cellId,
+        length: row.length.toString(),
+        whole: row.whole,
+        label: row.label,
+      });
+      piecesByAssortment.set(row.assortmentId, list);
+    }
 
     const stockByAssortment = new Map(stocks.map((s) => [s.assortmentId, s]));
     const cellName = new Map(cells.map((c) => [c.id, c.name]));
@@ -327,6 +371,10 @@ export class InventoryService {
           stockQty: stock ? stock.qty.toString() : '0',
           unitCostMinor,
           cells: cellsByAssortment.get(p.id) ?? [],
+          // K5 — bo'lak hisobi: bayroq va joriy reyestr (bayroq o'chiq bo'lsa
+          // `false` + bo'sh massiv, ya'ni ekranda hech narsa o'zgarmaydi).
+          pieceTracked: p.pieceTracked,
+          pieces: piecesByAssortment.get(p.id) ?? [],
         };
       }),
     };
@@ -447,6 +495,7 @@ export class InventoryService {
       parsed.storeId,
       parsed.positions.map((p) => p.cellId),
     );
+    this.assertPieceEntries(parsed.positions);
 
     const name = await this.nextName(accountId);
     const attributes = await this.attrs.validateAndNormalize(
@@ -482,6 +531,7 @@ export class InventoryService {
               varianceQty: '0',
               cellId: p.cellId ?? null,
               cell: p.cell ?? null,
+              pieceEntry: p.pieceEntry ?? null,
             })),
           },
         },
@@ -527,6 +577,7 @@ export class InventoryService {
         parsed.storeId ?? existing.storeId,
         parsed.positions.map((p) => p.cellId),
       );
+      this.assertPieceEntries(parsed.positions);
       // The destructive deleteMany is deferred into the $transaction below so a
       // version conflict (409) rolls back the delete instead of leaving the
       // count-lines destroyed (Class A — data corruption guard).
@@ -542,6 +593,7 @@ export class InventoryService {
           varianceQty: '0',
           cellId: p.cellId ?? null,
           cell: p.cell ?? null,
+          pieceEntry: p.pieceEntry ?? null,
         })),
       };
     }
@@ -658,6 +710,9 @@ export class InventoryService {
             costMinor: p.costMinor,
             cellId: p.cellId,
             cell: p.cell,
+            // K5 — `pieceEntry` ATAYLAB nusxalanmaydi: nusxa `actualQty = 0`
+            // bilan keladi (sanoq boshidan yoziladi), tarkib esa eski
+            // miqdorniki bo'lardi va Σ tekshiruvidan o'tmasdi.
           })),
         },
       },
@@ -682,17 +737,19 @@ export class InventoryService {
 
     // buyPrice fallback for the per-unit cost snapshot (products with no
     // stock/cost basis at the store) — one query outside the position loop.
-    const buyPriceById = new Map<string, bigint | null>(
-      (
-        await this.prisma.client.product.findMany({
-          where: {
-            accountId,
-            id: { in: existing.positions.map((p) => p.assortmentId) },
-          },
-          select: { id: true, buyPrice: true },
-        })
-      ).map((p) => [p.id, p.buyPrice]),
-    );
+    //
+    // K5: `pieceTracked` bayrog'i AYNI SO'ROVDA o'qiladi (K3 naqshi —
+    // qo'shimcha so'rov YO'Q). Bayroq o'chiq tovarda bo'lak reyestriga
+    // UMUMAN tegilmaydi, ya'ni bugungi jonli xulq bir bayt ham o'zgarmaydi.
+    const productRows = await this.prisma.client.product.findMany({
+      where: {
+        accountId,
+        id: { in: existing.positions.map((p) => p.assortmentId) },
+      },
+      select: { id: true, buyPrice: true, pieceTracked: true },
+    });
+    const buyPriceById = new Map<string, bigint | null>(productRows.map((p) => [p.id, p.buyPrice]));
+    const pieceTrackedIds = new Set(productRows.filter((p) => p.pieceTracked).map((p) => p.id));
 
     return this.prisma.client.$transaction(
       async (tx) => {
@@ -701,6 +758,15 @@ export class InventoryService {
         let shortageCount = 0;
         let placedCount = 0;
         let sumMinor = 0n;
+        // K5 — bo'lak reyestri hizalanishining yig'ma natijasi (audit + javob).
+        const recount = {
+          kept: 0,
+          adjusted: 0,
+          created: 0,
+          closed: 0,
+          labels: [] as string[],
+          unknownLabels: [] as string[],
+        };
 
         // F7 — yacheykaga sanalgan ORTIQCHA avval joylashtirish manbalaridan
         // (o'z omborining yacheykasiz qoldig'i → hovuz-ombor) ko'chiriladi;
@@ -874,6 +940,38 @@ export class InventoryService {
           await this.stock.applyDeltas(tx, accountId, userId, deltas);
         }
 
+        // ── K5 — bo'lak reyestrini sanoq natijasiga tenglashtirish ─────────
+        //
+        // 🔴 Qoldiq deltalari bilan BIR TRANZAKSIYADA (yuqorida). Sabab:
+        // qoldiq to'g'rilanib reyestr eski qolsa (yoki teskarisi) sverka o'sha
+        // zahoti YOLG'ON farq berardi va omborchi qaysi biriga ishonishini
+        // bilmasdi. Ikkalasi birga o'tadi yoki ikkalasi ham o'tmaydi.
+        //
+        // Faqat bayrog'i YOQILGAN tovarda va faqat tarkib KIRITILGAN qatorda.
+        // Ikkalasi ham bo'lmasa bu blok umuman ishlamaydi ⇒ bugungi jonli
+        // xulq (bayroq hech qayerda yoqilmagan) bir bayt ham o'zgarmaydi.
+        for (const p of existing.positions) {
+          if (!p.pieceEntry || !pieceTrackedIds.has(p.assortmentId)) continue;
+          const entry = this.parsePieceEntryOrThrow(p.pieceEntry, String(p.actualQty));
+          const outcome = await applyPieceRecount(
+            tx,
+            {
+              accountId,
+              storeId: existing.storeId,
+              cellId: p.cellId ?? null,
+              assortmentKind: p.assortmentKind,
+              assortmentId: p.assortmentId,
+            },
+            entry,
+          );
+          recount.kept += outcome.kept;
+          recount.adjusted += outcome.adjusted;
+          recount.created += outcome.created;
+          recount.closed += outcome.closed;
+          recount.labels.push(...outcome.labels);
+          recount.unknownLabels.push(...outcome.unknownLabels);
+        }
+
         // Atomic state-claim — transition ONLY if still 'draft'. A concurrent
         // post/cancel that already moved the doc gets count=0, we throw, and the
         // whole tx (incl. the stock deltas applied above) rolls back — so stock
@@ -901,10 +999,20 @@ export class InventoryService {
               shortagePositions: shortageCount,
               // F7: nechta manba-bo'lak joylashtirish sifatida ko'chdi.
               placementTakes: placedCount,
+              // K5: bo'lak reyestri qanday hizalandi (0 lar — bayroq o'chiq).
+              pieceRecount: {
+                kept: recount.kept,
+                adjusted: recount.adjusted,
+                created: recount.created,
+                closed: recount.closed,
+              },
             } as Prisma.InputJsonValue,
           },
         });
-        return updated;
+        // `pieceRecount` ADDITIV maydon: bosilishi kerak bo'lgan yorliqlarni
+        // ekran shundan oladi (kesim oqimidagi yorliq oynasi bilan bir naqsh).
+        // Bayroq o'chiq bo'lsa hammasi nol va ro'yxatlar bo'sh.
+        return { ...updated, pieceRecount: recount };
       },
       { isolationLevel: 'Serializable', timeout: 15000 },
     );
@@ -1104,6 +1212,45 @@ export class InventoryService {
   }
 
   // =====================================================================
+  // K5 — bo'lak tarkibi (`pieceEntry`)
+  // =====================================================================
+
+  /**
+   * Kiritilgan tarkibni o'qiydi va uni qator MIQDORIGA solishtiradi.
+   *
+   * Ikkalasi ham SHU YERDA, bitta joyda: `create`/`update` erta signal berish
+   * uchun chaqiradi (omborchi hujjatni saqlashda darhol ko'radi), `post` esa
+   * himoya qavati sifatida — qator hujjat saqlangandan keyin ham
+   * o'zgartirilgan bo'lishi mumkin emas, lekin post reyestrga YOZADI va
+   * yozishdan oldin tekshirmaslik 2026-08-24 sinfidagi xato bo'lardi.
+   */
+  private parsePieceEntryOrThrow(raw: string, quantity: string) {
+    const { entry, error, groupIndex } = parsePieceEntry(raw);
+    if (!entry) throw new BadRequestException(intakeErrorMessage(error ?? 'bad-group', groupIndex));
+    if (matchQuantity(entry.total, quantity) !== 'exact') {
+      throw new BadRequestException(quantityMismatchMessage(entry.total, quantity));
+    }
+    return entry;
+  }
+
+  /**
+   * Hujjatdagi HAMMA `pieceEntry` li qatorni tekshiradi.
+   *
+   * 🔴 Bayroqdan QAT'I NAZAR: tarkib kiritilgan bo'lsa u to'g'ri bo'lishi
+   * kerak. Bayroq esa post paytida hal qiladi — yozish yo'liga faqat
+   * `pieceTracked` tovar kiradi. Ya'ni bayroq o'chiq tovarda noto'g'ri matn
+   * ham 400 oladi (jimgina saqlanib, keyin bayroq yoqilganda «post
+   * qilinmayapti» bo'lib chiqishidan yaxshiroq).
+   */
+  private assertPieceEntries(
+    positions: ReadonlyArray<{ actualQty: string; pieceEntry?: string | null }>,
+  ): void {
+    for (const p of positions) {
+      if (!p.pieceEntry) continue;
+      this.parsePieceEntryOrThrow(p.pieceEntry, p.actualQty);
+    }
+  }
+
   private parseCreate(raw: unknown): CreateInventoryInput {
     const r = CreateInventorySchema.safeParse(raw);
     if (!r.success) throw new BadRequestException(r.error.issues.map((i) => i.message).join(', '));

@@ -51,6 +51,12 @@ export const SupplyPositionInputSchema = z.object({
   // drives per-cell stock on post); `cell` = denormalized «Зона / Ячейка» label (display).
   cellId: z.string().uuid().nullish(),
   cell: z.string().max(255).nullish(),
+  // K5 (bo'linadigan tovar) — kelgan RULONLAR: «250x5» (5 ta 250 m lik rulon).
+  // Faqat BUTUN rulon: yetkazuvchidan kelgan tovar butun o'ram va u yorliq
+  // OLMAYDI (K-Q3); qoldiq bo'lak kelsa omborchi uni K2 ekranida yorliq bilan
+  // qo'shadi. Σ tarkib === quantity bo'lishi SHART — «5 ta rulon × 250 m»
+  // kiritilib «1000 m» yozilgan bo'lsa reyestr birinchi kundan yolg'on bo'lardi.
+  pieceEntry: z.string().max(4000).nullish(),
 });
 export type SupplyPositionInput = z.infer<typeof SupplyPositionInputSchema>;
 

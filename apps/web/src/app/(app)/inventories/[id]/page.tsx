@@ -46,6 +46,8 @@ interface PositionDetail {
   costMinor: string | null;
   cellId: string | null;
   cell: string | null;
+  /** K5 — sanalgan bo'lak tarkibi («250x3+BLK-000041:200»). */
+  pieceEntry: string | null;
   product: { id: string; name: string; code: string | null; uom: string | null } | null;
 }
 
@@ -103,6 +105,7 @@ function formFromData(d: InventoryDetail): FormState {
       postedCostMinor: p.costMinor,
       cellId: p.cellId,
       cell: p.cell,
+      pieceEntry: p.pieceEntry,
     })),
     attributes: (d as { attributes?: Record<string, unknown> }).attributes ?? {},
   };
@@ -119,6 +122,7 @@ function snapshot(s: FormState): string {
       assortmentId: p.assortmentId,
       actualQty: p.actualQty,
       cellId: p.cellId ?? null,
+      pieceEntry: p.pieceEntry ?? null,
     })),
     attributes: s.attributes,
   });
@@ -208,6 +212,8 @@ export default function InventoryDetailPage() {
             actualQty: (p.actualQty || '0').replace(/\.$/, ''),
             cellId: p.cellId,
             cell: p.cell ?? null,
+            // K5 — bo'lak tarkibi (bo'linmaydigan tovarda `null`).
+            pieceEntry: p.pieceEntry || null,
           }));
       }
       payload.attributes = form.attributes;

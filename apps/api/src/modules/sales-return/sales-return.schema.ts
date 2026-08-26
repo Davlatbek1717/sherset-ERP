@@ -46,6 +46,13 @@ export const SalesReturnPositionInputSchema = z.object({
   // Ячейка» label. Mirror purchase-return / supply.
   cellId: z.string().uuid().nullish(),
   cell: z.string().max(255).nullish(),
+  // K5 (bo'linadigan tovar) — mijozdan QAYTGAN bo'lak: «BLK-000041:180»
+  // (yorlig'i bilan qaytdi) yoki «?:180» (yorliqsiz). Post paytida bo'lak
+  // reyestrga qaytadi: yorlig'i tanilsa AYNAN o'sha qator `active` ga o'tadi
+  // (mijozdagi yorliq raqami tizimdagi o'sha bo'lakka ishora qilib qolishi
+  // SHART — K-reja 7.3), tanilmasa yangi qator + yangi yorliq.
+  // Σ tarkib === quantity bo'lishi SHART.
+  pieceEntry: z.string().max(4000).nullish(),
 });
 export type SalesReturnPositionInput = z.infer<typeof SalesReturnPositionInputSchema>;
 
@@ -128,6 +135,10 @@ export const AcceptReturnSchema = z.object({
           .string()
           .regex(/^\d+(\.\d{1,6})?$/, 'quantity must be a positive decimal'),
         cellId: z.string().uuid(),
+        // K5 — qaytgan bo'lak tarkibi («BLK-000041:180»). Omborchi mijoz
+        // qo'lidagi yorliqni SKANERLAYDI va bo'lak reyestrga aynan o'sha
+        // qator bo'lib qaytadi. Bo'linadigan bo'lmagan tovarda bo'sh.
+        pieceEntry: z.string().max(4000).nullish(),
       }),
     )
     .min(1, 'Kamida 1 ta qator'),

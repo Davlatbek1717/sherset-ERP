@@ -110,6 +110,14 @@ export const PIECE_CONSUMED_REASON = {
   cutLoss: 'cut-loss',
   /** K2 ekranidagi «tugadi». */
   closed: 'closed',
+  /**
+   * K5 — SANASHDA topilmadi. Omborchi yacheykani sanab chiqdi va bu bo'lak
+   * javonda YO'Q ekan: u ketgan, boshqa yacheykaga ko'chgan yoki hech qachon
+   * bo'lmagan. Alohida sabab ATAYLAB: `closed` («tugadi», qo'lda) bilan
+   * aralashtirilsa sverkadagi farqning MANBAI ko'rinmay qolardi — ya'ni
+   * «reyestr nega kamaydi» savoliga javob yo'qolardi (IS-5).
+   */
+  recount: 'recount',
 } as const;
 export type PieceConsumedReason =
   (typeof PIECE_CONSUMED_REASON)[keyof typeof PIECE_CONSUMED_REASON];

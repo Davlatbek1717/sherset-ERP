@@ -24,6 +24,7 @@ import { usePrintTemplatesManager } from '@/components/print/print-templates-pro
 import { ProductEditModal } from '@/components/products/product-edit-modal';
 import { type KitPrintForm, KitPrintModal } from '@/components/purchase-orders/kit-print-modal';
 import { SendEmailDialog } from '@/components/send-email-dialog';
+import { PieceEntryField } from '@/components/stock-piece/piece-entry-field';
 import { SupplyApprovalPanel } from '@/components/supplies/supply-approval-panel';
 import { useApiMutation } from '@/hooks/use-api-mutation';
 import { useConflictReload } from '@/hooks/use-conflict-reload';
@@ -74,7 +75,14 @@ interface PositionDetail {
   vat: number | null;
   vatEnabled: boolean;
   costMinor: string | null;
-  product: { id: string; name: string; code: string | null; uom: string | null } | null;
+  product: {
+    id: string;
+    name: string;
+    code: string | null;
+    uom: string | null;
+    /** K5 — bo'lak hisobi yuritiladimi (kabel/sim/shlang). */
+    pieceTracked?: boolean;
+  } | null;
   rnpt: string | null;
   marking: string | null;
   gtdNumber: string | null;
@@ -84,6 +92,8 @@ interface PositionDetail {
   // «Ячейка» — address-storage bin: `cellId` (FK, drives the picker) + `cell` (label).
   cellId: string | null;
   cell: string | null;
+  /** K5 — kelgan RULONLAR («250x5»). Faqat butun rulon (K-Q3). */
+  pieceEntry: string | null;
 }
 
 interface SupplyDetail {
@@ -147,6 +157,9 @@ interface ProductItem {
 interface DetailPositionRow extends DocPositionRow {
   assortmentId: string | null;
   salePrices?: Array<{ priceTypeId: string; value: string }> | null;
+  /** K5 — kelgan rulonlar tarkibi va tovarning bayrog'i. */
+  pieceEntry?: string | null;
+  pieceTracked?: boolean;
 }
 
 function uid(): string {
@@ -308,6 +321,8 @@ function formFromData(d: SupplyDetail): FormState {
       countryLabel: p.country?.name ?? '',
       cellId: p.cellId ?? null,
       cell: p.cell ?? undefined,
+      pieceEntry: p.pieceEntry ?? '',
+      pieceTracked: p.product?.pieceTracked === true,
       salePrices: null,
     })),
     attributes: (d as { attributes?: Record<string, unknown> }).attributes ?? {},
@@ -732,6 +747,8 @@ export default function SupplyDetailPage() {
           // «Ячейка» — address-storage bin (cellId drives per-cell stock).
           ...(p.cellId ? { cellId: p.cellId } : {}),
           ...(p.cell ? { cell: p.cell } : {}),
+          // K5 — kelgan rulonlar («250x5»). Bo'linmaydigan tovarda `null`.
+          pieceEntry: p.pieceEntry || null,
         }));
       }
       payload.attributes = form.attributes;
@@ -1127,17 +1144,35 @@ export default function SupplyDetailPage() {
   const renderPositionCellCell = (row: DocPositionRow) => {
     const p = row as DetailPositionRow;
     return (
-      <CellPickerField
-        storeId={form.storeId || null}
-        assortmentId={p.assortmentId}
-        label={p.cell}
-        readOnly={!editableLines}
-        // Приёмка stores goods: picking a cell for a cell-less product binds it
-        // as that product's home cell (never overwrites an existing binding).
-        bindProductCell
-        onSelect={(cellId, label) => updatePosition(row.id, { cellId, cell: label })}
-        onClear={() => updatePosition(row.id, { cellId: null, cell: '' })}
-      />
+      <div className="flex flex-col gap-1">
+        <CellPickerField
+          storeId={form.storeId || null}
+          assortmentId={p.assortmentId}
+          label={p.cell}
+          readOnly={!editableLines}
+          // Приёмка stores goods: picking a cell for a cell-less product binds it
+          // as that product's home cell (never overwrites an existing binding).
+          bindProductCell
+          onSelect={(cellId, label) => updatePosition(row.id, { cellId, cell: label })}
+          onClear={() => updatePosition(row.id, { cellId: null, cell: '' })}
+        />
+        {/* K5 — bo'linadigan tovar (kabel/sim/shlang): kelgan RULONLAR.
+            Bayroq O'CHIQ bo'lsa maydon UMUMAN chizilmaydi, ya'ni bugungi
+            priyomka ekrani bir bayt ham o'zgarmaydi. Bo'lak kiritish bu yerda
+            TAQIQ (`wholeOnly`): yetkazuvchidan kelgan tovar butun o'ram va
+            priyomka ekranida yorliq bosish oqimi yo'q — qoldiq bo'lak
+            omborchi ekranida (K2) yorliq bilan qo'shiladi. */}
+        {p.pieceTracked ? (
+          <PieceEntryField
+            id={`supply-piece-entry-${row.id}`}
+            value={p.pieceEntry ?? ''}
+            quantity={String(row.quantity ?? '0')}
+            disabled={!editableLines}
+            wholeOnly
+            onChange={(v) => updatePosition(row.id, { pieceEntry: v })}
+          />
+        ) : null}
+      </div>
     );
   };
 

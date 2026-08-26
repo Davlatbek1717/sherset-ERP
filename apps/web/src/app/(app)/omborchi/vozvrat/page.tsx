@@ -25,6 +25,7 @@ import {
   type ReturnLabelItem,
   ReturnLabelPrintOverlay,
 } from '@/components/omborchi/return-label-print';
+import { PieceEntryField } from '@/components/stock-piece/piece-entry-field';
 import { api } from '@/lib/api-client';
 import { Input, NativeSelect, formatMoney, useToast } from '@moysklad/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -52,6 +53,8 @@ interface SourceLine {
   remainingQty: string;
   priceMinor: string;
   discount: string;
+  /** K5 — bo'lak hisobi yuritiladigan tovar (kabel/sim/shlang). */
+  pieceTracked?: boolean;
 }
 
 interface SourceResponse {
@@ -96,6 +99,8 @@ interface LineState {
   cellId: string | null;
   cellName: string;
   cellInput: string;
+  /** K5 — qaytgan bo'lak tarkibi («BLK-000041:180» yoki «?:180»). */
+  pieceEntry: string;
 }
 
 function fmtDate(iso: string) {
@@ -165,6 +170,8 @@ export default function OmborchiVozvratPage() {
           productId,
           quantity: s.qty.trim(),
           cellId: s.cellId as string,
+          // K5 — qaytgan bo'lak tarkibi (bo'linmaydigan tovarda `null`).
+          pieceEntry: s.pieceEntry.trim() || null,
         }));
       if (positions.length === 0) throw new Error(t('error_no_rows'));
       return api.post(`/sales-returns/acceptance/from-retail-sale/${saleId}`, { positions });
@@ -201,6 +208,7 @@ export default function OmborchiVozvratPage() {
         cellId: null,
         cellName: '',
         cellInput: '',
+        pieceEntry: '',
         ...s[productId],
         ...patch,
       },
@@ -398,6 +406,7 @@ export default function OmborchiVozvratPage() {
                     cellId: null,
                     cellName: '',
                     cellInput: '',
+                    pieceEntry: '',
                   };
                   const exhausted = Number(line.remainingQty) <= 0;
                   return (
@@ -491,6 +500,21 @@ export default function OmborchiVozvratPage() {
                           ) : null}
                         </div>
                       )}
+                      {/* K5 — bo'linadigan tovar: mijoz qo'lidagi yorliqni
+                          SKANERLAB kiritish. Yorlig'i tanilsa bo'lak AYNAN
+                          o'sha qator bilan reyestrga qaytadi (7.3), tanilmasa
+                          yangi yorliq beriladi. Bayroq O'CHIQ tovarda maydon
+                          UMUMAN chizilmaydi. */}
+                      {line.pieceTracked && !exhausted ? (
+                        <div className="mt-2">
+                          <PieceEntryField
+                            id={`vozvrat-piece-${line.productId}`}
+                            value={st.pieceEntry}
+                            quantity={st.qty || '0'}
+                            onChange={(v) => setLine(line.productId, { pieceEntry: v })}
+                          />
+                        </div>
+                      ) : null}
                     </div>
                   );
                 })}

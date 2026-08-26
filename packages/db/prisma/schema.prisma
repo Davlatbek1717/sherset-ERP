@@ -6191,6 +6191,13 @@ model SupplyPosition {
   cellId String? @map("cell_id") @db.Uuid
   cell   String? @db.VarChar(255)
 
+  /// K5 — kelgan RULONLAR («250x5»). Faqat BUTUN rulon: yetkazuvchidan kelgan
+  /// tovar ta'rifiga ko'ra butun o'ram va u yorliq OLMAYDI (K-Q3). Qoldiq
+  /// bo'lak kelsa omborchi uni K2 ekranida yorliq bilan qo'shadi — priyomka
+  /// ekranida yorliq bosish oqimi yo'q, ya'ni bo'lakni jimgina qabul qilish
+  /// uni javondan topib bo'lmaydigan qilib qoldirardi.
+  pieceEntry String? @map("piece_entry")
+
   supply                  Supply                          @relation(fields: [supplyId], references: [id], onDelete: Cascade)
   product                 Product?                        @relation("ProductSupplyPositions", fields: [productId], references: [id], onDelete: Restrict)
   purchaseOrderPosition   PurchaseOrderPosition?          @relation("SupplyFromPurchaseOrderPosition", fields: [purchaseOrderPositionId], references: [id], onDelete: SetNull)
@@ -7026,6 +7033,12 @@ model SalesReturnPosition {
   cellId String? @map("cell_id") @db.Uuid
   cell   String? @db.VarChar(255)
 
+  /// K5 — mijozdan QAYTGAN bo'lak («BLK-000041:180» yoki «?:180»). Post
+  /// paytida bo'lak reyestrga qaytadi: yorlig'i tanilsa AYNAN o'sha qator
+  /// `consumed` dan `active` ga o'tadi (`sourcePieceId` tarixi va mijozdagi
+  /// yorliq raqami saqlanadi), tanilmasa yangi qator + yangi yorliq.
+  pieceEntry String? @map("piece_entry")
+
   salesReturn    SalesReturn     @relation(fields: [salesReturnId], references: [id], onDelete: Cascade)
   product        Product?        @relation("ProductSalesReturnPositions", fields: [productId], references: [id], onDelete: Restrict)
   demandPosition DemandPosition? @relation("SalesReturnFromDemandPosition", fields: [demandPositionId], references: [id], onDelete: SetNull)
@@ -7627,6 +7640,13 @@ model InventoryPosition {
   // cellId = null keeps the pre-cell store-level behaviour byte-for-byte.
   cellId String? @map("cell_id") @db.Uuid
   cell   String? @db.VarChar(255)
+
+  /// K5 — omborchi SANAGAN bo'lak tarkibi («250x3+BLK-000041:200+?:150»).
+  /// Faqat `pieceTracked` tovarlarda to'ldiriladi; post paytida bo'lak reyestri
+  /// (`stock_pieces`) shu tarkibga TENGLASHTIRILADI (mutlaq amal — omborchining
+  /// ko'zi haqiqat manbai). Σ tarkib === `actualQty` bo'lishi SHART, aks holda
+  /// post bo'lgan zahoti reyestr va qoldiq bir-biriga zid bo'lardi.
+  pieceEntry String? @map("piece_entry")
 
   inventory Inventory  @relation(fields: [inventoryId], references: [id], onDelete: Cascade)
   product   Product?   @relation("ProductInventoryPositions", fields: [productId], references: [id], onDelete: Restrict)

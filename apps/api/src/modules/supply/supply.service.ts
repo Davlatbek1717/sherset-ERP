@@ -28,6 +28,13 @@ import { mapVersionedUpdateError } from '../shared/optimistic-lock.js';
 import { assertOrgAccountMatchesOrg } from '../shared/org-account.js';
 import { searchTokenGroups } from '../shared/search-tokens.js';
 import { withSerializationRetry } from '../shared/serialization-retry.js';
+import {
+  intakeErrorMessage,
+  matchQuantity,
+  parsePieceEntry,
+  quantityMismatchMessage,
+} from '../stock-piece/piece-intake-core.js';
+import { applySupplyPieceIntake } from '../stock-piece/stock-piece-intake.service.js';
 import { type StockDelta, StockService } from '../stock/stock.service.js';
 import { IN_FLIGHT_STAGES, isApprovalInFlight } from '../supply-approval/supply-approval.fsm.js';
 import { WebhookFireService } from '../webhook/webhook-fire.service.js';
@@ -569,6 +576,9 @@ export class SupplyService {
                 uom: true,
                 weightG: true,
                 volumeML: true,
+                // K5 — bo'lak hisobi bayrog'i. Mavjud `include` ga QO'SHILGAN
+                // maydon: post yo'li uchun qo'shimcha so'rov kerak emas.
+                pieceTracked: true,
               },
             },
             // moysklad «Страна» — resolve country name for the position row.
@@ -680,6 +690,7 @@ export class SupplyService {
       parsed.storeId,
       parsed.positions.map((p) => p.cellId),
     );
+    this.assertPieceEntries(parsed.positions);
 
     const name = await this.nextSupplyName(accountId);
 
@@ -769,6 +780,7 @@ export class SupplyService {
               countryId: p.countryId ?? null,
               cellId: p.cellId ?? null,
               cell: p.cell ?? null,
+              pieceEntry: p.pieceEntry ?? null,
             })),
           },
         },
@@ -989,6 +1001,7 @@ export class SupplyService {
           countryId: p.countryId ?? null,
           cellId: p.cellId ?? null,
           cell: p.cell ?? null,
+          pieceEntry: p.pieceEntry ?? null,
         })),
       };
     }
@@ -1011,6 +1024,7 @@ export class SupplyService {
         parsed.storeId ?? existing.storeId,
         parsed.positions.map((p) => p.cellId),
       );
+      this.assertPieceEntries(parsed.positions);
     }
 
     try {
@@ -1265,6 +1279,8 @@ export class SupplyService {
         // second concurrent post blocks on the row lock, then sees count 0 and
         // gets a clean 409 — never a second stock deduction / FIFO write. Inside
         // the tx, so a later failure (insufficient stock) rolls the claim back.
+        // K5 — priyomkada reyestrga tushgan rulonlar soni (audit uchun).
+        let piecesCreated = 0;
         const claim = await tx.supply.updateMany({
           where: { id, accountId, state: 'draft' },
           data: { state: 'posted' },
@@ -1357,6 +1373,34 @@ export class SupplyService {
         }));
 
         await this.stock.applyDeltas(tx, accountId, userId, deltas);
+
+        // ── K5 — kelgan RULONLAR bo'lak reyestriga tushadi ─────────────────
+        //
+        // 🔴 Qoldiq deltalari bilan BIR TRANZAKSIYADA (yuqorida): qoldiq
+        // oshib reyestr eski qolsa sverka o'sha zahoti yolg'on farq berardi.
+        // Faqat bayrog'i YOQILGAN tovarda va faqat tarkib KIRITILGAN qatorda —
+        // ikkalasi ham bo'lmasa bu blok umuman ishlamaydi, ya'ni bugungi jonli
+        // xulq (bayroq hech qayerda yoqilmagan) bir bayt ham o'zgarmaydi.
+        //
+        // Priyomka faqat QO'SHADI: «bugun nima keldi» deydi, «javonda nima
+        // bor» demaydi ⇒ mavjud bo'laklarni yopish uchun asos yo'q
+        // (sanashdan asosiy farqi).
+        for (const p of existing.positions) {
+          if (!p.pieceEntry || !p.product?.pieceTracked) continue;
+          const entry = this.parsePieceEntryOrThrow(p.pieceEntry, String(p.quantity));
+          const outcome = await applySupplyPieceIntake(
+            tx,
+            {
+              accountId,
+              storeId: existing.storeId,
+              cellId: p.cellId ?? null,
+              assortmentKind: p.assortmentKind,
+              assortmentId: p.assortmentId,
+            },
+            entry,
+          );
+          piecesCreated += outcome.created;
+        }
 
         // 2. Update each SupplyPosition with costMinor + remainingQty. The
         //    per-unit cost is the single source of truth — unpost/cancel
@@ -1471,6 +1515,8 @@ export class SupplyService {
                 assortmentId: p.assortmentId,
                 qty: String(p.quantity),
               })),
+              // K5: nechta rulon bo'lak reyestriga tushdi (0 — bayroq o'chiq).
+              piecesCreated,
             } as Prisma.InputJsonValue,
           },
         });
@@ -1818,6 +1864,37 @@ export class SupplyService {
       return max;
     });
     return String(n).padStart(5, '0');
+  }
+
+  // =====================================================================
+  // K5 — bo'lak tarkibi (`pieceEntry`)
+  // =====================================================================
+
+  /**
+   * Kelgan rulonlar tarkibini o'qiydi va qator MIQDORIGA solishtiradi.
+   *
+   * Σ === quantity SHART: «5 ta rulon × 250 m» kiritilib qatorga «1000 m»
+   * yozilgan bo'lsa, post bo'lgan zahoti qoldiq 1000, reyestr esa 1250
+   * ko'rsatardi — ya'ni sverka birinchi kundan qizil bo'lib qolardi va
+   * signal «bo'ri keldi» ga aylanardi (G3/H2 dagi AYNI xato-klass).
+   */
+  private parsePieceEntryOrThrow(raw: string, quantity: string) {
+    const { entry, error, groupIndex } = parsePieceEntry(raw);
+    if (!entry) throw new BadRequestException(intakeErrorMessage(error ?? 'bad-group', groupIndex));
+    if (matchQuantity(entry.total, quantity) !== 'exact') {
+      throw new BadRequestException(quantityMismatchMessage(entry.total, quantity));
+    }
+    return entry;
+  }
+
+  /** Hujjatdagi HAMMA `pieceEntry` li qatorni tekshiradi (bayroqdan qat'i nazar). */
+  private assertPieceEntries(
+    positions: ReadonlyArray<{ quantity: string; pieceEntry?: string | null }>,
+  ): void {
+    for (const p of positions) {
+      if (!p.pieceEntry) continue;
+      this.parsePieceEntryOrThrow(p.pieceEntry, p.quantity);
+    }
   }
 
   /** Faza 14: tanasi `supply-totals.ts`ga ko'chirildi (qabul-tasdiqlash ham chaqiradi). */
