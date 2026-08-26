@@ -367,6 +367,72 @@ pg_restore -d "$DATABASE_URL" --clean /root/sherset_v2-pre-deploy-20260826.dump
 
 ---
 
+## 5.1 PROMPT — yangi deploy sessiyasi uchun (nusxa ko'chiring)
+
+```
+D:\sherset-v2 da deploy qilamiz. Sen deploy operatorisan.
+
+AVVAL SHULARNI TO'LIQ O'QI (shu tartibda):
+1. docs/ops/2026-08-26-deploy-reja-1-kecha.md   ← ASOSIY IJRO REJASI, 11 qadam
+2. docs/ops/2026-08-25-deploy-dossieri.md       ← to'liq kontekst, B/D/X bandlari
+3. docs/plans/2026-08-23-ombor-restrukturizatsiya.md — 2-bo'lim (qoidalar 1–14)
+4. docs/plans/2026-08-24-split-kassa-hodisasi.md — nega bu qoidalar bor (IS-1…IS-7)
+5. docs/plans/2026-08-23-omborchi-tsd-mijozlar.md — G1–G6 hisobotlari (nima chiqyapti)
+
+QAMROV (egasi 2026-08-26 da C yo'lini tanladi — uch kecha):
+  BUGUN 1-KECHA: 62a27024 -> 61780120 · 36 commit · 6 migratsiya
+  Chiqadi: G1 G2 G3 G4(1+2a) G5 G6 + Q1–Q3 + H2 + H5
+  CHIQMAYDI: A1–A3 (2-kecha) · Q4–Q6 + K1–K6 + E5 (3-kecha)
+
+JAVOBGAR (qoida 13): Ozodbek (egasi) — jonli smoke'ni U bajaradi.
+Sen POS'da sotuv qila olmaysan: 9- va 10-qadamlarni egasiga topshirasan va
+natijasini undan so'rab olasan.
+
+VPS: root@13.140.157.10 (parol egasida, so'ra). Fail2ban bor — noto'g'ri
+parol bilan qayta-qayta urinma.
+⚠️ Muhim: parol bilan SSH ba'zan ruxsat qo'riqchisi tomonidan bloklanadi.
+Bloklansa TO'XTA va egasiga ikki yo'lni taklif qil: (a) u Bash ruxsatini
+ochadi, (b) u buyruqlarni o'zi yuritib chiqishini senga tashlaydi. Rejadagi
+har qadam nusxa-ko'chirib yuritiladigan blok shaklida yozilgan.
+
+QAT'IY TAQIQLAR:
+- `/deploy` slash-buyrug'i va deploy/deploy-smart.sh ISHLATILMAYDI. Ular
+  origin/climart-adoption ga reset --hard qiladi, u esa jonlidan 8 commit
+  ORQADA (F6/F7/F8 ni produksiyadan o'chirib tashlardi). Faqat qo'lda ff-merge.
+- Migratsiyadan OLDIN pg_dump olinmasa DAVOM ETMA (2-qadam, IS-4 saboqi).
+- Har qadamning TO'XTASH SHARTI bor — shart bajarilsa davom etma, egasiga
+  ayt va rejaning 4-bo'limidagi qaytarish daraxtiga qara.
+- Maxfiy ma'lumot (parol, token) repoga YOZILMAYDI (qoida 5).
+
+BILIB TURISHING KERAK BO'LGAN IKKI NUANCE (o'lchangan, qayta tekshirma):
+- 8-qadamdagi warehouse-state.ts bu kecha E5 GACHA bo'lgan versiya bo'ladi
+  (E5 3-kechada keladi). EXIT=0 kutiladi, chunki Ombor 01 va Ombor 02 BO'SH.
+  EXIT=2 chiqsa sabab BOSHQA — aniqlanmaguncha davom etma.
+- 1-kechaning TOPUP_ENTITIES ida piecetracking YO'Q (K2 keyinroq keladi) =>
+  bu kecha topup faqat retailcontrol + returnacceptance qo'shadi.
+
+ISH TARTIBI:
+Rejadagi 11 qadamni KETMA-KET bajar. Har qadamdan keyin natijani rejaning
+5-bo'limidagi «Deploy jurnali» jadvaliga yoz (vaqt + natija). Qadamni
+o'tkazib yuborma va tartibini o'zgartirma.
+
+TUGAGANDAN KEYIN (majburiy):
+- docs/ops/jonli-holat.md — «O'zgarishlar jurnali» ga qator (qoida 14) va
+  agar BRAK ombori yaratilgan bo'lsa 1-bo'limdagi JSON reyestrga qator;
+- docs/plans/2026-08-23-omborchi-tsd-mijozlar.md — G1…G6 hisobotlariga
+  deploy natijasi va qabul mezonining qaysi bandi JONLIDA bajarilgani;
+- NEXT.md ga qisqa hand-off yozuvi;
+- QOIDA 11: qabul mezonining biror bandi jonlida bajarilmasa faza «TUGADI»
+  deb YOPILMAYDI — «QISMAN» bo'lib qoladi. Halol yoz.
+- 11-qadam (ertalab 04:00–05:00 takroriy tekshiruv) BAJARILMAGUNCHA deploy
+  YAKUNLANGAN deb hisoblanmaydi.
+
+Boshla: rejaning T-0 va 1-qadamidan (VPS HEAD tekshiruvi). Avval egasidan
+VPS parolini so'ra.
+```
+
+---
+
 ## 6. Keyingi kechalar (eslatma)
 
 | Kecha | To'xtash nuqtasi | Nima | Migratsiya |
