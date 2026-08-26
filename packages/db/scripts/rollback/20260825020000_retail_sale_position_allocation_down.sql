@@ -1,0 +1,34 @@
+-- QAYTARISH YO'LI (F-reja 2-bo'lim, 12-qoida) — G4 migratsiyasining TESKARISI.
+--
+-- ⚠️ RETROSPEKTIV yozilgan (2026-08-25, deploy-tayyorlash tekshiruvi). Asl
+-- migratsiya (`3ebc9ffe`) 12-qoidadan KEYIN yozilgan, ya'ni teskarisi o'sha
+-- sessiyada yozilishi KERAK edi — bu qarzning yopilishi.
+-- Dossier: `docs/ops/2026-08-25-deploy-dossieri.md` (B4).
+--
+-- Migratsiya faqat YANGI jadval qo'shadi; mavjud birorta jadval ustuni
+-- o'zgarmagan ⇒ jadvalni tashlash boshqa hech narsaga tegmaydi.
+--
+-- 🔴 MA'LUMOT YO'QOLADI: `retail_sale_position_allocations` — chek pozitsiyasi
+--    qaysi ombor/yacheykadan yopilganining izi (G4-2a dan keyin `post()` va
+--    `sendToPicking` uchun YAGONA haqiqat). Jadval tashlangach:
+--      * ESKI kod (G4-2a gacha) uni umuman bilmaydi ⇒ ishlashda regressiya yo'q;
+--      * lekin ochiq `picking` cheklarining REZERVI ajratma bo'yicha yozilgan —
+--        rezervning O'ZI `stock_reservations` da qoladi va eski kod uni
+--        avvalgidek bo'shatadi.
+--    ⇒ Qaytarishdan OLDIN qatorlarni EKSPORT qiling (hisobot izi uchun):
+--         \copy (SELECT * FROM "retail_sale_position_allocations")
+--               TO 'allocations-backup.csv' CSV HEADER
+--
+-- TARTIB: FK lar jadval bilan birga ketadi (`DROP TABLE` ularni o'zi olib
+-- tashlaydi). Jadvalga TASHQARIDAN havola qiladigan FK yo'q — `store` va
+-- `store_cells` ga havola SHU jadvaldan CHIQADI, ya'ni RESTRICT to'siq bo'lmaydi.
+--
+-- Yugurtirish:
+--   cd packages/db && npx prisma db execute --schema prisma/schema.prisma \
+--     --file scripts/rollback/20260825020000_retail_sale_position_allocation_down.sql
+--   npx prisma migrate resolve --rolled-back 20260825020000_retail_sale_position_allocation
+--   npx prisma generate
+--
+-- Har qadam idempotent: qayta yugurtirish no-op.
+
+DROP TABLE IF EXISTS "retail_sale_position_allocations";

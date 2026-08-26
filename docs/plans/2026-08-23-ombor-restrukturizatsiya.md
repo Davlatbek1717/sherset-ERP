@@ -84,6 +84,10 @@
     beradi. Bu band bo'sh o'tkazilmaydi — «buzmaydi» deyish ham dalil bilan
     yoziladi. (Sabab: IS-1 — F5 sessiyasi G-rejani o'qimagani uchun split
     tovarni POS yeta olmaydigan omborga ko'chirganini bilmasdi.)
+    **2026-08-25 dan: `2026-08-25-bolinadigan-tovar-bolak-hisobi.md` (K-reja) ham
+    shu ro'yxatga kiradi** — u bo'linadigan tovar (kabel/sim/shlang) uchun Q1-v2
+    avto-taqsimotiga va shtrix unikalligi qoidasiga istisno kiritadi, hamda
+    inventarizatsiya va `retail-sale` posting yo'liga tegadi.
 11. **Qabul mezoni — yopish sharti.** Qabul mezonining biror bandi bajarilmasa
     faza **«TUGADI» deb yopilmaydi**; holati «QISMAN — jonli tasdiq kutilmoqda»
     bo'ladi va **keyingi faza boshlanmaydi**. Mezonni uchinchi shaxsga
