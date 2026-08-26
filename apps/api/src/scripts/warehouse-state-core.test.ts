@@ -63,9 +63,15 @@ describe('readPosPriority — apps/api dagi kaskad qoidasi bilan bir xil', () =>
 });
 
 describe('yetuvchanlik — 06:46 hodisasining shakli', () => {
-  it('kaskadda bor, lekin birinchi EMAS ombordagi qoldiq «yetib bo‘lmaydigan» deb sanaladi', () => {
-    // Aynan 2026-08-23 split holati: tovar «Ombor 02» ga ko'chgan, POS esa
-    // hovuzdan (pp=1) sotadi ⇒ 2 949 007 dona sotib bo'lmaydi.
+  it('E5 — kaskadda bor, lekin birinchi EMAS ombor endi YETADI (G4-2a)', () => {
+    // 🔴 BU TEST 2026-08-26 da TESKARISIGA O'ZGARTIRILDI (o'chirilmadi).
+    // Aynan 2026-08-23 split holati: tovar «Ombor 02» ga ko'chgan. H2 yozilgan
+    // paytda bu 2 949 007 dona SOTILMAS edi — kassa faqat kaskadning
+    // birinchisidan ayirardi va aynan shu 06:46 da savdoni to'xtatdi.
+    // G4-2a (`b4c27d24`) tasdiq-to'sig'ini olib tashladi: `resolveAllocStores`
+    // prioriteti bor HAMMA omborni manba qiladi ⇒ bu qoldiq endi yetadi.
+    // Eski xulqni saqlab qolsak skript deploy'dan keyin YOLG'ON QIZIL berardi
+    // (dossier D1) va qoida 13 qo'riqchisi «bo'ri keldi» bo'lib qolardi.
     const report = buildWarehouseState(
       input({
         stores: [
@@ -78,14 +84,13 @@ describe('yetuvchanlik — 06:46 hodisasining shakli', () => {
         ],
       }),
     );
-    expect(report.unreachableQty).toBe('2949007');
-    expect(report.unreachable).toEqual([
-      { storeId: W02, storeName: 'Ombor 02', qty: '2949007', reach: 'needs_approval' },
-    ]);
+    expect(report.unreachableQty).toBe('0');
+    expect(report.unreachable).toHaveLength(0);
     expect(report.stores.find((s) => s.id === POOL)?.reach).toBe('reachable');
+    expect(report.stores.find((s) => s.id === W02)?.reach).toBe('reachable');
   });
 
-  it('kaskadda umuman yo‘q ombor — «outside_cascade»', () => {
+  it('kaskadda umuman yo‘q ombor — «outside_cascade» (hodisaning YANGI shakli)', () => {
     const report = buildWarehouseState(
       input({
         stores: [store(POOL, 'Taqsimlanmagan', { __posPriority: 1 }), store(W01, 'Ombor 01')],
@@ -114,18 +119,38 @@ describe('yetuvchanlik — 06:46 hodisasining shakli', () => {
   });
 
   it('qoldig‘i 0 bo‘lgan yetib bo‘lmaydigan ombor shovqin qilmaydi', () => {
-    // Hozirgi jonli holat: «Ombor 02» da pp=2 qolgan (R1), lekin u BO'SH.
+    // Hozirgi jonli holat: «Ombor 01» da prioritet YO'Q (R4), lekin u BO'SH.
     const report = buildWarehouseState(
       input({
-        stores: [
-          store(POOL, 'Taqsimlanmagan', { __posPriority: 1 }),
-          store(W02, 'Ombor 02', { __posPriority: 2 }),
-        ],
+        stores: [store(POOL, 'Taqsimlanmagan', { __posPriority: 1 }), store(W01, 'Ombor 01')],
         storeStock: [{ storeId: POOL, qty: '100' }],
       }),
     );
     expect(report.unreachableQty).toBe('0');
     expect(report.unreachable).toHaveLength(0);
+  });
+
+  it('E5 — BRAK omboriga prioritet qo‘yilsa ham kaskadga KIRMAYDI', () => {
+    // `resolveAllocStores` da `!s.isBrak` filtri bor. Bu yerda bo'lmasa,
+    // tasodifan prioritet olgan BRAK ombori kaskad BOSHI bo'lib ko'rinardi va
+    // ikki model ikki xil haqiqat aytardi (H2 hisobotidagi «takrorlangan
+    // mantiq» ogohlantirishi aynan shu klass).
+    const report = buildWarehouseState(
+      input({
+        stores: [
+          store('store-brak', 'BRAK', { __posPriority: 1, [BRAK_STORE_KEY]: true }),
+          store(POOL, 'Taqsimlanmagan', { __posPriority: 2 }),
+        ],
+        storeStock: [
+          { storeId: 'store-brak', qty: '500' },
+          { storeId: POOL, qty: '100' },
+        ],
+      }),
+    );
+    expect(report.cascade.map((c) => c.name)).toEqual(['Taqsimlanmagan']);
+    expect(report.stores.find((s) => s.name === 'BRAK')?.reach).toBe('brak');
+    expect(report.stores.find((s) => s.id === POOL)?.reach).toBe('reachable');
+    expect(report.unreachableQty).toBe('0');
   });
 
   it('kaskad sozlanmagan bo‘lsa POS smena omboridan ishlaydi (F6 zaxira yo‘li)', () => {
@@ -155,9 +180,22 @@ describe('yetuvchanlik — 06:46 hodisasining shakli', () => {
       }),
     );
     expect(report.cascade.map((c) => c.name)).toEqual(['Aaa', 'Bbb', 'Ombor 02']);
-    // birinchi — «Aaa», ya'ni faqat u «reachable»
-    expect(report.stores.find((s) => s.id === 'a')?.reach).toBe('reachable');
-    expect(report.stores.find((s) => s.id === 'b')?.reach).toBe('needs_approval');
+    // TARTIB muhim (taqsimot uni o'qiydi), lekin YETUVCHANLIK uchun emas —
+    // G4-2a dan keyin kaskaddagi HAMMASI «reachable».
+    expect(report.stores.map((s) => s.reach)).toEqual(['reachable', 'reachable', 'reachable']);
+  });
+
+  it('E5/(b) — «Kassa oldidagi ombor» bayrog‘i o‘qiladi', () => {
+    const report = buildWarehouseState(
+      input({
+        stores: [
+          store(POOL, 'Taqsimlanmagan', { __posPriority: 2 }),
+          store('store-07', 'Ombor 07', { __posPriority: 1, __posFrontStore: true }),
+        ],
+      }),
+    );
+    expect(report.stores.find((s) => s.id === 'store-07')?.isPosFront).toBe(true);
+    expect(report.stores.find((s) => s.id === POOL)?.isPosFront).toBe(false);
   });
 });
 
@@ -345,26 +383,54 @@ describe('reyestr bilan solishtirish', () => {
     expect(exitCodeFor(drifts)).toBe(0);
   });
 
-  it('🔴 06:46 hodisasi: yetib bo‘lmaydigan qoldiq ⇒ chiqish kodi 2', () => {
+  it('🔴 06:46 hodisasining YANGI shakli: kaskadsiz ombordagi qoldiq ⇒ kod 2', () => {
+    // E5 — hodisaning mexanizmi o'zgardi, XAVFI QOLDI: G4-2a dan keyin tovarni
+    // kassadan uzib qo'yish uchun uni kaskadda BO'LMAGAN omborga qo'yish kerak
+    // (prioritetsiz). Detektor aynan shuni ushlashi shart.
     const report = buildWarehouseState(
       input({
         stores: [
           store(POOL, 'Taqsimlanmagan', { __posPriority: 1 }),
           store(W02, 'Ombor 02', { __posPriority: 2 }),
+          store(W01, 'Ombor 01'),
         ],
         cells: [cell('c1', POOL, '01-04-02-13')],
-        storeStock: [{ storeId: W02, qty: '2949007' }],
+        storeStock: [{ storeId: W01, qty: '2949007' }],
       }),
     );
     const drifts = diffAgainstRegistry(report, registry);
     const hit = drifts.find((d) => d.code === 'yetib-bolmaydigan-qoldiq');
     expect(hit?.severity).toBe('xato');
     expect(hit?.message).toContain('2949007');
-    expect(hit?.message).toContain('G4');
+    expect(hit?.message).toContain('kaskadda umuman yoq');
     expect(exitCodeFor(drifts)).toBe(2);
   });
 
-  it('POS smena ombori kaskad boshi bo‘lmasa xato (hodisaning aynan shakli)', () => {
+  it('POS smena ombori kaskadda UMUMAN bo‘lmasa xato (E5 — qayta ta’riflandi)', () => {
+    // Ilgari shart «kaskad boshi bo'lishi» edi; G4-2a dan keyin tartib
+    // yetuvchanlikka ta'sir qilmaydi, shuning uchun haqiqiy xato — smena
+    // ombori kaskadda UMUMAN yo'qligi (undagi qoldiq sotilmay qoladi).
+    const report = buildWarehouseState(
+      input({
+        stores: [store(POOL, 'Taqsimlanmagan'), store(W02, 'Ombor 02', { __posPriority: 1 })],
+        cells: [cell('c1', POOL, '01-04-02-13')],
+      }),
+    );
+    const drifts = diffAgainstRegistry(report, {
+      ...registry,
+      stores: [
+        { name: 'Taqsimlanmagan', posPriority: null },
+        { name: 'Ombor 02', posPriority: 1 },
+      ],
+    });
+    expect(drifts.map((d) => d.code)).toContain('pos-ombori-yetib-bolmaydi');
+    expect(exitCodeFor(drifts)).toBe(2);
+  });
+
+  it('E5 — POS ombori kaskad boshi bo‘lmasa ham endi XATO EMAS', () => {
+    // Aynan yuqoridagi testning ko'zgusi: pp=2 bo'lgan smena ombori G4-2a dan
+    // keyin mutlaqo normal. Eski qoida saqlanganda skript har deploy'da
+    // yolg'on qizil berardi.
     const report = buildWarehouseState(
       input({
         stores: [
@@ -372,6 +438,7 @@ describe('reyestr bilan solishtirish', () => {
           store(W02, 'Ombor 02', { __posPriority: 1 }),
         ],
         cells: [cell('c1', POOL, '01-04-02-13')],
+        storeStock: [{ storeId: POOL, qty: '100' }],
       }),
     );
     const drifts = diffAgainstRegistry(report, {
@@ -381,7 +448,46 @@ describe('reyestr bilan solishtirish', () => {
         { name: 'Ombor 02', posPriority: 1 },
       ],
     });
-    expect(drifts.map((d) => d.code)).toContain('pos-ombori-yetib-bolmaydi');
+    expect(drifts.map((d) => d.code)).not.toContain('pos-ombori-yetib-bolmaydi');
+    expect(exitCodeFor(drifts)).toBe(0);
+  });
+
+  it('E5/(b) — reyestrda e’lon qilinmagan «Kassa oldidagi ombor» bayrog‘i xato', () => {
+    const report = buildWarehouseState(
+      input({
+        stores: [
+          store(POOL, 'Taqsimlanmagan', { __posPriority: 1, __posFrontStore: true }),
+          store(W02, 'Ombor 02', { __posPriority: 2 }),
+        ],
+        cells: [cell('c1', POOL, '01-04-02-13')],
+        storeStock: [{ storeId: POOL, qty: '100' }],
+      }),
+    );
+    const drifts = diffAgainstRegistry(report, registry);
+    expect(drifts.map((d) => d.code)).toContain('kassa-oldidagi-ombor-reyestrda-yoq');
+    expect(exitCodeFor(drifts)).toBe(2);
+  });
+
+  it('E5/(b) — reyestr kutgan bayroq jonlida yo‘q bo‘lsa ham xato', () => {
+    const report = buildWarehouseState(
+      input({
+        stores: [
+          store(POOL, 'Taqsimlanmagan', { __posPriority: 1 }),
+          store(W02, 'Ombor 02', { __posPriority: 2 }),
+        ],
+        cells: [cell('c1', POOL, '01-04-02-13')],
+        storeStock: [{ storeId: POOL, qty: '100' }],
+      }),
+    );
+    const drifts = diffAgainstRegistry(report, {
+      ...registry,
+      stores: [
+        { name: 'Taqsimlanmagan', posPriority: 1, brak: false },
+        { name: 'Ombor 02', posPriority: 2, posFront: true },
+      ],
+    });
+    const hit = drifts.find((d) => d.code === 'kassa-oldidagi-ombor');
+    expect(hit?.severity).toBe('xato');
     expect(exitCodeFor(drifts)).toBe(2);
   });
 
@@ -432,7 +538,11 @@ describe('haqiqiy reyestr fayli (docs/ops/jonli-holat.md)', () => {
     expect(registry.split).toBe('qaytarilgan');
     expect(registry.posSessionStore).toBe('Taqsimlanmagan');
     expect(registry.allowUnreachableQty).toBe('0');
-    // Reyestrdagi POS ombori kaskad boshi (pp=1) bo'lishi SHART.
-    expect(registry.stores.find((s) => s.name === registry.posSessionStore)?.posPriority).toBe(1);
+    // E5 — reyestrdagi POS ombori KASKADDA bo'lishi SHART (ilgari «boshi
+    // bo'lishi shart» edi; G4-2a dan keyin tartib yetuvchanlikni belgilamaydi,
+    // lekin kaskadda umuman bo'lmasa undagi qoldiq sotilmay qoladi).
+    const posStore = registry.stores.find((s) => s.name === registry.posSessionStore);
+    expect(posStore?.posPriority).not.toBeNull();
+    expect(posStore?.posPriority).not.toBeUndefined();
   });
 });

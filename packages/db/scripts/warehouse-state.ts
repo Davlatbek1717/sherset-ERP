@@ -112,12 +112,12 @@ async function readAccount(accountId: string): Promise<WarehouseStateReport> {
   });
 }
 
+// E5 — `needs_approval` yorlig'i («tasdiq kerak (G4 yo'q!)») OLIB TASHLANDI:
+// G4-2a tasdiq-to'sig'ini o'chirdi, POS endi kaskadning hammasiga o'zi yetadi.
 function reachLabel(reach: string): string {
   switch (reach) {
     case 'reachable':
       return 'POS SOTADI';
-    case 'needs_approval':
-      return 'tasdiq kerak (G4 yo‘q!)';
     case 'outside_cascade':
       return 'kaskadda YO‘Q';
     default:
@@ -144,7 +144,13 @@ function printReport(accountId: string, report: WarehouseStateReport): void {
   for (const s of report.stores) {
     console.log(
       [
-        s.name + (s.archived ? ' (arxiv)' : '') + (s.isUnassignedSource ? ' [hovuz]' : ''),
+        s.name +
+          (s.archived ? ' (arxiv)' : '') +
+          (s.isUnassignedSource ? ' [hovuz]' : '') +
+          // E5/(b) — «Kassa oldidagi ombor» taqsimot tartibini o'zgartiradi
+          // (yolg'iz qoplasa birinchi, bo'linishda oxirgi), shuning uchun u
+          // jadvalda KO'RINISHI kerak: bayroq jimgina yo'qolsa 07 bo'shab qoladi.
+          (s.isPosFront ? ' [kassa oldi]' : ''),
         s.posPriority === null ? '—' : String(s.posPriority),
         String(s.cells),
         String(s.zones),

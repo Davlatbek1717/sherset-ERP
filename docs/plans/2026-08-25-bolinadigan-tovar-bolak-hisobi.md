@@ -245,6 +245,23 @@ bitta jismoniy bo'lakni bildiradi.
 > shtrixidan AJRATA olishi kerak. Aks holda omborchi bo'lakni skanerlaganda
 > tovar tanlovi (multi-hit) ochiladi va butun mantiq quladi.
 
+### 7.4 🔴 H-REJA SKRIPTLARI BO'LAK REYESTRINI BILMAYDI (2026-08-26 auditi)
+
+`stock_pieces` da `store_id` va `cell_id` bor, lekin `packages/db` dagi uchala
+jonli-ma'lumot skripti bo'lak degan tushunchani UMUMAN ko'rmaydi (o'lchandi —
+uchalasida «piece» so'zi nol marta):
+
+| Skript | Faza | Nima bo'ladi |
+|---|---|---|
+| `warehouse-split.ts` | **H4** | yacheykani yangi omborga ko'chiradi, `stock_pieces.store_id` ESKI omborda qoladi |
+| `stock-baseline-cleanup.ts` | **H5** | `Stock.qty` ni kamaytiradi, reyestr Σ o'zgarmaydi ⇒ «Σ tarkib === miqdor» buziladi ⇒ K5 kiritish oqimi **400** |
+| `warehouse-state.ts` | qoida 8/13 | bo'lak farqini umuman o'lchamaydi ⇒ signal yo'q |
+
+**Hozircha xavf yo'q:** bayroq jonlida hech qayerda yoqilmagan, jadval bo'sh.
+**Lekin `stock_pieces` bo'sh bo'lmagan kundan boshlab bu H4 va H5 uchun
+BLOKLOVCHI.** To'liq talab va yopish retsepti:
+`docs/plans/2026-08-24-split-kassa-hodisasi.md` → H4 fazasi → «T1» bandi.
+
 ---
 
 ## 8. FAZALAR

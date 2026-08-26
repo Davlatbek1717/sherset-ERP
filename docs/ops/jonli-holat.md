@@ -27,9 +27,9 @@ ketardi va bu aynan IS-7 muammosini qaytarardi.
   "posSessionStore": "Taqsimlanmagan",
   "allowUnreachableQty": "0",
   "stores": [
-    { "name": "Taqsimlanmagan", "posPriority": 1, "brak": false, "unassignedSource": false },
-    { "name": "Ombor 01", "posPriority": null, "brak": false },
-    { "name": "Ombor 02", "posPriority": 2, "brak": false }
+    { "name": "Taqsimlanmagan", "posPriority": 1, "brak": false, "unassignedSource": false, "posFront": false },
+    { "name": "Ombor 01", "posPriority": null, "brak": false, "posFront": false },
+    { "name": "Ombor 02", "posPriority": 2, "brak": false, "posFront": false }
   ]
 }
 ```
@@ -39,11 +39,25 @@ ketardi va bu aynan IS-7 muammosini qaytarardi.
 | Maydon | Ma'nosi |
 |---|---|
 | `split` | Yacheyka kodi prefiksi ↔ ombor mosligi: `bajarilgan` (hamma yacheyka o'z omborida), `qaytarilgan` (hammasi bitta omborda, prefiks mos emas), `qisman`, `yacheyka yoq` |
-| `posSessionStore` | Kassir smenalari ochiladigan ombor NOMI. **U kaskadning BIRINCHI ombori bo'lishi SHART** — aks holda 06:46 hodisasi qaytadi |
+| `posSessionStore` | Kassir smenalari ochiladigan ombor NOMI. **U POS kaskadida bo'lishi SHART** (`posPriority` bor va BRAK emas) — aks holda undagi qoldiq sotilmay qoladi |
 | `allowUnreachableQty` | Ruxsat etilgan «POS yeta olmaydigan qoldiq». Normal qiymat `"0"` |
 | `stores[].posPriority` | `Store.attributes.__posPriority`. `null` = kaskadda EMAS deb kutiladi |
-| `stores[].brak` | `__brakStore` (G3). BRAK omboridagi qoldiq yetuvchanlik hisobiga KIRMAYDI |
+| `stores[].brak` | `__brakStore` (G3). BRAK omboridagi qoldiq yetuvchanlik hisobiga KIRMAYDI; prioritet qo'yilgan bo'lsa ham kaskadga kirmaydi |
 | `stores[].unassignedSource` | `__unassignedSource` (F7 hovuz belgisi) |
+| `stores[].posFront` | `__posFrontStore` (G4, «Kassa oldidagi ombor» = 07). **Yetuvchanlikka ta'sir qilmaydi, TAQSIMOT tartibini belgilaydi:** yolg'iz qoplasa birinchi, bo'linishda ENG OXIRGI. Bayroq jimgina yo'qolsa 07 buyurtmalarda birinchi bo'lib bo'shab qoladi |
+
+> 🔴 **E5 — yetuvchanlik modeli 2026-08-26 da QAYTA YOZILDI (G4-2a dan keyin).**
+> Ilgari kassa FAQAT kaskadning BIRINCHI omboridan avtomatik ayirardi, qolganlari
+> «bosh omborchi tasdig'i kerak» (`needs_approval`) edi va aynan o'sha to'siq
+> 2026-08-24 06:46 da savdoni to'xtatdi. G4-2a (`b4c27d24`) tasdiq-to'sig'ini
+> olib tashladi — endi POS prioriteti bor va BRAK bo'lmagan HAMMA omborga o'zi
+> yetadi. Shuning uchun:
+> - `needs_approval` bosqichi **BEKOR QILINDI**;
+> - «POS yeta olmaydigan qoldiq» endi FAQAT `__posPriority` yo'q omborlardagi qoldiq;
+> - «POS ombori kaskad BOSHI bo'lsin» sharti «kaskadda BO'LSIN» ga aylandi.
+>
+> Busiz `warehouse-state.ts` deploy'dan keyin yolg'on qizil berardi va qoida 13
+> qo'riqchisi «bo'ri keldi» bo'lib qolardi (deploy dossieri, D1).
 
 ---
 
@@ -120,6 +134,14 @@ savdo boshlanishidan OLDIN: `warehouse-state.ts` + bitta sinov sotuv
 🔴 **Kunduzi YUGURTIRMANG:** skript ombor jamisini kamaytiradi, ya'ni kassani
 to'xtatib qo'yishi mumkin (qoida 13). Default imzo-oralig'i 9 000–11 000 — faqat
 soxta sonlarni oladi, haqiqiy qoldiqqa tegmaydi. Batafsil: H5 hisoboti.
+
+🔴 **T1 — K-REJA DEPLOY QILINGANDAN KEYIN BU SKRIPT TO'XTATILADI.**
+`stock_pieces` jadvali bo'sh bo'lmagan kundan boshlab skript bo'linadigan
+tovarga tegmasligi shart: u `Stock.qty` ni kamaytiradi, bo'lak reyestriga esa
+tegmaydi ⇒ «Σ tarkib === miqdor» sharti buziladi va K5 ning kiritish oqimi
+(sanash / priyomka / vozvrat) **400** bera boshlaydi. Aynan shu bilan H4
+(`warehouse-split.ts`) ham bloklanadi. To'liq talab:
+`docs/plans/2026-08-24-split-kassa-hodisasi.md` → H4 → «T1» bandi.
 
 ## 3.2. Kassa qarzi backfill'i (Q5) — 🔴 HALI YUGURTIRILMAGAN
 

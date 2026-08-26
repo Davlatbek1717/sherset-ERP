@@ -98,6 +98,42 @@ step "fetch + reset --hard origin/$BRANCH (was $BEFORE)"
 # `git diff BEFORE AFTER` below still works: it compares TREES, not ancestry, so
 # the file-diff (and the build-skip decision) stays correct.
 git fetch origin "$BRANCH"
+
+# ── ORQAGA-KETISH QO'RIQCHISI (2026-08-26, deploy-tayyorlik auditi) ─────────
+#
+# `reset --hard` HEAD ni oldinga ham, ORQAGA ham suradi. 2026-08-26 da o'lchandi:
+# erp.sherset.uz jonli HEAD `62a27024`, `origin/climart-adoption` esa `6533f173` —
+# ya'ni jonlidan **8 commit ORQADA** (F6 kaskad dvigateli, F7 joylashtirish,
+# F8 omborchi .exe aynan o'sha 8 tada). Skript o'sha holatda yurgizilsa uchala
+# fazani produksiyadan JIMGINA o'chirib tashlardi va hech qayerda xato
+# ko'rinmasdi — bu 2026-08-24 hodisasining aynan sinfi (IS-5: nosozlik signali yo'q).
+#
+# Shuning uchun: yo'qoladigan commit BO'LSA — TO'XTAYMIZ va ularni ko'rsatamiz.
+# Ongli orqaga qaytarish (rollback) `DS_ALLOW_ROLLBACK=1` bilan ochiladi.
+#
+# Tarixlar UMUMAN bog'lanmagan bo'lsa (shallow-klon almashinuvi — yuqoridagi
+# izoh) ajdodlik savolining ma'nosi yo'q: u holda tekshiruv o'tkazib yuboriladi,
+# lekin JIMGINA emas — ogohlantirish bilan.
+if git merge-base HEAD FETCH_HEAD >/dev/null 2>&1; then
+  LOST=$(git rev-list --count FETCH_HEAD..HEAD)
+  if [ "$LOST" -gt 0 ] && [ "${DS_ALLOW_ROLLBACK:-}" != "1" ]; then
+    echo "" >&2
+    echo "FATAL: reset --hard origin/$BRANCH jonli HEAD dan $LOST ta commit'ni O'CHIRADI." >&2
+    echo "Yo'qoladigan commitlar:" >&2
+    git log --oneline "FETCH_HEAD..HEAD" | sed 's/^/    /' >&2
+    echo "" >&2
+    echo "  · Bu ODATDA nosozlik: origin branch'i jonlidan orqada qolgan." >&2
+    echo "  · To'g'ri yo'l — qo'lda ff-merge (F-reja 2.8 / docs/ops/2026-08-25-deploy-dossieri.md, B3)." >&2
+    echo "  · ATAYLAB qaytarayotgan bo'lsangiz: DS_ALLOW_ROLLBACK=1 bilan qayta yuriting." >&2
+    echo "" >&2
+    exit 1
+  fi
+  [ "$LOST" -gt 0 ] && step "DS_ALLOW_ROLLBACK=1 — $LOST commit ONGLI ravishda qaytarilmoqda"
+else
+  echo "!  Ogohlantirish: HEAD va FETCH_HEAD tarixlari bog'lanmagan (shallow almashinuv?)" >&2
+  echo "   — orqaga-ketish tekshiruvi o'tkazib yuborildi." >&2
+fi
+
 git reset --hard FETCH_HEAD
 AFTER=$(git rev-parse HEAD)
 

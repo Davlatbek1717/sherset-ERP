@@ -2,13 +2,19 @@
 
 > **Yaratilgan:** 2026-08-23 · **Buyurtmachi:** Ozodbek (egasi) · **Holat:** **G1 ⚠️ QISMAN** (kod tayyor va HEAD'da butunligi 2026-08-25 da qayta tasdiqlandi; qabul mezoni jonli tasdiqni kutmoqda — egasi 2026-08-25 da deploy'ni «hozir yo'q» dedi; `9fe25d15` da bitta o'lik i18n kaliti tuzatildi) · G2+G3 KOD TAYYOR · **G4 2a (backend) TAYYOR** — kassa endi ko'p ombordan AVTOMATIK sotadi (tasdiq-to'sig'i olib tashlandi); 2b qoldi: POS UI, yig'ish topshiriqlari, H2/H3 (E5) · **G5 QISMAN** — TSD auth + APK skeleti · **G6 QISMAN** — TSD ish ekranlari (yig'ish + yetishmovchilik, joylashtirish, sanash) tayyor, **APK ENDI HAQIQATAN QURILADI** (`BUILD SUCCESSFUL`), lekin jonli qurilmada tekshirilmagan (qoida 11). **Deploy kutilmoqda** — egasi «keyinroq» dedi VA 2026-08-24 hodisasi hal bo'lmagan (`docs/plans/2026-08-24-split-kassa-hodisasi.md`). Deploy'da: `topup-role-permissions.ts` MAJBURIY (`retailcontrol` + `returnacceptance`); **BESHTA migratsiya** — G1 `…120000_drawer_cash_out_sales_return`, G3 `…170000_sales_return_retail_sale`, **G4 `20260825020000_retail_sale_position_allocation`**, **G5 `20260825170000_tsd_device`**, **G6 `20260825200000_tsd_work_screens`**; **egasi qo'lida:** Ombor 07 kartasiga «Kassa oldidagi ombor» checkbox'i (busiz «07 bo'linishda oxirida» qoidasi ishlamaydi). ⚠️ Bu deploy JONLI XULQNI o'zgartiradi — G4 2a hisobotidagi «Jonli sozlash» NI VA G6 hisobotining 1-bandini (omborchiga yacheyka ko'chirish OCHILADI) o'qing
 >
-> 📋 **DEPLOY DOSSIERI (2026-08-25) — `docs/ops/2026-08-25-deploy-dossieri.md`.**
-> Yuqoridagi «BESHTA migratsiya» ESKIRGAN: delta `62a27024..8d1f4a01` (37 commit)
-> va **YETTITA migratsiya** — branch'ga Q1–Q3 (qarz reyestri) va A1 (avans) ham
-> qo'shildi. Dossierda 6 ta bloklovchi kamchilik va qadamma-qadam retsept bor.
+> 📋 **DEPLOY DOSSIERI — `docs/ops/2026-08-25-deploy-dossieri.md` (2026-08-26 da QAYTA YOZILDI).**
+> Yuqoridagi «BESHTA migratsiya» ham, dossierning birinchi tahriridagi «YETTITA»
+> ham ESKIRGAN. **Joriy raqamlar: delta `62a27024..HEAD` = 69 commit, 12 migratsiya**
+> (G1–G6 + Q1–Q6 + A1–A3 + K1–K6 + H2/H5). Dossierda 6 ta bloklovchi kamchilik,
+> 12 migratsiyaning TARTIBI va qadamma-qadam retsept bor.
+> 🔴 **B0: 33 commit `mirfayz` remote'ga PUSH QILINMAGAN** — deploy manbasi
+> o'sha remote, ya'ni push qilinmasa server ESKI kodni oladi.
 > 🔴 **B3: `/deploy` va `deploy-smart.sh` bu delta uchun ISHLATILMAYDI** — ular
 > `origin/climart-adoption` ga `reset --hard` qiladi, u esa jonlidan 8 commit
 > ORQADA (F6/F7/F8 ni produksiyadan o'chirib tashlardi). Faqat qo'lda F-reja 2.8.
+> ✅ **E5 (D1) 2026-08-26 da YOPILDI** — `warehouse-state-core.ts` endi G4-2a
+> haqiqatida (`needs_approval` bekor, `reachable` = kaskaddagi hammasi,
+> reyestrda `posFront`). G4 2b ning qolgan bandlari: POS UI + yig'ish topshiriqlari.
 >
 > **Ijro tartibi:** har faza ALOHIDA sessiyada. Agent shu faylni va
 > `docs/plans/2026-08-23-ombor-restrukturizatsiya.md` ni (F-reja) TO'LIQ o'qiydi,
@@ -1124,10 +1130,15 @@ Mock'larga `stockByCell.findMany` va `retailSalePositionAllocation` qo'shildi
   o'zgartira olishi (`manual` ustuni tayyor, backend qabul qilishga tayyor emas).
 - **Yig'ish topshiriqlari** (`createPickingTasksForSale`) hamon yacheyka
   prefiksidan taxmin qiladi — ajratmadan qurilsin.
-- **E5 — H2/H3:** `warehouse-state-core.ts` dagi `needs_approval` bosqichi endi
-  ma'nosiz (POS hamma kaskad omboriga yetadi); reyestrga `__posFrontStore`
-  qatori; H3 qo'riqchisi qayta belgilansin. **Bu bajarilmaguncha
-  `warehouse-state.ts` yolg'on qizil berishi mumkin.**
+- ✅ **E5 — H2/H3: BAJARILDI (2026-08-26, deploy-tayyorlik sessiyasi).**
+  `warehouse-state-core.ts` da `needs_approval` bosqichi BEKOR QILINDI,
+  `reachable` endi kaskaddagi HAMMA ombor (BRAK istisno — `resolveAllocStores`
+  bilan bir xil filtr), reyestrga `posFront` (`__posFrontStore`) maydoni va
+  ikkita yangi drift qo'shildi, «POS ombori kaskad BOSHI bo'lsin» sharti
+  «kaskadda BO'LSIN» ga aylandi. `docs/ops/jonli-holat.md` ham yangilandi.
+  Testlar 24 → **29** (teskari nazorat: eski model qaytarilsa 3 test yiqiladi).
+  ⇒ `warehouse-state.ts` endi deploy'dan keyin yolg'on qizil BERMAYDI.
+  **H3 ning O'ZI (signal + audit yozuvi) hamon qurilmagan** — u alohida faza.
 - **`cancel()` ajratma qatorlarini o'chirmaydi** — bekor qilingan chekda eski
   qatorlar qolib ketadi (zararsiz, lekin `store` FK RESTRICT bo'lgani uchun
   ombor o'chirishni bloklashi mumkin).

@@ -375,6 +375,8 @@ bu safar savdo to'xtamasdan.
   **G4 (yangi tahriri) JONLIDA bo'lishi shart** — split'ni xavfsiz qiladigan
   faza aynan o'sha;
 - H2 (holat reyestri) va H3 (signal) jonlida;
+- 🔴 **T1 — `warehouse-split.ts` BO'LAK REYESTRINI ko'chirishi shart** (pastdagi
+  «T1» bandi). Bu band yopilmaguncha H4 BOSHLANMAYDI;
 - Variant A tanlansa: Ombor 07 raqamlashtirilgan va POS tovari o'sha yerda;
 - Variant B tanlansa: avto-kaskad sozlamasi qurilgan va yoqilgan;
 - Variant C tanlansa: G4 jonlida.
@@ -392,10 +394,62 @@ bu safar savdo to'xtamasdan.
    sinov sotuv (post → tekshir → cancel), yacheyka sanash, ko'chirish.
 5. Savdo boshlanishidan oldin (ertalab) — takroriy smoke va `warehouse-state.ts`.
 6. Zonalarni tiklash (R5): split zonani kod 2-segmentidan qayta hosil qiladi.
+7. 🔴 **T1 (yangi, 2026-08-26) — BO'LAK REYESTRI ham ko'chirilsin.**
+
+---
+
+#### 🔴 T1 — `packages/db` skriptlari bo'lak reyestrini BILMAYDI (H4 va H5 uchun to'siq)
+
+**O'lchangan holat (2026-08-26 auditi):** `stock_pieces` jadvalida `store_id` va
+`cell_id` bor (`packages/db/prisma/schema.prisma`, K1). Lekin uchala jonli-ma'lumot
+skriptida «piece» so'zi **NOL marta** uchraydi:
+
+```
+packages/db/scripts/warehouse-split-core.ts        : 0
+packages/db/scripts/stock-baseline-cleanup-core.ts : 0
+packages/db/scripts/warehouse-state-core.ts        : 0
+```
+
+**Oqibati ikki xil, ikkalasi ham jim:**
+
+| Skript | Nima qiladi | Bo'lak reyestrida nima bo'ladi |
+|---|---|---|
+| **H4 `warehouse-split.ts`** | yacheyka + `StockByCell` ni yangi omborga ko'chiradi | `stock_pieces.store_id` ESKI omborda qoladi ⇒ bo'lak yacheykasi bir omborda, o'zi boshqasida |
+| **H5 `stock-baseline-cleanup.ts`** | `Stock.qty` ni kamaytiradi (yacheykaga tegmaydi) | reyestr Σ o'zgarmaydi ⇒ «Σ tarkib === miqdor» sharti buziladi |
+
+Ikkinchisining narxi aniq: K5 ning ommaviy kiritish oqimi (sanash / priyomka /
+vozvrat) Σ shartini tekshiradi va **400** qaytaradi, K6 ning kunlik 20:00 sverka
+signali esa har kuni farq haqida xabar beradi. Ya'ni omborchi ishlay olmay qoladi
+va sabab ko'rinmaydi — bu IS-5 («nosozlik signali noto'g'ri manzilni ko'rsatadi»)
+klassi.
+
+**Hozir xavf YO'Q va nega:** `pieceTracked` bayrog'i jonlida hech qayerda
+yoqilmagan va `stock_pieces` jadvali BO'SH (K1–K6 deploy qilinmagan). Ya'ni bu
+kutayotgan mina, portlagan mina emas.
+
+**To'siq qoidasi (2026-08-26 dan):**
+
+> **K-reja deploy qilingan (`stock_pieces` bo'sh EMAS) holatda H4 ham, H5 ham
+> shu band yopilmaguncha YURITILMAYDI.** Yopish — bitta sessiyalik ish:
+> 1. `warehouse-split-core.ts` rejasiga bo'lak qatorlari qo'shilsin (yacheyka
+>    bilan BIRGA ko'chadi; yacheykasiz bo'lak ombor bo'yicha), teskarisi
+>    (`warehouse-split-revert.ts`) ham;
+> 2. `stock-baseline-cleanup-core.ts` `pieceTracked` tovarni **skip** qilsin
+>    (sabab bilan, `skipped` ro'yxatida ko'rinsin) — soxta «mashq» qoldig'i
+>    bo'linadigan tovarda baribir kutilmaydi;
+> 3. `warehouse-state.ts` ga bitta qator: «bo'lak reyestri farqi: N tovar» —
+>    qoida 8 bo'yicha u har ombor-deploy'ida yuradi, ya'ni signal shu yerda
+>    ARZON;
+> 4. uchalasiga sof-yadro testlari (DB kerak emas).
+>
+> Har uch skript uchun qoida 12 (teskarisi + lokal sinov) o'z kuchida.
+
+---
 
 **Qabul mezoni:** split bajarilgan; `warehouse-state.ts` da «POS yeta olmaydigan
 qoldiq = 0»; jonli sinov sotuvi o'tgan (ledger'da ko'rinadi); ertalabki savdo
-shikoyatsiz o'tgan (birinchi 2 soat kuzatiladi).
+shikoyatsiz o'tgan (birinchi 2 soat kuzatiladi); **bo'lak reyestri split'dan
+keyin ham yacheykalari bilan bir omborda (T1)**.
 
 **PROMPT:**
 ```
@@ -644,6 +698,12 @@ QISMAN (qoida 11).
 5. Har yugurish `docs/ops/jonli-holat.md` ning o'zgarishlar jurnaliga yoziladi (qoida 14).
 
 **Ochiq qolganlar / keyingi fazalarga:**
+- 🔴 **T1 — K-reja deploy qilingandan KEYIN bu skript BO'LINADIGAN tovarga
+  tegmasligi shart** (to'liq tavsif H4 fazasidagi «T1» bandida). Skript
+  `Stock.qty` ni kamaytiradi, `stock_pieces` ga esa tegmaydi ⇒ «Σ tarkib ===
+  miqdor» sharti buziladi va K5 ning kiritish oqimi 400 bera boshlaydi.
+  Hozir xavf yo'q (bayroq hech qayerda yoqilmagan, jadval bo'sh), lekin
+  **`stock_pieces` bo'sh bo'lmagan kundan boshlab bu BLOKLOVCHI.**
 - **🔴 Jonli DRY-RUN** — H5 ni yopish uchun birinchi qadam. Faqat O'QISH,
   istalgan payt xavfsiz: `cd /var/www/sherset-v2/packages/db && npx tsx
   scripts/stock-baseline-cleanup.ts`. Ro'yxat egasiga ko'rsatiladi.
@@ -661,6 +721,19 @@ QISMAN (qoida 11).
   tranzaksiyada. Hozircha kechalik yugurish yetarli va xavfsizroq.
 
 ### H2 — Jonli holat reyestri + warehouse-state.ts · ⚠️ QISMAN · 2026-08-24
+
+> 🔴 **2026-08-26 TAHRIRI (E5) — pastdagi yetuvchanlik modeli QAYTA YOZILDI.**
+> Bu hisobot `needs_approval` bosqichini («kaskadda bor, birinchi emas ⇒ bosh
+> omborchi tasdig'i kerak») tasvirlaydi. G4-2a (`b4c27d24`) o'sha
+> tasdiq-to'sig'ini butunlay olib tashladi: `resolveAllocStores` prioriteti bor
+> va BRAK bo'lmagan HAMMA omborni manba qiladi. Shuning uchun yadro
+> yangilandi — `needs_approval` BEKOR, `reachable` = kaskaddagi hammasi,
+> `outside_cascade` = prioritetsiz ombor, reyestrga `posFront` maydoni.
+> Busiz skript deploy'dan keyin YOLG'ON QIZIL berardi va qoida 13 qo'riqchisi
+> «bo'ri keldi» bo'lib qolardi (deploy dossieri, D1). Testlar 24 → 29.
+> Pastdagi «detektor hodisani QAYTA TIKLADI» misoli TARIXIY: bugungi model
+> uchun hodisaning shakli «prioritetsiz omborda qoldiq bor» ko'rinishida.
+> **Qabul mezonining jonli bandi HAMON OCHIQ** ⇒ faza QISMANligicha qoladi.
 
 **Holat qoida 11 bo'yicha: «QISMAN — jonli tasdiq kutilmoqda».** Kod, reyestr va
 testlar tayyor va yashil; qabul mezonining «skript JONLIDA yugurtirilib hozirgi

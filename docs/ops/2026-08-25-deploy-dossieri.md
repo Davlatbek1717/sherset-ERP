@@ -1,342 +1,347 @@
-# Deploy dossieri — 2026-08-25 · `62a27024..8d1f4a01`
+# Deploy dossieri — `62a27024..HEAD`
 
-> **Maqsad:** G-reja (`docs/plans/2026-08-23-omborchi-tsd-mijozlar.md`) fazalarining
-> hisobotlari tekshirildi, kamchiliklar ro'yxatga olindi, deploy qadamlari
-> tayyorlandi. **DEPLOY QILINMADI** (egasining ko'rsatmasi).
-> Bu fayl fazalar hisobotini ALMASHTIRMAYDI — u faqat deploy nuqtasidagi
-> holatni bir joyga yig'adi.
+> **Maqsad:** deploy nuqtasidagi holatni bir joyga yig'ish. Bu fayl fazalar
+> hisobotini ALMASHTIRMAYDI.
+>
+> **Yaratilgan:** 2026-08-25 (delta `62a27024..8d1f4a01`, 37 commit, 7 migratsiya).
+> 🔴 **QAYTA YOZILDI: 2026-08-26** — delta o'shandan beri deyarli ikki baravar
+> o'sdi (**69 commit, 12 migratsiya**) va eski raqamlar deploy'ni xato yo'lga
+> boshlardi. Eski matn git tarixida (`17dc7f43`).
+>
+> **DEPLOY QILINMAGAN** (egasining 2026-08-25 dagi «C — hozir deploy YO'Q» qarori).
 
 ---
 
-## 1. Xulosa bir qarashda
+## 1. Xulosa bir qarashda (2026-08-26 o'lchovi)
 
 | | |
 |---|---|
-| **Delta** | `62a27024..8d1f4a01` — **37 commit** |
-| **Migratsiya** | **7 ta** (G-reja sarlavhasi «beshta» deydi — ESKIRGAN, pastda) |
-| **Texnik gate** | ✅ typecheck 4/4 · ✅ lint gate 0 error · ✅ api 9160 passed · ✅ web 4296 passed (ikkala «xato» — parallel-yuklama flake'i, yolg'iz yugurtirilganda yashil) |
-| **Bloklovchi kamchilik** | **6 ta** (2-bo'lim) — hech biri KOD emas, hammasi jarayon/dalil/tasdiq. **B4 shu tekshiruvda qisman yopildi** (4 ta yangi down skript) |
-| **Jonli xulq o'zgaradimi** | **HA, ikki joyda** (4-bo'lim: G4-2a kassa taqsimoti, G6 omborchi ruxsati) |
+| **Delta** | `62a27024..HEAD` — **69 commit** |
+| **Migratsiya** | **12 ta** (2-bo'limdagi TARTIB majburiy) |
+| **Push holati** | 🔴 **33 commit `mirfayz` remote'ga PUSH QILINMAGAN** — deploy manbasi o'sha remote, ya'ni hozir deploy qilinsa A1–A3, Q4–Q6, K1–K6 SERVERGA YETIB BORMAYDI |
+| **Texnik gate (HEAD'da o'lchandi)** | ✅ typecheck 10/10 · ✅ lint 0 error / 1272 warning · ✅ api **684 fayl / 9907 passed / 0 failed** · ✅ web **339 fayl / 4427 passed / 0 failed** (i18n gate'lar ichida) |
+| **Bloklovchi kamchilik** | **6 ta** (3-bo'lim) — hech biri KOD emas |
+| **Jonli xulq o'zgaradimi** | **HA, uch joyda** (5-bo'lim) |
 
-**Fazalar holati (hisobotlardan olingan, kod bilan qayta tekshirilgan):**
+**Delta ichidagi ish oqimlari — UCHTA, hammasi «QISMAN»:**
 
-| Faza | Hisobotdagi holat | Kod tekshiruvi |
+| Oqim | Fazalar | Reja |
 |---|---|---|
-| G1 vozvrat-payout | TAYYOR, deploy kutmoqda | ✅ tasdiqlandi |
-| G2 kontrol oqimi | TAYYOR, deploy kutmoqda | ✅ tasdiqlandi |
-| G3 vozvrat qabuli | TAYYOR, deploy kutmoqda | ✅ tasdiqlandi (`assertNotPaid` bor — G1 ning ochiq bandi haqiqatan yopilgan) |
-| G4 1-bosqich | QISMAN | ✅ yadro + jadval + `__posFrontStore` bayrog'i bor |
-| G4 2a-bosqich | QISMAN (backend) | ✅ `assertAvailableCascade` o'chirilgan, `post()` ajratmadan quriladi |
-| **G4 2b** | **BOSHLANMAGAN** | ❌ tasdiqlandi — 3-bo'lim D2 |
-| G5 TSD auth | QISMAN | ✅ tasdiqlandi |
-| G6 TSD ekranlari | QISMAN | ✅ tasdiqlandi, **APK fayl bor** (7,1 MB, `android/tsd-app/app/build/outputs/apk/debug/`) |
+| Omborchi / TSD | G1, G2, G3, G4 (1+2a), G5, G6 | `docs/plans/2026-08-23-omborchi-tsd-mijozlar.md` |
+| Kassa qarzi + avans | Q1…Q6, A1…A3 | `docs/plans/2026-08-25-kassa-qarzi-undirish-reyestri.md` |
+| Bo'linadigan tovar | K1…K6 | `docs/plans/2026-08-25-bolinadigan-tovar-bolak-hisobi.md` |
+| Hodisa qarzlari | H2, H5 (+ E5 tuzatishi) | `docs/plans/2026-08-24-split-kassa-hodisasi.md` |
+
+🔴 **Bu deployning ENG KATTA xavfi texnik emas, HAJMIY:** 21 faza jonlida bir
+marta ham tekshirilmasdan bir-birining ustiga qurildi (qoida 11 «bajarilmagan
+qabul mezoni bilan keyingi faza boshlanmaydi» deydi — amalda buzilgan).
+Nosozlik chiqsa «qaysi biri buzdi?» savoli juda qimmat bo'ladi — bu
+2026-08-24 hodisasining IS-3 klassi, kattaroq masshtabda. Bosqichma-bosqich
+chiqarish varianti — 7-bo'lim.
 
 ---
 
-## 2. 🔴 DEPLOY'DAN OLDIN YOPILISHI SHART (bloklovchi)
+## 2. MIGRATSIYALAR — 12 ta, SHU TARTIBDA
 
-### B1 — G6 migratsiyasi lokal dev bazada YUGURTIRILMAGAN (qoida 7)
+Har biri (cwd = `packages/db`, `DATABASE_URL` ni `apps/api/.env` dan source qiling):
 
-`20260825200000_tsd_work_screens` — G6 hisoboti buni o'zi halol qayd etgan.
-SQL idempotent naqshda (`ADD COLUMN IF NOT EXISTS`, `CREATE TABLE IF NOT EXISTS`,
-`DO $$ … EXCEPTION WHEN duplicate_object`) va `prisma validate` yashil, lekin
-**naqsh — isbot emas**. Qolgan migratsiyalardan G3/G4/G5 lokal bazada 2 martadan
-yugurtirilib isbotlangan edi.
+    pnpm exec prisma db execute --file prisma/migrations/<NOM>/migration.sql
+    pnpm exec prisma migrate resolve --applied <NOM>
 
-**To'siq:** `packages/db/.env` bu mashinada YO'Q, `sherset_v2_dev` paroli
-sessiyaga berilmagan (postgres 18 `localhost:5432` da tinglayapti — tekshirildi).
-**Kerak:** parol → `db execute` → qayta `db execute` (no-op chiqishi) →
-ustun/indeks/FK ni SQL bilan tasdiqlash.
+Oxirida BIR MARTA: `pnpm exec prisma generate`
 
-### B2 — Jonli VPS HEAD tasdiqlanmagan (Davlatbek reset tuzog'i)
+| # | Migratsiya | Faza | Lokal dev bazada | down skript |
+|---|---|---|---|---|
+| 1 | `20260824120000_drawer_cash_out_sales_return` | G1 | ✅ 2× | ✅ (sinalmagan) |
+| 2 | `20260824170000_sales_return_retail_sale` | G3 | ✅ 2× | ✅ (sinalmagan) |
+| 3 | `20260825020000_retail_sale_position_allocation` | G4 | ✅ 2× | ✅ (sinalmagan) |
+| 4 | `20260825120000_debt_source_doc` | Q1 | ✅ | ✅ (sinalmagan) |
+| 5 | `20260825170000_tsd_device` | G5 | ✅ 2× | ✅ sinalgan |
+| 6 | `20260825200000_tsd_work_screens` | G6 | ❌ **HECH QACHON** | ✅ (sinalmagan) |
+| 7 | `20260825220000_drawer_cash_in_kind` | A1 | ✅ | ✅ |
+| 8 | `20260825230000_stock_piece_registry` | K1 | ✅ UP×2→zond→DOWN×2→UP | ✅ |
+| 9 | `20260825235000_company_settings_sale_debt_term` | Q4 | ❌ **HECH QACHON** (Q6 ning DRY yugurishi o'lchadi) | ✅ (sinalmagan) |
+| 10 | `20260826000000_stock_piece_cut` | K4 | ✅ UP×2→zond→DOWN×2→UP | ✅ |
+| 11 | `20260826120000_stock_piece_intake` | K5 | ✅ UP×2→zond→DOWN×2→UP | ✅ |
+| 12 | `20260826170000_piece_tracking_decision` | K6 | ✅ UP×2→zond→DOWN×2→UP | ✅ |
 
-Kutilishi: `62a27024` (F8 hisoboti). **Tekshirilmagan** — SSH paroli berilmagan.
-HEAD boshqa bo'lsa butun delta hisobi noto'g'ri.
+**Qaytarish TARTIBI — teskarisi (12 → 1).** Skriptlar
+`packages/db/scripts/rollback/*_down.sql`, buyrug'i har faylning boshida.
+Hammasi ADDITIV migratsiya (yangi ustun/jadval), shuning uchun **kodni
+qaytarishning o'zi yetadi** — eski kod yangi ustunlarni bilmaydi va ular bo'sh
+turaveradi. Down skriptlar faqat tuzilmani ham tozalash kerak bo'lganda
+yuritiladi, va o'shanda har faylning «ma'lumot yo'qoladi» bloki AVVAL o'qiladi
+(G1 niki — PUL izi, alohida diqqat).
+
+---
+
+## 3. 🔴 DEPLOY'DAN OLDIN YOPILISHI SHART
+
+### B0 — PUSH (yangi, 2026-08-26 · eng birinchi qadam)
+
+`mirfayz/yacheyka-inventarizatsiya` = `61780120` (G6), HEAD esa undan **33
+commit** oldinda. Deploy retsepti aynan shu remote'dan `fetch` qiladi ⇒ push
+qilinmasa server ESKI kodni oladi. Eng yomoni: migratsiyalar 12 tasi ham
+berilgan bo'lib, ularni ishlatadigan KOD yo'q bo'lib qoladi.
+
+    git push mirfayz yacheyka-inventarizatsiya
+
+Pre-push gate: typecheck + guard + lint (hammasi HEAD'da yashil, 1-bo'lim).
+
+### B1 — Ikki migratsiya lokal dev bazada YUGURTIRILMAGAN (qoida 7)
+
+`20260825200000_tsd_work_screens` (G6) va
+`20260825235000_company_settings_sale_debt_term` (Q4). Ikkalasining SQL'i
+isbotlangan naqshda (`ADD COLUMN IF NOT EXISTS`, `CREATE TABLE IF NOT EXISTS`,
+`DO $$ … EXCEPTION WHEN duplicate_object`) va `prisma validate` yashil —
+**lekin naqsh isbot emas**, qolgan 10 tasi lokal bazada yugurtirilgan.
+
+**To'siq:** `packages/db/.env` bu mashinada yo'q, `sherset_v2_dev` paroli
+foydalanuvchidan so'raladi (qoida 5).
+**Kerak:** `db execute` → qayta `db execute` (no-op) → ustun/indeks/FK ni SQL
+bilan tasdiqlash.
+
+### B2 — To'rt down skript lokal bazada SINALMAGAN (qoida 12)
+
+`20260824120000` (G1), `20260824170000` (G3), `20260825020000` (G4),
+`20260825120000` (Q1) — retrospektiv yozilgan, hech biri yugurtirilmagan.
+Qoida 12 «teskarisi yoziladi **VA sinaladi**» deydi. B1 bilan bir sessiyada
+yopiladi: har biri uchun `DOWN → DOWN (no-op) → UP`.
+
+> 2026-08-24 hodisasidan keyin kassaga tegadigan deploy'ni sinalgan qaytarish
+> yo'lisiz chiqarish — aynan IS-4.
 
 ### B3 — 🔴 `/deploy` VA `deploy-smart.sh` BU DELTA UCHUN ISHLATILMAYDI
 
 `deploy/deploy-smart.sh` → `git fetch origin climart-adoption` + **`git reset --hard`**.
-O'lchandi: `origin/climart-adoption` = `6533f173`, u jonlidagi `62a27024` dan
-**8 commit ORQADA** (F6, F7, F8 aynan o'sha 8 tada). Ya'ni skriptni yurgizish
-**F6/F7/F8 ni produksiyadan o'chirib tashlaydi** — omborchi .exe va joylashtirish
+
+2026-08-26 da qayta o'lchandi: `62a27024` **`origin/climart-adoption` ning
+avlodi EMAS**, farq **8 commit** (F6, F7, F8 aynan o'sha 8 tada). Ya'ni skript
+yurgizilsa **F6/F7/F8 produksiyadan o'chadi** — omborchi .exe va joylashtirish
 dvigateli yo'qoladi.
 
-⇒ **Faqat qo'lda retsept** (F-reja 2.8, 5-bo'limda ochilgan):
+⇒ **Faqat qo'lda retsept** (F-reja 2.8, 6-bo'limda ochilgan):
 `git fetch <mirfayz-url> yacheyka-inventarizatsiya:tmp && git merge --ff-only tmp`.
-`origin` ni ilgarilatish — alohida qaror (Davlatbek bilan kelishiladi;
-F-reja 552–558-qatorlardagi saboq).
+`origin` ni ilgarilatish — alohida qaror (Davlatbek bilan kelishiladi).
 
-### B4 — QAYTARISH (down) skriptlari — qoida 12 · 🟡 QISMAN YOPILDI
+✅ **2026-08-26: bu tuzoq endi PROZA emas, MEXANIK QO'RIQCHI.**
+`deploy/deploy-smart.sh` ga `reset --hard` dan OLDIN orqaga-ketish tekshiruvi
+qo'shildi: `git rev-list --count FETCH_HEAD..HEAD > 0` bo'lsa skript
+**TO'XTAYDI** va yo'qoladigan commitlarni ro'yxat qilib ko'rsatadi. Shu
+repoda haqiqiy holat bilan sinaldi — `LOST=8`, ro'yxatda aynan F6/F7/F8.
+Ongli rollback: `DS_ALLOW_ROLLBACK=1`. Tarixlar bog'lanmagan bo'lsa
+(shallow almashinuv) tekshiruv o'tkazib yuboriladi, lekin JIMGINA emas —
+ogohlantirish bilan. ⚠️ Qo'riqchi VPS'dagi nusxada ishlaydi, ya'ni u
+**deploy bilan birga yetib boradi** — hozircha jonlidagi skriptda YO'Q.
 
-| Migratsiya | Faza | down | Holat |
-|---|---|---|---|
-| `20260824120000_drawer_cash_out_sales_return` | G1 | ✅ | **shu tekshiruvda yozildi** (retrospektiv) |
-| `20260824170000_sales_return_retail_sale` | G3 | ✅ | **shu tekshiruvda yozildi** (retrospektiv) |
-| `20260825020000_retail_sale_position_allocation` | G4 | ✅ | **shu tekshiruvda yozildi** (retrospektiv) |
-| `20260825120000_debt_source_doc` | Q1 | ✅ | **shu tekshiruvda yozildi** (retrospektiv) |
-| `20260825170000_tsd_device` | G5 | ✅ | o'z sessiyasida, lokal bazada sinalgan |
-| `20260825200000_tsd_work_screens` | G6 | ✅ | o'z sessiyasida (lokal sinov B1 bilan birga kutmoqda) |
-| `20260825220000_drawer_cash_in_kind` | A1 | 🟡 | teskarisi A1 HISOBOTI ichida matn bilan yozilgan (`253fe105`), **alohida `.sql` fayl YO'Q** — o'z sessiyasiga qoldirildi |
+### B4 — Jonli VPS HEAD tasdiqlanmagan (Davlatbek reset tuzog'i)
 
-G1/G3 qoida 12 dan OLDIN yozilgan (qoida `902643a9` da kiritilgan) — ular uchun bu
-qarz edi, buzilish emas. **G4 va Q1 esa qoidadan KEYIN** ⇒ haqiqiy buzilish edi.
-Hammasi additiv (yangi ustun/jadval), shuning uchun teskarisi sodda:
-`DROP COLUMN IF EXISTS` / `DROP TABLE IF EXISTS`.
+Kutilishi: `62a27024` (F8 hisoboti). Tekshirilmagan — SSH paroli berilmagan.
+HEAD boshqa bo'lsa butun delta hisobi noto'g'ri.
 
-**Yangi to'rt skript `packages/db/scripts/rollback/` da**, mavjud G5/G6 naqshi
-bo'yicha: buyrug'i fayl boshida, har biri idempotent, va har birida
-**«qaysi ma'lumot yo'qoladi + qaytarishdan oldin nimani eksport qilish kerak»**
-bloki bor (G1 niki pul izi — alohida diqqat).
+### B5 — Jonli holat 2026-08-24 dan beri O'LCHANMAGAN
 
-⚠️ **YANGI SKRIPTLAR LOKAL BAZADA SINALMAGAN** — B1 dagi o'sha to'siq (parol).
-Qoida 12 «teskarisi yoziladi VA sinaladi» deydi ⇒ bu band B1 bilan birga yopiladi:
-har biri uchun DOWN → DOWN (no-op) → UP zanjiri yugurtiriladi.
-
-**2026-08-24 hodisasidan keyin kassaga tegadigan deploy'ni qaytarish yo'lisiz
-chiqarish — aynan IS-4.**
-
-### B5 — Delta endi «G-reja» EMAS: ichida Q1–Q3 va A1 ham bor
-
-37 commit ichida: G1–G6 + **Q1, Q2, Q3** (kassa qarzi undirish reyestri) +
-**A1** (mijozdan avans) + H2 + H5 + yacheyka skriptlari.
-Q1/Q2/Q3/A1 to'rttasi ham «QISMAN — jonli tasdiq kutilmoqda» (qoida 11).
-
-**A1 shu tekshiruv davomida yakunlandi:** kod `8d1f4a01`, hisobot `253fe105`
-(`docs/plans/2026-08-25-kassa-qarzi-undirish-reyestri.md`). Uning O'Z qabul
-mezoni ham **B1 dagi AYNAN o'sha to'siqda turibdi** — «migratsiya lokal dev
-bazada ikki marta xatosiz ❌ PAROL KUTILMOQDA».
-
-⚠️ **Eslatma:** A1 hisoboti deploy branch'i sifatida `kassa-qarzi-q1-q2` @
-`456e53af` ni ko'rsatadi va o'zi ham «Q3 ham, A1 ham unda YO'Q — qayta
-yig'ilishi kerak» deydi. Ya'ni **ikkita raqobatchi deploy yo'li bor**:
-(a) butun `yacheyka-inventarizatsiya` branch'i — G+Q+A birga (bu dossier shuni
-hisoblaydi); (b) G4siz tor branch. Qaysi biri — egasining qarori (7-bo'lim).
-
-### B6 — Ishchi daraxt toza emas (boshqa sessiyaning qoldig'i)
-
-```
- M apps/web/src/components/stores/cell-contents-modal.tsx   (+224/−62)
- M docs/plans/2026-08-23-ombor-restrukturizatsiya.md         (K-reja 10-qoida qatori)
-?? apps/web/src/components/stores/cell-contents-modal.test.tsx
-?? docs/plans/2026-08-25-bolinadigan-tovar-bolak-hisobi.md   (K-reja fayli)
-```
-
-G5 VA G6 hisobotlari ikkalasi ham buni «boshqa sessiyaning qoldig'i» deb qayd
-etgan. Commit qilinmagani uchun **deploy'ga TUSHMAYDI** — lekin 6-bo'limdagi test
-raqamlari SHU daraxtda o'lchangan, ya'ni ular toza HEAD niki emas.
+`docs/ops/jonli-holat.md` reyestri o'sha kungi o'lchov. Deploy'dan OLDIN
+qoida 8 talab qiladi: `cd packages/db && npx tsx scripts/warehouse-state.ts`
+(faqat o'qish). Chiqish kodi 2 bo'lsa TO'XTA.
 
 ---
 
-## 3. 🟠 DEPLOY'NI BLOKLAMAYDI, LEKIN OCHIQ QARZ
+## 4. 🟠 DEPLOY'NI BLOKLAMAYDI, LEKIN OCHIQ QARZ
 
-### D1 — E5: `warehouse-state.ts` deploy'dan keyin YOLG'ON natija beradi
+### ✅ D1 — E5 (`warehouse-state.ts` yolg'on qizil) — **2026-08-26 da YOPILDI**
 
-Qoida 13 ombor/kassaga tegadigan har deploy'dan keyin `warehouse-state.ts` ni
-majburiy qiladi. Lekin `packages/db/scripts/warehouse-state-core.ts:242`:
+Eski holat: `warehouse-state-core.ts` hamon «faqat kaskadning BIRINCHI ombori
+yetadi» modelida edi, G4-2a esa tasdiq-to'sig'ini olib tashlagan ⇒ skript
+deploy'dan keyin har kaskad omborini `needs_approval` deb belgilab, qoida 13
+qo'riqchisini «bo'ri keldi» qilardi.
 
-```ts
-const reachableIds = cascadeConfigured
-  ? new Set(firstCascadeId ? [firstCascadeId] : [])   // ← faqat BIRINCHI ombor
-  : sessionStoreIds;
-```
-
-G4-2a dan keyin POS **hamma** kaskad omboriga o'zi yetadi ⇒ birinchidan keyingi
-har bir ombor `needs_approval` deb belgilanadi, bu esa endi YOLG'ON.
-`__posFrontStore` bayrog'i ham reyestrda (`docs/ops/jonli-holat.md`) yo'q.
-**Bugungi jonli topologiyada zarari kichik** (kaskadda amalda bitta to'la ombor —
-`Taqsimlanmagan`), lekin **H4 (split qayta) dan OLDIN yopilishi shart**, aks holda
-H3 qo'riqchisi «bo'ri keldi» qilib qoladi.
+Tuzatildi: `needs_approval` bosqichi bekor qilindi; `reachable` = kaskaddagi
+HAMMA ombor (BRAK istisno — `resolveAllocStores` bilan bir xil); reyestrga
+`posFront` (`__posFrontStore`) maydoni va ikkita yangi drift qo'shildi;
+«POS ombori kaskad BOSHI bo'lsin» sharti «kaskadda BO'LSIN» ga aylandi.
+Testlar: `warehouse-state-core.test.ts` 24 → **29** (teskari nazorat: eski
+model qaytarilganda 3 test yiqiladi).
 
 ### D2 — G4 2b: yig'ish topshirig'i hamon TAXMINDAN quriladi
 
-`retail-sale.service.ts:3591 createPickingTasksForSale` guruhlashni hamon
+`retail-sale.service.ts#createPickingTasksForSale` guruhlashni hamon
 `product.attributes.__yacheyka` (tovarning UY yacheykasi) prefiksidan qiladi —
-`retail_sale_position_allocations` dan EMAS. Rezerv va `post()` ajratmadan ketadi,
-topshiriq esa taxmindan ⇒ ajratma boshqa omborni ko'rsatgan holatda topshiriq
-NOTO'G'RI omborchiga tushadi. Bu G4 dan OLDIN ham shunday edi (yangi regressiya
-emas), lekin bo'linish holati paydo bo'lgach kuchayadi.
-
-**POS UI («qayerdan olinadi» + kassir o'zgartirishi) ham qurilmagan** —
-`manual` ustuni tayyor turibdi, `apps/web/src/components/pos/` da ajratmaga
-birorta murojaat yo'q (tekshirildi).
+`retail_sale_position_allocations` dan EMAS. Rezerv va `post()` ajratmadan
+ketadi, topshiriq esa taxmindan ⇒ ajratma boshqa omborni ko'rsatgan holatda
+topshiriq NOTO'G'RI omborchiga tushadi. G4 dan OLDIN ham shunday edi (yangi
+regressiya emas), lekin bo'linish holati paydo bo'lgach kuchayadi.
+**POS UI («qayerdan olinadi» + kassir o'zgartirishi) ham qurilmagan.**
 
 ### D3 — `cancel()` ajratma qatorlarini o'chirmaydi
 
-`retailSalePositionAllocation.deleteMany` faqat `post()` va `sendToPicking` da bor,
-`cancel()` da yo'q. Zararsiz, lekin `store` FK RESTRICT ombor o'chirishni bloklashi mumkin.
+`retailSalePositionAllocation.deleteMany` faqat `post()` va `sendToPicking` da.
+Zararsiz, lekin `store` FK RESTRICT ombor o'chirishni bloklashi mumkin.
 
-### D4 — Ikkita test 5 s timeout'da flake beradi (parallel yuklama)
+### D4 — Ikkita test parallel yuklamada flake beradi (5 s timeout)
 
-* `apps/api/src/modules/auth/tsd-device.service.test.ts` — to'liq yugurishda 21 s
-  (timeout), yolg'iz **1394 ms** ✅. Sabab: uchta argon2 hash + `testTimeout: 5000`.
-* `apps/web/src/app/(app)/sotuv/__tests__/chek-comment.test.tsx` — yolg'iz **627 ms** ✅.
-  (G3 hisobotidagi `sales-screen-shift` flake'i bilan bir klass.)
-
-Deploy'ni bloklamaydi, lekin gate'ni tasodifan qizil qiladi. Tuzatish: shu ikki
-faylga `testTimeout` oshirish (alohida kichik ish).
+`auth/tsd-device.service.test.ts` (uchta argon2 hash) va
+`sotuv/__tests__/chek-comment.test.tsx`. 2026-08-26 ning to'liq yugurishida
+IKKALASI HAM yashil chiqdi, lekin sabab yo'qolmagan — `testTimeout` ni
+oshirish kichik alohida ish.
 
 ### D5 — `scripts/guard-baseline.json` dagi `label-grounding.test.ts` qatori
 
-G2 hisobotidagi eslatma kuchda — baseline yozuvi endi PASS bo'lib turibdi
-(bo'sh `visual-captures` korpusi). Kichik tozalash.
+Baseline yozuvi endi PASS bo'lib turibdi (bo'sh `visual-captures` korpusi).
+Kichik tozalash (H6/5-band).
+
+### D6 — 🔴 T1: `packages/db` skriptlari bo'lak reyestrini BILMAYDI (yangi)
+
+`warehouse-split.ts` (H4), `stock-baseline-cleanup.ts` (H5) va
+`warehouse-state.ts` — uchalasida «piece» so'zi NOL marta. `stock_pieces` da
+esa `store_id` + `cell_id` bor. Bu **deployni bloklamaydi** (jadval bo'sh,
+bayroq yoqilmagan), lekin **K-reja jonliga chiqqan kundan boshlab H4 va H5
+uchun BLOKLOVCHI** bo'ladi. To'liq talab va yopish retsepti:
+`docs/plans/2026-08-24-split-kassa-hodisasi.md` → H4 → «T1» bandi.
+
+### D7 — `preflight.mjs` yolg'on anomaliya beradi
+
+«NEXT.md top-entry'larda git'da YO'Q hash'lar: `ea8e779a`» — u commit emas,
+`NEXT.md:486` dagi DB batch id'si. Har sessiyada anomaliya chiqarib qimmat
+session-start-audit workflow'ini uyg'otadi. Heuristika toraytirilsin.
 
 ---
 
-## 4. 🔴 JONLI XULQ O'ZGARISHI — egasi TASDIQLASHI kerak
+## 5. 🔴 JONLI XULQ O'ZGARISHI — egasi TASDIQLASHI kerak
 
 ### X1 — Kassa endi tasdiqsiz KO'P OMBORDAN sotadi (G4-2a)
 
 `assertAvailableCascade` o'chirildi. 400 endi faqat haqiqiy defitsitda va matni
-«tizimdagi hech bir omborda yetarli miqdor yo'q» («bosh omborchi tasdig'i» yo'q).
+«tizimdagi hech bir omborda yetarli miqdor yo'q».
 
-**Bugungi jonli topologiyada amaliy o'zgarish KICHIK** (`docs/ops/jonli-holat.md`,
-2026-08-24 o'lchovi): kaskadda `Taqsimlanmagan` (pp=1, ≈52,5 mln dona) va BO'SH
-`Ombor 02` (pp=2). Ya'ni taqsimot amalda bitta ombordan chiqadi.
+**Bugungi jonli topologiyada amaliy o'zgarish KICHIK:** kaskadda
+`Taqsimlanmagan` (pp=1, ≈52,5 mln dona) va BO'SH `Ombor 02` (pp=2), ya'ni
+taqsimot amalda bitta ombordan chiqadi.
 
-**Ijobiy yon ta'sir:** yacheykasiz ajratmada `cellMode: 'store-only'` ⇒ sotuv endi
-**sanalgan yacheykani buzmaydi** (H5 muammosi). Jonlida qoldiqning ~94 % i
+**Ijobiy yon ta'sir:** yacheykasiz ajratmada `cellMode: 'store-only'` ⇒ sotuv
+endi **sanalgan yacheykani buzmaydi** (H5 muammosi). Jonlida qoldiqning ~94 % i
 yacheykasiz, ya'ni bu ko'pchilik sotuvga tegadi.
 
 ### X2 — «Omborchi» roli tovar kartasidagi ko'chirishni HAQIQATAN ishlata boshlaydi (G6)
 
-`POST /products/:id/cell-move` va `/cell-place` bazaviy talabi `store.update` dan
-`storecell.update` ga tushirildi (TSD foydalanuvchisi kichik omborchi bo'lgani uchun
-majburiy edi). Web'dagi «Переместить» tugmasi ruxsat bilan yashirilmagan ⇒
-**ilgari 403 bergan tugma endi ishlaydi**. Ombor KARTASI (`store.update`) va
-omborlararo ko'chirish YOPIQ qoladi (istisno — hovuz ombori).
+`POST /products/:id/cell-move` va `/cell-place` bazaviy talabi `store.update`
+dan `storecell.update` ga tushirildi. Web'dagi «Переместить» tugmasi ruxsat
+bilan yashirilmagan ⇒ **ilgari 403 bergan tugma endi ishlaydi**. Ombor KARTASI
+va omborlararo ko'chirish YOPIQ qoladi (istisno — hovuz ombori).
+
+### X3 — Bo'linadigan tovar mexanikasi yoqiladi (K1…K6, yangi)
+
+- yangi ruxsat-entity **`piecetracking`** (topup MAJBURIY);
+- birligi «м» bo'lgan **YANGI** tovarda bo'lak bayrog'i **YOQILGAN** keladi
+  (K-Q9) — mavjud 4583 tovarga tegmaydi (K-Q10, qo'lda);
+- yangi **cron 20:00 da** (savdodan KEYIN) kunlik sverka signali — farq yo'q
+  bo'lsa xabar ham yo'q;
+- bayroq yoqilgan tovarda avto-taqsimotning 3-holati (bo'linish) O'CHADI: jami
+  yetsa-yu bir bo'lakda bo'lmasa **400 `no-single-source`** — bu ATAYLAB
+  (mijozga uzluksiz bo'lak kerak), lekin kassir uchun YANGI xulq.
+
+⇒ **K1…K6 ni pilot bilan boshlash SHART** (K6/4): bayroq avval FAQAT kabel
+guruhiga yoqilsin, bir kunda butun «м» katalogiga emas.
 
 ---
 
-## 5. DEPLOY RETSEPTI (qadamma-qadam)
+## 6. DEPLOY RETSEPTI (qadamma-qadam)
 
-> Old shart: B1–B6 yopilgan. `/deploy` slash-buyrug'i va `deploy-smart.sh`
-> **ISHLATILMAYDI** (B3).
+> Old shart: B0–B5 yopilgan. `/deploy` va `deploy-smart.sh` **ISHLATILMAYDI** (B3).
 
-**0. Deploy'dan OLDIN** — `packages/db` ichida `npx tsx scripts/warehouse-state.ts`
-(faqat o'qish). Chiqish kodi 2 bo'lsa TO'XTA. Natija hisobotga ko'chiriladi.
+**0. Push** — `git push mirfayz yacheyka-inventarizatsiya` (B0).
 
-**1. VPS HEAD tekshiruvi:** `git -C /var/www/sherset-v2 rev-parse HEAD` → `62a27024`
-kutiladi. Farq bo'lsa TO'XTA (B2).
+**1. Deploy'dan OLDIN o'lchov** — `packages/db` ichida
+`npx tsx scripts/warehouse-state.ts` (faqat o'qish). Chiqish kodi 2 bo'lsa
+TO'XTA. Natija hisobotga ko'chiriladi.
 
-**2. Kodni olib kelish:**
+**2. VPS HEAD tekshiruvi:** `git -C /var/www/sherset-v2 rev-parse HEAD` →
+`62a27024` kutiladi. Farq bo'lsa TO'XTA (B4).
+
+**3. Kodni olib kelish:**
 `git fetch <mirfayz-url> yacheyka-inventarizatsiya:tmp && git merge --ff-only tmp`
 
-**3. Migratsiyalar — 7 ta, shu TARTIBDA.** Har biri:
-`pnpm exec prisma db execute --file prisma/migrations/<NOM>/migration.sql`
-→ `pnpm exec prisma migrate resolve --applied <NOM>`
+**4. Migratsiyalar — 12 ta, 2-bo'limdagi TARTIBDA.** Oxirida bir marta
+`prisma generate`.
 
-```
-20260824120000_drawer_cash_out_sales_return    (G1)
-20260824170000_sales_return_retail_sale        (G3)
-20260825020000_retail_sale_position_allocation (G4)
-20260825120000_debt_source_doc                 (Q1)
-20260825170000_tsd_device                      (G5)
-20260825200000_tsd_work_screens                (G6)
-20260825220000_drawer_cash_in_kind             (A1)
-```
+**5. Build va restart:** `nohup corepack pnpm build:web` (BUILD_RC poll) →
+`pm2 restart sherset-v2-web` **va** `sherset-v2-api`.
 
-Oxirida BIR MARTA: `pnpm exec prisma generate`
-*(cwd = `packages/db`; `DATABASE_URL` ni `apps/api/.env` dan source qiling.)*
-
-**4. Build va restart:** `nohup corepack pnpm build:web` (BUILD_RC poll) →
-`pm2 restart sherset-v2-web` **va** `sherset-v2-api` (api ham o'zgargan).
-
-**5. 🔴 MAJBURIY — ruxsat topup:** `apps/api` ichida
+**6. 🔴 MAJBURIY — ruxsat topup:** `apps/api` ichida
 `npx tsx src/scripts/topup-role-permissions.ts` → **api yana restart** (perm kesh).
-Yangi entity'lar: `retailcontrol` (G2) + `returnacceptance` (G3) — ikkalasi ham
-`TOPUP_ENTITIES` da turibdi (tekshirildi).
-Keyin follow-up commit: ikkalasini `TOPUP_ENTITIES` dan olib tashlash.
+Yangi entity'lar: **`retailcontrol`** (G2) + **`returnacceptance`** (G3) +
+**`piecetracking`** (K2) — uchalasi ham `TOPUP_ENTITIES` da (tekshirildi).
+Keyin follow-up commit: uchalasini `TOPUP_ENTITIES` dan olib tashlash.
 
-**6. Egasi qo'lda:**
+**7. Egasi qo'lda:**
 
-1. «Omborchi» rolidan **`Ta'minot` (supply)** qatorlarini olib tashlash — shablon
-   o'zgarishi jonli rolga o'z-o'zidan ko'chmaydi (topup faqat QO'SHADI).
+1. «Omborchi» rolidan **`Ta'minot` (supply)** qatorlarini olib tashlash —
+   shablon o'zgarishi jonli rolga o'z-o'zidan ko'chmaydi (topup faqat QO'SHADI).
 2. **BRAK ombori** yaratish, yacheykalarini raqamlash, kartada «BRAK ombori»
-   belgilash, **POS prioritetini BO'SH qoldirish**. Shu qilinmaguncha
-   `/omborchi/vozvrat` dagi «Brak» tugmasi o'chiq turadi (ataylab, test bilan).
-   Yaratilgach `docs/ops/jonli-holat.md` reyestriga qator qo'shiladi — aks holda
-   birinchi brak qabulidan keyin har deploy «yetib bo'lmaydigan qoldiq» deb bloklanadi.
-3. **«Kassa oldidagi ombor» checkbox'i** — 07 ombori jonlida HALI YO'Q (reyestrda
-   faqat `Taqsimlanmagan` / `Ombor 01` / `Ombor 02`). Bu qadam amalda **H4 (split
-   qayta) dan keyin** ma'noga kiradi.
-4. **X2 ni tasdiqlash** — omborchi endi yacheykadan yacheykaga ko'chira oladi.
+   belgilash, **POS prioritetini BO'SH qoldirish**. Yaratilgach
+   `docs/ops/jonli-holat.md` reyestriga qator qo'shiladi.
+3. **«Kassa oldidagi ombor» checkbox'i** — 07 ombori jonlida HALI YO'Q, bu
+   qadam amalda **H4 (split qayta) dan keyin** ma'noga kiradi. Bayroq
+   qo'yilganda reyestrga `"posFront": true` yozilishi SHART — aks holda
+   `warehouse-state.ts` darhol qizil beradi (yangi drift, D1).
+4. **X1, X2, X3 ni tasdiqlash.**
+5. **K pilotining birinchi kuni:** bayroq FAQAT kabel guruhiga.
 
-**7. Uchma-uch smoke (qoida 13 — «sahifa 200» buni ALMASHTIRMAYDI):**
+**8. Uchma-uch smoke (qoida 13 — «sahifa 200» buni ALMASHTIRMAYDI):**
 sinov sotuv (post → tekshir → cancel) + yacheyka sanash + ko'chirish +
-`npx tsx scripts/warehouse-state.ts` (natijasi hisobotga).
-Qo'shimcha zanjirlar:
+`npx tsx scripts/warehouse-state.ts` (natijasi hisobotga). Qo'shimcha zanjirlar:
 
 * **G1** — sinov vozvrat → POS mijoz profilida qaytim → to'lov → expected-cash
   aynan shu summaga kamayadi → ikkinchi to'lov RAD etiladi;
 * **G2** — 2 skladli chek → omborchilar «Tayyor» → kontrol navbati → bitta qator
   o'chirilganda kassir ekranida summa o'zgaradi (SSE) → «To'liq» → post;
 * **G3** — chekdan qabul → yorliq chop → post → kassirda qaytim;
-* **ruxsat** — storekeeper bilan `/omborchi/kontrol` va `/omborchi/vozvrat` → **403**.
+* **G5/G6** — TSD juftlash → PIN → o'z tasklari → `GET /products` **403**;
+* **Q1–Q6** — `apps/api/src/scripts/ops-q6-live-verify.ts` (avval DRY, so'ng `--live`);
+* **A1–A3** — avans qabuli → avansdan to'lash → naqd qaytarish;
+* **K1–K6** — bayrog'i O'CHIQ tovar bilan oddiy sotuv (xulq o'zgarmasin), so'ng
+  pilot tovarida kesim → yorliq → to'lov;
+* **ruxsat** — storekeeper bilan `/omborchi/kontrol`, `/omborchi/vozvrat` va
+  `/omborchi/hal-qilinmagan` → **403**.
 
-**8. Qaytarish yo'li:** kod — `git reset --hard 62a27024` + build + restart.
-Baza — `packages/db/scripts/rollback/*_down.sql`, buyrug'i har faylning boshida.
-Endi **7 tadan 6 tasida** down skript bor (A1 niki o'z sessiyasidan kutilmoqda, B4).
-Qaytarish TARTIBI — migratsiya tartibiga TESKARI:
-
-```
-20260825220000_drawer_cash_in_kind             (A1 — skript YO'Q)
-20260825200000_tsd_work_screens                (G6 — ikki SHART bilan, fayl boshida)
-20260825170000_tsd_device                      (G5)
-20260825120000_debt_source_doc                 (Q1)
-20260825020000_retail_sale_position_allocation (G4)
-20260824170000_sales_return_retail_sale        (G3)
-20260824120000_drawer_cash_out_sales_return    (G1 — PUL izi, avval eksport)
-```
-
-Hammasi additiv migratsiya bo'lgani uchun **kodni qaytarishning o'zi yetadi**
-(eski kod yangi ustunlarni bilmaydi va ular bo'sh turaveradi). Down skriptlar
-faqat baza tuzilmasini ham tozalash kerak bo'lganda yugurtiriladi — va o'shanda
-har faylning «ma'lumot yo'qoladi» bloki AVVAL o'qiladi.
-
----
-
-## 6. Bugungi gate o'lchovi (2026-08-25, `8d1f4a01` + toza bo'lmagan daraxt)
-
-| Gate | Natija |
-|---|---|
-| `turbo typecheck` (api 8G, web, db) | ✅ 4/4 successful |
-| `node scripts/check-lint.mjs` | ✅ 0 error, 1182 warning (siyosat: warning ruxsat) |
-| api vitest | 651 fayl · **9160 passed** / 1 failed / 2 skipped — xato = `tsd-device.service` flake'i (yolg'iz ✅) |
-| web vitest | 326 fayl · **4296 passed** / 1 failed / 26 skipped — xato = `chek-comment` flake'i (yolg'iz ✅) |
-| i18n gate'lar | ✅ (web vitest ichida) |
-| `prisma validate` | ✅ sxema yaroqli |
-| APK | ✅ `app-debug.apk` 7,1 MB mavjud |
+**9. Qaytarish yo'li:** kod — `git reset --hard 62a27024` + build + restart.
+Baza — `packages/db/scripts/rollback/*_down.sql`, 12 → 1 tartibida.
 
 ---
 
 ## 7. Deploy qamrovi — egasining qarori kerak
 
-Branch'da endi uchta ish oqimi aralashgan. Ikki yo'l bor:
+### A yo'li — butun branch (G + Q/A + K birga)
 
-### A yo'li — butun branch (G1–G6 + Q1–Q3 + A1) · **tavsiya etiladi**
+* Delta `62a27024..HEAD`, 12 migratsiya, bitta build, bitta smoke.
+* **Ustunligi:** branch chiziqli — ff-merge ishlaydi, kod aynan test qilingan
+  holida boradi.
+* **Kamchiligi:** 21 faza bir kechada jonliga chiqadi. Nosozlikda «qaysi biri
+  buzdi?» savoli juda qimmat (IS-3).
 
-* Delta `62a27024..HEAD`, 7 migratsiya, bitta build, bitta smoke.
-* **Ustunligi:** branch chiziqli — ff-merge ishlaydi, hech nima cherry-pick
-  qilinmaydi, kod aynan test qilingan holida boradi.
-* **Kamchiligi:** bir deployda uchta yangi oqim jonliga chiqadi; nosozlikda
-  «qaysi biri buzdi?» degan savol qimmatlashadi.
+### B yo'li — tor branch (`kassa-qarzi-q1-q2` @ `456e53af`)
 
-### B yo'li — tor branch (`kassa-qarzi-q1-q2` @ `456e53af`, G4siz)
-
-* Q2 sessiyasi tayyorlagan, **lekin unda Q3 ham, A1 ham, G5/G6 ham YO'Q**
-  ⇒ qayta yig'ish kerak (cherry-pick).
-* **Ustunligi:** G4-2a (kassa taqsimoti) jonliga chiqmaydi ⇒ X1 xavfi qoladi.
+* Q2 sessiyasi tayyorlagan, lekin unda Q3–Q6, A1–A3, G5/G6 va K1–K6 YO'Q
+  ⇒ qayta yig'ish kerak.
 * **Kamchiligi:** qayta yig'ilgan branch **HECH QACHON to'liq test qilinmagan
-  kombinatsiya** bo'ladi — bu 2026-08-24 hodisasining IS-3 klassi
-  («xavfsiz yoqish» xulosasi noto'g'ri bazaga qurilgan).
+  kombinatsiya** bo'ladi — bu ham IS-3. Eng yomon variant.
 
-**Tavsiya — A yo'li**, chunki:
+### C yo'li — BOSQICHMA-BOSQICH, oraliq commit'largacha (yangi, 2026-08-26)
 
-1. G4-2a ning bugungi jonli topologiyada amaliy xavfi kichik (4-bo'lim X1:
-   kaskadda amalda bitta to'la ombor bor);
-2. cherry-pick qilingan, sinalmagan kombinatsiya bir deploydan ko'ra xavfliroq;
-3. G4-2a `cellMode: 'store-only'` bilan H5 muammosini TUZATADI — ya'ni uni
-   ushlab turishning o'z narxi bor (sanash ishi sotuvlardan buzilaverad).
+Branch CHIZIQLI, ya'ni uni bo'lish uchun cherry-pick KERAK EMAS — har kecha
+`merge --ff-only <oraliq commit>` bilan AYNAN test qilingan nuqtaga to'xtaladi:
 
-Agar egasi baribir G4 ni ushlab turishni istasa — u alohida faza sifatida
-QAYTARIB olinishi kerak (kod darajasida), cherry-pick bilan emas.
+| Kecha | To'xtash nuqtasi | Nima chiqadi | Migratsiya |
+|---|---|---|---|
+| 1 | `61780120` | G1–G6 + Q1–Q3 + H2/H5 | 1, 2, 3, 4, 5, 6 |
+| 2 | `cbc14723` | A1–A3 (avans oqimi) | 7 |
+| 3 | HEAD | Q4–Q6 + K1–K6 + E5 | 8, 9, 10, 11, 12 |
+
+⚠️ **Halol qayd:** branch tartibi Q va K fazalarini ARALASHTIRGAN (Q4 ↔ K2,
+Q5 ↔ K3, Q6 ↔ K4), shuning uchun 3-kecha ikkala oqimni birga olib keladi.
+Uni ham ajratish kerak bo'lsa branch qayta tartiblanishi (rebase) shart — bu
+esa «test qilingan kombinatsiya» kafolatini yo'qotadi, ya'ni B yo'lining
+kamchiligini qaytaradi.
+
+**Tavsiya — C yo'li**, chunki 21 fazani bitta oynada tekshirib bo'lmaydi va
+2026-08-24 hodisasining butun sabog'i shu. C imkonsiz bo'lsa — A (B emas).

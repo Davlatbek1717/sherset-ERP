@@ -331,6 +331,43 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-08-26b (DEPLOY-TAYYORLIK AUDITI — F/G/H rejalari · 69 commit · 12 migratsiya).**
+> Dossier: `docs/ops/2026-08-25-deploy-dossieri.md` (2026-08-26 da QAYTA YOZILDI).
+>
+> **Nima o'lchandi (HEAD `bb71be5c`, o'z yugurishim):** typecheck 10/10 ·
+> lint 0 error · api **684 fayl / 9907 passed / 0 failed** · web **339 fayl /
+> 4427 passed / 0 failed**. Ya'ni **kod sog'lom, muammo kodda emas.**
+>
+> **Shu sessiyada tuzatilgani:**
+> 1. **Qoida 14 qarzi** — 3 rollback `.sql` + deploy dossierining O'ZI git'da
+>    YO'Q edi (`??`): deploy'ga tushmasdi va yo'qolardi (IS-6 naqshi) → `17dc7f43`.
+> 2. **E5 / dossier D1 YOPILDI** — `warehouse-state-core.ts` hamon G4-2a gacha
+>    bo'lgan modelda edi (`needs_approval` = «kaskadda bor, birinchi emas»), ya'ni
+>    qoida 13 majburiy qilgan skript deploy'dan keyin YOLG'ON QIZIL berardi.
+>    Endi `reachable` = kaskaddagi HAMMASI (BRAK istisno), reyestrda `posFront`
+>    (`__posFrontStore`), 2 ta yangi drift. Testlar 24 → **29** (teskari nazorat:
+>    eski model qaytarilsa 3 test yiqiladi).
+> 3. **B3 tuzog'i mexanik qo'riqchiga aylandi** — `deploy/deploy-smart.sh` endi
+>    `reset --hard` HEAD ni ORQAGA suradigan bo'lsa TO'XTAYDI va yo'qoladigan
+>    commitlarni ro'yxat qilib ko'rsatadi (`DS_ALLOW_ROLLBACK=1` — ongli rollback).
+>    Haqiqiy holatda sinaldi: `LOST=8`, ro'yxatda aynan F6/F7/F8.
+> 4. **T1 (yangi to'siq) yozildi** — `packages/db` ning uchala jonli-ma'lumot
+>    skripti bo'lak reyestrini BILMAYDI (o'lchandi: «piece» so'zi nol marta),
+>    holbuki `stock_pieces` da `store_id`+`cell_id` bor. K-reja jonliga chiqqan
+>    kundan boshlab bu **H4 va H5 uchun BLOKLOVCHI**. Manzil: hodisa rejasi → H4 → «T1».
+>
+> **🔴 DEPLOY'GACHA QOLGAN TO'SIQLAR (dossier 3-bo'limi):**
+> **B0 — 33 commit `mirfayz` remote'ga PUSH QILINMAGAN** (deploy manbasi aynan o'sha) ·
+> **B1 — 2 migratsiya lokal bazada HECH QACHON yugurtirilmagan** (G6
+> `…tsd_work_screens`, Q4 `…sale_debt_term`) · **B2 — 4 down skript sinalmagan**
+> (G1/G3/G4/Q1) · **B4 — VPS HEAD tasdiqlanmagan** · **B5 — jonli holat
+> 2026-08-24 dan beri o'lchanmagan**. B1/B2 uchun `sherset_v2_dev` paroli kerak.
+>
+> **🔴 ENG KATTA XAVF — HAJM, texnika emas:** 21 faza (G1–G6, Q1–Q6, A1–A3,
+> K1–K6, H2, H5) jonlida bir marta ham tekshirilmasdan bir-birining ustiga
+> qurildi — qoida 11 amalda buzilgan. Dossier 7-bo'limida **C yo'li** (uch
+> kechaga bo'lib chiqarish; branch chiziqli, ya'ni cherry-pick KERAK EMAS).
+
 > **🕒 2026-08-26a (KASSA QARZI → UNDIRISH REYESTRI + KASSADA AVANS — Q1…Q6 va A1…A3;
 > 🔴 **KOD TAYYOR, DEPLOY QILINMAGAN, JONLI ISBOT YO'Q**) — reja:
 > `docs/plans/2026-08-25-kassa-qarzi-undirish-reyestri.md`.**

@@ -16,6 +16,20 @@
  * `retail-stock-cascade.ts` bilan AYNAN bir xil bo'lishi SHART (packages/db
  * app qatlamiga qaray olmaydi — `warehouse-split-core.ts` dagi cost-basis
  * takrori bilan bir sabab). Birini o'zgartirsangiz ikkinchisini ham.
+ *
+ * 🔴 E5 (2026-08-26) — YETUVCHANLIK MODELI G4-2a DAN KEYIN QAYTA YOZILDI.
+ * H2 yozilganda kassa FAQAT kaskadning BIRINCHI omboridan avtomatik ayirardi,
+ * qolganlari esa «bosh omborchi tasdig'i kerak» (`needs_approval`) edi.
+ * G4-2a (`b4c27d24`) o'sha tasdiq-to'sig'ini OLIB TASHLADI: endi
+ * `retail-allocation.ts#resolveAllocStores` prioriteti bor va BRAK bo'lmagan
+ * HAMMA omborni manba deb oladi. Ya'ni bu yerdagi eski model deploy'dan keyin
+ * YOLG'ON QIZIL berardi (dossier D1) — qoida 13 esa shu skriptni har
+ * ombor/kassa deploy'ida majburiy qiladi, ya'ni qo'riqchi «bo'ri keldi» bo'lib
+ * qolardi. Endi model manbaga qaytarildi:
+ *   reachable      = kaskadda BOR (o'rni muhim emas), BRAK emas
+ *   outside_cascade= `__posPriority` yo'q ⇒ POS hech qachon yeta olmaydi
+ *   brak           = `__brakStore` ⇒ ATAYLAB yopiq, xavf emas
+ * `needs_approval` bosqichi BEKOR QILINDI (tasdiq oqimi endi umuman yo'q).
  */
 
 import {
@@ -89,17 +103,26 @@ function readBoolFlag(attributes: unknown, key: string): boolean {
 export const BRAK_STORE_KEY = '__brakStore';
 /** F7 hovuz-ombori («Taqsimlanmagan»). */
 export const UNASSIGNED_SOURCE_KEY = '__unassignedSource';
+/**
+ * G4 «Kassa oldidagi ombor» (07) — E5/(b). Yetuvchanlikka TA'SIR QILMAYDI
+ * (u kaskadda turishi bilan yetadi), lekin TAQSIMOT tartibini o'zgartiradi:
+ * yolg'iz qoplasa BIRINCHI, bo'linishda ENG OXIRGI. Bayroq noto'g'ri omborga
+ * qo'yilsa kassa oldidagi ombor buyurtmalar bilan bo'shab qoladi — shuning
+ * uchun u reyestrda yozilib, drift sifatida tekshiriladi.
+ */
+export const POS_FRONT_STORE_KEY = '__posFrontStore';
 
 // ---------------------------------------------------------------------------
 // Hisobot shakli
 // ---------------------------------------------------------------------------
 
 export type ReachStatus =
-  /** POS shu ombordan avtomatik ayiradi (kaskadning BIRINCHI ombori). */
+  /**
+   * POS shu ombordan AVTOMATIK ayiradi. G4-2a dan keyin bu kaskadning
+   * HAMMA ombori (ilgari faqat birinchisi edi) — `resolveAllocStores`.
+   */
   | 'reachable'
-  /** Kaskadda bor, lekin birinchi emas ⇒ bosh omborchi tasdig'i (G4) kerak — G4 hali YO'Q. */
-  | 'needs_approval'
-  /** Kaskadda umuman yo'q ⇒ POS hech qachon yeta olmaydi. */
+  /** Kaskadda umuman yo'q (`__posPriority` yo'q) ⇒ POS hech qachon yeta olmaydi. */
   | 'outside_cascade'
   /** BRAK ombori — ataylab yetib bo'lmaydi, xavf EMAS. */
   | 'brak';
@@ -113,6 +136,8 @@ export interface StoreState {
   posPriority: number | null;
   isBrak: boolean;
   isUnassignedSource: boolean;
+  /** G4 `__posFrontStore` — «kassa oldidagi ombor» (taqsimot tartibi). */
+  isPosFront: boolean;
   cells: number;
   cellsWithoutZone: number;
   zones: number;
@@ -166,6 +191,8 @@ export interface RegistryStore {
   posPriority?: number | null;
   brak?: boolean;
   unassignedSource?: boolean;
+  /** G4 `__posFrontStore` (E5/b). Berilmasa tekshirilmaydi. */
+  posFront?: boolean;
 }
 
 export interface Registry {
@@ -226,22 +253,34 @@ export function buildWarehouseState(input: WarehouseStateInput): WarehouseStateR
     else cellsByStore.set(c.storeId, [c]);
   }
 
-  // --- kaskad tartibi (apps/api `orderCascadeStores` bilan bir xil) ---
+  // --- kaskad tartibi (apps/api `resolveAllocStores` bilan bir xil) ---
+  // 🔴 BRAK ombori kaskaddan CHIQARILADI — `resolveAllocStores` da ham aynan
+  // shunday (`!s.isBrak`). Busiz brak omboriga tasodifan prioritet qo'yilsa u
+  // bu yerda kaskad BOSHI bo'lib ko'rinardi, apps/api esa uni manba deb
+  // olmasdi — ikki model ikki xil haqiqat aytardi.
   const cascade = input.stores
-    .map((s) => ({ id: s.id, name: s.name, posPriority: readPosPriority(s.attributes) }))
-    .filter((s): s is { id: string; name: string; posPriority: number } => s.posPriority !== null)
-    .sort((a, b) => a.posPriority - b.posPriority || a.name.localeCompare(b.name));
+    .map((s) => ({
+      id: s.id,
+      name: s.name,
+      posPriority: readPosPriority(s.attributes),
+      isBrak: readBoolFlag(s.attributes, BRAK_STORE_KEY),
+    }))
+    .filter(
+      (s): s is { id: string; name: string; posPriority: number; isBrak: boolean } =>
+        s.posPriority !== null && !s.isBrak,
+    )
+    .sort((a, b) => a.posPriority - b.posPriority || a.name.localeCompare(b.name))
+    .map(({ id, name, posPriority }) => ({ id, name, posPriority }));
   const cascadeConfigured = cascade.length > 0;
   const cascadeIds = new Set(cascade.map((s) => s.id));
-  const firstCascadeId = cascade[0]?.id ?? null;
 
-  // Kaskad sozlanmagan bo'lsa POS eski yo'l bilan — smena ombori (F6 zaxira yo'li).
+  // E5 — POS kaskadning HAMMA omboriga o'zi yetadi (G4-2a: tasdiq-to'sig'i
+  // olib tashlandi). Kaskad sozlanmagan bo'lsa eski zaxira yo'l: smena ombori
+  // (F6 `resolveAllocStores` ning `fallbackStoreId` shoxi).
   const sessionStoreIds = new Set(
     input.openSessions.filter((s) => s.sessions > 0).map((s) => s.storeId),
   );
-  const reachableIds = cascadeConfigured
-    ? new Set(firstCascadeId ? [firstCascadeId] : [])
-    : sessionStoreIds;
+  const reachableIds = cascadeConfigured ? cascadeIds : sessionStoreIds;
 
   const stores: StoreState[] = input.stores.map((s) => {
     const cells = cellsByStore.get(s.id) ?? [];
@@ -253,9 +292,7 @@ export function buildWarehouseState(input: WarehouseStateInput): WarehouseStateR
       ? 'brak'
       : reachableIds.has(s.id)
         ? 'reachable'
-        : cascadeIds.has(s.id)
-          ? 'needs_approval'
-          : 'outside_cascade';
+        : 'outside_cascade';
     return {
       id: s.id,
       name: s.name,
@@ -263,6 +300,7 @@ export function buildWarehouseState(input: WarehouseStateInput): WarehouseStateR
       posPriority: readPosPriority(s.attributes),
       isBrak,
       isUnassignedSource: readBoolFlag(s.attributes, UNASSIGNED_SOURCE_KEY),
+      isPosFront: readBoolFlag(s.attributes, POS_FRONT_STORE_KEY),
       cells: cells.length,
       cellsWithoutZone: cells.filter((c) => c.zoneId === null).length,
       zones: zones.size,
@@ -379,6 +417,34 @@ export function diffAgainstRegistry(report: WarehouseStateReport, registry: Regi
           `kutilgan ${expected.unassignedSource}, jonlida ${actual.isUnassignedSource}`,
       });
     }
+    // E5/(b) — «Kassa oldidagi ombor» (07). Taqsimot tartibini belgilaydi:
+    // bayroq yo'qolsa 07 buyurtmalarda BIRINCHI bo'lib bo'shab qoladi
+    // (G4-2a hisobotidagi «Jonli sozlash» 1-bandi), noto'g'ri omborda
+    // bo'lsa esa oddiy ombor kassa oldidagidek ishlaydi.
+    if (expected.posFront !== undefined && actual.isPosFront !== expected.posFront) {
+      drifts.push({
+        code: 'kassa-oldidagi-ombor',
+        severity: 'xato',
+        message:
+          `«${expected.name}» «Kassa oldidagi ombor» (__posFrontStore) belgisi: ` +
+          `kutilgan ${expected.posFront}, jonlida ${actual.isPosFront}`,
+      });
+    }
+  }
+
+  // Reyestrda umuman ko'rsatilmagan, lekin jonlida YOQILGAN bayroq — bu
+  // taqsimot tartibini jimgina o'zgartiradi, shuning uchun ko'rinishi shart.
+  const declaredPosFront = new Set(
+    registry.stores.filter((s) => s.posFront === true).map((s) => s.name),
+  );
+  for (const s of report.stores) {
+    if (s.isPosFront && !declaredPosFront.has(s.name)) {
+      drifts.push({
+        code: 'kassa-oldidagi-ombor-reyestrda-yoq',
+        severity: 'xato',
+        message: `«${s.name}» jonlida «Kassa oldidagi ombor» deb belgilangan, reyestrda esa yoq (qoida 14: reyestrni yangilang yoki bayroqni oching)`,
+      });
+    }
   }
 
   const known = new Set(registry.stores.map((s) => s.name));
@@ -407,12 +473,17 @@ export function diffAgainstRegistry(report: WarehouseStateReport, registry: Regi
       message: `Reyestrdagi POS smena ombori «${registry.posSessionStore}» jonlida yoq`,
     });
   } else if (posStore.reach !== 'reachable') {
+    // E5 — shart YUMSHATILMADI, QAYTA TA'RIFLANDI. G4-2a gacha «kaskad boshi
+    // bo'lmasa» xato edi; endi POS kaskadning hammasiga yetadi, ya'ni haqiqiy
+    // xato — smena ombori kaskadda UMUMAN bo'lmasligi (yoki BRAK bo'lishi):
+    // o'shanda o'sha ombordagi qoldiq hech qachon sotilmaydi va bu 06:46
+    // hodisasining aynan shakli.
     drifts.push({
       code: 'pos-ombori-yetib-bolmaydi',
       severity: 'xato',
       message:
-        `POS smena ombori «${posStore.name}» kaskadning BIRINCHI ombori EMAS ` +
-        '(06:46 hodisasining aynan shakli)',
+        `POS smena ombori «${posStore.name}» POS kaskadida YOQ ` +
+        `(reach=${posStore.reach}) — undagi qoldiq sotilmaydi (06:46 hodisasining shakli)`,
     });
   }
   for (const s of report.stores) {
@@ -431,12 +502,7 @@ export function diffAgainstRegistry(report: WarehouseStateReport, registry: Regi
       drifts.push({
         code: 'yetib-bolmaydigan-qoldiq',
         severity: 'xato',
-        message:
-          `«${u.storeName}» da ${u.qty} dona qoldiq bor, lekin POS unga yeta olmaydi (` +
-          (u.reach === 'needs_approval'
-            ? 'kaskadda bor, birinchi emas — G4 tasdigi kerak, G4 hali YOQ'
-            : 'kaskadda umuman yoq') +
-          ')',
+        message: `«${u.storeName}» da ${u.qty} dona qoldiq bor, lekin POS unga yeta olmaydi (kaskadda umuman yoq — omborga \`__posPriority\` qo'ying yoki qoldiqni ko'chiring)`,
       });
     }
   }
