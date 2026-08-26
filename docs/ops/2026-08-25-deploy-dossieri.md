@@ -18,9 +18,9 @@
 |---|---|
 | **Delta** | `62a27024..HEAD` — **69 commit** |
 | **Migratsiya** | **12 ta** (2-bo'limdagi TARTIB majburiy) |
-| **Push holati** | 🔴 **33 commit `mirfayz` remote'ga PUSH QILINMAGAN** — deploy manbasi o'sha remote, ya'ni hozir deploy qilinsa A1–A3, Q4–Q6, K1–K6 SERVERGA YETIB BORMAYDI |
+| **Push holati** | ✅ **2026-08-26 da push qilindi** (`61780120..9f05c712`). Ilgari 33 commit qolib ketgan edi — A1–A3, Q4–Q6, K1–K6 serverga yetib bormasdi |
 | **Texnik gate (HEAD'da o'lchandi)** | ✅ typecheck 10/10 · ✅ lint 0 error / 1272 warning · ✅ api **684 fayl / 9907 passed / 0 failed** · ✅ web **339 fayl / 4427 passed / 0 failed** (i18n gate'lar ichida) |
-| **Bloklovchi kamchilik** | **6 ta** (3-bo'lim) — hech biri KOD emas |
+| **Bloklovchi kamchilik** | **4 ta ochiq** (B1, B2, B4, B5) — B0 va B3 2026-08-26 da yopildi; hech biri KOD emas |
 | **Jonli xulq o'zgaradimi** | **HA, uch joyda** (5-bo'lim) |
 
 **Delta ichidagi ish oqimlari — UCHTA, hammasi «QISMAN»:**
@@ -77,16 +77,17 @@ yuritiladi, va o'shanda har faylning «ma'lumot yo'qoladi» bloki AVVAL o'qiladi
 
 ## 3. 🔴 DEPLOY'DAN OLDIN YOPILISHI SHART
 
-### B0 — PUSH (yangi, 2026-08-26 · eng birinchi qadam)
+### ✅ B0 — PUSH · **BAJARILDI 2026-08-26**
 
-`mirfayz/yacheyka-inventarizatsiya` = `61780120` (G6), HEAD esa undan **33
-commit** oldinda. Deploy retsepti aynan shu remote'dan `fetch` qiladi ⇒ push
-qilinmasa server ESKI kodni oladi. Eng yomoni: migratsiyalar 12 tasi ham
-berilgan bo'lib, ularni ishlatadigan KOD yo'q bo'lib qoladi.
+Muammo: `mirfayz/yacheyka-inventarizatsiya` = `61780120` (G6), HEAD esa undan
+**33 commit** oldinda edi. Deploy retsepti aynan shu remote'dan `fetch` qiladi
+⇒ push qilinmasa server ESKI kodni olardi, eng yomoni — 12 migratsiya berilib,
+ularni ishlatadigan KOD yo'q bo'lib qolardi.
 
     git push mirfayz yacheyka-inventarizatsiya
+    → 61780120..9f05c712  (pre-push: typecheck ✅ · guard ✅ · lint ✅)
 
-Pre-push gate: typecheck + guard + lint (hammasi HEAD'da yashil, 1-bo'lim).
+Endi remote HEAD = lokal HEAD. **Keyingi commit'dan keyin QAYTA push kerak.**
 
 ### B1 — Ikki migratsiya lokal dev bazada YUGURTIRILMAGAN (qoida 7)
 

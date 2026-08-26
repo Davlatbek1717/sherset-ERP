@@ -356,8 +356,10 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 >    holbuki `stock_pieces` da `store_id`+`cell_id` bor. K-reja jonliga chiqqan
 >    kundan boshlab bu **H4 va H5 uchun BLOKLOVCHI**. Manzil: hodisa rejasi → H4 → «T1».
 >
+> **✅ B0 (push) va B3 (deploy qo'riqchisi) shu sessiyada YOPILDI.**
+> Push: `61780120..9f05c712` — endi remote HEAD = lokal HEAD.
+>
 > **🔴 DEPLOY'GACHA QOLGAN TO'SIQLAR (dossier 3-bo'limi):**
-> **B0 — 33 commit `mirfayz` remote'ga PUSH QILINMAGAN** (deploy manbasi aynan o'sha) ·
 > **B1 — 2 migratsiya lokal bazada HECH QACHON yugurtirilmagan** (G6
 > `…tsd_work_screens`, Q4 `…sale_debt_term`) · **B2 — 4 down skript sinalmagan**
 > (G1/G3/G4/Q1) · **B4 — VPS HEAD tasdiqlanmagan** · **B5 — jonli holat
