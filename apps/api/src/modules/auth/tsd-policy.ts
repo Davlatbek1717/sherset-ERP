@@ -54,6 +54,18 @@ export const TSD_ALLOWED: readonly Rule[] = [
     exact: true,
     why: 'qatorda yetishmovchilikni belgilash',
   },
+  // K4 — bo'linadigan tovar (kabel/sim/shlang) KESIMI. Terminalning o'z ishi:
+  // omborchi javonda turib `BLK-` yorlig'ini skanerlaydi va kesimni yozadi.
+  // Javobda NARX YO'Q (bo'lakda narx tushunchasi umuman yo'q) va QOLDIQQA
+  // TEGMAYDI — kesim stok-neytral (K-reja 2-bo'lim). Reyestrni ERKIN
+  // tahrirlash (`/stock-pieces`) TSD'ga OCHIQ EMAS: u `piecetracking`
+  // ruxsatini talab qiladi va kichik omborchida u YO'Q (K-Q9).
+  {
+    prefix: '/restock-tasks/:id/lines/:lineId/cut',
+    methods: ['POST'],
+    exact: true,
+    why: "bo'linadigan tovar kesimini yozish",
+  },
   // 🔴 `POST /restock-tasks/from-sales-return` ATAYLAB YO'Q: u vozvratdan
   // topshiriq OCHADI (kassir/katta omborchi ishi), TSD esa topshiriqni
   // BAJARADI. `picking-sheets` ham yo'q — u chop etish yo'li (kassa qobig'i).

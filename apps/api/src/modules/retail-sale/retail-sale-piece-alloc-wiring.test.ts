@@ -85,6 +85,13 @@ function makeService(client: unknown, stock: ReturnType<typeof makeStockStub>) {
 function makePostHarness(opts: { pieceTracked: boolean }) {
   const tx = {
     stockByCell: { findMany: vi.fn().mockResolvedValue([]) },
+    // K4 — bayrog'i YOQILGAN tovarda `post()` bo'lak reyestrini ham yopadi
+    // (mijozga ketgan bo'lak `sold` bo'ladi). Bu dunyoda reyestr BO'SH, ya'ni
+    // K3 ning o'lchovlari o'zgarmaydi.
+    stockPiece: {
+      findMany: vi.fn().mockResolvedValue([]),
+      updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+    },
     retailSalePositionAllocation: {
       findMany: vi.fn().mockResolvedValue([]),
       deleteMany: vi.fn().mockResolvedValue({ count: 0 }),

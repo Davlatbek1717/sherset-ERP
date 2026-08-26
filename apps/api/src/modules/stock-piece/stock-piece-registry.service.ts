@@ -5,6 +5,7 @@ import { compareDecimals } from '../shared/decimal.js';
 import { PIECE_STATUS, isPieceLabel } from './stock-piece-core.js';
 import {
   MAX_CREATE_COUNT,
+  MAX_LABEL_RETRIES,
   type RegistryView,
   buildRegistryView,
   nextPieceSeq,
@@ -81,9 +82,6 @@ export interface RegistryResponse {
   /** Doiradagi yacheykalar (ko'chirish tanlovi uchun). */
   cells: Array<{ id: string; name: string }>;
 }
-
-/** Yorliq poygasida nechta marta qayta urinamiz (`analitika/order.service` naqshi). */
-const MAX_LABEL_RETRIES = 5;
 
 @Injectable()
 export class StockPieceRegistryService {

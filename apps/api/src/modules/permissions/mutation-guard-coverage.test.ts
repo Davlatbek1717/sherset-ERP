@@ -274,6 +274,8 @@ const INTENTIONALLY_OPEN: Record<string, string> = {
   'RestockTaskController#confirmScan': 'DEFER Q10 — omborchi ekrani, mos entity-slug yo`q',
   'RestockTaskController#setShortage':
     'G6 — qator tasdiqlash bilan BIR sirt (yuqoridagi ikkisi kabi); chek tarkibini o`zgartirmaydi, faqat XABAR beradi',
+  'RestockTaskController#cutPiece':
+    'K4 — qator tasdiqlash bilan BIR sirt; QOLDIQQA tegmaydi (kesim stok-neytral: 250 -> 180 + 70), reyestrni ERKIN tahrirlash esa `piecetracking` da qoladi',
 };
 
 function stripComments(src: string): string {

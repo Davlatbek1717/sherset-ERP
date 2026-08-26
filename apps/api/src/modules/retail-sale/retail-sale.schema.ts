@@ -59,6 +59,20 @@ export const RetailSalePositionInputSchema = z.object({
   quantity: z.coerce.string().regex(/^\d+(\.\d{1,6})?$/, 'quantity must be a positive decimal'),
   priceMinor: z.coerce.string().regex(/^\d+$/, 'priceMinor must be a non-negative integer'),
   discount: discountPercent.default('0'),
+  /**
+   * K4 — KASSIRNING mijoz bilan kelishgan bo'lak tarkibi: `['150','30']`.
+   *
+   * Bo'linadigan tovarda (kabel/sim/shlang) mijozga 180 m uzluksiz kerak
+   * bo'lsa-yu eng uzuni 150 bo'lsa, kassir mijoz bilan kelishadi va tarkibni
+   * BELGILAYDI (K-Q5: «tizim o'zi bo'lmaydi»). K3 uni faqat SAVATDA saqlardi,
+   * serverga yubormasdi — omborchi kelishuvni ko'rmasdi (K3 hisobotining
+   * «K4 uchun ASOSIY qarz» bandi).
+   *
+   * Miqdorga TA'SIR QILMAYDI: qator baribir 180 m bo'lib qoladi — egasining
+   * 2026-08-25 dagi K-S3 qarori bo'yicha chekda BITTA qator, tarkib esa
+   * izoh. Ixtiyoriy; oddiy tovarda umuman yuborilmaydi.
+   */
+  pieceLengths: z.array(z.string().trim().min(1).max(32)).max(20).optional(),
 });
 export type RetailSalePositionInput = z.infer<typeof RetailSalePositionInputSchema>;
 

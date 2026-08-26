@@ -20,10 +20,28 @@ const PRODUCT = {
   attributes: { __yacheyka: '02-03-01-04' },
 };
 
-function makePrisma(over: { products?: unknown[] } = {}) {
+function makePrisma(over: { products?: unknown[]; piece?: unknown } = {}) {
   const findMany = vi.fn().mockResolvedValue(over.products ?? [PRODUCT]);
+  // K4 — bo'lak shoxi (K1 da `supported: false` edi, endi bo'lak topiladi).
+  const pieceFindFirst = vi.fn().mockResolvedValue(
+    over.piece === undefined
+      ? {
+          id: 'piece-1',
+          label: 'BLK-000123',
+          length: { toString: () => '68' },
+          whole: false,
+          status: 'active',
+          assortmentId: 'p1',
+          storeId: 's1',
+          store: { name: 'Ombor 02' },
+          cell: { name: '02-03-01-04' },
+          reservedPositionId: null,
+        }
+      : over.piece,
+  );
   const client = {
-    product: { findMany },
+    product: { findMany, findFirst: vi.fn().mockResolvedValue({ id: 'p1', name: 'Kabel 2x1.5' }) },
+    stockPiece: { findFirst: pieceFindFirst },
     stock: {
       findMany: vi.fn().mockResolvedValue([{ assortmentId: 'p1', qty: 180 }]),
     },
@@ -40,7 +58,7 @@ function makePrisma(over: { products?: unknown[] } = {}) {
       ]),
     },
   };
-  return { prisma: { client } as never, findMany, client };
+  return { prisma: { client } as never, findMany, pieceFindFirst, client };
 }
 
 describe('TsdService.scan — narxsizlik', () => {
@@ -89,11 +107,36 @@ describe('TsdService.scan — natija shakli', () => {
     expect(findMany).not.toHaveBeenCalled();
   });
 
-  it('bo`lak kodi (K-reja) — `supported: false`, tovar tanlovi OCHILMAYDI', async () => {
+  it('bo`lak kodi (K4) — BO`LAK topiladi, tovar tanlovi OCHILMAYDI', async () => {
+    // K1–K3 davrida bu yerda `supported: false` turardi (bo'lakni ochadigan
+    // ekran yo'q edi). K4 kesim oqimini qurdi ⇒ shox to'ldirildi. O'zgarmagan
+    // qism — TOVAR qidiruvi umuman ishga tushmasligi (K-reja 7.3).
     const { prisma, findMany } = makePrisma();
     const out = await new TsdService(prisma).scan('acc-1', { code: 'BLK-000123' });
-    expect(out).toMatchObject({ kind: 'piece', piece: { supported: false } });
+    expect(out).toMatchObject({
+      kind: 'piece',
+      piece: { supported: true, found: true, label: 'BLK-000123', length: '68' },
+      products: [],
+    });
     expect(findMany).not.toHaveBeenCalled();
+  });
+
+  it('topilmagan bo`lak — `found: false` (jimgina boshqa tovar ochilmaydi)', async () => {
+    const { prisma, findMany } = makePrisma({ piece: null });
+    const out = await new TsdService(prisma).scan('acc-1', { code: 'BLK-999999' });
+    expect(out).toMatchObject({ kind: 'piece', piece: { supported: true, found: false } });
+    expect(findMany).not.toHaveBeenCalled();
+  });
+
+  it('bo`lak javobida NARX maydoni YO`Q', async () => {
+    const { prisma } = makePrisma();
+    const out = (await new TsdService(prisma).scan('acc-1', { code: 'BLK-000123' })) as {
+      piece: Record<string, unknown>;
+    };
+    const keys = JSON.stringify(out.piece).toLowerCase();
+    for (const forbidden of ['price', 'narx', 'cost', 'buy']) {
+      expect(keys).not.toContain(forbidden);
+    }
   });
 
   it('kodsiz so`rov 400', async () => {

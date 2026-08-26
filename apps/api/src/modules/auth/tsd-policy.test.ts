@@ -31,6 +31,24 @@ describe('isTsdAllowed — omborchi ishi OCHIQ', () => {
     expect(isTsdAllowed('DELETE', '/restock-tasks/t1/lines/l1/shortage')).toBe(false);
   });
 
+  it('K4 — bo`linadigan tovar KESIMI ochiq, reyestrning qolgani YOPIQ', () => {
+    expect(isTsdAllowed('POST', '/restock-tasks/t1/lines/l1/cut')).toBe(true);
+    // `exact` — ichki yo'llar ochilmaydi.
+    expect(isTsdAllowed('POST', '/restock-tasks/t1/lines/l1/cut/x')).toBe(false);
+    // Faqat POST/GET: boshqa metodlar yopiq. (GET `/restock-tasks` prefiksi
+    // bo'yicha allaqachon ochiq — topshiriq detali; kesim esa YOZUV yo'li.)
+    expect(isTsdAllowed('DELETE', '/restock-tasks/t1/lines/l1/cut')).toBe(false);
+    expect(isTsdAllowed('PUT', '/restock-tasks/t1/lines/l1/cut')).toBe(false);
+    // 🔴 Reyestrni ERKIN tahrirlash TSD'ga YOPIQ: u `piecetracking` ruxsatini
+    // talab qiladi va kichik omborchida u YO'Q (K-Q9). Terminal faqat O'Z
+    // topshirig'idagi qatorni kesa oladi.
+    expect(isTsdAllowed('GET', '/stock-pieces')).toBe(false);
+    expect(isTsdAllowed('POST', '/stock-pieces')).toBe(false);
+    expect(isTsdAllowed('GET', '/stock-pieces/lookup')).toBe(false);
+    expect(isTsdAllowed('POST', '/stock-pieces/flag')).toBe(false);
+    expect(isTsdAllowed('GET', '/stock-pieces/reconciliation')).toBe(false);
+  });
+
   it('narxsiz skan-qidiruv va yacheyka yorlig`i', () => {
     expect(isTsdAllowed('GET', '/tsd/scan')).toBe(true);
     expect(isTsdAllowed('GET', '/admin/stores/cells/by-barcode')).toBe(true);

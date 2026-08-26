@@ -105,6 +105,18 @@ export function nextPieceSeq(maxLabel: string | null | undefined): number {
   return seq === null ? 1 : seq + 1;
 }
 
+/**
+ * Yorliq poygasida nechta marta qayta uriniladi (`analitika/order.service`
+ * naqshi). Ikki omborchi bir vaqtda yorliq bersa ikkalasi ham bir xil `seq`
+ * ni oladi — birinchisi yozadi, ikkinchisi `P2002` olib keyingi raqamdan
+ * qayta urinadi; DB unikal indeksi oxirgi to'siq bo'lib qoladi.
+ *
+ * Qiymatning YAGONA uyi shu yer: uni K2 (reyestrga qo'shish) ham, K4 (kesim)
+ * ham import qiladi. Ikki joyda ikki qiymat bo'lib ketishi bu repoda nomi
+ * bor xato-klass (`PIECE_LABEL_PREFIX` bilan bir sabab).
+ */
+export const MAX_LABEL_RETRIES = 5;
+
 /** Ketma-ket `count` ta yorliq: `startSeq`, `startSeq+1`, … */
 export function issuePieceLabels(startSeq: number, count: number): string[] {
   if (!Number.isInteger(count) || count < 1) throw new Error('piece label count must be >= 1');

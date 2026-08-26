@@ -63,6 +63,15 @@ import {
 import { resolveCreatorGroupId } from '../shared/group-stamp.js';
 // Optimistic-lock (lost-update guard) for the draft field-edit update() path.
 import { mapVersionedUpdateError } from '../shared/optimistic-lock.js';
+// K4 — bo'lak reyestri: kassirning kelishuvi («150+30»), mijozga ketgan
+// bo'laklarning to'lov paytida reyestrdan chiqishi va bekor qilishda
+// bo'shatilishi. `stock_pieces` ga yozadigan kod SHU IKKI FUNKSIYADA
+// (`stock-piece` moduli) — bu servis jadvalga o'zi tegmaydi.
+import { formatPieceLengths } from '../stock-piece/piece-cut-core.js';
+import {
+  consumePiecesForSale,
+  releasePiecesForSale,
+} from '../stock-piece/stock-piece-cut.service.js';
 import {
   type StockBalance,
   type StockDelta,
@@ -637,6 +646,10 @@ export class RetailSaleService {
               priceMinor: p.priceMinor,
               discount: p.discount,
               sumMinor: p.lineMinor,
+              // K4 — kassirning bo'lak kelishuvi («150+30»). `computePositions`
+              // faqat PUL hisobini qiladi, shuning uchun qiymat kirish
+              // massividan INDEKS bo'yicha olinadi — `rows` uning 1:1 nusxasi.
+              pieceLengths: formatPieceLengths(parsed.positions[idx]?.pieceLengths),
             })),
           },
         },
@@ -719,6 +732,9 @@ export class RetailSaleService {
                       priceMinor: p.priceMinor,
                       discount: p.discount,
                       sumMinor: p.lineMinor,
+                      // K4 — kassirning bo'lak kelishuvi (yuqoridagi `create`
+                      // bilan bir xil qoida: indeks bo'yicha, `rows` 1:1).
+                      pieceLengths: formatPieceLengths(parsed.positions?.[idx]?.pieceLengths),
                     })),
                   },
                 }
@@ -1425,6 +1441,37 @@ export class RetailSaleService {
             })),
           });
         }
+
+        // K4/6-vazifa — MIJOZGA KETGAN BO'LAK REYESTRDAN CHIQADI.
+        //
+        // AYNAN shu tranzaksiyada, qoldiq ayirish bilan birga: qoldiq kamayib
+        // bo'lak reyestrda qolsa (yoki teskarisi) sverka o'sha ondayoq yolg'on
+        // farq berardi va omborchi yo'q muammoni qidirardi.
+        //
+        // Kesim bu yerda ham STOK-NEYTRAL bo'lib qoladi: bo'laklar `sold`
+        // bo'ladi, qoldiqni esa YUQORIDAGI `applyDeltas` kamaytiradi — ya'ni
+        // ikkalasi bir marta, bir joyda.
+        //
+        // 🔴 BAYROQ SHARTI ataylab: bo'linadigan tovarsiz chekda reyestrga
+        // so'rov UMUMAN ketmaydi (K3 ning «bayroq o'chiq bo'lsa hech narsa
+        // o'zgarmaydi» qoidasi). Jonlida bayroq hozircha hech qayerda
+        // yoqilmagan ⇒ bu blok ishga tushmaydi. Chekka qo'shilgandan KEYIN
+        // bayroq o'chirilgan (nodir) holatda bo'laklar band bo'lib qoladi —
+        // sverka buni «ortiqcha» deb KO'RSATADI, jim yo'qotish yo'q.
+        if (pieceTrackedIds.size > 0) {
+          const pieceConsume = await consumePiecesForSale(
+            tx,
+            accountId,
+            stockPositions.map((p) => ({ id: p.id, quantity: String(p.quantity) })),
+          );
+          // Nomuvofiqlik sotuvni TO'XTATMAYDI (to'lov paytida chekni rad
+          // etish 2026-08-24 hodisasining aynan shakli bo'lardi) — KO'RINADI.
+          for (const m of pieceConsume.mismatches) {
+            this.logger.warn(
+              `[piece-mismatch] sale=${id} position=${m.positionId} chek=${m.expected} bo'laklar=${m.pieces}`,
+            );
+          }
+        }
       }
 
       // Kassa TZ §6.1 — har to'lov turi alohida qator. Bu Z-hisobotning
@@ -1762,7 +1809,17 @@ export class RetailSaleService {
         // P3 — rezervni bo'shatish uchun do'kon KERAK, va u `send-to-picking`
         // rezerv yozgan joy bilan AYNI manbadan olinadi (smena do'koni).
         session: { select: { storeId: true } },
-        positions: { select: { productId: true, quantity: true }, orderBy: { position: 'asc' } },
+        positions: {
+          select: {
+            productId: true,
+            quantity: true,
+            // K4 — bo'linadigan tovar bayrog'i POZITSIYA bilan birga keladi
+            // (K3 naqshi: alohida so'rov YO'Q). Faqat shu bayroq bo'lsa
+            // bo'lak reyestriga tegiladi.
+            product: { select: { pieceTracked: true } },
+          },
+          orderBy: { position: 'asc' },
+        },
       },
     });
     if (!sale) throw new NotFoundException(`RetailSale ${id} not found`);
@@ -1835,6 +1892,25 @@ export class RetailSaleService {
           'release_cancel',
         );
       }
+
+      // K4 — MIJOZ VOZ KECHDI: kesilgan bo'lak OMBORDA QOLADI.
+      //
+      // 🔴 Bu rezervdan TUBDAN farq qiladi. Rezerv — hisob yozuvi, u
+      // bo'shatiladi. Bo'lak esa JISMONIY haqiqat: kabel allaqachon kesilgan
+      // va uni qaytarib ulab bo'lmaydi. Shuning uchun 180 m yorlig'i bilan
+      // javonda turaveradi va ertaga boshqa mijozga ketadi (K-reja 2-bo'lim).
+      // Qoldiq bir grammga ham o'zgarmaydi — kesim uni hech qachon
+      // o'zgartirmagan edi (STOK-NEYTRAL).
+      //
+      // Uziladigan yagona narsa — «mijoz oldida turibdi» bog'lanishi, aks
+      // holda bo'lak abadiy band bo'lib qolardi va uni hech kim sotolmasdi
+      // (rezervning abadiy hold muammosining bo'lak shakli).
+      // Bayroq sharti — `post()` dagi bilan AYNI sabab: bo'linadigan tovarsiz
+      // chekda reyestrga so'rov umuman ketmaydi.
+      if (sale.positions.some((p) => p.product?.pieceTracked === true)) {
+        await releasePiecesForSale(tx, accountId, id);
+      }
+
       await this.writeAuditEvents(tx, accountId, sale.sessionId, userId, [
         planCancelAuditEvent(id, {
           // The stage BEFORE the flip — «cancelled a ready receipt» means the
@@ -4017,6 +4093,11 @@ export class RetailSaleService {
                 quantity: pos.quantity,
                 binLocation: bin || null,
                 position: i,
+                // K4 — qator QAYSI chek pozitsiyasidan chiqqani. Busiz kesim
+                // oqimi pozitsiyani `(chek, tovar)` juftligidan TAXMIN
+                // qilardi: kassir bitta tovarni chekka ikki qator qilib
+                // qo'ysa bo'lak noto'g'ri qatorga biriktirilardi.
+                positionId: pos.id,
               };
             }),
           },

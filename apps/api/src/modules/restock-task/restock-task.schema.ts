@@ -71,3 +71,31 @@ export const ShortageSchema = z.object({
   note: z.string().trim().max(500).optional(),
   clientOpId,
 });
+
+/**
+ * K4 — BO'LINADIGAN TOVAR KESIMI (kabel/sim/shlang).
+ *
+ * Manba IKKI yo'l bilan ko'rsatiladi va ikkalasi ham kerak:
+ *   · `label` — omborchi javondagi `BLK-` yorlig'ini SKANERLAYDI (asosiy yo'l);
+ *   · `pieceId` — ekrandagi ro'yxatdan tanlaydi (butun rulonda yorliq UMUMAN
+ *     yo'q — K-Q3, ya'ni uni faqat ro'yxatdan tanlash mumkin).
+ *
+ * `remainingLength` IXTIYORIY: tizim `manba − kesim` ni taklif qiladi, omborchi
+ * esa HAQIQIY o'lchovni yozadi (K-reja 5-bo'lim, «o'z-o'zini tuzatish»). Farq
+ * `cut-loss` qatori bo'lib reyestrdan chiqadi va QOLDIQQA TEGILMAYDI
+ * (egasining 2026-08-25 qarori).
+ *
+ * Uzunliklar SATR (`Decimal(20,6)`) — `number` ga o'girish 0.1+0.2 klassidagi
+ * yo'qotishni aynan kesim hisobiga olib kirardi.
+ */
+export const CutPieceSchema = z
+  .object({
+    pieceId: uuid.optional(),
+    label: z.string().trim().min(1).max(40).optional(),
+    cutLength: z.string().trim().min(1).max(32),
+    remainingLength: z.string().trim().max(32).nullish(),
+    clientOpId,
+  })
+  .refine((d) => d.pieceId !== undefined || (d.label !== undefined && d.label.length > 0), {
+    message: "Manba bo'lak ko'rsatilmadi (yorliqni skanerlang yoki ro'yxatdan tanlang)",
+  });

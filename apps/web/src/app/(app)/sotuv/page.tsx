@@ -1071,6 +1071,12 @@ function SalesScreen({
       quantity: normalizeQtyDecimal(l.quantity),
       priceMinor: l.priceMinor.toString(),
       discount: discountPct > 0 ? String(discountPct) : '0',
+      // K4 — kassirning mijoz bilan kelishgan bo'lak tarkibi («150 + 30»)
+      // endi CHEKKA ketadi va omborchining yig'ish topshirig'ida ko'rinadi.
+      // K3 da u faqat savatda yashardi (K3 hisobotining «ASOSIY qarz» bandi).
+      // Bo'linmagan qatorda yuborilmaydi — server ham 2 tadan kamini
+      // saqlamaydi (`formatPieceLengths`).
+      ...(l.pieceLengths && l.pieceLengths.length > 1 ? { pieceLengths: l.pieceLengths } : {}),
     }));
 
   const onSold = (saleId: string) => {

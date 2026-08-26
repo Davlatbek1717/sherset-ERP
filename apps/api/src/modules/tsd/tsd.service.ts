@@ -47,6 +47,57 @@ interface TsdProductHit {
 export class TsdService {
   constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
+  /**
+   * K4 — skanerlangan `BLK-` yorlig'i bo'yicha BITTA bo'lak.
+   *
+   * Multi-hit YO'Q va bo'lishi ham mumkin emas: yorliq akkaunt ichida unikal
+   * (K1, `@@unique([accountId, label])`) — K-reja 7.3 ning butun ma'nosi
+   * shunda. Topilmasa `found: false` qaytadi va terminal aniq xabar beradi;
+   * jimgina boshqa tovar OCHILMAYDI.
+   */
+  private async findPiece(accountId: string, code: string) {
+    const label = code.trim().toUpperCase();
+    const piece = await this.prisma.client.stockPiece.findFirst({
+      where: { accountId, label },
+      select: {
+        id: true,
+        label: true,
+        length: true,
+        whole: true,
+        status: true,
+        assortmentId: true,
+        storeId: true,
+        store: { select: { name: true } },
+        cell: { select: { name: true } },
+        reservedPositionId: true,
+      },
+    });
+    if (!piece) return { code, supported: true as const, found: false as const };
+
+    // Tovar nomi — NARXSIZ oq ro'yxatdan (`TSD_PRODUCT_SELECT` bilan bir qoida).
+    const product = await this.prisma.client.product.findFirst({
+      where: { accountId, id: piece.assortmentId },
+      select: { id: true, name: true, code: true, uom: true, pieceTracked: true },
+    });
+
+    return {
+      code,
+      supported: true as const,
+      found: true as const,
+      id: piece.id,
+      label: piece.label,
+      length: piece.length.toString(),
+      whole: piece.whole,
+      status: piece.status,
+      /** Boshqa chek uchun ajratilganmi (omborchi buni ko'rishi kerak). */
+      reserved: piece.reservedPositionId !== null,
+      storeId: piece.storeId,
+      storeName: piece.store?.name ?? null,
+      cellName: piece.cell?.name ?? null,
+      product,
+    };
+  }
+
   async scan(accountId: string, rawQuery: unknown) {
     const parsed = TsdScanQuerySchema.safeParse(rawQuery);
     if (!parsed.success) throw new BadRequestException('Skan kodi kiritilmadi');
@@ -54,8 +105,21 @@ export class TsdService {
     const kind = classifyScanCode(code);
 
     // K-reja 7.3 — bo'lak kodi tovar qidiruviga TUSHMAYDI (izoh `tsd-scan.ts`).
+    //
+    // K4 (2026-08-26): shox TO'LDIRILDI. K1–K3 davrida bu yerda
+    // `supported: false` turardi — bo'lakni ochadigan ekran hali yo'q edi va
+    // terminal «hali qo'llab-quvvatlanmaydi» derdi. Endi bo'lak topiladi.
+    //
+    // 🔴 NARX YO'Q va bu TUZILMAVIY: `stock_pieces` da narx tushunchasi
+    // umuman yo'q, tovar nomi esa oq ro'yxatdagi ustunlardan olinadi — ya'ni
+    // `Product` ga yangi narx ustuni qo'shilsa ham bu yo'lga kirmaydi.
     if (kind === 'piece') {
-      return { code, kind: 'piece' as const, piece: { code, supported: false }, products: [] };
+      return {
+        code,
+        kind: 'piece' as const,
+        piece: await this.findPiece(accountId, code),
+        products: [],
+      };
     }
 
     // Yacheyka kodi — terminal `/admin/stores/cells/by-barcode` ga o'tadi

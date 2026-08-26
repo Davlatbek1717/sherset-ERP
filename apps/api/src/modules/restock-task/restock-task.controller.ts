@@ -89,4 +89,27 @@ export class RestockTaskController {
   ) {
     return this.svc.setShortage(user.accountId, user.sub, id, lineId, body);
   }
+
+  /**
+   * K4 — BO'LINADIGAN TOVAR KESIMI (kabel/sim/shlang).
+   *
+   * Ruxsat qatorni TASDIQLASH bilan BIR XIL, ya'ni ataylab ochiq (yuqoridagi
+   * sinf izohi, Q10 DEFER): kesim omborchi ekranining o'z sirti va u
+   * QOLDIQQA TEGMAYDI — `Stock`/`StockByCell` ga bir qator ham yozilmaydi
+   * (K-reja 2-bo'lim: kesim STOK-NEYTRAL). O'zgaradigan yagona narsa —
+   * `stock_pieces` reyestri: «250» o'rniga «180 + 70» bo'ladi.
+   *
+   * Reyestrni ERKIN tahrirlash (qo'shish, uzunlikni tuzatish, «tugadi»,
+   * bayroq) esa `piecetracking` ruxsatida QOLADI (K2, katta omborchi) —
+   * bu yerdan faqat O'Z topshirig'idagi qatorni kesish mumkin.
+   */
+  @Post(':id/lines/:lineId/cut')
+  async cutPiece(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Param('lineId') lineId: string,
+    @Body() body: unknown,
+  ) {
+    return this.svc.cutPiece(user.accountId, user.sub, id, lineId, body);
+  }
 }

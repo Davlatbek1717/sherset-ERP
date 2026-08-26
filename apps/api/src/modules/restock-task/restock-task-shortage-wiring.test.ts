@@ -1,5 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
+import { StockPieceCutService } from '../stock-piece/stock-piece-cut.service.js';
 import { RestockTaskService } from './restock-task.service.js';
 
 /**
@@ -105,8 +106,33 @@ function makeWorld(opts: {
     $transaction: vi.fn(async (cb: (t: unknown) => Promise<unknown>) => cb(tx)),
   };
 
-  const svc = new RestockTaskService({ client } as never, { emit: vi.fn() } as never);
-  return { svc, lineUpdates, taskUpdates, opCreates, client, getLines: () => lines };
+  // K4 — `findById` endi bo'linadigan tovar kontekstini ham qo'shadi
+  // (`withPieceContext`). Bu dunyoda bayroq HECH BIR tovarda yoqilmagan, ya'ni
+  // u birinchi so'rovdan keyin to'xtaydi va javob shakli G6 dagidek qoladi.
+  const clientWithPieces = {
+    ...client,
+    product: {
+      findMany: vi.fn(async () => lines.map((l) => ({ id: l.productId, pieceTracked: false }))),
+      // `assertCutRecorded` — bayrog'i o'chiq tovarda darhol qaytadi
+      // (kesim TALAB QILINMAYDI), ya'ni tasdiqlash yo'li G6 dagidek qoladi.
+      findFirst: vi.fn(async () => ({ pieceTracked: false })),
+    },
+    stockPiece: { findMany: vi.fn(async () => []) },
+  };
+
+  const svc = new RestockTaskService(
+    { client: clientWithPieces } as never,
+    { emit: vi.fn() } as never,
+    new StockPieceCutService(),
+  );
+  return {
+    svc,
+    lineUpdates,
+    taskUpdates,
+    opCreates,
+    client: clientWithPieces,
+    getLines: () => lines,
+  };
 }
 
 const dec = (v: string) => ({ toString: () => v });

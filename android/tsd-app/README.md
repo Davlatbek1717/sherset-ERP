@@ -150,6 +150,40 @@ Javobgar: __________ · Sana/vaqt: __________ · APK versiyasi: __________
    yangi son kiriting → saqlang → `/cell` ekranida o'sha son ko'rinsin.
 8. **Narx tekshiruvi (yana):** har ekranda narx YO'Qligini ko'zdan kechiring.
 
+## Qo'lda smoke (K4 qabul mezoni — BO'LINADIGAN TOVAR KESIMI)
+
+Javobgar: __________ · Sana/vaqt: __________ · APK versiyasi: __________
+
+Oldshart: sinov tovarga (kabel) bo'lak hisobi bayrog'i YOQILGAN va reyestrga
+bo'laklar kiritilgan (K2 ekrani, `/omborchi/bolaklar`).
+
+1. **Kesim zanjiri:** kassir 180 m kabel bilan chek ochib yig'ishga yuboradi →
+   TSD'da qatorda **«✂ Kesish»** tugmasi chiqsin (kassir «150 + 30» deb
+   kelishgan bo'lsa, o'sha kelishuv ham ekranda ko'rinsin) → bo'lakni tanlang
+   yoki `BLK-` yorlig'ini SKANERLANG → kesilgan uzunlikni kiriting → saqlang.
+   Ekranda YANGI YORLIQ raqamlari chiqsin.
+2. **Qator O'ZI yopilsin:** so'ralgan miqdor to'liq kesilgach qator
+   tasdiqlangan bo'lsin (qo'shimcha tugma bosilmasin) va chek KONTROLGA tushsin.
+3. **Kesimsiz yopib bo'lmasligi:** boshqa kabel qatorida kesimni yozmasdan
+   «Tasdiqlash» ni bosing → **rad etilsin** («avval kesimni yozing»).
+4. **QOLDIQ O'ZGARMASIN (eng muhim band):** kesimdan OLDIN va KEYIN o'sha
+   tovarning ombor qoldig'ini yozib oling — **bir grammga ham o'zgarmasligi
+   SHART** (kesim stok-neytral; qoldiq faqat to'lovda kamayadi).
+5. **Sverka:** `/reports/piece-reconciliation` da o'sha tovar bo'yicha farq
+   kesimdan keyin ham «yo'q» bo'lsin (o'lchov farqi kiritilgan bo'lsa —
+   aynan o'sha miqdorda ko'rinsin).
+6. **Yorliqni skanerlash:** yangi `BLK-` yorlig'ini skan qiling → AYNAN o'sha
+   bo'lak ochilsin (tovar multi-hit tanlovi OCHILMASIN).
+7. **To'lov:** kassir chekni yopsin → qoldiq kamaysin VA o'sha bo'lak
+   reyestrdan chiqsin (sverka farq bermasin).
+8. **Mijoz voz kechdi:** yangi chekda kesim yozing va chekni BEKOR qiling →
+   kesilgan bo'lak omborda YORLIG'I bilan QOLSIN (`active`), qoldiq esa
+   o'zgarmasin.
+9. **Aloqasiz holat:** Wi-Fi ni o'chirib kesimni saqlashga urinib ko'ring →
+   ekran «aloqa yo'q — kesim saqlanmadi» desin va kiritilgan sonlar JOYIDA
+   qolsin (kesim oflayn navbatga ATAYLAB qo'yilmaydi: yorliq raqamini server
+   beradi).
+
 ## Fayl xaritasi
 
 ```
@@ -168,5 +202,6 @@ app/src/main/java/uz/sherset/tsd/
    MainActivity.kt                         — qobiq: juftlash → PIN → router → skan marshruti
    TaskListScreen.kt · TaskDetailScreen.kt · ShortageScreen.kt
    PlaceScreen.kt · CountScreen.kt · ScanInfoScreen.kt · PickProductScreen.kt
+   CutScreen.kt                            — K4: bo'linadigan tovar kesimi
 app/build.gradle.kts · settings.gradle.kts — build konfiguratsiyasi
 ```

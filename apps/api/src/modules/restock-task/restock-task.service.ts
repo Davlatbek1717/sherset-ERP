@@ -8,11 +8,21 @@ import {
   isDuplicateClientOp,
   normalizeClientOpId,
 } from '../shared/client-op.js';
+import {
+  type CutCoverage,
+  canConfirmPieceLine,
+  evaluateCutCoverage,
+  parsePieceLengths,
+} from '../stock-piece/piece-cut-core.js';
+import { PIECE_STATUS } from '../stock-piece/stock-piece-core.js';
+import { StockPieceCutService } from '../stock-piece/stock-piece-cut.service.js';
+import { MAX_LABEL_RETRIES } from '../stock-piece/stock-piece-registry-core.js';
 import { planShortage, resolveTaskStatus, sortLinesByRoute } from './restock-task-progress.js';
 import {
   ConfirmLineSchema,
   ConfirmScanSchema,
   CreateRestockFromSalesReturnSchema,
+  CutPieceSchema,
   RestockTaskFilterSchema,
   ShortageSchema,
 } from './restock-task.schema.js';
@@ -67,6 +77,9 @@ export class RestockTaskService {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(NotificationService) private readonly notifications: NotificationService,
+    // K4 — `stock_pieces` ga yozadigan YAGONA yo'l. Bu servis jadvalga o'zi
+    // tegmaydi (modul chegarasi `stock-piece.module.ts` izohida).
+    @Inject(StockPieceCutService) private readonly cutService: StockPieceCutService,
   ) {}
 
   async createFromSalesReturn(accountId: string, authorId: string, raw: unknown) {
@@ -409,7 +422,116 @@ export class RestockTaskService {
       include: { lines: { orderBy: { position: 'asc' } } },
     });
     if (!task) throw new NotFoundException('Joylashtirish vazifasi topilmadi');
-    return { ...task, lines: sortLinesByRoute(task.lines) };
+    const lines = sortLinesByRoute(task.lines);
+    return { ...task, lines: await this.withPieceContext(accountId, task.storeId, lines) };
+  }
+
+  /**
+   * K4 — bo'linadigan tovar qatorlariga KESIM konteksti qo'shiladi.
+   *
+   * Nega javobning ICHIDA, alohida endpoint emas: TSD allowlist'i tor va
+   * `/stock-pieces` unga OCHIQ EMAS (u `piecetracking` ruxsatini talab qiladi,
+   * kichik omborchida esa u YO'Q — K-Q9). Ya'ni terminal bo'laklar ro'yxatini
+   * boshqa yerdan ololmaydi. Skanerlangan `BLK-` yorlig'i ham SHU ro'yxatdan
+   * topiladi — qo'shimcha so'rov ham, yangi ruxsat ham kerak bo'lmaydi.
+   *
+   * Bayrog'i o'chiq tovarlar uchun QO'SHIMCHA SO'ROV KETMAYDI (birinchi
+   * so'rov bayroqni o'qiydi va to'plam bo'sh chiqsa shu yerda to'xtaydi) ⇒
+   * bugungi jonli holatda (bayroq hech qayerda yoqilmagan) javob shakli
+   * bir baytga ham o'zgarmaydi, faqat bitta yengil `product.findMany`
+   * qo'shiladi.
+   */
+  private async withPieceContext<
+    T extends {
+      id: string;
+      productId: string | null;
+      quantity: unknown;
+      positionId?: string | null;
+    },
+  >(accountId: string, storeId: string | null, lines: T[]) {
+    const productIds = [...new Set(lines.map((l) => l.productId).filter((v): v is string => !!v))];
+    if (productIds.length === 0) return lines.map((l) => ({ ...l, pieceTracked: false }));
+
+    const products = await this.prisma.client.product.findMany({
+      where: { accountId, id: { in: productIds } },
+      select: { id: true, pieceTracked: true },
+    });
+    const tracked = new Set(products.filter((p) => p.pieceTracked).map((p) => p.id));
+    if (tracked.size === 0) return lines.map((l) => ({ ...l, pieceTracked: false }));
+
+    const positionIds = lines
+      .map((l) => l.positionId ?? null)
+      .filter((v): v is string => v !== null);
+
+    const [pieces, positions] = await Promise.all([
+      this.prisma.client.stockPiece.findMany({
+        where: {
+          accountId,
+          assortmentKind: 'product',
+          assortmentId: { in: [...tracked] },
+          status: PIECE_STATUS.active,
+          ...(storeId ? { storeId } : {}),
+        },
+        select: {
+          id: true,
+          assortmentId: true,
+          label: true,
+          length: true,
+          whole: true,
+          cellId: true,
+          reservedPositionId: true,
+          cell: { select: { name: true } },
+        },
+        orderBy: { length: 'desc' },
+        take: 500,
+      }),
+      positionIds.length > 0
+        ? this.prisma.client.retailSalePosition.findMany({
+            where: { accountId, id: { in: positionIds } },
+            select: { id: true, pieceLengths: true },
+          })
+        : Promise.resolve([] as Array<{ id: string; pieceLengths: string | null }>),
+    ]);
+
+    const agreedByPosition = new Map(positions.map((p) => [p.id, p.pieceLengths]));
+
+    return lines.map((line) => {
+      if (!line.productId || !tracked.has(line.productId)) {
+        return { ...line, pieceTracked: false };
+      }
+      const own = pieces.filter((p) => p.assortmentId === line.productId);
+      // Boshqa qatorga band qilingan bo'lak MANBA sifatida ko'rsatilmaydi —
+      // u jismonan mijoz oldida turibdi.
+      const reserved = own.filter((p) => p.reservedPositionId === line.positionId);
+      const free = own.filter((p) => p.reservedPositionId === null);
+      const coverage: CutCoverage = evaluateCutCoverage({
+        pieceTracked: true,
+        registryHasPieces: own.length > 0,
+        reserved: reserved.map((p) => ({
+          length: p.length.toString(),
+          status: PIECE_STATUS.active,
+        })),
+        quantity: String(line.quantity),
+      });
+      const shape = (p: (typeof own)[number]) => ({
+        id: p.id,
+        label: p.label,
+        length: p.length.toString(),
+        whole: p.whole,
+        cellName: p.cell?.name ?? null,
+      });
+      return {
+        ...line,
+        pieceTracked: true,
+        /** Kassirning mijoz bilan kelishgani: `['150','30']` (K3 → K4). */
+        agreedLengths: parsePieceLengths(agreedByPosition.get(line.positionId ?? '') ?? null),
+        /** Omborchi tanlashi mumkin bo'lgan manbalar (eng uzuni birinchi). */
+        pieceOptions: free.map(shape),
+        /** Shu qator uchun ALLAQACHON kesilgan bo'laklar. */
+        cutPieces: reserved.map(shape),
+        cutCoverage: coverage,
+      };
+    });
   }
 
   /** Confirm a specific line (manual «placed» button). */
@@ -428,6 +550,8 @@ export class RestockTaskService {
     if (input.productId && line.productId && input.productId !== line.productId) {
       throw new BadRequestException('Mahsulot bu qatorga mos kelmaydi');
     }
+    // K4 — bo'linadigan tovarda qator KESIMSIZ yopilmaydi (5-vazifa).
+    await this.assertCutRecorded(accountId, taskId, line);
     // Bu yo'l QATORGA manzillangan (`lineId`) ⇒ takror yuborish baribir o'sha
     // qatorni tasdiqlaydi va `alreadyConfirmed` uni no-op qiladi. Ya'ni
     // idempotentlik kaliti bu yerda SHART emas — klient uni baribir yuboradi
@@ -466,8 +590,252 @@ export class RestockTaskService {
         exists ? 'Bu mahsulot allaqachon tasdiqlangan' : 'Skanerlangan mahsulot bu vazifada yo‘q',
       );
     }
+    // K4 — bo'linadigan tovarda qator KESIMSIZ yopilmaydi (5-vazifa).
+    // Skan yo'lida ham: aks holda omborchi kabelni skanerlab qatorni yopardi
+    // va kesim hech qachon yozilmasdi (reyestr o'lik ma'lumotga aylanardi).
+    await this.assertCutRecorded(accountId, taskId, match);
     await this.markConfirmed(accountId, userId, taskId, match.id, false, { clientOpId, route });
     return this.findById(accountId, taskId);
+  }
+
+  /**
+   * K4 — BO'LINADIGAN TOVAR KESIMI (kabel/sim/shlang; K-reja 5-bo'lim).
+   *
+   * Zanjir: omborchi javondagi `BLK-` yorlig'ini SKANERLAYDI (yoki ro'yxatdan
+   * tanlaydi) → kesilgan uzunlikni kiritadi → tizim qoldiqni taklif qiladi,
+   * omborchi HAQIQIY o'lchovni yozadi → mijoz bo'lagi va yangi qoldiq
+   * YORLIQ oladi → so'ralgan miqdor qoplansa qator O'ZI yopiladi.
+   *
+   * 🔴 STOK-NEYTRAL: `Stock`/`StockByCell` ga bir qator ham yozilmaydi
+   * (K-reja 2-bo'lim). Qoldiq faqat `post()` da, to'lov paytida kamayadi.
+   * Chiqindi va kesim yo'qotishi ham FAQAT reyestrdan chiqadi (egasining
+   * 2026-08-25 qarori) — sverka farqni ko'rsatadi, tuzatish K5 da.
+   *
+   * BITTA TRANZAKSIYA: kesim + qator yopilishi. Ajralsa ikki yoriq ochilardi —
+   * kesim yozilib qator ochiq qolardi (chek kontrolga tushmasdi) yoki qator
+   * yopilib kesim yo'qolardi (yorliq bosilgan, reyestrda izi yo'q).
+   */
+  async cutPiece(accountId: string, userId: string, taskId: string, lineId: string, raw: unknown) {
+    const input = CutPieceSchema.parse(raw ?? {});
+    const clientOpId = normalizeClientOpId(input.clientOpId);
+    const route = 'restock-tasks/lines/cut';
+
+    // Oflayn navbat amalni qayta yuborishi mumkin. Kalitsiz takror kesim
+    // manbani IKKINCHI marta bo'lardi (yoki `source-not-active` xatosi bilan
+    // omborchini chalg'itardi) — G6 dagi `confirm-scan` bilan bir sabab.
+    if (await findClientOp(this.prisma.client, { accountId, clientOpId, route })) {
+      return { task: await this.findById(accountId, taskId), labels: [] as string[] };
+    }
+
+    const line = await this.prisma.client.restockTaskLine.findFirst({
+      where: { id: lineId, restockTaskId: taskId, accountId },
+      select: { id: true, productId: true, quantity: true, positionId: true, confirmedAt: true },
+    });
+    if (!line) throw new NotFoundException('Vazifa qatori topilmadi');
+    if (!line.productId) throw new BadRequestException('Qatorda mahsulot yo‘q');
+
+    const task = await this.prisma.client.restockTask.findFirst({
+      where: { id: taskId, accountId },
+      select: { status: true, storeId: true, sourceType: true, sourceId: true },
+    });
+    if (!task) throw new NotFoundException('Joylashtirish vazifasi topilmadi');
+    if (task.status === 'cancelled') throw new BadRequestException('Vazifa bekor qilingan');
+
+    const product = await this.prisma.client.product.findFirst({
+      where: { accountId, id: line.productId },
+      select: { pieceTracked: true },
+    });
+    if (!product?.pieceTracked) {
+      // Bayrog'i o'chiq tovarda kesim ma'nosiz: bo'lak reyestri unda
+      // yuritilmaydi va yozilgan qator sverkada «bayroqsiz bo'lak»
+      // ogohlantirishiga aylanardi (K1 `pieces-without-flag`).
+      throw new BadRequestException("Bu tovarda bo'lak hisobi yoqilmagan");
+    }
+
+    const positionId = await this.resolvePositionId(accountId, task, line);
+    if (!positionId) {
+      throw new BadRequestException(
+        "Chek qatori topilmadi — kesim faqat kassa chekining yig'ish topshirig'ida yoziladi",
+      );
+    }
+
+    for (let attempt = 0; ; attempt++) {
+      try {
+        const result = await this.prisma.client.$transaction(async (tx) => {
+          await claimClientOp(tx, { accountId, clientOpId, route, employeeId: userId });
+
+          const source = await this.cutService.findSource(tx, accountId, {
+            pieceId: input.pieceId ?? null,
+            label: input.label ?? null,
+          });
+          // Manba SHU qatorning tovari va SHU omborniki bo'lishi shart —
+          // aks holda kesim boshqa tovarning bo'lagini mijozga biriktirardi.
+          if (source.assortmentId !== line.productId) {
+            throw new BadRequestException("Bu bo'lak boshqa tovarniki");
+          }
+          if (task.storeId && source.storeId !== task.storeId) {
+            throw new BadRequestException("Bu bo'lak boshqa omborda");
+          }
+          if (source.reservedPositionId && source.reservedPositionId !== positionId) {
+            throw new BadRequestException("Bu bo'lak boshqa chek uchun ajratilgan");
+          }
+
+          const startSeq = await this.cutService.nextSeq(tx, accountId);
+          const cut = await this.cutService.cut(tx, {
+            accountId,
+            source,
+            cutLength: input.cutLength,
+            remainingLength: input.remainingLength ?? null,
+            saleId: task.sourceId ?? '',
+            positionId,
+            startSeq,
+          });
+
+          // Kesimdan keyin: so'ralgan miqdor qoplandimi. Qoplansa qator
+          // O'ZI yopiladi — omborchi yana bir tugma bosmaydi. Qoplanmasa
+          // (kassir «150 + 30» deb kelishgan) qator OCHIQ qoladi va ekran
+          // qancha qolganini ko'rsatadi.
+          const reserved = await tx.stockPiece.findMany({
+            where: {
+              accountId,
+              reservedPositionId: positionId,
+              status: PIECE_STATUS.active,
+            },
+            select: { length: true },
+          });
+          const coverage = evaluateCutCoverage({
+            pieceTracked: true,
+            registryHasPieces: true,
+            reserved: reserved.map((p) => ({
+              length: p.length.toString(),
+              status: PIECE_STATUS.active,
+            })),
+            quantity: String(line.quantity),
+          });
+
+          if (coverage === 'covered' && line.confirmedAt == null) {
+            const employee = await tx.employee.findFirst({
+              where: { id: userId, accountId },
+              select: { name: true },
+            });
+            await tx.restockTaskLine.update({
+              where: { id: line.id },
+              data: {
+                confirmedAt: new Date(),
+                confirmedById: userId,
+                confirmedByName: employee?.name ?? null,
+              },
+            });
+            await this.syncTaskStatus(tx, taskId);
+          }
+
+          return { labels: cut.labels, rule: cut.rule, coverage };
+        });
+
+        return {
+          task: await this.findById(accountId, taskId),
+          labels: result.labels,
+          rule: result.rule,
+          coverage: result.coverage,
+        };
+      } catch (e) {
+        // Yorliq poygasi: qo'shni omborchi o'sha raqamni oldi — keyingisidan
+        // qayta urinamiz (K2 `create` bilan bir naqsh, DB unikal indeksi
+        // oxirgi to'siq bo'lib qoladi).
+        if ((e as { code?: string }).code === 'P2002' && attempt + 1 < MAX_LABEL_RETRIES) continue;
+        // Poyga: ayni kesim ikkinchi nusxada kelgan. Effekt yo'q, xato ham
+        // yo'q — joriy holat qaytariladi (idempotent javob).
+        if (isDuplicateClientOp(e)) {
+          return { task: await this.findById(accountId, taskId), labels: [] as string[] };
+        }
+        throw e;
+      }
+    }
+  }
+
+  /**
+   * Qator qaysi CHEK POZITSIYASIGA tegishli.
+   *
+   * Asosiy manba — `restock_task_lines.position_id` (K4 migratsiyasi). Eski
+   * qatorlarda u NULL, shuning uchun zaxira yo'l bor: chek + tovar bo'yicha
+   * BITTA pozitsiya topilsa — o'sha. Ikkitasi topilsa ATAYLAB `null`
+   * qaytariladi: taxmin qilib noto'g'ri qatorga biriktirgandan ko'ra ochiq
+   * xato berish yaxshiroq (kassir bitta tovarni chekka ikki qator qilib
+   * qo'yishi mumkin).
+   */
+  private async resolvePositionId(
+    accountId: string,
+    task: { sourceType: string | null; sourceId: string | null },
+    line: { positionId: string | null; productId: string | null },
+  ): Promise<string | null> {
+    if (line.positionId) return line.positionId;
+    if (task.sourceType !== 'retailsale' || !task.sourceId || !line.productId) return null;
+    const positions = await this.prisma.client.retailSalePosition.findMany({
+      where: { accountId, retailSaleId: task.sourceId, productId: line.productId },
+      select: { id: true },
+      take: 2,
+    });
+    return positions.length === 1 ? (positions[0]?.id ?? null) : null;
+  }
+
+  /**
+   * K4/5-vazifa — «amal yorliqsiz YOPILMAYDI».
+   *
+   * Bo'linadigan tovar qatorini kesim yozilmasdan tasdiqlab bo'lmaydi: aks
+   * holda omborchi kabelni kesib, yorliqni bosmasdan qatorni yopardi va
+   * reyestr birinchi kundayoq haqiqatdan uzilardi.
+   *
+   * 🔴 LEKIN reyestr BO'SH bo'lsa qator ODATDAGIDEK yopiladi
+   * (`evaluateCutCoverage` → `not-required`). Sabab K3 ning `no-registry`
+   * qoidasi bilan AYNI: bayroq yoqilgan-u bo'laklar hali kiritilmagan holat
+   * K5 gacha NORMAL, va kesimni majburiy qilish o'sha kuniyoq har kabel
+   * yig'ishini to'xtatardi. Ya'ni «bo'lak hisobi» savdoni TO'XTATMAYDI.
+   */
+  private async assertCutRecorded(
+    accountId: string,
+    taskId: string,
+    line: { id: string; productId: string | null; quantity: unknown; positionId: string | null },
+  ): Promise<void> {
+    if (!line.productId) return;
+    const product = await this.prisma.client.product.findFirst({
+      where: { accountId, id: line.productId },
+      select: { pieceTracked: true },
+    });
+    if (!product?.pieceTracked) return;
+
+    const task = await this.prisma.client.restockTask.findFirst({
+      where: { id: taskId, accountId },
+      select: { storeId: true },
+    });
+
+    const pieces = await this.prisma.client.stockPiece.findMany({
+      where: {
+        accountId,
+        assortmentKind: 'product',
+        assortmentId: line.productId,
+        status: PIECE_STATUS.active,
+        ...(task?.storeId ? { storeId: task.storeId } : {}),
+      },
+      select: { length: true, reservedPositionId: true },
+      take: 500,
+    });
+
+    const coverage = evaluateCutCoverage({
+      pieceTracked: true,
+      registryHasPieces: pieces.length > 0,
+      reserved: pieces
+        .filter((p) => p.reservedPositionId !== null && p.reservedPositionId === line.positionId)
+        .map((p) => ({ length: p.length.toString(), status: PIECE_STATUS.active })),
+      quantity: String(line.quantity),
+    });
+
+    if (!canConfirmPieceLine(coverage)) {
+      throw new BadRequestException(
+        coverage === 'missing'
+          ? "Bo'linadigan tovar: avval kesimni yozing (bo'lak yorlig'ini skanerlang), so'ng qatorni yoping"
+          : "Bo'linadigan tovar: kesilgan bo'laklar so'ralgan miqdorni qoplamaydi — qolganini ham kesing",
+      );
+    }
   }
 
   /**

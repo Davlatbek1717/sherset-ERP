@@ -17,6 +17,11 @@ import { StockModule } from '../stock/stock.module.js';
 import { RetailSaleController } from './retail-sale.controller.js';
 import { RetailSaleService } from './retail-sale.service.js';
 
+// K4 — bo'lak reyestri bilan bog'lanish DI orqali EMAS: `post()`/`cancel()`
+// `stock-piece` modulining SOF FUNKSIYALARINI (`consumePiecesForSale`,
+// `releasePiecesForSale`) chaqiradi. Ular `tx` ni argument oladi, holati yo'q
+// ⇒ yangi modul importi ham, konstruktor parametri ham kerak emas (sabab
+// `stock-piece-cut.service.ts` da yozilgan).
 @Module({
   imports: [
     AuthModule,

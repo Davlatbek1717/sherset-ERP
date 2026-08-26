@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { StockPieceCutService } from '../stock-piece/stock-piece-cut.service.js';
 import { RestockTaskService } from './restock-task.service.js';
 
 /**
@@ -62,7 +63,9 @@ function makeService(opts: {
       store: { findFirst: vi.fn(async () => null) },
     },
   };
-  return new RestockTaskService(prisma as never, {} as never);
+  // K4 — uchinchi bog'liqlik (kesim servisi). Bu fayl `getPickingSheets` ni
+  // sinaydi va u bo'lak reyestriga umuman kirmaydi.
+  return new RestockTaskService(prisma as never, {} as never, new StockPieceCutService());
 }
 
 /** Varaqdagi tovar nomlari — tartib bilan. */

@@ -30,7 +30,14 @@
     <string name="scan_hint">Shtrix yoki yacheyka kodi</string>
     <string name="scan_multi">Bir nechta tovar topildi — birini tanlang</string>
     <string name="scan_none">Topilmadi</string>
-    <string name="scan_piece">Bu bo\'lak kodi — hozircha qo\'llab-quvvatlanmaydi</string>
+    <!-- K4 gacha bu «hozircha qo'llab-quvvatlanmaydi» edi; endi bo'lak
+         topiladi va ko'rsatiladi (`ScanInfoScreen.renderPiece`). Matn
+         topshiriq/joylashtirish ekranlarida qoladi: u yerda bo'lak kodi
+         TOVAR o'rniga skanerlangan bo'ladi. -->
+    <string name="scan_piece">Bu bo\'lak yorlig\'i — tovar shtrixini skanerlang</string>
+    <string name="scan_piece_not_found">Bo\'lak topilmadi (yorliq reyestrda yo\'q)</string>
+    <string name="scan_piece_reserved">⚠ Bu bo\'lak boshqa chek uchun ajratilgan</string>
+    <string name="scan_piece_closed">Bu bo\'lak reyestrdan chiqqan</string>
 
     <!-- G6 — umumiy -->
     <string name="scan_info_title">Skan ma\'lumoti</string>
@@ -96,6 +103,24 @@
     <string name="queue_rejected_clear">Ro\'yxatni tozalash</string>
     <string name="offline">Aloqa yo\'q — amal navbatga qo\'yildi</string>
     <string name="offline_queued">Aloqa yo\'q — navbatga qo\'yildi (%1$d)</string>
+
+    <!-- K4 — bo'linadigan tovar kesimi (kabel/sim/shlang) -->
+    <string name="cut_button">✂ Kesish</string>
+    <string name="cut_title">Bo\'lakni kesish</string>
+    <string name="cut_need">Kerak: %1$s</string>
+    <string name="cut_agreed">Mijoz bilan kelishilgan: %1$s</string>
+    <string name="cut_pick_source">Qaysi bo\'lakdan kesasiz?</string>
+    <string name="cut_no_pieces">Bu tovarda bo\'lak reyestri bo\'sh</string>
+    <string name="cut_whole_roll">Butun rulon</string>
+    <string name="cut_length_hint">Kesilgan uzunlik</string>
+    <string name="cut_remaining_hint">Qolgan uzunlik (bo\'sh = avtomatik)</string>
+    <string name="cut_remaining_note">O\'lchagan qoldig\'ingiz kamroq bo\'lsa yozing — farq reyestrdan chiqadi, ombordagi qoldiq o\'zgarmaydi</string>
+    <string name="cut_submit">Kesimni yozish</string>
+    <string name="cut_change_source">Boshqa bo\'lak tanlash</string>
+    <string name="cut_saved">Kesim yozildi</string>
+    <string name="cut_saved_labels">Kesim yozildi. Yangi yorliqlar: %1$s</string>
+    <string name="cut_piece_not_in_line">Bu bo\'lak shu qatorga mos emas</string>
+    <string name="cut_offline">Aloqa yo\'q — kesim saqlanmadi (yorliq raqamini server beradi), qayta urinib ko\'ring</string>
 
     <!-- Navbatdagi amallarning nomlari (rad etilganlar ro'yxatida ko'rinadi) -->
     <string name="op_confirm_line">Qator tasdig\'i</string>

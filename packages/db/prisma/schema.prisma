@@ -1430,10 +1430,24 @@ model RestockTaskLine {
   shortageById    String?   @map("shortage_by_id") @db.Uuid
   shortageByName  String?   @map("shortage_by_name") @db.VarChar(255)
 
+  /// K4 — qator QAYSI chek pozitsiyasidan chiqqani.
+  ///
+  /// Busiz kesim oqimi pozitsiyani `(sourceId, productId)` juftligidan
+  /// TAXMIN qilardi va kassir bitta tovarni chekka ikki qator qilib qo'ysa
+  /// bo'lak noto'g'ri qatorga biriktirilardi. Yig'ish topshirig'i baribir
+  /// `sale.positions` dan quriladi (`createPickingTasksForSale`), ya'ni bu
+  /// ustun tekin keladi. NULL — vozvrat topshirig'i (`restock`) yoki K4 dan
+  /// oldin ochilgan qator. SetNull: chek qatori kontrol tomonidan o'chirilsa
+  /// topshiriq qatori YO'QOLMAYDI (omborchi ishining izi qoladi).
+  positionId      String?   @map("position_id") @db.Uuid
+
   restockTask RestockTask @relation(fields: [restockTaskId], references: [id], onDelete: Cascade)
+  // Nomi `salePosition` — `position` (qatordagi TARTIB raqami) allaqachon band.
+  salePosition RetailSalePosition? @relation("RestockLinePosition", fields: [positionId], references: [id], onDelete: SetNull)
 
   @@index([restockTaskId, position])
   @@index([accountId, productId])
+  @@index([positionId])
   @@map("restock_task_lines")
 }
 
@@ -7824,6 +7838,26 @@ model StockPiece {
   /// yoki hisobdan chiqarilgan, sverkada SANALMAYDI (tarix uchun qoladi).
   status         String  @default("active") @db.VarChar(20)
 
+  /// K4 — bo'lak QAYSI chek qatoriga kesilgani («mijoz oldida turibdi»).
+  ///
+  /// 🔴 Band bo'lgan bo'lak HAM omborda va sverkada SANALADI: kesim
+  /// STOK-NEYTRAL, qoldiq esa faqat to'lovda kamayadi (K-reja 2-bo'lim).
+  /// Ya'ni bu maydon «kim uchun ajratilgan» degan izoh, «yo'q» degani EMAS.
+  ///
+  /// Ikkala tomonda ham SET NULL ATAYLAB: chek bekor qilinsa yoki qatorini
+  /// kontrol o'chirsa, kesilgan bo'lak omborda YORLIG'I bilan qolaveradi va
+  /// ertaga boshqa mijozga ketadi (K-reja 2-bo'lim: «mijoz voz kechsa hech
+  /// nima buzilmaydi»). Kabelni qaytarib ulab bo'lmaydi — bo'lakning o'zi
+  /// jismoniy haqiqat, chek esa yo'qoladigan hujjat.
+  reservedSaleId     String? @map("reserved_sale_id") @db.Uuid
+  reservedPositionId String? @map("reserved_position_id") @db.Uuid
+
+  /// Nega `consumed` bo'lgani — sverkadagi farqni tushuntiradigan YAGONA joy:
+  /// `sold` (mijozga ketdi, to'lov paytida), `scrap` (1 m dan kalta qoldiq,
+  /// K-Q6), `cut-loss` (omborchi tuzatgan kesim yo'qotishi), `closed`
+  /// (K2 ekranidagi «tugadi»). NULL — K4 dan oldingi qatorlar.
+  consumedReason String? @map("consumed_reason") @db.VarChar(20)
+
   createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz()
   updatedAt  DateTime  @updatedAt @map("updated_at") @db.Timestamptz()
   consumedAt DateTime? @map("consumed_at") @db.Timestamptz()
@@ -7837,6 +7871,9 @@ model StockPiece {
   // SetNull: manba bo'lak o'chsa bola yetim qoladi, lekin YO'QOLMAYDI.
   sourcePiece StockPiece?  @relation("StockPieceCut", fields: [sourcePieceId], references: [id], onDelete: SetNull)
   cutPieces   StockPiece[] @relation("StockPieceCut")
+  // K4 — band qilingan chek/qator (yuqoridagi izoh: SetNull, bo'lak omonat emas).
+  reservedSale     RetailSale?         @relation("StockPieceReservedSale", fields: [reservedSaleId], references: [id], onDelete: SetNull)
+  reservedPosition RetailSalePosition? @relation("StockPieceReservedPosition", fields: [reservedPositionId], references: [id], onDelete: SetNull)
 
   @@unique([accountId, label])
   // Sverka va K2/K3 ekranlari: (ombor × tovar) kesimidagi faol bo'laklar.
@@ -7844,6 +7881,9 @@ model StockPiece {
   // Yacheyka tarkibi (K2 ekrani, TSD sanash).
   @@index([cellId])
   @@index([sourcePieceId])
+  // K4 — `post()`/`cancel()` chek qatorlari bo'yicha bo'laklarni topadi.
+  @@index([accountId, reservedPositionId], map: "stock_pieces_account_reserved_position_idx")
+  @@index([accountId, reservedSaleId], map: "stock_pieces_account_reserved_sale_idx")
   @@map("stock_pieces")
 }
 
@@ -8744,6 +8784,8 @@ model RetailSale {
   retailSalesReturns  RetailSalesReturn[]  @relation("RetailSalesReturnSource")
   /// G3 — shu chekdan omborda qabul qilingan vozvratlar (ВП- hujjatlari).
   salesReturns        SalesReturn[]        @relation("SalesReturnFromRetailSale")
+  /// K4 — shu chek uchun omborda kesilgan bo'laklar (mijoz oldida turgani).
+  reservedPieces      StockPiece[]         @relation("StockPieceReservedSale")
 
   @@unique([accountId, name])
   @@index([accountId, sessionId, state])
@@ -8845,8 +8887,25 @@ model RetailSalePosition {
   retailSale RetailSale @relation(fields: [retailSaleId], references: [id], onDelete: Cascade)
   product    Product?   @relation("RetailSalePositionProduct", fields: [productId], references: [id], onDelete: Restrict)
 
+  /// K4 — KASSIRNING mijoz bilan kelishgan bo'lak tarkibi: «150+30».
+  ///
+  /// Nega ustun, jadval emas: bu O'LCHOV emas, KELISHUV matni. Haqiqiy
+  /// bo'laklar `stock_pieces.reservedPositionId` orqali biriktiriladi (ular
+  /// omborchi kesgach paydo bo'ladi) — bu ustun esa omborchiga «nimani kesish
+  /// kerak» deb aytadi. K3 uni faqat savatda saqlardi va omborga yetib
+  /// bormasdi (K3 hisobotining «ASOSIY qarz» bandi).
+  ///
+  /// Format: «+» bilan ajratilgan uzunliklar («150+30»), `piece-cut-core.ts`
+  /// dagi `parsePieceLengths`/`formatPieceLengths` yagona o'quvchi-yozuvchisi.
+  /// NULL — oddiy tovar yoki bo'linmagan qator.
+  pieceLengths String? @map("piece_lengths")
+
   /// G4 — bu qator qaysi ombor(lar)ning qaysi yacheyka(lar)idan olinishi.
   allocations RetailSalePositionAllocation[]
+  /// K4 — shu qator uchun kesilgan jismoniy bo'laklar.
+  pieces      StockPiece[]                  @relation("StockPieceReservedPosition")
+  /// K4 — shu qatorga bog'langan yig'ish topshirig'i qatorlari.
+  restockLines RestockTaskLine[]            @relation("RestockLinePosition")
 
   @@index([retailSaleId, position])
   @@index([accountId, productId])
@@ -11624,6 +11683,18 @@ model Debt {
   ///
   /// ⚠️ SIMMETRIYA MAJBURIY: `remove()` ham bunday qatorga `−totalMinor`
   /// yozmasligi shart, aks holda o'chirish mijozning qarzini yo'q qilardi.
+  ///
+  /// 🔴 YOZUVCHILAR ENDI UCHTA (Q2/Q5, 2026-08-25) — «faqat to'lov paytida»
+  /// degan yuqoridagi jumla ESKIRGAN:
+  ///   1. `pos-debt-payment.service.ts#adoptBalanceDebt` — to'lov paytida (P1);
+  ///   2. `retail-sale.service.ts#writeSaleDebtRegistryRow` — chek POST
+  ///      qilinganda (Q2), summasi §2.2 kesishuv qoidasi bo'yicha;
+  ///   3. `scripts/ops-q5-backfill-sale-debts.ts` — tarixiy cheklar uchun
+  ///      ommaviy backfill (Q5), `DebtNote` da `[Q5-BACKFILL run=…]` belgisi.
+  /// Uchalasi ham `applyDelta` ni CHAQIRMAYDI va `recompute-counterparty-balances.ts`
+  /// ning `debt.groupBy` bloki ularni `balanceAdopted: false` filtri bilan
+  /// hujjat-hisobidan CHIQARADI. Reja:
+  /// `docs/plans/2026-08-25-kassa-qarzi-undirish-reyestri.md`.
   balanceAdopted Boolean @default(false) @map("balance_adopted")
 
   /// 🔴 HUJJAT-MANBA BOG'LAMI (Q1, 2026-08-25 — kassa qarzini undirish reyestriga ulash).

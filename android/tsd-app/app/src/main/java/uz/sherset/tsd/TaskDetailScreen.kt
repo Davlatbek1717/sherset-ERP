@@ -117,6 +117,15 @@ class TaskDetailScreen(
             body.addView(ui.label(lineLabel(ui, l), big = true))
             if (isClosed(l)) continue
             val lineId = l.optString("id")
+            // K4 — bo'linadigan tovar: qator KESIMSIZ yopilmaydi (server ham
+            // rad etadi). Tugma FAQAT reyestrda manba bor bo'lganda chiqadi:
+            // reyestr bo'sh bo'lsa qator odatdagidek tasdiqlanadi (K3 ning
+            // `no-registry` qoidasi — bo'lak hisobi savdoni to'xtatmaydi).
+            if (l.optBoolean("pieceTracked") &&
+                (l.optJSONArray("pieceOptions")?.length() ?: 0) > 0
+            ) {
+                body.addView(ui.button(R.string.cut_button) { shell.go(CutScreen(shell, taskId, l)) })
+            }
             body.addView(ui.button(R.string.line_confirm) { confirmLine(lineId) })
             body.addView(ui.button(R.string.line_shortage) {
                 shell.go(ShortageScreen(shell, taskId, l))

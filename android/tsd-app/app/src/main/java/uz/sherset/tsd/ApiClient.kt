@@ -119,6 +119,32 @@ class ApiClient(private val baseUrl: String) {
         return post("/restock-tasks/" + taskId + "/lines/" + lineId + "/shortage", body)
     }
 
+    /**
+     * K4 — BO'LINADIGAN TOVAR KESIMI (kabel/sim/shlang).
+     *
+     * Manba: skanerlangan `BLK-` yorlig'i YOKI ro'yxatdan tanlangan `pieceId`.
+     * `remaining` — omborchi O'LCHAGAN qoldiq (bo'sh bo'lsa server
+     * «manba − kesim» ni oladi).
+     *
+     * 🔴 QOLDIQQA TEGMAYDI: kesim stok-neytral (250 → 180 + 70). Server
+     * faqat bo'lak reyestrini yangilaydi va yangi YORLIQlarni qaytaradi.
+     */
+    fun cut(
+        taskId: String,
+        lineId: String,
+        pieceId: String?,
+        label: String?,
+        cutLength: String,
+        remaining: String?,
+        clientOpId: String,
+    ): JSONObject {
+        val body = JSONObject().put("cutLength", cutLength).put("clientOpId", clientOpId)
+        if (!pieceId.isNullOrBlank()) body.put("pieceId", pieceId)
+        if (!label.isNullOrBlank()) body.put("label", label)
+        if (!remaining.isNullOrBlank()) body.put("remainingLength", remaining)
+        return post("/restock-tasks/" + taskId + "/lines/" + lineId + "/cut", body)
+    }
+
     // ── Skan ────────────────────────────────────────────────────────────────
 
     /** NARXSIZ skan-qidiruv (`tsd-scan.ts`). */

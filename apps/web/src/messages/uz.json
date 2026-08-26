@@ -10582,7 +10582,21 @@
     "scan_success": "Skanerlandi va tasdiqlandi",
     "confirmed": "Tasdiqlangan",
     "pending": "Kutilmoqda",
-    "shortage": "yetmadi: {qty}"
+    "shortage": "yetmadi: {qty}",
+    "cut_button": "Kesish",
+    "cut_title": "Bo'linadigan tovar kesimi",
+    "cut_need": "kerak: {qty}",
+    "cut_scan_label": "Bo'lak yorlig'ini skanerlang (BLK-)",
+    "cut_source_label": "Yoki manbani ro'yxatdan tanlang",
+    "cut_whole_roll": "Butun rulon",
+    "cut_length_label": "Kesildi",
+    "cut_remaining_label": "Qoldi",
+    "cut_hint": "Qoldiqni tizim taklif qiladi — haqiqatda kamroq chiqsa tuzating. Farq bo'lak reyestridan chiqadi; ombordagi QOLDIQ o'zgarmaydi.",
+    "cut_submit": "Kesimni yozish",
+    "cut_cancel": "Bekor",
+    "cut_success": "Kesim yozildi, yorliq bosilmoqda",
+    "cut_agreed": "Mijoz bilan kelishilgan",
+    "cut_pieces_available": "omborda bo'laklar: {count}"
   },
   "picking": {
     "send_to_picking": "Yig'ish varaqasi",

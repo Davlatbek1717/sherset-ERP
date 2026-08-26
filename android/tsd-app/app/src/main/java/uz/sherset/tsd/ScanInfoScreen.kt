@@ -28,9 +28,11 @@ class ScanInfoScreen(
         val products = hit.optJSONArray("products") ?: JSONArray()
 
         when (hit.optString("kind")) {
-            // K-reja 7.3 — bo'lak kodi tovar tanlovini OCHMAYDI (kesim oqimi
-            // K1 da quriladi; hozir kod TANILADI va shu bilan to'xtaydi).
-            "piece" -> body.addView(ui.label(ui.str(R.string.scan_piece), big = true))
+            // K-reja 7.3 — bo'lak kodi tovar tanlovini HECH QACHON ochmaydi:
+            // yorliq akkaunt ichida UNIKAL, ya'ni multi-hit bo'lishi mumkin
+            // emas. K1–K3 davrida bu yerda «hali qo'llab-quvvatlanmaydi»
+            // yozuvi turardi; K4 dan boshlab bo'lakning O'ZI ko'rsatiladi.
+            "piece" -> renderPiece(body)
             "none" -> body.addView(ui.label(ui.str(R.string.scan_none), big = true))
             else -> {
                 if (products.length() > 1) {
@@ -43,6 +45,33 @@ class ScanInfoScreen(
             }
         }
         body.addView(ui.button(R.string.back) { shell.back() })
+    }
+
+    /**
+     * K4 — skanerlangan `BLK-` yorlig'i: bo'lakning uzunligi, joyi va tovari.
+     * NARX YO'Q (bo'lakda narx tushunchasi umuman yo'q).
+     */
+    private fun renderPiece(body: LinearLayout) {
+        val ui = shell.ui
+        val piece = hit.optJSONObject("piece")
+        if (piece == null || !piece.optBoolean("found")) {
+            body.addView(ui.label(ui.str(R.string.scan_piece_not_found), big = true))
+            return
+        }
+        val cell = piece.optString("cellName").ifEmpty { ui.str(R.string.no_cell) }
+        body.addView(
+            ui.label(piece.optString("label") + " · " + piece.optString("length"), big = true),
+        )
+        body.addView(ui.label(piece.optJSONObject("product")?.optString("name") ?: ""))
+        body.addView(ui.label(cell + "  (" + piece.optString("storeName") + ")"))
+        if (piece.optBoolean("reserved")) {
+            // Boshqa chek uchun ajratilgan bo'lak — omborchi buni BILISHI kerak,
+            // aks holda uni ikkinchi mijozga kesib yuborardi.
+            body.addView(ui.label(ui.str(R.string.scan_piece_reserved), big = true))
+        }
+        if (piece.optString("status") != "active") {
+            body.addView(ui.label(ui.str(R.string.scan_piece_closed)))
+        }
     }
 
     private fun renderProduct(body: LinearLayout, p: JSONObject) {
