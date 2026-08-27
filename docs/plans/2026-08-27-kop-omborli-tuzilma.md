@@ -229,47 +229,227 @@ haqiqatni aytsin — **tovar joylashtirilishidan OLDIN**.
 
 **Oldshart:** ✅ S-M1 javobi olingan (4-bo'lim) — **M1 BOSHLASH MUMKIN**.
 
-**Vazifalar:**
+**Oyna:** jonli o'zgarish ⇒ **20:00 dan keyin** (qoida 12).
 
-1. **Kaskad prioritetlarini qo'yish** (jonli, `stores.attributes` jsonb) —
-   qiymatlar **4-bo'limdagi KANONIK JADVALDAN** olinadi (S-M1 javobi:
-   `07 → 01 → 02 → 03 → 04 → 05 → 06`). Taqsimlanmagan **1 da qoladi**,
-   Ombor 99 ga prioritet **berilmaydi**.
-   Buyruq shakli (`attributes` — `jsonb`):
+---
 
-       UPDATE stores SET attributes = coalesce(attributes,'{}'::jsonb)
-              || '{"__posPriority": N}'::jsonb
-        WHERE id = '<uuid>';
+#### M1.0 · Ijrodan OLDIN (o'lchov va qaytarish nuqtasi)
 
-   **Qaytarish (qoida 12):** `UPDATE stores SET attributes = attributes -
-   '__posPriority' WHERE id = '<uuid>';` — har ombor uchun alohida yozilsin.
-2. **Avval LOKAL dev bazada** sinash (qoida 7). Lokal baza mavjud bo'lmasa —
-   jonlida `BEGIN … tekshirish … ROLLBACK` bilan DRY, so'ng AYNAN o'sha
-   bayonot `COMMIT` bilan; usul hisobotda yoziladi.
-3. **`docs/ops/jonli-holat.md` ni to'liq yangilash** (qoida 14): 1-bo'limdagi
-   JSON reyestriga **to'qqizala ombor**, 2-bo'limdagi jadval,
-   «O'zgarishlar jurnali» qatori.
-4. **`warehouse-state.ts` ni lokalda yugurtirish** — reyestr yangilangach
-   drift qolmasligi kerak.
-5. Testlar: `warehouse-state-core.test.ts` ga yangi reyestr shakli uchun
-   test; kaskad tartibi testi (`retail-stock-cascade` / `retail-allocation`).
+```bash
+# VPS: root@13.140.157.10 (parol egasida)
+cd /var/www/sherset-v2
+set -a; . apps/api/.env; set +a
+PGURL="${DATABASE_URL%%\?*}"          # 🔴 ?schema=public tuzog'i (2026-08-26 da o'lchangan)
+
+# 1) HOZIRGI holatni yozib ol — bu QAYTARISH nuqtasi (qoida 12)
+psql "$PGURL" -At -F"|" -c \
+  "select id, name, coalesce(attributes::text,'{}') from stores order by name" \
+  | tee /root/m1-stores-before-20260827.txt
+
+# 2) Kaskadga tegishli qoldiq bormi (bo'sh omborlar kutiladi)
+psql "$PGURL" -At -F"|" -c \
+  "select s.name, coalesce(sum(st.qty),0) from stores s
+     left join stocks st on st.store_id = s.id group by s.name order by s.name"
+```
+
+🔴 **TO'XTASH SHARTI:** `Ombor 01…07` dan birortasida qoldiq **0 dan katta**
+bo'lsa — 3.1-jadval eskirgan, tovar allaqachon joylashtirilgan. Davom
+etmang, egasiga ayting va rejani qayta hisoblang.
+
+> **Nega `pg_dump` emas:** bu faza faqat **9 qatorning `attributes` ustunini**
+> o'zgartiradi. Yuqoridagi `…-before-…txt` — aniq va to'liq qaytarish nuqtasi.
+> Dump bu yerda ortiqcha (va u oradagi savdoni yo'qotadi).
+
+---
+
+#### M1.1 · Kaskad prioritetlari — avval DRY (`ROLLBACK`)
+
+Qiymatlar **4-bo'limdagi KANONIK JADVALDAN**. Avval **`ROLLBACK` bilan**
+yuriting va zondni tekshiring:
+
+```sql
+BEGIN;
+
+-- 1  Ombor 07  (kassaga eng yaqin)
+UPDATE stores SET attributes = coalesce(attributes,'{}'::jsonb) || '{"__posPriority": 1}'::jsonb
+ WHERE id = '02016d74-e750-4333-808a-a5ceda7e3970';
+-- 2  Ombor 01
+UPDATE stores SET attributes = coalesce(attributes,'{}'::jsonb) || '{"__posPriority": 2}'::jsonb
+ WHERE id = '7400bf94-c2b0-4d5c-b12d-f971cd10e187';
+-- 3  Ombor 02   (hozir 2 → 3; H6/1 = R1 xavfi shu bilan yopiladi)
+UPDATE stores SET attributes = coalesce(attributes,'{}'::jsonb) || '{"__posPriority": 3}'::jsonb
+ WHERE id = '01662dbe-ee31-405f-a82f-ff8a82dc8809';
+-- 4  Ombor 03
+UPDATE stores SET attributes = coalesce(attributes,'{}'::jsonb) || '{"__posPriority": 4}'::jsonb
+ WHERE id = '1e5df878-e447-464b-9b28-01e4aa497e67';
+-- 5  Ombor 04
+UPDATE stores SET attributes = coalesce(attributes,'{}'::jsonb) || '{"__posPriority": 5}'::jsonb
+ WHERE id = 'b628f0d0-a95c-4749-9fb3-d94230abae8b';
+-- 6  Ombor 05
+UPDATE stores SET attributes = coalesce(attributes,'{}'::jsonb) || '{"__posPriority": 6}'::jsonb
+ WHERE id = '75878ad6-6a4d-4539-ad14-a4655c203cb4';
+-- 7  Ombor 06
+UPDATE stores SET attributes = coalesce(attributes,'{}'::jsonb) || '{"__posPriority": 7}'::jsonb
+ WHERE id = 'ed80b5ce-55ca-4770-a8a6-6b5f4c4d514a';
+-- 8  Taqsimlanmagan  (hozir 1 → 8, ENG OXIRIDA)
+UPDATE stores SET attributes = coalesce(attributes,'{}'::jsonb) || '{"__posPriority": 8}'::jsonb
+ WHERE id = '968f9da2-6dbb-4375-b5e2-d19799b51de6';
+
+-- Ombor 99 (BRAK) ga TEGILMAYDI — u kaskadda bo'lmasligi SHART.
+
+-- Zond: kutilgan tartib chiqishi kerak
+SELECT name, attributes->>'__posPriority' AS pp
+  FROM stores ORDER BY (attributes->>'__posPriority')::int NULLS LAST, name;
+
+ROLLBACK;     -- 🔴 DRY bosqichi: hozircha QAYTARILADI
+```
+
+**Kutilgan zond natijasi:**
+
+| Ombor | pp | | Ombor | pp |
+|---|---|---|---|---|
+| Ombor 07 | 1 | | Ombor 05 | 6 |
+| Ombor 01 | 2 | | Ombor 06 | 7 |
+| Ombor 02 | 3 | | Taqsimlanmagan | 8 |
+| Ombor 03 | 4 | | Ombor 99 | *(bo'sh)* |
+| Ombor 04 | 5 | | | |
+
+🔴 **TO'XTASH:** zond boshqacha chiqsa — `COMMIT` QILMANG.
+
+---
+
+#### M1.2 · Ijro va qaytarish
+
+Ijro: **aynan o'sha blok**, faqat oxirgi qator `ROLLBACK;` → **`COMMIT;`**.
+
+**Qaytarish buyrug'i (qoida 12) — bitta blok, asl holatni AYNAN tiklaydi:**
+
+```sql
+BEGIN;
+UPDATE stores SET attributes = coalesce(attributes,'{}'::jsonb) || '{"__posPriority": 1}'::jsonb
+ WHERE id = '968f9da2-6dbb-4375-b5e2-d19799b51de6';   -- Taqsimlanmagan → 1 (asl)
+UPDATE stores SET attributes = coalesce(attributes,'{}'::jsonb) || '{"__posPriority": 2}'::jsonb
+ WHERE id = '01662dbe-ee31-405f-a82f-ff8a82dc8809';   -- Ombor 02 → 2 (asl)
+UPDATE stores SET attributes = attributes - '__posPriority'
+ WHERE id IN ('02016d74-e750-4333-808a-a5ceda7e3970',  -- Ombor 07
+              '7400bf94-c2b0-4d5c-b12d-f971cd10e187',  -- Ombor 01
+              '1e5df878-e447-464b-9b28-01e4aa497e67',  -- Ombor 03
+              'b628f0d0-a95c-4749-9fb3-d94230abae8b',  -- Ombor 04
+              '75878ad6-6a4d-4539-ad14-a4655c203cb4',  -- Ombor 05
+              'ed80b5ce-55ca-4770-a8a6-6b5f4c4d514a'); -- Ombor 06
+COMMIT;
+```
+
+Natija `/root/m1-stores-before-20260827.txt` bilan solishtirib tasdiqlanadi.
+
+> ℹ️ **API restart KERAK EMAS — o'lchangan.** `resolveStockCascade` va
+> `resolveAllocationStores` har `post()` da `store.findMany` bilan **qaytadan
+> o'qiydi** (`retail-sale.service.ts:3513`, `:3526`) — kesh yo'q. Ruxsat
+> keshidan farqli o'laroq bu yerda restart shart emas (qilinsa ham zararsiz).
+
+---
+
+#### M1.3 · Reyestrni yangilash (qoida 14) — `docs/ops/jonli-holat.md`
+
+**1-bo'limdagi JSON** to'qqizala omborga to'ldiriladi:
+
+```json
+{
+  "split": "qisman",
+  "posSessionStore": "Taqsimlanmagan",
+  "allowUnreachableQty": "0",
+  "stores": [
+    { "name": "Ombor 07", "posPriority": 1, "brak": false, "posFront": false },
+    { "name": "Ombor 01", "posPriority": 2, "brak": false, "posFront": false },
+    { "name": "Ombor 02", "posPriority": 3, "brak": false, "posFront": false },
+    { "name": "Ombor 03", "posPriority": 4, "brak": false, "posFront": false },
+    { "name": "Ombor 04", "posPriority": 5, "brak": false, "posFront": false },
+    { "name": "Ombor 05", "posPriority": 6, "brak": false, "posFront": false },
+    { "name": "Ombor 06", "posPriority": 7, "brak": false, "posFront": false },
+    { "name": "Taqsimlanmagan", "posPriority": 8, "brak": false, "unassignedSource": false, "posFront": false },
+    { "name": "Ombor 99", "posPriority": null, "brak": true, "posFront": false }
+  ]
+}
+```
+
+⚠️ **`posSessionStore` hamon `Taqsimlanmagan`** — kassir smenalari o'sha
+omborda ochiladi, va u kaskadda (8-o'rinda) qolgani uchun shart bajariladi
+(E5: «kaskadda **BO'LSIN**», boshi bo'lishi shart emas).
+
+Shuningdek yangilanadi: **2-bo'limdagi jadval** (to'qqiz qator) va
+**«O'zgarishlar jurnali»** qatori.
+
+---
+
+#### M1.4 · Tekshirish
+
+```bash
+cd /var/www/sherset-v2/packages/db
+set -a; . ../../apps/api/.env; set +a
+npx tsx scripts/warehouse-state.ts; echo "EXIT=$?"
+```
+
+⚠️ **Serverdagi `jonli-holat.md` nusxasi ESKI** (`61780120` dan) ⇒ jonlida
+`EXIT=2` chiqadi va bu **kutilgan**; yangilangan reyestr serverga keyingi
+deploy bilan boradi. Shuning uchun **haqiqiy tekshiruv LOKALDA**: yangilangan
+reyestr bilan `--json` chiqishini jonli o'lchov bilan solishtiring.
+
+🔴 **Ikkala tomonda ham SHART:** «POS yeta olmaydigan qoldiq: **0**».
+
+---
+
+#### M1.5 · Uchma-uch smoke (qoida 13) — MAJBURIY
+
+Kaskad **boshi o'zgardi**: qulflanadigan asosiy ombor (`storeId = cascade[0]`)
+endi `Taqsimlanmagan` emas, **`Ombor 07`**. 4-bo'limdagi besh o'lchov «xulq
+o'zgarmaydi» deydi, lekin buni **jonli sinov** tasdiqlashi kerak — IS-3
+saboqi aynan shu: kod xulqi haqidagi to'g'ri xulosa **tizim holati** haqida
+noto'g'ri bo'lishi mumkin.
+
+| # | Amal | Kutilgan |
+|---|---|---|
+| 1 | Sinov **SOTUV**: chek → post → qoldiq kamaydi → **cancel** | cancel deltalarni aynan qaytaradi; ajratma qatori `store_id = Taqsimlanmagan` bo'ladi (tovar o'sha yerda) |
+| 2 | Yacheyka **SANASH** | hujjatda to'g'ri ko'rinadi |
+| 3 | **KO'CHIRISH** (yacheykadan yacheykaga) | jami qoldiq o'zgarmaydi |
+
+🔴 **TO'XTASH:** sotuv 400 bersa yoki «Tizimdagi hech bir omborda yetarli
+miqdor yo'q» xabari chiqsa — **darhol M1.2 dagi qaytarish blokini** yuriting.
+
+**Ertalab (04:00–05:00, savdo boshlanishidan OLDIN):** `warehouse-state.ts`
++ bitta sinov sotuv. **Javobgar shaxs va vaqt hisobotda yoziladi.**
+
+---
+
+#### M1.6 · Testlar (kodda)
+
+- `warehouse-state-core.test.ts` — to'qqiz omborli reyestr shakli;
+- kaskad tartibi testi (`retail-allocation` / `retail-stock-cascade`):
+  **bo'sh omborlar boshda turganda ham** reja to'g'ri omborga tushishi;
+- BRAK ombori kaskadga **kirmasligi** (mavjud testni buzmaslik).
+
+---
 
 **Qabul mezoni:**
-- jonlida to'qqizala ombor prioriteti reyestrdagi bilan **aynan mos**;
-- `warehouse-state.ts` jonlida yuritilganda **prioritet va reyestr driftlari
-  YO'Q** (serverdagi reyestr nusxasi eski bo'lsa — bu hisobotda aniq
-  yoziladi va faza «QISMAN» bo'ladi);
-- **«POS yeta olmaydigan qoldiq: 0»**;
-- qoida 13 smoke bajarilgan.
+- jonlida to'qqizala ombor prioriteti **kanonik jadval bilan aynan mos**;
+- «POS yeta olmaydigan qoldiq: **0**»;
+- `jonli-holat.md` — JSON, jadval va jurnal **uchalasi** yangilangan;
+- **qoida 13 smoke bajarilgan** (uchala band) va **ertalabki takroriy
+  tekshiruv** javobgar shaxs bilan yozilgan.
 
 **PROMPT:**
 ```
 D:\sherset-v2 dagi docs/plans/2026-08-27-kop-omborli-tuzilma.md ni TO'LIQ o'qi.
 Qoida 3 bo'yicha docs/plans/2026-08-23-ombor-restrukturizatsiya.md (2-bo'lim),
 docs/plans/2026-08-24-split-kassa-hodisasi.md va docs/ops/jonli-holat.md ni ham o'qi.
+
 Sen M1 fazasini bajarasan (kaskad sozlamasi + jonli holat reyestri).
-S-M1 javobi ALLAQACHON olingan — 4-bo'limdagi KANONIK JADVALNI ishlat.
+Ijro materiali TAYYOR — 6-bo'limdagi M1.0…M1.6 bloklarini KETMA-KET bajar:
+aniq SQL, qaytarish bloki, reyestr JSON'i va smoke ro'yxati o'sha yerda.
+S-M1 javobi olingan — 4-bo'limdagi KANONIK JADVALNI ishlat.
 Egasidan faqat VPS parolini so'ra.
+
+MUHIM: bu JONLI o'zgarish — faqat 20:00 dan keyin. M1.1 (DRY/ROLLBACK) ni
+o'tkazib yuborma. Smoke MAJBURIY.
 Faqat M1 vazifalari, testlar, jonli tekshiruv, hisobot shu faylning
 10-bo'limiga — va TO'XTA. Keyingi fazani BOSHLAMA.
 ```
