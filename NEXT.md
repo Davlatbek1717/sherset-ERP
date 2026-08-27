@@ -348,9 +348,12 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 >    kuni ertalabgina 3379). Keyingi sessiyalar buni nosozlik deb o'qimasin.
 > 2. 🟠 **`api.out.log` 550 MB** — log rotatsiyasi yo'q (`pm2-logrotate` kerak).
 > 3. **Serverdagi `warehouse-state.ts` `EXIT=2` beraveradi** — reyestrning yangi
->    nusxasi (Ombor 99, `split: qisman`) faqat lokalda; u serverga **2-kecha**
->    deploy'i bilan boradi. Farq **kodda emas, hujjatda**. Aynan IKKI farq
->    kutiladi, uchinchisi — haqiqiy muammo.
+>    nusxasi (Ombor 99, `split: qisman`) faqat lokalda. Farq **kodda emas,
+>    hujjatda**. 🔴 **TUZATISH:** u serverga **2-kecha bilan KELMAYDI** —
+>    yangilangan `jonli-holat.md` `58771056` da, u esa `cbc14723` (2-kecha
+>    nishoni) dan KEYIN turadi. Reyestr **3-KECHA** (branch HEAD) bilan boradi
+>    ⇒ 2-kechadan keyin ham `EXIT=2` KUTILGAN. Aynan IKKI farq bo'lsin,
+>    uchinchisi — haqiqiy muammo.
 > 4. ⚠️ Deploy hujjatlari **commit qilinmagan** turgan ekan (4 fayl).
 >    Commit qilinmagan hisobot = IS-6 ning qaytishi ⇒ commit SHART.
 >

@@ -429,8 +429,15 @@ ishga tushmagan** · topup: `retailcontrol` 26 + `returnacceptance` 26 qator ·
 4. 🔴 **Serverdagi `warehouse-state.ts` hamon `EXIT=2` beradi va bu KUTILGAN:**
    reyestrning YANGI nusxasi (Ombor 99 + `split: qisman`) faqat LOKALDA —
    serverdagi fayl `61780120` dan, ya'ni eski. **Farq kodda emas, hujjatda.**
-   Reyestr serverga 2-kecha deploy'i bilan boradi. Shu paytgacha **aynan ikki**
-   farq kutiladi; **uchinchisi — haqiqiy muammo.**
+   🔴 **TUZATISH (2026-08-27 da o'lchandi): reyestr 2-KECHA bilan KELMAYDI.**
+   Yangilangan `jonli-holat.md` `58771056` commitida, u esa branch tartibida
+   2-kechaning to'xtash nuqtasi `cbc14723` dan KEYIN turadi (isbot:
+   `git diff --name-only 61780120..cbc14723 -- docs/ops/jonli-holat.md` → bo'sh).
+   ⇒ Reyestr serverga **3-KECHA** (branch HEAD) bilan boradi. Ya'ni
+   `warehouse-state.ts` **2-kechadan keyin ham `EXIT=2` beraveradi** — bu
+   KUTILGAN, nosozlik EMAS. Shu paytgacha **aynan ikki** farq bo'lishi shart
+   («Ombor 99 reyestrda yo'q» + «split kutilgan qaytarilgan, jonlida qisman»);
+   **uchinchi farq — haqiqiy muammo.**
 
 ⚠️ **Jarayon qaydi (qoida 14 ruhida):** bu sessiya boshlanganda ishchi daraxt
 `git status` bo'yicha TOZA ko'rindi va jurnal BO'SH o'qildi; ~20 daqiqadan keyin
