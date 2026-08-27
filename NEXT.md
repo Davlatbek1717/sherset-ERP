@@ -331,6 +331,111 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-08-27b (1-KECHA DEPLOY'I MUSTAQIL TASDIQLANDI — deploy'dan ~19 soat keyin).**
+> Egasi deploy prompt'ini qayta ishga tushirdi; yangi operator sessiyasi holatni
+> noldan o'lchadi. To'liq bayon: `docs/ops/2026-08-26-deploy-reja-1-kecha.md` §5.2.
+>
+> ✅ **Quyidagi 2026-08-27a yozuvi ikkinchi, bog'liqsiz manba bilan TASDIQLANDI:**
+> reflog, 6/6 migratsiya (`20:02:26→20:02:58`), `BUILD_ID`, pm2 restart vaqtlari,
+> topup qatorlari, 9/9 sahifa `200`. **Chegara zondi:** A1 `kind` **yo'q**, K1
+> `stock_pieces` **yo'q**, G1/G4/G6/Q1 obyektlari **bor** ⇒ jonlidagi holat aynan
+> 1-kecha chegarasi. **Tizim bir to'liq savdo kunini yangi kodda o'tkazdi**
+> (2026-08-27 da ~83 chek, soatiga 7–16) — pm2 qayta ishga tushmagan.
+>
+> 🆕 **Yangi topilmalar:**
+> 1. Logdagi `Error: TIMEOUT` — **deploy'ga aloqasi YO'Q**: `telegram@2.26.22`
+>    `_updateLoop` idan, **2026-08-21 dan beri** (jami 38 048; deploy'dan oldingi
+>    kuni ertalabgina 3379). Keyingi sessiyalar buni nosozlik deb o'qimasin.
+> 2. 🟠 **`api.out.log` 550 MB** — log rotatsiyasi yo'q (`pm2-logrotate` kerak).
+> 3. **Serverdagi `warehouse-state.ts` `EXIT=2` beraveradi** — reyestrning yangi
+>    nusxasi (Ombor 99, `split: qisman`) faqat lokalda; u serverga **2-kecha**
+>    deploy'i bilan boradi. Farq **kodda emas, hujjatda**. Aynan IKKI farq
+>    kutiladi, uchinchisi — haqiqiy muammo.
+> 4. ⚠️ Deploy hujjatlari **commit qilinmagan** turgan ekan (4 fayl).
+>    Commit qilinmagan hisobot = IS-6 ning qaytishi ⇒ commit SHART.
+>
+> **HAMON OCHIQ (o'zgarmadi):** qoida 13 smoke'ining **yacheyka SANASH** va
+> **KO'CHIRISH** bandlari (xavfsiz — savdo tinchigach), **cancel** (alohida sinov
+> cheki + API ruxsati kerak), **omborchi ROLI va XODIMI** (busiz G2/G3/G5/G6
+> qabul mezonlari yopilmaydi), `sklad_keepers.printer_name`.
+
+> **🕒 2026-08-27a (1-KECHA DEPLOY BAJARILDI — `83027bc2 → 61780120`).**
+> Ijro jurnali: `docs/ops/2026-08-26-deploy-reja-1-kecha.md` §5.
+>
+> **BAJARILDI (1–9 qadamlar):** 37 commit (rejadagi 36 emas — jonli HEAD
+> `62a27024` EMAS, **`83027bc2`** ekan; farq bitta HUJJAT commiti, kod/migratsiya
+> aynan o'sha) · **6/6 migratsiya** + `generate`, tuzilma zondi 7/7 ·
+> `BUILD_RC=0` · topup `rc=0` · 9/9 sahifa `200` · `warehouse-state` **EXIT=0**,
+> POS yeta olmaydigan qoldiq **0** · zaxira `/root/sherset_v2-pre-deploy-20260826.dump`
+> (7.8 MB). Api xato loglari toza, `pm2` 6 soat barqaror (`unstable restarts: 0`).
+>
+> 🟢 **10-QADAM ASOSIY BANDI YOPILDI — HAQIQIY SOTUV BILAN (2026-08-27 07:12).**
+> Jonli kuzatuvchi deploy'dan keyingi birinchi haqiqiy sotuvni ushladi:
+> **`ТРН-2026-01765`, `posted`, 1 200 000, kassir Ravshan.** O'lchovlar:
+> **G4 ajratma qatori YOZILDI** (`store_id=Taqsimlanmagan`, **`cell_id=BO'SH`**,
+> `qty=1`, `manual=f`) ⇒ **X1 tasdiqlandi — sotuv sanalgan yacheykani BUZMADI**;
+> yacheyka qoldig'i 1 818 573/651 **o'zgarmadi**; kassa balansi
+> 137 431 316 551 → 137 432 516 551, **farq AYNAN 1 200 000** = chek summasi;
+> smena tushumi mos; api xatolari **yo'q**. Ya'ni 2026-08-24 da to'xtagan
+> KASSA YO'LI jonlida ishlayapti. Sun'iy sinov cheki ATAYLAB yaratilmadi.
+>
+> 🔴 **HAMON BAJARILMAGAN (qoida 11 + 13):** `cancel`, **yacheyka sanash**,
+> **ko'chirish**. Cancel'ni haqiqiy mijoz cheki ustida sinab bo'lmaydi va
+> **UI'da post bo'lgan chekda «Отменить» YO'Q** — faqat «Возврат» (boshqa amal,
+> reyestrda ikkita hujjat qoldiradi). Cancel uchun alohida sinov cheki + API
+> ruxsati kerak. Sanash va ko'chirish xavfsiz — savdo tinchigach bajarilsin.
+> Ish savdo boshlanish oynasiga (05:00–06:00 Toshkent) cho'zilib ketdi.
+> Ertalabki tekshiruv (05:30) bajarildi: loglar toza, `pm2` barqaror
+> (`unstable restarts: 0`), yetib bo'lmaydigan qoldiq **0**, `warehouse-state`
+> `EXIT=2` — kutilgan, aynan ikkita bashorat qilingan farq bilan.
+> Kuzatuvchi (`/root/smoke-watch.sh`) 07:12 da ishga tushdi va yuqoridagi
+> natijani berdi; log `/root/smoke-watch.log` da.
+>
+> 🔴 **ENG MUHIM TOPILMA — jonlida omborchi INFRATUZILMASI yo'q edi:**
+> `warehouse_manager`/`storekeeper` rollari **umuman yo'q**, 13 xodimning
+> hammasi kassir/administrator, `employee_permissions` bo'sh, `sklad_keepers`
+> bo'sh edi ⇒ `createPickingTasksForSale` topshiriq YARATMASDI (`restock_tasks`
+> jonlida **0 qator** — G2 zanjiri hech qachon yurmagan). Shuning uchun
+> **G1…G6 ning hammasi «QISMAN»** bo'lib qoladi.
+>
+> **2026-08-27 da egasining qarori bilan sozlandi (jonli o'zgarish!):**
+> - **BRAK ombori** «Ombor 99» (`d4b4ff85`), `__brakStore=true`, POS prioriteti
+>   YO'Q, **27 yacheyka** (`99-01-01-01`…`99-01-03-09`);
+> - **`sklad_keepers`**: sklad **1, 2, 3 → «Admin User»** (`885fb467`,
+>   Administrator). 🔴 ATAYLAB kassir EMAS: `markReady` da `assigneeId=userId`
+>   bo'lsa kassirning «tayyor»i chekni `ready` ga flip QILMAYDI ⇒ omborchi qilib
+>   kassir belgilansa **cheklar qotib qolardi**.
+> - Usul: lokal dev baza paroli yo'qligi sababli qoida 7 ning maqsadi jonli
+>   `BEGIN…tekshirish…ROLLBACK` DRY bilan bajarildi, so'ng aynan o'sha bayonot
+>   `COMMIT` bilan. Qaytarish buyruqlari rejada (qoida 12).
+> - `jonli-holat.md` yangilandi (JSON + jadval + jurnal, qoida 14).
+>
+> ⚠️ **KEYINGI DEPLOY'DA BILISH SHART:**
+> 1. **`pg_dump` rejadagi shaklda ISHLAMAYDI** — `DATABASE_URL` da Prisma'ning
+>    `?schema=public` qismi bor, libpq uni rad etadi va **0 baytli** fayl qoldiradi.
+>    To'g'risi: `PGURL="${DATABASE_URL%%\?*}"`.
+> 2. **SSH aloqasi tasodifiy uziladi** (TCP RST), lekin serverdagi jarayon
+>    DAVOM ETAVERADI — bir marta merge biz ko'rmagan holda bajarilib bo'lgan edi.
+>    Yechim: har qadam `setsid nohup … > /root/deploy-<teg>.log` bilan fonda,
+>    log alohida o'qiladi. Buzuvchi qadamni KO'R-KO'RONA QAYTA YURITMANG.
+> 3. **Serverda untracked fayllar `merge --ff-only` ni yiqitadi** — bu safar
+>    `create-cells.ts` va `warehouse-split-revert.ts` to'qnashdi;
+>    `/root/untracked-backup-20260826/` ga ko'chirildi (ikkalasi ham git
+>    versiyasi bilan mantiqan AYNAN bir xil edi, isbotlandi).
+> 4. **`warehouse-state.ts` endi `EXIT=2` beradi va bu KUTILGAN** — serverdagi
+>    reyestr nusxasi `61780120` dan, yangisi 2-kecha deploy'i bilan boradi.
+>    **AYNAN IKKI** farq bo'lishi shart: «Ombor 99 reyestrda yo'q» + «split
+>    kutilgan qaytarilgan, jonlida qisman». **Uchinchi farq = HAQIQIY muammo.**
+>
+> **Keyingi qadamlar (tartib bilan):** (a) `smoke-watch.log` ni o'qish va
+> 10-qadamni yopish; (b) omborchi ROLI va XODIMI yaratish — busiz G2/G3/G5/G6
+> qabul mezonlari yopilmaydi va «403» ruxsat sinovi qilinmaydi;
+> (c) `sklad_keepers.printer_name` to'ldirish; (d) **2-kecha** (`cbc14723`,
+> A1–A3, 1 migratsiya); (e) **3-kecha** (HEAD, Q4–Q6 + K1–K6 + E5, 5 migratsiya).
+> **E5 uchun yangi vazifa:** split holati hisobidan BRAK ombori CHIQARILSIN —
+> uning o'z yacheykalari doim «mos» bo'lgani uchun umumiy holatni «qisman» ga
+> surib yubordi.
+
 > **🕒 2026-08-26b (DEPLOY-TAYYORLIK AUDITI — F/G/H rejalari · 69 commit · 12 migratsiya).**
 > Dossier: `docs/ops/2026-08-25-deploy-dossieri.md` (2026-08-26 da QAYTA YOZILDI).
 >

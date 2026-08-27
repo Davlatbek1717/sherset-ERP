@@ -23,13 +23,14 @@ ketardi va bu aynan IS-7 muammosini qaytarardi.
 
 ```json
 {
-  "split": "qaytarilgan",
+  "split": "qisman",
   "posSessionStore": "Taqsimlanmagan",
   "allowUnreachableQty": "0",
   "stores": [
     { "name": "Taqsimlanmagan", "posPriority": 1, "brak": false, "unassignedSource": false, "posFront": false },
     { "name": "Ombor 01", "posPriority": null, "brak": false, "posFront": false },
-    { "name": "Ombor 02", "posPriority": 2, "brak": false, "posFront": false }
+    { "name": "Ombor 02", "posPriority": 2, "brak": false, "posFront": false },
+    { "name": "Ombor 99", "posPriority": null, "brak": true, "posFront": false }
   ]
 }
 ```
@@ -41,6 +42,15 @@ ketardi va bu aynan IS-7 muammosini qaytarardi.
 | `split` | Yacheyka kodi prefiksi ↔ ombor mosligi: `bajarilgan` (hamma yacheyka o'z omborida), `qaytarilgan` (hammasi bitta omborda, prefiks mos emas), `qisman`, `yacheyka yoq` |
 | `posSessionStore` | Kassir smenalari ochiladigan ombor NOMI. **U POS kaskadida bo'lishi SHART** (`posPriority` bor va BRAK emas) — aks holda undagi qoldiq sotilmay qoladi |
 | `allowUnreachableQty` | Ruxsat etilgan «POS yeta olmaydigan qoldiq». Normal qiymat `"0"` |
+
+> ⚠️ **`split` nega «qisman» (2026-08-27):** BRAK ombori («Ombor 99») yaratilgach
+> uning **o'z** 27 yacheykasi (`99-…`) o'z omboriga MOS bo'ldi, haqiqiy omborlarning
+> 974 yacheykasi esa hamon `Taqsimlanmagan` da (mos EMAS). Skript bu ikkisini
+> ajratmaydi, shuning uchun umumiy holat «qaytarilgan» dan «qisman» ga o'tdi.
+> **Haqiqiy split hamon QAYTARILGAN** — kutilayotgan kesim: `mos 27` (faqat BRAK),
+> `mos emas 974`. Bu raqamlardan chetlanish — HAQIQIY o'zgarish belgisi.
+> 🔜 **E5 uchun vazifa:** split holati hisobidan BRAK ombori CHIQARILSIN (u
+> ta'rifi bo'yicha o'z yacheykalariga ega va split'ga aloqasi yo'q).
 | `stores[].posPriority` | `Store.attributes.__posPriority`. `null` = kaskadda EMAS deb kutiladi |
 | `stores[].brak` | `__brakStore` (G3). BRAK omboridagi qoldiq yetuvchanlik hisobiga KIRMAYDI; prioritet qo'yilgan bo'lsa ham kaskadga kirmaydi |
 | `stores[].unassignedSource` | `__unassignedSource` (F7 hovuz belgisi) |
@@ -70,9 +80,10 @@ o'zgarganda shu yerga yoziladi.
 
 | Store | id (qisqa) | Roli | Yacheyka | POS prioriteti | Qoldiq (dona) |
 |---|---|---|---|---|---|
-| **Taqsimlanmagan** | `968f9da2` | hisob-kitob hovuzi + AYNI PAYTDA kassa ombori | **900** | **1** (kaskad boshi) | ≈52,5 mln |
+| **Taqsimlanmagan** | `968f9da2` | hisob-kitob hovuzi + AYNI PAYTDA kassa ombori | **974** | **1** (kaskad boshi) | ≈52,5 mln |
 | Ombor 01 | `7400bf94` | fizik ombor (hozircha bo'sh) | 0 | yo'q | 0 |
 | Ombor 02 | `01662dbe` | fizik ombor (hozircha bo'sh) | 0 | 2 | 0 |
+| **Ombor 99** | `d4b4ff85` | **BRAK ombori** (vozvratdagi brak tovar) | **27** | yo'q (ataylab) | 0 |
 
 **Nega hozir shunday (vaqtinchalik holat):**
 
@@ -91,10 +102,10 @@ o'zgarganda shu yerga yoziladi.
 - **`__unassignedSource` hech qayerda yoqilmagan** — F7 hovuz belgisi hali
   ishlatilmayapti; `Taqsimlanmagan` amalda hovuz VAZIFASINI bajaradi, lekin belgisi
   yo'q. H4 da aniqlashtiriladi.
-- **BRAK ombori hali YARATILMAGAN** (G3 deploy'i kutilmoqda). Yaratilgach reyestrga
-  `{ "name": "…", "brak": true, "posPriority": null }` qatori qo'shiladi — aks holda
-  birinchi brak qabulidan keyin har deploy «yetib bo'lmaydigan qoldiq» deb bloklanadi
-  (G3 hisobotidagi ogohlantirish).
+- **BRAK ombori YARATILDI** (2026-08-27, «Ombor 99», `d4b4ff85`): `__brakStore = true`,
+  `__posPriority` **yo'q** ⇒ POS kaskadiga kirmaydi va yetuvchanlik hisobiga ta'sir
+  qilmaydi. 27 yacheyka (`99-01-01-01` … `99-01-03-09`), zonasiz. `warehouse-state.ts`
+  uni «BRAK (ataylab yopiq)» deb tanidi.
 
 ---
 
@@ -210,6 +221,9 @@ Reja va to'liq retsept: `docs/plans/2026-08-25-kassa-qarzi-undirish-reyestri.md`
 | 2026-08-24 (ertalab) | `Taqsimlanmagan.__posPriority = 1` | F6 sessiyasi, qo'lda UPDATE | — |
 | 2026-08-24 ~21:00 | 119 ta `01-04-…` yacheyka «Ombor 01» → «Taqsimlanmagan»; 490 yangi yacheyka yaratildi (410 → 900) | parallel sessiya, `create-cells.ts` + `warehouse-split-revert.ts` | — |
 | 2026-08-24 (H2) | **Shu reyestr yaratildi** — yuqoridagi holat kodga tushirildi | H2 sessiyasi | ✅ |
+| 2026-08-26 20:02–20:12 | **1-kecha deploy'i** `83027bc2 → 61780120` (37 commit, 6 migratsiya): G1–G6 + Q1–Q3 + H2 + H5 kodi. Ombor TUZILMASI o'zgarmadi | deploy operatori, qo'lda ff-merge | ✅ (tuzilma o'zgarmagani qayd etildi) |
+| 2026-08-27 ~01:15 | **BRAK ombori yaratildi** — «Ombor 99» (`d4b4ff85`), `__brakStore=true`, POS prioriteti YO'Q, 27 yacheyka (`99-01-*`) | deploy operatori; ombor qatori — jonli `BEGIN…ROLLBACK` DRY, so'ng `COMMIT`; yacheykalar — `create-cells.ts --store "Ombor 99" --ombor 99 --stelaj 1:3x9` (DRY → `--apply --allow-remote`) | ✅ |
+| 2026-08-27 ~01:20 | **`sklad_keepers` to'ldirildi** — sklad 1, 2, 3 → «Admin User» (`885fb467`, Administrator). Omborchi vazifasi vaqtincha unga yuklandi (jonlida ombor xodimi yo'q) | deploy operatori, jonli `BEGIN…ROLLBACK` DRY, so'ng `COMMIT` (`ON CONFLICT DO NOTHING`) | ✅ (ombor tuzilmasiga tegmaydi) |
 
 > Yangi qator qo'shganda: sana, nima, kim/nima bilan, va reyestr (1-bo'lim JSON +
 > 2-bo'lim jadval) yangilanganini belgilang.

@@ -1,6 +1,6 @@
 # Omborchi va TSD mijozlari — kontrol, vozvrat, TSD APK
 
-> **Yaratilgan:** 2026-08-23 · **Buyurtmachi:** Ozodbek (egasi) · **Holat:** **G1 ⚠️ QISMAN** (kod tayyor va HEAD'da butunligi 2026-08-25 da qayta tasdiqlandi; qabul mezoni jonli tasdiqni kutmoqda — egasi 2026-08-25 da deploy'ni «hozir yo'q» dedi; `9fe25d15` da bitta o'lik i18n kaliti tuzatildi) · G2+G3 KOD TAYYOR · **G4 2a (backend) TAYYOR** — kassa endi ko'p ombordan AVTOMATIK sotadi (tasdiq-to'sig'i olib tashlandi); 2b qoldi: POS UI, yig'ish topshiriqlari, H2/H3 (E5) · **G5 QISMAN** — TSD auth + APK skeleti · **G6 QISMAN** — TSD ish ekranlari (yig'ish + yetishmovchilik, joylashtirish, sanash) tayyor, **APK ENDI HAQIQATAN QURILADI** (`BUILD SUCCESSFUL`), lekin jonli qurilmada tekshirilmagan (qoida 11). **Deploy kutilmoqda** — egasi «keyinroq» dedi VA 2026-08-24 hodisasi hal bo'lmagan (`docs/plans/2026-08-24-split-kassa-hodisasi.md`). Deploy'da: `topup-role-permissions.ts` MAJBURIY (`retailcontrol` + `returnacceptance` + **`piecetracking`**); G-rejaning O'Z migratsiyalari BESHTA (G1 `…120000_drawer_cash_out_sales_return`, G3 `…170000_sales_return_retail_sale`, G4 `20260825020000_retail_sale_position_allocation`, G5 `20260825170000_tsd_device`, G6 `20260825200000_tsd_work_screens`), lekin **BUTUN DELTA — 12 migratsiya** (Q/A/K bilan birga; tartib dossierda); **egasi qo'lida:** Ombor 07 kartasiga «Kassa oldidagi ombor» checkbox'i (busiz «07 bo'linishda oxirida» qoidasi ishlamaydi). ⚠️ Bu deploy JONLI XULQNI o'zgartiradi — G4 2a hisobotidagi «Jonli sozlash» NI VA G6 hisobotining 1-bandini (omborchiga yacheyka ko'chirish OCHILADI) o'qing
+> **Yaratilgan:** 2026-08-23 · **Buyurtmachi:** Ozodbek (egasi) · **Holat:** **G1 ⚠️ QISMAN** (kod tayyor va HEAD'da butunligi 2026-08-25 da qayta tasdiqlandi; qabul mezoni jonli tasdiqni kutmoqda — egasi 2026-08-25 da deploy'ni «hozir yo'q» dedi; `9fe25d15` da bitta o'lik i18n kaliti tuzatildi) · G2+G3 KOD TAYYOR · **G4 2a (backend) TAYYOR** — kassa endi ko'p ombordan AVTOMATIK sotadi (tasdiq-to'sig'i olib tashlandi); 2b qoldi: POS UI, yig'ish topshiriqlari, H2/H3 (E5) · **G5 QISMAN** — TSD auth + APK skeleti · **G6 QISMAN** — TSD ish ekranlari (yig'ish + yetishmovchilik, joylashtirish, sanash) tayyor, **APK ENDI HAQIQATAN QURILADI** (`BUILD SUCCESSFUL`), lekin jonli qurilmada tekshirilmagan (qoida 11). 🚀 **KOD JONLIGA CHIQDI 2026-08-26/27** (1-kecha, `83027bc2 → 61780120`, 37 commit, 6 migratsiya — hisobot 4-bo'lim boshida). **LEKIN HAMMA FAZA «QISMAN» BO'LIB QOLADI (qoida 11):** jonlida omborchi ROLI ham, ombor XODIMI ham yo'q, `restock_tasks` 0 qator, `sales_returns` 0 qator ⇒ birorta qabul mezoni jonlida bajarilmadi. 2026-08-27 da qisman sozlandi: BRAK ombori «Ombor 99» yaratildi va `sklad_keepers` (sklad 1,2,3 → «Admin User») to'ldirildi. Eski qayd: deploy kutilmoqda edi — egasi «keyinroq» degan VA 2026-08-24 hodisasi hal bo'lmagan (`docs/plans/2026-08-24-split-kassa-hodisasi.md`). Deploy'da: `topup-role-permissions.ts` MAJBURIY (`retailcontrol` + `returnacceptance` + **`piecetracking`**); G-rejaning O'Z migratsiyalari BESHTA (G1 `…120000_drawer_cash_out_sales_return`, G3 `…170000_sales_return_retail_sale`, G4 `20260825020000_retail_sale_position_allocation`, G5 `20260825170000_tsd_device`, G6 `20260825200000_tsd_work_screens`), lekin **BUTUN DELTA — 12 migratsiya** (Q/A/K bilan birga; tartib dossierda); **egasi qo'lida:** Ombor 07 kartasiga «Kassa oldidagi ombor» checkbox'i (busiz «07 bo'linishda oxirida» qoidasi ishlamaydi). ⚠️ Bu deploy JONLI XULQNI o'zgartiradi — G4 2a hisobotidagi «Jonli sozlash» NI VA G6 hisobotining 1-bandini (omborchiga yacheyka ko'chirish OCHILADI) o'qing
 >
 > 📋 **DEPLOY DOSSIERI — `docs/ops/2026-08-25-deploy-dossieri.md` (2026-08-26 da QAYTA YOZILDI).**
 > Sarlavhadagi «BESHTA» — G-rejaning O'Z migratsiyalari; dossierning birinchi
@@ -431,6 +431,87 @@ Ikkala rejani va docs/plans/2026-08-24-split-kassa-hodisasi.md ni to'liq o'qi (a
 > Shablon: **Faza · sana · commit(lar)** — nima qilindi (fayl ro'yxati bilan qisqa),
 > test natijalari (raqamlar), deploy holati (jonli tekshiruv dalili), ochiq qolganlar,
 > keyingi fazaga eslatmalar.
+
+### 🚀 DEPLOY — 1-kecha · 2026-08-26/27 · `83027bc2 → 61780120`
+
+**G1…G6 ning KODI JONLIGA CHIQDI.** To'liq ijro jurnali:
+`docs/ops/2026-08-26-deploy-reja-1-kecha.md` (5-bo'lim).
+
+| | |
+|---|---|
+| Delta | **37 commit** (rejadagi 36 emas — jonli HEAD `62a27024` emas, `83027bc2` ekan; farq bitta HUJJAT commiti, kod va migratsiya AYNAN o'sha) |
+| Migratsiya | **6/6 qo'llandi** + `prisma generate`; tuzilma zondi 7/7 |
+| Build / restart | `BUILD_RC=0`, `pm2` ikkalasi `online`, `unstable restarts: 0`, 6 soat barqaror |
+| Ruxsat topup | `rc=0` — `retailcontrol` + `returnacceptance` 5 rolga tushdi |
+| Sahifalar | `/omborchi`, `/omborchi/kontrol`, `/omborchi/vozvrat` → **200** |
+| Jonli holat | `POS yeta olmaydigan qoldiq: 0`; api xato loglari toza |
+
+🔴 **QOIDA 11 — HAMMA FAZA «QISMAN» BO'LIB QOLADI.** Kod jonlida, lekin
+**birorta faza qabul mezoni jonlida BAJARILMADI**. Sabab quyida, va u
+texnik emas — **operatsion**:
+
+**Jonlida omborchi INFRATUZILMASI yo'q edi** (2026-08-27 da o'lchandi):
+
+- `warehouse_manager` / `storekeeper` **rollari umuman yo'q** (8 rol bor:
+  AccountOwner, Administrator, B2B/B2G sotuvchi, Employee, Kassir, Manager,
+  PointOfSale, ReadOnly);
+- 13 xodimning **hammasi kassir yoki administrator** — ombor xodimi yo'q;
+- `employee_permissions` **bo'sh** (0 qator);
+- `sklad_keepers` **bo'sh** edi ⇒ `createPickingTasksForSale` «no skladKeeper
+  mappings found» deb qaytib ketardi va **yig'ish topshirig'i UMUMAN
+  yaratilmasdi**; `restock_tasks` jonlida **0 qator** — ya'ni G2 zanjiri
+  bugungacha bir marta ham yurmagan.
+
+**2026-08-27 da egasining qarori bilan qisman sozlandi:**
+
+- **BRAK ombori yaratildi** — «Ombor 99» (`d4b4ff85`), `__brakStore=true`,
+  POS prioriteti YO'Q, 27 yacheyka. ⇒ **G3 ning «Brak» tugmasi endi yoqiladi.**
+- **`sklad_keepers` to'ldirildi** — sklad 1, 2, 3 → «Admin User»
+  (Administrator). Omborchi vazifasi vaqtincha menejerga yuklandi.
+  ⇒ **G2 zanjiri endi haqiqatan tug'iladi.**
+  🔴 Tanlov ATAYLAB kassir bo'lmagan xodimga tushdi: `markReady` da
+  `assigneeId = userId` bo'lsa kassirning «tayyor» tugmasi chekni `ready` ga
+  flip QILMAYDI ⇒ omborchi qilib kassir belgilansa cheklar qotib qolardi.
+
+**Fazalar bo'yicha qabul mezoni holati (qoida 11):**
+
+| Faza | Kod jonlida | Qabul mezoni jonlida | Nega |
+|---|---|---|---|
+| **G1** | ✅ | ❌ | Sinov vozvrat qilinmadi. `sales_returns` jonlida **0 qator** |
+| **G2** | ✅ | ❌ | Zanjir hali yurmagan; `sklad_keepers` bugun to'ldirildi, sinov kutilmoqda |
+| **G3** | ✅ | ❌ | BRAK ombori bugun yaratildi; qabul → yorliq → post zanjiri sinalmadi |
+| **G4 (1+2a)** | ✅ | ✅ **JONLIDA TASDIQLANDI** | 2026-08-27 07:12, haqiqiy sotuv `ТРН-2026-01765` (kassir Ravshan): **ajratma qatori YOZILDI** — `store_id=Taqsimlanmagan`, **`cell_id=BO'SH`**, `qty=1`, `manual=f`. Ya'ni tasdiqsiz avto-taqsimot ishladi va **sanalgan yacheykani buzmadi** (X1). Kassa balansi AYNAN chek summasiga (1 200 000) oshdi; yacheyka qoldig'i o'zgarmadi; `POS yeta olmaydigan qoldiq: 0`. **Qabul mezonining «tasdiqsiz post bo'ladi + ledgerda aynan o'sha ombordan ayiriladi» bandi BAJARILDI**; «07 da yetmaydigan tovar bilan bo'linish» bandi jonli topologiyada sinalmadi (kaskadda amalda bitta to'la ombor) ⇒ faza baribir «QISMAN» |
+| **G5** | ✅ | ❌ | TSD qurilma xodimga bog'lanadi — ombor xodimi yo'q |
+| **G6** | ✅ | ❌ | Xuddi shu sabab; APK jonli qurilmada sinalmagan |
+
+**Ruxsat sinovi («oddiy omborchi bilan 403») BAJARIB BO'LMAYDI** — bunday
+foydalanuvchi mavjud emas.
+
+**🟢 2026-08-27 07:12 — KASSA YO'LI JONLIDA TASDIQLANDI.** Deploy'dan keyingi
+birinchi HAQIQIY sotuv (`ТРН-2026-01765`, kassir Ravshan, 1 200 000) muammosiz
+post bo'ldi. Bu 2026-08-24 da aynan to'xtagan oqim. O'lchov: G4 ajratmasi
+yozildi (`cell_id` BO'SH ⇒ sanalgan yacheyka buzilmadi), kassa balansi aynan
+chek summasiga oshdi, api xatolari yo'q. Sun'iy sinov cheki ATAYLAB
+yaratilmadi — haqiqiy sotuv kuchliroq dalil va nol qo'shimcha xavf.
+
+⚠️ **Cancel bandi ochiq qoldi:** post bo'lgan chekda UI'da «Отменить» YO'Q —
+faqat «Возврат» (bu boshqa amal, reyestrda ikkita hujjat qoldiradi). Haqiqiy
+mijoz cheki ustida cancel sinab bo'lmaydi. Cancel'ni sinash uchun alohida
+sinov cheki va API ruxsati kerak.
+
+**Ochiq qolganlar:**
+
+1. **Omborchi roli va xodimi yaratilsin** — busiz G2/G3/G5/G6 qabul mezonlari
+   yopilmaydi va «403» sinovi qilinmaydi;
+2. `sklad_keepers.printer_name` **bo'sh** — yig'ish varaqasi chop etilmaydi;
+3. **D2 hamon ochiq:** yig'ish topshirig'i `product.attributes.__yacheyka`
+   TAXMINIDAN quriladi, `retail_sale_position_allocations` dan EMAS
+   (2026-08-27 da kodda qayta tasdiqlandi) ⇒ ajratma boshqa omborni
+   ko'rsatganda topshiriq noto'g'ri omborchiga tushadi;
+4. Jonlida **4417/5090 tovarning yacheykasi yo'q** ⇒ ular `NULL_SKLAD` guruhiga
+   tushib **birinchi omborchiga** (`keepers[0]`) boradi.
+
+---
 
 ### G1 — Vozvrat pulini kassadan qaytarish · ⚠️ QISMAN (qoida 11) · 2026-08-25 · `9fe25d15`
 
