@@ -1,7 +1,8 @@
 # Ko'p omborli tuzilmaga o'tish (7+ ombor) — M-REJA
 
 > **Yaratilgan:** 2026-08-27 · **Buyurtmachi:** Ozodbek (egasi) ·
-> **Holat:** **M0 ✅ reja tuzildi** · M1…M8 boshlanmagan
+> **Holat:** **M0 ✅ reja tuzildi** · **S-M1 ✅ javob olindi** ·
+> **M1 boshlashga TAYYOR** · M2…M8 boshlanmagan
 >
 > **Nega bu reja bor:** 2026-08-27 05:32–05:37 da egasi jonlida **Ombor 03,
 > 04, 05, 06, 07** ni yaratdi va yaqin kunlarda ularga tovar joylashtirishni
@@ -144,18 +145,40 @@ mulohaza uchinchi holatga tatbiq etilmagan. **M2 aynan shuni yopadi.**
 
 ---
 
-## 4. 🔴 EGASIDAN JAVOB KUTILAYOTGAN SAVOL
-
-### S-M1 — omborlarning FIZIK tartibi
+## 4. ✅ S-M1 — JAVOB OLINDI (egasi, 2026-08-27)
 
 Kaskad tartibi «kassaga yaqinlik» bo'yicha quriladi (egasining Q1 qarori:
 «tovar **eng yaqin ombordan** ayiriladi»). Tizim buni o'zi bilmaydi.
 
-**Savol:** Ombor 01 … 07 ni kassaga yaqinligi bo'yicha tartiblang.
+**Savol edi:** Ombor 01 … 07 ni kassaga yaqinligi bo'yicha tartiblang.
 
-**Javob berilmaguncha M1 BOSHLANMAYDI.** Vaqtinchalik xavfsiz taxmin —
-raqam tartibi (01→1 … 07→7), lekin egasining tasdig'isiz yozilmaydi, chunki
-noto'g'ri tartib «uzoq ombordan yig'ish» ga olib keladi.
+> **JAVOB: `07 → 01 → 02 → 03 → 04 → 05 → 06`.**
+> Ya'ni **Ombor 07 kassaga eng yaqin** («kassa oldidagi ombor»), qolganlari
+> raqam tartibida.
+
+**KANONIK KASKAD JADVALI** (M1 shuni yozadi):
+
+| O'rin | Ombor | id (qisqa) | `__posPriority` |
+|---|---|---|---|
+| 1 | **Taqsimlanmagan** | `968f9da2` | **1** — o'zgarmaydi (bugun butun qoldiq shu yerda) |
+| 2 | Ombor 07 | `02016d74` | **2** |
+| 3 | Ombor 01 | `7400bf94` | **3** |
+| 4 | Ombor 02 | `01662dbe` | **4** (hozir 2 — H6/1 shu yerda yopiladi) |
+| 5 | Ombor 03 | `1e5df878` | **5** |
+| 6 | Ombor 04 | `b628f0d0` | **6** |
+| 7 | Ombor 05 | `75878ad6` | **7** |
+| 8 | Ombor 06 | `ed80b5ce` | **8** |
+| — | Ombor 99 (BRAK) | `d4b4ff85` | **YO'Q** — ataylab, kaskadga kirmaydi |
+
+🔴 **Nega «Taqsimlanmagan» hamon 1-o'rinda:** bugun **butun sotuv** o'shandan
+ketadi (51,2 mln qoldiq). Uni oxirga surish sotuv xulqini **darhol**
+o'zgartirardi. Shuning uchun u **M7 da**, tovar haqiqatan ko'chgandan keyin
+oxirgi o'ringa o'tadi va o'shanda Ombor 07 birinchi bo'ladi. Bu bosqichma-
+bosqichlik ataylab: har o'zgarish alohida kuzatiladi.
+
+⚠️ **`posPriority` va `posFront` — ikki BOSHQA narsa.** Bu jadval kaskad
+TARTIBINI beradi. «Kassa oldidagi ombor» bayrog'i (`__posFrontStore`,
+taqsimotda yolg'iz qoplasa birinchi / bo'linishda oxirgi) **M7 da** qo'yiladi.
 
 > ⚠️ **«Ombor 07 = kassa oldidagi» qoidasi bilan chalkashtirmang.** `posFront`
 > — bu **taqsimot** bayrog'i (yolg'iz qoplasa birinchi, bo'linishda oxirgi),
@@ -188,15 +211,14 @@ M5 (T1: bo'lak reyestri) ──────────────────�
 **Maqsad:** hamma ombor POS kaskadida to'g'ri o'rin olsin va reyestr
 haqiqatni aytsin — **tovar joylashtirilishidan OLDIN**.
 
-**Oldshart:** S-M1 javobi (4-bo'lim).
+**Oldshart:** ✅ S-M1 javobi olingan (4-bo'lim) — **M1 BOSHLASH MUMKIN**.
 
 **Vazifalar:**
 
-1. **Kaskad prioritetlarini qo'yish** (jonli, `stores.attributes` jsonb):
-   - `Taqsimlanmagan` — **1 da QOLADI** (bugun butun sotuv o'shandan ketadi;
-     uni oxirga surish M6 dan keyin, M7 da);
-   - Ombor 01…07 — S-M1 tartibida **2 dan boshlab**;
-   - `Ombor 99` — prioritet YO'Q (BRAK, ataylab).
+1. **Kaskad prioritetlarini qo'yish** (jonli, `stores.attributes` jsonb) —
+   qiymatlar **4-bo'limdagi KANONIK JADVALDAN** olinadi (S-M1 javobi:
+   `07 → 01 → 02 → 03 → 04 → 05 → 06`). Taqsimlanmagan **1 da qoladi**,
+   Ombor 99 ga prioritet **berilmaydi**.
    Buyruq shakli (`attributes` — `jsonb`):
 
        UPDATE stores SET attributes = coalesce(attributes,'{}'::jsonb)
@@ -230,7 +252,8 @@ D:\sherset-v2 dagi docs/plans/2026-08-27-kop-omborli-tuzilma.md ni TO'LIQ o'qi.
 Qoida 3 bo'yicha docs/plans/2026-08-23-ombor-restrukturizatsiya.md (2-bo'lim),
 docs/plans/2026-08-24-split-kassa-hodisasi.md va docs/ops/jonli-holat.md ni ham o'qi.
 Sen M1 fazasini bajarasan (kaskad sozlamasi + jonli holat reyestri).
-Egasidan S-M1 javobini (omborlarning fizik tartibi) va VPS parolini so'ra.
+S-M1 javobi ALLAQACHON olingan — 4-bo'limdagi KANONIK JADVALNI ishlat.
+Egasidan faqat VPS parolini so'ra.
 Faqat M1 vazifalari, testlar, jonli tekshiruv, hisobot shu faylning
 10-bo'limiga — va TO'XTA. Keyingi fazani BOSHLAMA.
 ```
@@ -594,9 +617,11 @@ va jonli ma'lumot o'zgartirmadi** — faqat o'qish so'rovlari va hujjat.
 Buzilishi mumkin bo'lgan oqim yo'q.
 
 **Ochiq qolganlar:**
-- 🔴 **S-M1 javobsiz** (omborlarning fizik tartibi) — M1 shusiz boshlanmaydi;
+- ✅ **S-M1 javob olindi** (egasi, 2026-08-27): `07 → 01 → 02 → 03 → 04 → 05 → 06`
+  ⇒ kanonik jadval 4-bo'limga yozildi, **M1 bloklanmagan**;
 - reyestr (`jonli-holat.md`) hamon 4 omborli — M1 yangilaydi;
 - H-rejadagi H3 va H4 bandlariga «M-rejaga ko'chirildi» yozuvi qo'shilishi
   kerak (M1 sessiyasi qo'shsin yoki alohida kichik ish).
 
-**Keyingi faza:** **M1**, lekin **faqat S-M1 javobidan keyin.**
+**Keyingi faza:** **M1** — bloklanmagan, alohida sessiyada boshlanadi
+(prompti 6-bo'limda).
