@@ -331,6 +331,18 @@ Faqat H2 vazifalari, testlar, jonli o'qish-tekshiruv, hisobot — va TO'XTA.
 
 ### H3 — «Tovar bor, lekin kassa yeta olmaydi» — signal va qo'riqchi
 
+> 🔴 **BU FAZA `docs/plans/2026-08-27-kop-omborli-tuzilma.md` GA KO'CHIRILDI (M2).**
+> Sabab: quyidagi 1-band signalni `assertAvailableCascade` ga bog'lagan, o'sha
+> metod esa **2026-08-25 da G4-2a bilan O'CHIRILGAN** (`retail-sale.service.ts`
+> dagi izohga qarang) ⇒ H3 ni yozilganidek bajarib bo'lmaydi. Ilgak endi
+> `apps/api/src/modules/retail-sale/retail-allocation.ts` da: u yerda ikkita
+> `ShortfallReason` bor (`insufficient` · `no-single-source`), uchinchisi —
+> «tovar BOR, lekin POS yeta olmaydi» — yo'q, va shu sababli kassirga
+> **yolg'on xabar** («hech bir omborda yetarli miqdor yo'q») chiqadi.
+> **6 banddan 1 tasi bajarilgan** — deploy qo'riqchisi (E5 orqali).
+> Quyidagi matn TARIXIY holda qoldirildi.
+
+
 **Maqsad:** IS-5 ni yopish. Ayni nosozlik yana yuz bersa — 46 daqiqa emas,
 birinchi urinishda ko'rinadi.
 
@@ -366,6 +378,16 @@ qoldiq signali). Faqat H3 vazifalari, testlar, deploy, jonli tekshiruv, hisobot 
 ---
 
 ### H4 — Split'ni XAVFSIZ qayta yuritish (S1 javobidan keyin)
+
+> 🔴 **BU FAZA `docs/plans/2026-08-27-kop-omborli-tuzilma.md` GA KO'CHIRILDI (M6).**
+> **Egasi 2026-08-27 da H4 KERAK dedi** («omborlararo ko'chirish hujjat
+> sifatida — ha, va tez orada kerak») va o'sha kuni 05:32–05:37 da jonlida
+> **Ombor 03, 04, 05, 06, 07** ni yaratdi. Ya'ni faza endi mavhum emas —
+> tuzilma amalda qurilmoqda. M-rejada u **oltita oldshart fazaga** bo'lindi
+> (M1 kaskad · M2 signal · M3 yacheykalar · M4 topshiriq · M5 T1 · M6 ko'chirish)
+> va ko'chirish **bir kechada BITTA ombor** qilib belgilandi.
+> Quyidagi matn TARIXIY holda qoldirildi; T1 bandi M5 da ijro etiladi.
+
 
 **Maqsad:** reja maqsad-arxitekturasiga (har fizik ombor alohida Store) qaytish —
 bu safar savdo to'xtamasdan.

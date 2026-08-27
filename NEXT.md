@@ -331,6 +331,36 @@ purchase-orders related-docs populate (`GET /purchase-orders/:id/related`) · wo
 
 ## ⏭️ Aniq keyingi vazifa (har sessiya yakunlanganda yangilanadi)
 
+> **🕒 2026-08-27c (YANGI REJA — KO'P OMBORLI TUZILMA, M1…M8).**
+> Reja: **`docs/plans/2026-08-27-kop-omborli-tuzilma.md`**. Har faza —
+> ALOHIDA sessiya, har fazaning O'Z PROMPTI bor, hisobotlar rejaning
+> 10-bo'limiga yoziladi. Faza tugagach agent **TO'XTAYDI** (o'zgarmas qoida).
+>
+> **Nega tug'ildi:** egasi 2026-08-27 05:32–05:37 da jonlida **Ombor 03, 04,
+> 05, 06, 07** ni yaratdi va «tez orada tovar boradi» dedi. Jonlida endi
+> **9 ombor**, reyestrda esa **4 ta**.
+>
+> 🔴 **O'LCHANGAN XAVF (X-1):** beshovida ham `__posPriority` YO'Q.
+> `resolveAllocStores` (`retail-allocation.ts:214`) prioritetsiz omborni
+> taqsimotdan CHIQARADI ⇒ **birinchi tovar tushgan zahoti kassa uni
+> sotolmaydi**, va `buildShortfallMessage` buni `insufficient` deb atab
+> **«hech bir omborda yetarli miqdor yo'q»** deydi — bu YOLG'ON. Aynan
+> 2026-08-24 mexanizmi. **Tartib: prioritet OLDIN, tovar KEYIN.**
+>
+> **H3 ta'rifi ESKIRGAN** — `assertAvailableCascade` 2026-08-25 da o'chirilgan;
+> H3 va H4 M-rejaga ko'chirildi (M2 va M6), H-rejada havola qo'yildi.
+>
+> **Fazalar:** M1 kaskad+reyestr · M2 signal (H3) · M3 yacheyka raqamlash ·
+> M4 D2 topshiriq · M5 T1 bo'lak reyestri · M6 ko'chirish (H4, bir kechada
+> BITTA ombor) · M7 posFront 07 · M8 omborlararo hujjat (F7).
+>
+> 🔴 **M1 BOSHLANMAYDI** — egasidan **S-M1** javobi kerak: omborlarni
+> kassaga yaqinligi bo'yicha tartiblash.
+>
+> ℹ️ Yacheyka qoldig'i kamayishi tushuntirildi: 62 ta `СП-…` «avto-tenglash»
+> (−622 671, har biri 9 000–11 000) — soxta «mashq» qoldig'i SANASH orqali
+> tozalanmoqda. Sotuvning ulushi −289 ⇒ X1 kuchida.
+
 > **🕒 2026-08-27b (1-KECHA DEPLOY'I MUSTAQIL TASDIQLANDI — deploy'dan ~19 soat keyin).**
 > Egasi deploy prompt'ini qayta ishga tushirdi; yangi operator sessiyasi holatni
 > noldan o'lchadi. To'liq bayon: `docs/ops/2026-08-26-deploy-reja-1-kecha.md` §5.2.
