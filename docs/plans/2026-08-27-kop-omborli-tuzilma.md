@@ -160,29 +160,45 @@ Kaskad tartibi «kassaga yaqinlik» bo'yicha quriladi (egasining Q1 qarori:
 
 | O'rin | Ombor | id (qisqa) | `__posPriority` |
 |---|---|---|---|
-| 1 | **Taqsimlanmagan** | `968f9da2` | **1** — o'zgarmaydi (bugun butun qoldiq shu yerda) |
-| 2 | Ombor 07 | `02016d74` | **2** |
-| 3 | Ombor 01 | `7400bf94` | **3** |
-| 4 | Ombor 02 | `01662dbe` | **4** (hozir 2 — H6/1 shu yerda yopiladi) |
-| 5 | Ombor 03 | `1e5df878` | **5** |
-| 6 | Ombor 04 | `b628f0d0` | **6** |
-| 7 | Ombor 05 | `75878ad6` | **7** |
-| 8 | Ombor 06 | `ed80b5ce` | **8** |
+| 1 | **Ombor 07** | `02016d74` | **1** — kassaga eng yaqin |
+| 2 | Ombor 01 | `7400bf94` | **2** |
+| 3 | Ombor 02 | `01662dbe` | **3** (hozir 2 — H6/1 shu yerda yopiladi) |
+| 4 | Ombor 03 | `1e5df878` | **4** |
+| 5 | Ombor 04 | `b628f0d0` | **5** |
+| 6 | Ombor 05 | `75878ad6` | **6** |
+| 7 | Ombor 06 | `ed80b5ce` | **7** |
+| 8 | **Taqsimlanmagan** | `968f9da2` | **8 — ENG OXIRIDA** (hozir 1) |
 | — | Ombor 99 (BRAK) | `d4b4ff85` | **YO'Q** — ataylab, kaskadga kirmaydi |
 
-🔴 **Nega «Taqsimlanmagan» hamon 1-o'rinda:** bugun **butun sotuv** o'shandan
-ketadi (51,2 mln qoldiq). Uni oxirga surish sotuv xulqini **darhol**
-o'zgartirardi. Shuning uchun u **M7 da**, tovar haqiqatan ko'chgandan keyin
-oxirgi o'ringa o'tadi va o'shanda Ombor 07 birinchi bo'ladi. Bu bosqichma-
-bosqichlik ataylab: har o'zgarish alohida kuzatiladi.
+### ✅ «Taqsimlanmagan eng oxirida» — egasining tuzatishi (2026-08-27)
+
+Rejaning birinchi tahririda `Taqsimlanmagan` **1-o'rinda qoldirilgan** edi
+(«bugun butun sotuv o'shandan ketadi, xulq o'zgarmasin»). **Egasi buni rad
+etdi:** hovuz ta'rifi bo'yicha **eng oxirida** turishi kerak.
+
+**Tekshirildi — ehtiyotkorlik ortiqcha edi.** Bo'sh omborni kaskad boshiga
+qo'yish bugun xulqni O'ZGARTIRMAYDI, va bu taxmin emas, beshta o'lchov:
+
+| # | Shubha | Natija |
+|---|---|---|
+| 1 | Bo'sh omborlar taqsimotni buzadimi? | ❌ Yo'q — qoldig'i 0 ⇒ hissasi 0, reja `Taqsimlanmagan` ga tushib ketaveradi. Natija **aynan bir xil** |
+| 2 | Qulflash faqat `cascade[0]` da qoladimi? | ❌ Yo'q — kod `extraStoreIds` orqali **hamma plan omborini** qulflaydi (`retail-sale.service.ts:1193–1207`), tartibdan qat'i nazar |
+| 3 | `allowNegativeStock` `cascade[0]` dan olinadi (`:970`, `:3844`) — farq bo'ladimi? | ❌ Yo'q — **to'qqizala omborda ham `false`** (jonlida o'lchandi) ⇒ qiymat o'zgarmaydi |
+| 4 | `posSessionStore` kaskad BOSHI bo'lishi shartmi? | ❌ Yo'q — **E5 buni yumshatgan**: «kaskadda BO'LSIN» (`warehouse-state-core.ts:29`). Taqsimlanmagan kaskadda qoladi ⇒ shart bajariladi |
+| 5 | `assertAvailable` asosiy ombor balansini talab qiladimi? | ❌ Yo'q — u `post()` da **chaqirilmaydi** (faqat izohlarda qolgan). Yetarlilik **ajratmaning o'zi** bilan kafolatlanadi (`:3631`). `[alloc-invariant]` esa faqat `logger.warn` — sotuvni to'xtatmaydi |
+
+⇒ **Bitta jonli o'zgarish yetadi**, ikkitasi emas: M1 yakuniy tartibni darrov
+yozadi va **M7 endi faqat `posFront` bayrog'ini** qo'yadi.
 
 ⚠️ **`posPriority` va `posFront` — ikki BOSHQA narsa.** Bu jadval kaskad
 TARTIBINI beradi. «Kassa oldidagi ombor» bayrog'i (`__posFrontStore`,
 taqsimotda yolg'iz qoplasa birinchi / bo'linishda oxirgi) **M7 da** qo'yiladi.
 
-> ⚠️ **«Ombor 07 = kassa oldidagi» qoidasi bilan chalkashtirmang.** `posFront`
-> — bu **taqsimot** bayrog'i (yolg'iz qoplasa birinchi, bo'linishda oxirgi),
-> `posPriority` esa **kaskad tartibi**. Ikkalasi alohida (M7).
+🔴 **M1 dan keyin qoida 13 smoke MAJBURIY** — kaskad boshi o'zgarardi, ya'ni
+`storeId` (qulflanadigan asosiy ombor) endi `Ombor 07`. Yuqoridagi besh
+o'lchov «xulq o'zgarmaydi» deydi, lekin buni **jonli sinov sotuvi** tasdiqlashi
+kerak (IS-3 saboqi: kod xulqi haqidagi to'g'ri xulosa tizim holati haqida
+noto'g'ri bo'lishi mumkin).
 
 ---
 
@@ -484,7 +500,8 @@ bo'linishda oxirgi; «Taqsimlanmagan» kaskad **oxiriga** o'tadi.
 2. **Reyestrda `"posFront": true`** yozilishi SHART — aks holda
    `warehouse-state.ts` darhol drift beradi (`kassa-oldidagi-ombor-reyestrda-yoq`,
    `xato` darajali).
-3. `Taqsimlanmagan` prioriteti **oxirgi raqamga** o'tkaziladi (hovuz sifatida).
+3. ~~`Taqsimlanmagan` ni oxirgi raqamga o'tkazish~~ — **M1 da bajarildi**
+   (egasining 2026-08-27 tuzatishi, 4-bo'lim). M7 da qayta tartiblash YO'Q.
 4. Testlar: `posFront` ning ikki xulqi (yolg'iz qoplasa birinchi, bo'linishda
    oxirgi) — `retail-allocation` testlarida qulflansin.
 
