@@ -78,8 +78,15 @@ function debt(over: Partial<DebtRow> & { id: string; totalMinor: bigint }): Debt
 function makeDb(rows: DebtRow[]) {
   const debts = rows;
   const payments: PaymentRow[] = [];
-  const deltas: Array<{ deltaMinor: bigint; currency: string; docType?: string; docId?: string }> =
-    [];
+  const deltas: Array<{
+    deltaMinor: bigint;
+    currency: string;
+    docType?: string;
+    docId?: string;
+    notice?: string;
+  }> = [];
+  /** `$transaction` muvaffaqiyatli tugadimi — «commit'dan keyin» isboti uchun. */
+  let committed = false;
 
   // ── qulf (FOR UPDATE) ────────────────────────────────────────────────────
   const held = new Set<string>();
@@ -214,7 +221,9 @@ function makeDb(rows: DebtRow[]) {
     $transaction: async <T>(fn: (tx: unknown) => Promise<T>): Promise<T> => {
       const owned = new Set<string>();
       try {
-        return await fn(makeTx(owned));
+        const out = await fn(makeTx(owned));
+        committed = true;
+        return out;
       } finally {
         releaseAll(owned);
       }
@@ -233,6 +242,7 @@ function makeDb(rows: DebtRow[]) {
     organization: { findFirst: async () => null },
   };
 
+  const notices: Array<{ currency: string; deltaMinor: bigint; committed: boolean }> = [];
   const balances = {
     applyDelta: vi.fn(
       async (
@@ -241,11 +251,24 @@ function makeDb(rows: DebtRow[]) {
         _counterpartyId: string,
         currency: string,
         deltaMinor: bigint,
-        meta?: { docType?: string; docId?: string },
+        meta?: { docType?: string; docId?: string; notice?: string },
       ) => {
-        deltas.push({ deltaMinor, currency, docType: meta?.docType, docId: meta?.docId });
+        deltas.push({
+          deltaMinor,
+          currency,
+          docType: meta?.docType,
+          docId: meta?.docId,
+          notice: meta?.notice,
+        });
       },
     ),
+    // 2026-08-28: FIFO bo'laklari xabar chiqarmaydi (`notice: 'defer'`) —
+    // hujjat uchun BITTA yig'ma xabar commit'dan keyin shu yerdan o'tadi.
+    emitDocumentNotice: vi.fn(async (p: { currency: string; deltaMinor: bigint }) => {
+      // `committed` CHAQIRUV PAYTIDA suratga olinadi: xabar tranzaksiya
+      // ichidan chiqsa bu yerda `false` bo'lardi.
+      notices.push({ currency: p.currency, deltaMinor: p.deltaMinor, committed });
+    }),
   };
 
   // Faza 11 (`M-05`): kassa daftari. Ilgari bu servis MoneyService'ni import
@@ -259,7 +282,7 @@ function makeDb(rows: DebtRow[]) {
   };
 
   const svc = new PosDebtPaymentService({ client } as never, balances as never, money as never);
-  return { svc, debts, payments, deltas, balances, cashDeltas };
+  return { svc, debts, payments, deltas, balances, cashDeltas, notices };
 }
 
 const paidSum = (payments: PaymentRow[]) =>
@@ -453,5 +476,92 @@ describe('PosDebtPaymentService.pay — DUP-07 recalc kanonik yo`li', () => {
     expect(s.openCount).toBe(1);
     expect(s.outstandingMinor).toBe('20000');
     expect(s.debts.map((d) => d.id)).toEqual(['live']);
+  });
+});
+
+/**
+ * 🔴 BITTA TO'LOV = BITTA XABAR (2026-08-28, prodda o'lchangan nuqson).
+ *
+ * TUZATISHDAN OLDINGI holat. FIFO to'lovni N qarzga bo'lardi, har bo'lak
+ * `recalcDebt` → `applyDelta` chaqirardi, `applyDelta` esa HAR SAFAR
+ * `COUNTERPARTY_BALANCE_CHANGED` chiqarardi. Natijada:
+ *   · mijozga ketadigan xabar BIRINCHI bo'lakning summasini va O'RTADAGI
+ *     balansni olardi — 2 616 000 to'lagan mijoz «qabul qilindi: 1 572 000 ·
+ *     qolgan qarz: 1 044 000» degan YOLG'ON xabarni ko'rardi (qarzi 0 edi);
+ *   · egaga esa bitta to'lov uchun N ta xabar ketardi (`notifyOwner`da dedup
+ *     umuman yo'q).
+ *
+ * Yechim JURNALNI o'zgartirmaydi — har qarz o'z balans qatorini olishi SHART
+ * (akt-sverka va hisobotlar shundan yuriladi). Ajratilgan narsa — XABAR:
+ * bo'laklar `notice: 'defer'` bilan yoziladi, hujjat esa COMMIT'dan keyin
+ * bitta `emitDocumentNotice` bilan e'lon qilinadi.
+ *
+ * NON-VACUOUS: tuzatishdan oldingi kodda 1-test `notices` ni BO'SH ko'radi
+ * (metod umuman chaqirilmasdi), 3-test esa `notice` maydonini `undefined`
+ * topadi.
+ */
+describe("PosDebtPaymentService.pay — bitta to'lov = bitta xabar", () => {
+  /** 100k + 200k + 300k = 600k — bitta to'lov uchta qarzga bo'linadi. */
+  const threeDebts = () => [
+    debt({ id: 'd1', totalMinor: 100_000n, createdAt: new Date('2026-08-01T00:00:00Z') }),
+    debt({ id: 'd2', totalMinor: 200_000n, createdAt: new Date('2026-08-02T00:00:00Z') }),
+    debt({ id: 'd3', totalMinor: 300_000n, createdAt: new Date('2026-08-03T00:00:00Z') }),
+  ];
+
+  it("uch qarzga bo'lingan to'lov: xabar BITTA va TO'LIQ summada", async () => {
+    const { svc, deltas, notices } = makeDb(threeDebts());
+    await svc.pay(ACC, 'u1', { counterpartyId: CP, amountMinor: '600000' });
+
+    // Jurnal — uch qator (o'zgarmaydi, buxgalteriya shunday bo'lishi kerak).
+    expect(deltas).toHaveLength(3);
+    expect(deltaSum(deltas)).toBe(-600_000n);
+
+    // Xabar — BITTA, va u bo'lakning emas, HUJJATNING summasi.
+    expect(notices).toHaveLength(1);
+    expect(notices[0]?.deltaMinor).toBe(-600_000n);
+    expect(notices[0]?.currency).toBe('UZS');
+  });
+
+  it("har bo'lak `notice: 'defer'` bilan yoziladi — bo'lak xabari YO'Q", async () => {
+    const { svc, deltas } = makeDb(threeDebts());
+    await svc.pay(ACC, 'u1', { counterpartyId: CP, amountMinor: '600000' });
+
+    expect(deltas).toHaveLength(3);
+    for (const d of deltas) expect(d.notice).toBe('defer');
+  });
+
+  it("xabar COMMIT'dan KEYIN chiqadi (rollbackda fantom xabar bo'lmasin)", async () => {
+    const { svc, notices } = makeDb(threeDebts());
+    await svc.pay(ACC, 'u1', { counterpartyId: CP, amountMinor: '600000' });
+
+    expect(notices).toHaveLength(1);
+    // Tranzaksiya ichidan chiqsa bu `false` bo'lardi.
+    expect(notices[0]?.committed).toBe(true);
+  });
+
+  it("bitta qarzga tushgan to'lov ham AYNI yo'ldan o'tadi (shox ikkiga bo'linmaydi)", async () => {
+    const { svc, deltas, notices } = makeDb([debt({ id: 'd1', totalMinor: 100_000n })]);
+    await svc.pay(ACC, 'u1', { counterpartyId: CP, amountMinor: '100000' });
+
+    expect(deltas).toHaveLength(1);
+    expect(deltas[0]?.notice).toBe('defer');
+    expect(notices).toHaveLength(1);
+    expect(notices[0]?.deltaMinor).toBe(-100_000n);
+  });
+
+  it("rad etilgan to'lov xabar CHIQARMAYDI", async () => {
+    const { svc, notices } = makeDb([debt({ id: 'd1', totalMinor: 100_000n })]);
+    await expect(
+      svc.pay(ACC, 'u1', { counterpartyId: CP, amountMinor: '999000' }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(notices).toHaveLength(0);
+  });
+
+  it("ikki ALOHIDA to'lov — ikki xabar (dedup haqiqiy to'lovni yutmaydi)", async () => {
+    const { svc, notices } = makeDb([debt({ id: 'd1', totalMinor: 100_000n })]);
+    await svc.pay(ACC, 'u1', { counterpartyId: CP, amountMinor: '40000' });
+    await svc.pay(ACC, 'u1', { counterpartyId: CP, amountMinor: '60000' });
+
+    expect(notices.map((n) => n.deltaMinor)).toEqual([-40_000n, -60_000n]);
   });
 });

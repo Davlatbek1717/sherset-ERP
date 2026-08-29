@@ -201,6 +201,7 @@ function makeDb(rows: DebtRow[], deskCurrency = 'UZS') {
     organization: { findFirst: async () => ({ name: 'Org', legalTitle: null }) },
   };
 
+  const notices: Array<{ currency: string; deltaMinor: bigint }> = [];
   const balances = {
     applyDelta: vi.fn(
       async (
@@ -213,6 +214,11 @@ function makeDb(rows: DebtRow[], deskCurrency = 'UZS') {
         balanceDeltas.push({ currency, deltaMinor });
       },
     ),
+    // 2026-08-28: FIFO bo'laklari xabar chiqarmaydi (`notice: 'defer'`) —
+    // hujjat uchun BITTA yig'ma xabar commit'dan keyin shu yerdan o'tadi.
+    emitDocumentNotice: vi.fn(async (p: { currency: string; deltaMinor: bigint }) => {
+      notices.push({ currency: p.currency, deltaMinor: p.deltaMinor });
+    }),
   };
   const money = {
     applyDeltas: vi.fn(async (_t: unknown, _a: string, ds: Array<Record<string, unknown>>) => {
@@ -221,7 +227,7 @@ function makeDb(rows: DebtRow[], deskCurrency = 'UZS') {
   };
 
   const svc = new PosDebtPaymentService({ client } as never, balances as never, money as never);
-  return { svc, debts, payments, balanceDeltas, cashDeltas };
+  return { svc, debts, payments, balanceDeltas, cashDeltas, notices };
 }
 
 describe("PosDebtPaymentService.pay — F6 dollar qarz to'lovi", () => {

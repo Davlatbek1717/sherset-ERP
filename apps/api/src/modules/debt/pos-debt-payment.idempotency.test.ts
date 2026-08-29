@@ -237,7 +237,14 @@ function makeDb(opts: FakeOpts = {}) {
     },
   };
 
-  const balances = { applyDelta: vi.fn(async () => undefined) };
+  const notices: Array<{ currency: string; deltaMinor: bigint }> = [];
+  const balances = {
+    applyDelta: vi.fn(async () => undefined),
+    // 2026-08-28: hujjat uchun bitta yig'ma xabar (`notice: 'defer'` juftligi).
+    emitDocumentNotice: vi.fn(async (p: { currency: string; deltaMinor: bigint }) => {
+      notices.push({ currency: p.currency, deltaMinor: p.deltaMinor });
+    }),
+  };
   const money = { applyDeltas: vi.fn(async () => undefined) };
 
   const svc = new PosDebtPaymentService({ client } as never, balances as never, money as never);

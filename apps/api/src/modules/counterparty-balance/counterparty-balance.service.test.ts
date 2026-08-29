@@ -193,3 +193,108 @@ describe('CounterpartyBalanceService.applyDelta — journal (Faza 9, DUP-15)', (
     expect(entryArgs).toHaveLength(6);
   });
 });
+
+/**
+ * 2026-08-28 — «BITTA HUJJAT = BITTA XABAR».
+ *
+ * Bir hujjat bir necha `applyDelta` qilishi mumkin (POS qarz to'lovi FIFO
+ * bo'yicha N qarzga bo'linadi). Jurnal bo'linishicha qolishi SHART, lekin
+ * mijozga ketadigan xabar HUJJAT darajasida bo'lishi kerak — aks holda u
+ * birinchi bo'lakning summasini «to'liq to'lov» deb o'qiydi.
+ *
+ * NON-VACUOUS: `notice` qo'llab-quvvatlanmagan kodda 1-test hodisani KO'RADI
+ * (`emit` chaqirilgan), 3-test esa `emitDocumentNotice` yo'qligidan yiqiladi.
+ */
+function svcWithBalance(balanceMinor: bigint | null) {
+  const events = { emit: vi.fn() };
+  const findFirst = vi.fn(async () => (balanceMinor === null ? null : { balanceMinor }));
+  const prisma = { client: { counterpartyBalance: { findFirst } } };
+  return {
+    service: new CounterpartyBalanceService(prisma as never, events as never),
+    events,
+    findFirst,
+  };
+}
+
+const DOC_NOTICE = {
+  accountId: 'acc-1',
+  counterpartyId: 'cp-1',
+  currency: 'UZS',
+  source: 'debtpayment',
+  docType: 'debtpayment',
+  docId: 'batch-1',
+} as const;
+
+describe('CounterpartyBalanceService — hujjat darajasidagi xabar', () => {
+  it("`notice: 'defer'` jurnalni yozadi, lekin hodisa CHIQARMAYDI", async () => {
+    const { tx, entryArgs } = makeTx();
+    const { service, events } = svcWithBalance(0n);
+    await service.applyDelta(tx as never, 'acc-1', 'cp-1', 'UZS', -1_000_000n, {
+      ...META,
+      notice: 'defer',
+    });
+    // Pul daftari — o'zgarishsiz.
+    expect(entryArgs).toHaveLength(1);
+    expect(entryArgs[0]!.data.deltaMinor).toBe(-1_000_000n);
+    // Xabar — chaqiruvchi hujjat tugagach o'zi beradi.
+    expect(events.emit).not.toHaveBeenCalled();
+  });
+
+  it("sukut (`notice` berilmagan) — eski xulq: har delta o'z hodisasini beradi", async () => {
+    const { tx } = makeTx();
+    const { service, events } = svcWithBalance(0n);
+    await service.applyDelta(tx as never, 'acc-1', 'cp-1', 'UZS', -1_000_000n, META);
+    expect(events.emit).toHaveBeenCalledTimes(1);
+  });
+
+  it('`emitDocumentNotice` — YAKUNIY balans bilan bitta hodisa', async () => {
+    const { service, events, findFirst } = svcWithBalance(0n);
+    await service.emitDocumentNotice({ ...DOC_NOTICE, deltaMinor: -2_616_000n });
+
+    expect(findFirst).toHaveBeenCalledTimes(1);
+    expect(events.emit).toHaveBeenCalledTimes(1);
+    const payload = events.emit.mock.calls[0]![1] as {
+      deltaMinor: bigint;
+      newBalanceMinor: bigint;
+      docId: string;
+      source: string;
+    };
+    // 🔴 Nuqsonning o'zi: ilgari bu yerda bo'lak summasi (−1 572 000) va
+    // O'RTADAGI balans (1 044 000) turardi.
+    expect(payload.deltaMinor).toBe(-2_616_000n);
+    expect(payload.newBalanceMinor).toBe(0n);
+    expect(payload.docId).toBe('batch-1');
+    expect(payload.source).toBe('debtpayment');
+  });
+
+  it('balans qatori yo`q bo`lsa hodisa chiqmaydi (aytadigan gap yo`q)', async () => {
+    const { service, events } = svcWithBalance(null);
+    await service.emitDocumentNotice({ ...DOC_NOTICE, deltaMinor: -1n });
+    expect(events.emit).not.toHaveBeenCalled();
+  });
+
+  it('nol delta — hodisa ham, DB o`qishi ham yo`q', async () => {
+    const { service, events, findFirst } = svcWithBalance(0n);
+    await service.emitDocumentNotice({ ...DOC_NOTICE, deltaMinor: 0n });
+    expect(findFirst).not.toHaveBeenCalled();
+    expect(events.emit).not.toHaveBeenCalled();
+  });
+
+  it('DB nosozligi CHAQIRUVCHIGA QAYTMAYDI — pul allaqachon commit bo`lgan', async () => {
+    const events = { emit: vi.fn() };
+    const prisma = {
+      client: {
+        counterpartyBalance: {
+          findFirst: vi.fn(async () => {
+            throw new Error('db down');
+          }),
+        },
+      },
+    };
+    const service = new CounterpartyBalanceService(prisma as never, events as never);
+    await expect(
+      service.emitDocumentNotice({ ...DOC_NOTICE, deltaMinor: -1n }),
+    ).resolves.toBeUndefined();
+    expect(events.emit).not.toHaveBeenCalled();
+  });
+});

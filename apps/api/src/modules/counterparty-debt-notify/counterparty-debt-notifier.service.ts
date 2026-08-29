@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { OnEvent } from '@nestjs/event-emitter';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { type CounterpartyBalanceChangedEvent, HR_EVENT } from '../hr/hr-shared/hr-events.types.js';
+import { advisoryLockKey } from '../shared/advisory-lock-key.js';
 import { buildCounterpartyMessage } from './counterparty-message.util.js';
 import { buildDebtMessage } from './debt-notify.util.js';
 import { ensureReceiptLink } from './receipt-link.util.js';
@@ -50,7 +51,15 @@ function trimDecimal(v: string): string {
  * neither owner nor counterparty is spammed by internal churn.
  *
  * Dedup: the counterparty row is keyed by (sourceEventType, sourceDocId=docId);
- * a re-emitted event for the same document never enqueues a second notice.
+ * a re-emitted event for the same document never enqueues a second notice. The
+ * check+insert is ATOMIC (`enqueueOnce`: transaction + advisory lock), so two
+ * concurrent events for one document cannot both slip through.
+ *
+ * 🔴 Bitta HUJJAT bir necha balans-deltasidan iborat bo'lishi mumkin (POS qarz
+ * to'lovi FIFO bo'yicha N qarzga bo'linadi). Bunday hujjat bu yerga BITTA
+ * yig'ma hodisa bo'lib keladi — `CounterpartyBalanceService.emitDocumentNotice`
+ * (bo'laklar `notice: 'defer'` bilan jim yoziladi). Ya'ni bu servis hech qachon
+ * bo'lak summasini «to'liq to'lov» deb yozmaydi; qoida o'sha faylda.
  *
  * Optional env DEBT_NOTIFY_THRESHOLD_MINOR: when set and abs(newBalance)
  * exceeds it, the OWNER message gets an extra ⚠️ warning line. It never
@@ -416,36 +425,80 @@ export class CounterpartyDebtNotifier {
 
       // Dedup: one outbox row per (event-type, source document). A re-emitted
       // balance event for the same doc must not double-message the counterparty.
-      if (payload.docId) {
-        const existing = await this.prisma.client.hrTelegramOutbox.findFirst({
-          where: {
-            accountId: payload.accountId,
-            counterpartyId: payload.counterpartyId,
-            sourceEventType: COUNTERPARTY_NOTIFY_EVENT,
-            sourceDocId: payload.docId,
-          },
-          select: { id: true },
-        });
-        if (existing) return;
-      }
+      const outboxId = await this.enqueueOnce(payload, toPhone, text);
+      if (outboxId === null) return; // shu hujjat uchun qator allaqachon bor
 
-      const outbox = await this.prisma.client.hrTelegramOutbox.create({
-        data: {
-          accountId: payload.accountId,
-          counterpartyId: payload.counterpartyId,
-          toPhone,
-          messageText: text,
-          sourceEventType: COUNTERPARTY_NOTIFY_EVENT,
-          sourceDocId: payload.docId ?? null,
-          status: 'pending',
-        },
-        select: { id: true },
-      });
-
-      await this.mirrorToThread(payload, text, outbox.id, name);
+      await this.mirrorToThread(payload, text, outboxId, name);
     } catch (e) {
       this.logger.warn(`counterparty debt notify failed: ${(e as Error).message}`);
     }
+  }
+
+  /**
+   * Outbox qatorini ATOMIK yozadi: bir hujjat = bir qator. `null` qaytsa —
+   * qator allaqachon mavjud (dublikat), chaqiruvchi jim to'xtaydi.
+   *
+   * 🔴 NEGA TRANZAKSIYA + MASLAHAT-QULFI (2026-08-28). Ilgari bu joy
+   * «`findFirst` → `create`» edi va bu READ COMMITTED da ATOMIK EMAS: bir
+   * hujjatning ikki hodisasi bir vaqtda kelsa ikkalasi ham «yo'q ekan» deb
+   * ko'rib, mijozga IKKI xabar ketardi. Hodisalar `{ async, promisify }`
+   * bilan navbatsiz ishlagani uchun bu nazariy emas, kuzatilgan xulq edi.
+   *
+   * Qulf DB SXEMASIGA TEGMAYDI (unique indeks migratsiya talab qiladi va
+   * mavjud dublikatlarda deploy'ni yiqitardi) va tranzaksiya tugashi bilan
+   * o'zi bo'shaydi — hech qanday tozalash yo'li kerak emas.
+   *
+   * `docId` yo'q hodisada dedup kaliti ham yo'q ⇒ qator shartsiz yoziladi
+   * (eski xulq: kalitsiz qatorlar bir-birini bloklamasin).
+   */
+  private async enqueueOnce(
+    payload: CounterpartyBalanceChangedEvent,
+    toPhone: string,
+    text: string,
+  ): Promise<string | null> {
+    const data = {
+      accountId: payload.accountId,
+      counterpartyId: payload.counterpartyId,
+      toPhone,
+      messageText: text,
+      sourceEventType: COUNTERPARTY_NOTIFY_EVENT,
+      sourceDocId: payload.docId ?? null,
+      status: 'pending',
+    };
+
+    if (!payload.docId) {
+      const row = await this.prisma.client.hrTelegramOutbox.create({
+        data,
+        select: { id: true },
+      });
+      return row.id;
+    }
+
+    const lockKey = advisoryLockKey(
+      `${COUNTERPARTY_NOTIFY_EVENT}|${payload.accountId}|${payload.docId}`,
+    );
+    return this.prisma.client.$transaction(async (tx) => {
+      // Kalit bo'yicha navbat: shu tranzaksiya tugaguncha boshqa hech kim
+      // AYNI hujjat uchun bu blokdan o'ta olmaydi.
+      //
+      // Parametr MATN sifatida uzatilib `::bigint` ga o'giriladi: drayverning
+      // `BigInt` ni qaysi wire-tipda yuborishiga tayanmaydi (ba'zi
+      // versiyalarda `numeric` bo'lib ketadi va `pg_advisory_xact_lock`
+      // uchun mos overload topilmasdi).
+      await tx.$queryRaw`SELECT pg_advisory_xact_lock(${lockKey.toString()}::bigint)`;
+      const existing = await tx.hrTelegramOutbox.findFirst({
+        where: {
+          accountId: payload.accountId,
+          counterpartyId: payload.counterpartyId,
+          sourceEventType: COUNTERPARTY_NOTIFY_EVENT,
+          sourceDocId: payload.docId,
+        },
+        select: { id: true },
+      });
+      if (existing) return null;
+      const row = await tx.hrTelegramOutbox.create({ data, select: { id: true } });
+      return row.id;
+    });
   }
 
   /** abs(newBalance) > DEBT_NOTIFY_THRESHOLD_MINOR (if a valid threshold is set). */

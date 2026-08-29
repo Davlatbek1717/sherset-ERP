@@ -43,6 +43,28 @@ export interface ApplyDeltaMeta {
   docType: ApplyDeltaDocType;
   docId: string;
   organizationId: string | null;
+  /**
+   * XABAR REJIMI (2026-08-28). Jurnalga TEGMAYDI — faqat domen-hodisasiga
+   * (`COUNTERPARTY_BALANCE_CHANGED`, ya'ni mijoz/egaga ketadigan xabarga).
+   *
+   *   `'each'` (sukut) — har `applyDelta` o'z hodisasini chiqaradi;
+   *   `'defer'`        — bu delta KATTAROQ hujjatning BO'LAGI. Hodisa shu
+   *                      yerda chiqarilmaydi; chaqiruvchi hujjat COMMIT
+   *                      bo'lgach `emitDocumentNotice` bilan BITTA yig'ma
+   *                      hodisa beradi.
+   *
+   * NEGA KERAK (prodda o'lchangan, 2026-08-28): POS qarz to'lovi FIFO bo'yicha
+   * N qarzga bo'linadi va HAR BO'LAK alohida `applyDelta` chaqiradi. Mijozga
+   * ketadigan xabar esa BIRINCHI bo'lakning summasini va O'RTADAGI balansni
+   * olardi — 2 616 000 to'lagan mijoz «qabul qilindi: 1 572 000 · qolgan
+   * qarz: 1 044 000» degan YOLG'ON xabar olardi (haqiqatda qarzi 0 edi).
+   *
+   * 🔴 Bo'laklarni jurnalda QO'SHIB yuborish YECHIM EMAS: har qarz o'z
+   * jurnal qatorini olishi SHART (`recalcDebt` → qarz kesimidagi delta,
+   * akt-sverka va hisobotlar shundan yuriladi). Shuning uchun ajratiladigan
+   * narsa — JURNAL emas, XABAR.
+   */
+  notice?: 'each' | 'defer';
 }
 
 /**
@@ -130,17 +152,81 @@ export class CounterpartyBalanceService {
       },
     });
 
+    // `'defer'` — hujjat bir necha deltadan iborat. Xabarni chaqiruvchi
+    // hujjat tugagach BIR MARTA beradi (`emitDocumentNotice`), aks holda
+    // mijoz birinchi bo'lakning summasini «to'liq to'lov» deb o'qiydi.
+    if (meta.notice === 'defer') return;
+
+    this.emitChanged({
+      accountId,
+      counterpartyId,
+      currency,
+      deltaMinor,
+      newBalanceMinor: row.balanceMinor,
+      source: meta.source,
+      docType: meta.docType,
+      docId: meta.docId,
+    });
+  }
+
+  /**
+   * BITTA HUJJAT = BITTA XABAR (2026-08-28) — `notice: 'defer'` ning juftligi.
+   *
+   * Chaqiruvchi bir hujjat doirasida N ta `applyDelta` qilgan bo'lsa (POS
+   * qarz to'lovining FIFO taqsimoti), shu metod ularning O'RNIGA bitta
+   * yig'ma hodisa chiqaradi: `deltaMinor` — HUJJATNING to'liq summasi,
+   * `newBalanceMinor` — hujjatdan KEYINGI YAKUNIY balans.
+   *
+   * ⚠️ COMMIT'DAN KEYIN CHAQIRILADI va ATAYLAB `tx` OLMAYDI — balansni
+   * `this.prisma.client` orqali o'qiydi. Uchta sabab:
+   *   1. tx ichida o'qilsa balans O'RTA holatda bo'lishi mumkin edi (yana
+   *      o'sha bug, faqat boshqa nuqtada);
+   *   2. tranzaksiya ROLLBACK bo'lsa mijozga «to'lovingiz qabul qilindi»
+   *      degan FANTOM xabar ketardi (`applyDelta` ning commit-oldi emit'i
+   *      shu xavfni allaqachon oladi — bu yo'l uni takrorlamaydi);
+   *   3. `debtpayment` kabi turlarda xabar sarlavhasi hujjat sanasini
+   *      qidiradi (`fetchDocMeta`) — commit'gacha u BOSHQA ulanishga
+   *      ko'rinmaydi va sarlavha sanasiz qolardi.
+   *
+   * Hech qachon throw QILMAYDI: xabar — yon ta'sir, pul yozuvi allaqachon
+   * commit bo'lgan va uni xabar nosozligi bekor qilmasligi kerak.
+   */
+  async emitDocumentNotice(params: {
+    accountId: string;
+    counterpartyId: string;
+    currency: string;
+    /** Butun hujjatning oldindan ishoralangan deltasi (Σ bo'laklar). */
+    deltaMinor: bigint;
+    source: CounterpartyBalanceChangeSource;
+    docType: ApplyDeltaDocType;
+    docId: string;
+  }): Promise<void> {
+    if (params.deltaMinor === 0n) return;
+    let row: { balanceMinor: bigint } | null;
     try {
-      const payload: CounterpartyBalanceChangedEvent = {
-        accountId,
-        counterpartyId,
-        currency,
-        deltaMinor,
-        newBalanceMinor: row.balanceMinor,
-        source: meta.source,
-        docType: meta.docType,
-        docId: meta.docId,
-      };
+      row = await this.prisma.client.counterpartyBalance.findFirst({
+        where: {
+          accountId: params.accountId,
+          counterpartyId: params.counterpartyId,
+          currency: params.currency,
+        },
+        select: { balanceMinor: true },
+      });
+    } catch (e) {
+      this.logger.warn(`document-notice balance read failed: ${(e as Error).message}`);
+      return;
+    }
+    // Qator yo'q = balans hech qachon qo'zg'almagan ⇒ aytadigan gap yo'q.
+    if (!row) return;
+    this.emitChanged({ ...params, newBalanceMinor: row.balanceMinor });
+  }
+
+  /**
+   * YAGONA emit nuqtasi. Listener xatosi (yoki `EventEmitter2` ning o'zi)
+   * hech qachon chaqiruvchining tranzaksiyasiga qaytmasligi kerak.
+   */
+  private emitChanged(payload: CounterpartyBalanceChangedEvent): void {
+    try {
       this.events.emit(HR_EVENT.COUNTERPARTY_BALANCE_CHANGED, payload);
     } catch (e) {
       this.logger.warn(`balance-changed emit failed: ${(e as Error).message}`);

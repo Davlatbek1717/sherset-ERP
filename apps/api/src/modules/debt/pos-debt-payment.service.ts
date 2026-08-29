@@ -346,6 +346,8 @@ export class PosDebtPaymentService {
       receipts: Array<{ debtName: string; amountMinor: bigint; closed: boolean }>;
       appliedMinor: bigint;
       currency: string;
+      /** `[valyuta, delta]` — commit'dan keyingi YAGONA xabar uchun. */
+      notices: Array<[string, bigint]>;
     };
     try {
       result = await this.prisma.client.$transaction(async (tx) => {
@@ -440,6 +442,19 @@ export class PosDebtPaymentService {
         const currency = input.currency;
         const receipts: Array<{ debtName: string; amountMinor: bigint; closed: boolean }> = [];
 
+        // ── BITTA TO'LOV = BITTA XABAR (2026-08-28) ─────────────────────────
+        // Balans jurnaliga har qarz O'Z qatorini yozadi (o'zgarmaydi), lekin
+        // mijozga/egaga ketadigan xabar HUJJAT darajasida bo'lishi kerak.
+        // Bu yerda faqat YIG'INDI to'planadi; hodisa commit'dan KEYIN
+        // (`emitDocumentNotice`) chiqariladi.
+        //
+        // Valyuta KESIMIDA yig'iladi, chunki balans deltasi QARZNING
+        // valyutasida yoziladi (`recalcDebt`), `lockOpenDebts` esa valyuta
+        // bo'yicha FILTRLAMAYDI. Amalda reyestr `DEBT_LEDGER_CURRENCY` da
+        // yuriladi ⇒ ro'yxat bir elementli bo'ladi; bir kun ikkinchi valyuta
+        // paydo bo'lsa xabar jimgina noto'g'ri balansni ko'rsatmasin.
+        const noticeByCurrency = new Map<string, bigint>();
+
         // F6: mijoz bergan ASL summa (sent) FIFO qatorlariga bo'linadi — har
         // qator o'z `amountOriginalMinor` ini oladi, chunki STORNO qatordan-
         // qatorga ishlaydi va yashiqdan aynan o'sha jismoniy summani chiqaradi.
@@ -490,10 +505,25 @@ export class PosDebtPaymentService {
               docType: 'debtpayment',
               docId: batchId,
               organizationId: null,
-              // Mijozga «✅ To'lovingiz qabul qilindi» xabari shundan ketadi.
+              // `source` — xabarning TURI («✅ To'lovingiz qabul qilindi»).
+              // 2026-08-28 dan beri xabarni bu yerdagi delta EMAS, pastdagi
+              // yig'ma `emitDocumentNotice` chiqaradi; `source` esa o'sha
+              // xabarga ham shu yerdan ko'chadi.
               source: 'debtpayment',
+              // 🔴 Bo'lak xabari YO'Q — pastda butun hujjat uchun bitta xabar
+              // chiqariladi. Busiz mijoz FIFO'ning birinchi bo'lagini «to'liq
+              // to'lov» deb o'qirdi (2026-08-28 nuqsoni).
+              notice: 'defer',
             },
           });
+
+          // Qulf ostidagi qator ⇒ `recalcDebt` ning balans deltasi AYNAN
+          // `-alloc.amountMinor` (paidDelta = yangi − eski to'langan, va bu
+          // to'lov qatorini shu tranzaksiyadan boshqa hech kim yoza olmaydi).
+          noticeByCurrency.set(
+            debt.currency,
+            (noticeByCurrency.get(debt.currency) ?? 0n) - alloc.amountMinor,
+          );
 
           receipts.push({
             debtName: debt.name,
@@ -529,7 +559,13 @@ export class PosDebtPaymentService {
           ),
         );
 
-        return { receipts, appliedMinor: plan.appliedMinor, currency };
+        return {
+          receipts,
+          appliedMinor: plan.appliedMinor,
+          currency,
+          // Valyuta → hujjatning to'liq balans deltasi (manfiy = qarz kamaydi).
+          notices: [...noticeByCurrency],
+        };
       });
     } catch (e) {
       // Poygada YUTQAZGAN takroriy so'rov: tez yo'l kalitni ko'rmadi (ikkala
@@ -552,6 +588,23 @@ export class PosDebtPaymentService {
       // unique indeksdan ham kelishi mumkin — kalit qatori topilmasa uni
       // «takror» deb yutib yuborish haqiqiy xatoni YASHIRARDI.
       throw e;
+    }
+
+    // ── XABAR: COMMIT'DAN KEYIN, HUJJAT UCHUN BIR MARTA ────────────────────
+    // Bu yerdaligi ATAYLAB: tranzaksiya ichida bo'lsa (a) rollbackda mijozga
+    // fantom «to'lovingiz qabul qilindi» ketardi, (b) balans o'rta holatda
+    // o'qilardi, (c) xabar sarlavhasidagi hujjat sanasi commit'gacha boshqa
+    // ulanishga ko'rinmasdi. `emitDocumentNotice` hech qachon throw qilmaydi.
+    for (const [noticeCurrency, deltaMinor] of result.notices) {
+      await this.balances.emitDocumentNotice({
+        accountId,
+        counterpartyId: input.counterpartyId,
+        currency: noticeCurrency,
+        deltaMinor,
+        source: 'debtpayment',
+        docType: 'debtpayment',
+        docId: batchId,
+      });
     }
 
     const rest = await this.loadOpenDebts(accountId, input.counterpartyId);

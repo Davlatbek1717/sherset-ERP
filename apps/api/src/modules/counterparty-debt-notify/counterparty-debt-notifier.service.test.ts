@@ -84,20 +84,29 @@ function makePrismaFull(
   );
   const chatMessageCreate = vi.fn(opts.chatMessageCreateImpl ?? (async () => ({ id: 'tcm-1' })));
   const chatFindFirst = vi.fn(async () => opts.chatRow ?? null);
+  // 2026-08-28: dedup endi TRANZAKSIYA + maslahat-qulfi ichida bajariladi
+  // (`enqueueOnce`). Double `$transaction` ni AYNI `client` ustida ochadi —
+  // `hrTelegramOutbox` bir xil obyekt, ya'ni mavjud testlarning kutgan
+  // `outboxFindFirst`/`outboxCreate` chaqiruvlari o'zgarishsiz qoladi.
+  const advisoryLocks: unknown[][] = [];
+  const client: Record<string, unknown> = {
+    counterparty: { findFirst: vi.fn(async () => cp) },
+    telegramChat: { count: chatCount, findFirst: chatFindFirst },
+    telegramChatMessage: { create: chatMessageCreate },
+    hrTelegramOutbox: { findFirst: outboxFindFirst, create: outboxCreate, count: outboxCount },
+    // `fetchDocMeta` shu jadvallardan o'qiydi (turiga qarab bittasi).
+    retailSale: { findFirst: saleFind },
+    debt: { findFirst: docFind },
+    debtPayment: { findFirst: docFind },
+    organization: { findFirst: vi.fn(async () => opts.organization ?? null) },
+  };
+  client.$queryRaw = vi.fn(async (_s: TemplateStringsArray, ...values: unknown[]) => {
+    advisoryLocks.push(values);
+    return [];
+  });
+  client.$transaction = vi.fn(async (fn: (tx: unknown) => Promise<unknown>) => fn(client));
   return {
-    prisma: {
-      client: {
-        counterparty: { findFirst: vi.fn(async () => cp) },
-        telegramChat: { count: chatCount, findFirst: chatFindFirst },
-        telegramChatMessage: { create: chatMessageCreate },
-        hrTelegramOutbox: { findFirst: outboxFindFirst, create: outboxCreate, count: outboxCount },
-        // `fetchDocMeta` shu jadvallardan o'qiydi (turiga qarab bittasi).
-        retailSale: { findFirst: saleFind },
-        debt: { findFirst: docFind },
-        debtPayment: { findFirst: docFind },
-        organization: { findFirst: vi.fn(async () => opts.organization ?? null) },
-      },
-    },
+    prisma: { client },
     outboxCreate,
     outboxFindFirst,
     outboxCount,
@@ -105,6 +114,8 @@ function makePrismaFull(
     docFind,
     chatMessageCreate,
     chatFindFirst,
+    /** Har `enqueueOnce` ning maslahat-qulfi kalitlari (poyga testlari uchun). */
+    advisoryLocks,
   };
 }
 
@@ -637,5 +648,160 @@ describe('CounterpartyDebtNotifier', () => {
       await new CounterpartyDebtNotifier(prisma as any).onBalanceChanged(retailEvent);
       expect(outboxCreate).toHaveBeenCalled();
     });
+  });
+});
+
+/**
+ * 🔴 DEDUP POYGASI (2026-08-28).
+ *
+ * TUZATISHDAN OLDINGI holat: dedup «`findFirst` → `create`» edi va bu
+ * READ COMMITTED da ATOMIK EMAS. Bir hujjatning ikki hodisasi bir vaqtda
+ * kelsa (hodisalar `{ async, promisify }` bilan navbatsiz ishlaydi) ikkalasi
+ * ham «qator yo'q ekan» deb ko'rib, mijozga IKKI xabar ketardi.
+ *
+ * Yechim: tekshir-keyin-yoz `$transaction` + `pg_advisory_xact_lock` ichida.
+ *
+ * Quyidagi double Postgres semantikasini HALOL modellaydi: `findFirst`
+ * `await` bilan YIELD qiladi (ya'ni ikki oqim haqiqatan bir-birining orasiga
+ * tusha oladi), `$queryRaw` esa kalit bo'yicha NAVBAT tutadi va qulf
+ * tranzaksiya tugaganda bo'shaydi.
+ *
+ * NON-VACUOUS: qulf hech nima qilmasa (eski kod yo'li) `findFirst` ning
+ * yield'i tufayli ikkala oqim ham bo'sh jadval ko'radi va IKKI qator yoziladi.
+ */
+function makeRacyPrisma() {
+  const rows: Array<{ id: string; sourceDocId: string | null }> = [];
+  const held = new Set<string>();
+  const waiters = new Map<string, Array<() => void>>();
+
+  async function acquire(key: string, owned: Set<string>) {
+    if (owned.has(key)) return;
+    while (held.has(key)) {
+      await new Promise<void>((resolve) => {
+        const q = waiters.get(key) ?? [];
+        q.push(resolve);
+        waiters.set(key, q);
+      });
+    }
+    held.add(key);
+    owned.add(key);
+  }
+  function releaseAll(owned: Set<string>) {
+    for (const key of owned) {
+      held.delete(key);
+      waiters.get(key)?.shift()?.();
+    }
+    owned.clear();
+  }
+
+  const outbox = {
+    findFirst: vi.fn(async (args: { where: { sourceDocId: string } }) => {
+      await Promise.resolve(); // qulfsiz o'qish — YIELD qiladi
+      return rows.find((r) => r.sourceDocId === args.where.sourceDocId) ?? null;
+    }),
+    create: vi.fn(async (args: { data: { sourceDocId: string | null } }) => {
+      const row = { id: `out-${rows.length + 1}`, sourceDocId: args.data.sourceDocId };
+      rows.push(row);
+      return { id: row.id };
+    }),
+    count: vi.fn(async () => 0),
+  };
+
+  const base = {
+    counterparty: {
+      findFirst: vi.fn(async () => ({
+        name: 'Akme',
+        phone: '+998901234567',
+        attributes: { tgid: '1' },
+      })),
+    },
+    telegramChat: { count: vi.fn(async () => 1), findFirst: vi.fn(async () => null) },
+    telegramChatMessage: { create: vi.fn(async () => ({ id: 'tcm' })) },
+    hrTelegramOutbox: outbox,
+    retailSale: { findFirst: vi.fn(async () => null) },
+    debt: { findFirst: vi.fn(async () => null) },
+    debtPayment: { findFirst: vi.fn(async () => null) },
+    organization: { findFirst: vi.fn(async () => null) },
+  };
+
+  const client = {
+    ...base,
+    $transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) => {
+      const owned = new Set<string>();
+      try {
+        return await fn({
+          ...base,
+          $queryRaw: async (_s: TemplateStringsArray, ...values: unknown[]) => {
+            await acquire(String(values[0]), owned);
+            return [];
+          },
+        });
+      } finally {
+        releaseAll(owned);
+      }
+    }),
+  };
+  return { prisma: { client }, rows, outbox };
+}
+
+describe('CounterpartyDebtNotifier — dedup poygasi (atomik outbox)', () => {
+  const event = (docId: string): CounterpartyBalanceChangedEvent => ({
+    accountId: 'acc-1',
+    counterpartyId: 'cp-1',
+    currency: 'UZS',
+    deltaMinor: -2_616_000n,
+    newBalanceMinor: 0n,
+    source: 'debtpayment',
+    docType: 'debtpayment',
+    docId,
+  });
+
+  beforeEach(() => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({ ok: true }) as Response),
+    );
+    process.env.DEBT_NOTIFY_ENABLED = 'true';
+    process.env.DEBT_NOTIFY_ONLY_KNOWN_CONTACTS = 'false';
+    process.env.DEBT_NOTIFY_MAX_PER_MINUTE = '100';
+    process.env.DEBT_NOTIFY_BOT_TOKEN = '';
+    process.env.DEBT_NOTIFY_CHAT_ID = '';
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    process.env.DEBT_NOTIFY_ENABLED = '';
+    process.env.DEBT_NOTIFY_ONLY_KNOWN_CONTACTS = '';
+    process.env.DEBT_NOTIFY_MAX_PER_MINUTE = '';
+  });
+
+  it('AYNI hujjatning ikki PARALLEL hodisasi — BITTA outbox qatori', async () => {
+    const { prisma, rows } = makeRacyPrisma();
+    // biome-ignore lint/suspicious/noExplicitAny: test wiring
+    const svc = new CounterpartyDebtNotifier(prisma as any);
+
+    await Promise.all([svc.onBalanceChanged(event('b-1')), svc.onBalanceChanged(event('b-1'))]);
+
+    expect(rows).toHaveLength(1);
+  });
+
+  it('BOSHQA hujjatlar bir-birini bloklamaydi — ikki qator', async () => {
+    const { prisma, rows } = makeRacyPrisma();
+    // biome-ignore lint/suspicious/noExplicitAny: test wiring
+    const svc = new CounterpartyDebtNotifier(prisma as any);
+
+    await Promise.all([svc.onBalanceChanged(event('b-1')), svc.onBalanceChanged(event('b-2'))]);
+
+    expect(rows).toHaveLength(2);
+  });
+
+  it('qulf tranzaksiya tugagach BO`SHAYDI — ketma-ket chaqiruv osilib qolmaydi', async () => {
+    const { prisma, rows } = makeRacyPrisma();
+    // biome-ignore lint/suspicious/noExplicitAny: test wiring
+    const svc = new CounterpartyDebtNotifier(prisma as any);
+
+    await svc.onBalanceChanged(event('b-1'));
+    await svc.onBalanceChanged(event('b-2'));
+
+    expect(rows.map((r) => r.sourceDocId)).toEqual(['b-1', 'b-2']);
   });
 });

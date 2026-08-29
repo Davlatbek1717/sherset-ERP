@@ -269,6 +269,7 @@ function makeDb(rows: DebtRow[], balances: Record<string, bigint>) {
     organization: { findFirst: async () => null },
   };
 
+  const notices: Array<{ currency: string; deltaMinor: bigint }> = [];
   const balanceSvc = {
     applyDelta: vi.fn(
       async (
@@ -283,6 +284,11 @@ function makeDb(rows: DebtRow[], balances: Record<string, bigint>) {
         balanceStore[currency] = (balanceStore[currency] ?? 0n) + deltaMinor;
       },
     ),
+    // 2026-08-28: FIFO bo'laklari xabar chiqarmaydi (`notice: 'defer'`) —
+    // hujjat uchun BITTA yig'ma xabar commit'dan keyin shu yerdan o'tadi.
+    emitDocumentNotice: vi.fn(async (p: { currency: string; deltaMinor: bigint }) => {
+      notices.push({ currency: p.currency, deltaMinor: p.deltaMinor });
+    }),
   };
 
   const money = {
@@ -304,7 +310,7 @@ function makeDb(rows: DebtRow[], balances: Record<string, bigint>) {
     money as never,
   );
 
-  return { service, debts, payments, notes, balanceDeltas, moneyDeltas, balanceStore };
+  return { service, debts, payments, notes, balanceDeltas, moneyDeltas, balanceStore, notices };
 }
 
 const payload = (amountMinor: bigint) => ({
