@@ -226,6 +226,7 @@ Reja va to'liq retsept: `docs/plans/2026-08-25-kassa-qarzi-undirish-reyestri.md`
 | 2026-08-27 ~01:20 | **`sklad_keepers` to'ldirildi** — sklad 1, 2, 3 → «Admin User» (`885fb467`, Administrator). Omborchi vazifasi vaqtincha unga yuklandi (jonlida ombor xodimi yo'q) | deploy operatori, jonli `BEGIN…ROLLBACK` DRY, so'ng `COMMIT` (`ON CONFLICT DO NOTHING`) | ✅ (ombor tuzilmasiga tegmaydi) |
 | 2026-08-27 05:32–05:37 | **Ombor 03, 04, 05, 06, 07 yaratildi** (`__cellInventory=true`, `__posPriority` YO'Q, yacheykasiz, qoldiq 0) ⇒ jonlida 9 ombor | egasi, UI orqali | ❌ **YO'Q** — reyestrda hamon 4 ombor; `warehouse-state.ts` ularni `reyestrda-yoq` (ogohlantirish) deb ko'rsatadi. Reyestrga kiritish **M1** ning ishi (M1.3) |
 | **2026-08-29 05:50–06:23** | 🔴 **2-kecha deploy'i KUNDUZI bajarildi** (egasi qarori — savdo ochiq, 5 ta smena ishlab turgan holda): `61780120 → cbc14723`, 14 commit, **1 migratsiya** `20260825220000_drawer_cash_in_kind` (additiv: `retail_drawer_cash_in.kind` + 2 indeks). Chiqdi: A1/A2/A3 avans oqimi + G1 tuzatishi + yacheykadan «Chiqarish». **Ombor TUZILMASI o'zgarmadi.** | Claude, SSH orqali; zaxira `/root/sherset_v2-pre-deploy-20260829.dump` (TOC: 259 `TABLE DATA`); build **`.next-new`** ichiga (jonli `.next` tegilmagan) → katalog almashtirish → `pm2 restart`; eski build **`.next-old`** da saqlanmoqda | ✅ (tuzilma o'zgarmagani qayd etildi) |
+| **2026-08-29 20:25–21:31** | 🟢 **3-kecha deploy'i KECHKI OYNADA bajarildi** (savdo YO'Q): `cbc14723 → f612d804`, 38 commit, **5 migratsiya** (`stock_piece_registry`, `company_settings_sale_debt_term`, `stock_piece_cut`, `stock_piece_intake`, `piece_tracking_decision` — hammasi additiv). Chiqdi: **K1–K6** (bo'lak reyestri) + **Q4–Q6** + **E5** + qarz xabari tuzatishi. `topup-role-permissions.ts` yuritildi ⇒ `piecetracking` 26 qator. **Ombor TUZILMASI o'zgarmadi.** | Claude, Posh-SSH orqali; zaxira `/root/sherset_v2-pre-deploy-20260830.dump` (259 `TABLE DATA`); build `.next-new` ichiga → katalog almashtirish (`.next-old2`) → `pm2 restart` | ✅ **reyestrning O'ZI shu deploy bilan serverga yetib bordi** (JSON hamon 4 ombor — Ombor 03–07 M1 ning ishi) |
 
 > **2026-08-29 deploy'ining o'lchangan izi** (qoida 8 + 13):
 > `warehouse-state.ts` deploy'dan KEYIN — `EXIT=2`, **aynan 1 ta `xato`**
@@ -240,6 +241,28 @@ Reja va to'liq retsept: `docs/plans/2026-08-25-kassa-qarzi-undirish-reyestri.md`
 > → **200** (136 ms, Electron desktop klient).
 > 🔴 **Qoida 13 smoke'i HALI TO'LIQ EMAS** — yacheyka sanash, ko'chirish va
 > A1–A3 avans oqimi jonlida sinalmagan ⇒ fazalar «QISMAN» bo'lib qoladi.
+
+> **2026-08-30 (3-kecha) deploy'ining o'lchangan izi** (qoida 8 + 13):
+> `warehouse-state.ts` deploy'dan KEYIN — **`EXIT=0`**, **0 ta `xato`**,
+> **5 ta `ogohlantirish`** (`reyestrda-yoq`: Ombor 03, 04, 05, 06, 07).
+> 🟢 Bu kesim ham deploy'dan OLDIN skript kodidan hisoblab qo'yilgan edi va
+> **aynan mos tushdi**. `split-holati` xatosi YO'QOLDI — chunki reyestr faylining
+> o'zi (`split: "qisman"` + «Ombor 99») shu deploy bilan serverga yetib bordi.
+> 🟢 **«POS yeta olmaydigan qoldiq» = 0.** Jami yacheyka **1270** (2-kechada 1089
+> edi — oradagi kunda 181 yangi yacheyka yaratilgan), ombor qoldiq
+> 50 252 495,30, kaskad `1:Taqsimlanmagan → 2:Ombor 02`, split `mos 27 / mos
+> emas 1243`.
+> Texnik verify: **11/11 sahifa 200** — shundan `/omborchi/bolaklar` (K2) va
+> `/omborchi/hal-qilinmagan` (K6) **YANGI** · pm2 ikkalasi `online`, sikl yo'q ·
+> flip'dan keyin API va web jurnalida **yangi xato YO'Q** (bor xatolar 06:20 va
+> undan oldingi, ya'ni deploy'dan avvalgi) · `BUILD_ID yF8gtOuG… → LpEjL2oe3…`.
+> **Q6 jonli verify (DRY) BIRINCHI MARTA YURITILDI** — 6/6 band `OK`:
+> Q1/A1/Q4 migratsiyalari bazada, A2/A3 maydonlari API javobida, undirish
+> reyestrida **105 ta kassa cheki qatori** (Q5 backfill'idan 0 — u hali
+> yuritilmagan).
+> 🔴 **Qoida 13 smoke'i HALI BAJARILMAGAN** — yacheyka sanash/ko'chirish, avans
+> oqimi va K-oqimi (bayroq → rulon → kesim) egasining UI ishi ⇒ fazalar
+> «QISMAN» bo'lib qoladi.
 
 > Yangi qator qo'shganda: sana, nima, kim/nima bilan, va reyestr (1-bo'lim JSON +
 > 2-bo'lim jadval) yangilanganini belgilang.

@@ -1,4 +1,4 @@
-# 3-KECHA DEPLOY · `cbc14723` → `46aee11f`
+# 3-KECHA DEPLOY · `cbc14723` → `f612d804` — ✅ BAJARILDI
 
 > **Nima uchun bu fayl:** egasi 2026-08-29 kechqurun «barcha deploy qilinmagan
 > ishlarni top, bittasi ham qolmasin, hammasini deploy qilamiz» dedi. Quyida
@@ -27,7 +27,11 @@ worktree'lar, remote'lar.
 | 6 | `stash@{0}` — «G4 2-bosqich» (2026-08-25) | retail-sale simlari | 🟢 **kerak emas** — `spreadAllocationsToPositions`, `allocatedByPosition`, `CASCADE_ROWS_FRONT`, `balancesByStore`, `lockedStores` hammasi HEAD da bor (G4 tugagan) |
 | 7 | `climart-adoption` | — | 🟢 HEAD dan 22 orqada, unikal commit YO'Q |
 
-**Yakuniy delta: `cbc14723` → `46aee11f` = 37 commit, 5 migratsiya.**
+**Yakuniy delta: `cbc14723` → `f612d804` = 38 commit, 5 migratsiya.**
+
+> ℹ️ `f612d804` — shu dossierning o'zi. Undan KEYINGI jurnal commit'lari sof
+> hujjat va serverga YUBORILMAYDI: jonli HEAD `f612d804` bo'lib qoladi
+> (o'tgan kechalardagi kabi — `57c7a869` ham `cbc14723` deploy'ini keyin yozgan).
 
 ### 1.1 Chiqadigan fazalar
 
@@ -57,7 +61,7 @@ Qolgani — hujjat (`docs/**`), jonli xulqqa ta'siri yo'q.
 | `node scripts/check-lint.mjs` | ✅ 0 xato (1274 ogohlantirish — siyosat bo'yicha ruxsat) |
 | api `vitest run` | ✅ **9934 / 9934** (tuzatishdan oldin 9931 + 1 yiqilish) |
 | web `vitest run` | ✅ **339 / 339** fayl |
-| `git push mirfayz` | ✅ `67202a09..46aee11f` |
+| `git push mirfayz` | ✅ `67202a09..f612d804` |
 
 ---
 
@@ -123,9 +127,9 @@ dump ~8 MB bo'ladi va bu NORMAL.
 
 ```
 cd /var/www/sherset-v2
-git fetch https://github.com/Mirfayz1993/sherset-ERP.git yacheyka-inventarizatsiya:tmp3
-git merge --ff-only 46aee11f
-git rev-parse HEAD                    # 46aee11f...
+git fetch --force https://github.com/Mirfayz1993/sherset-ERP.git \n  yacheyka-inventarizatsiya:tmp-deploy-20260830
+git merge --ff-only f612d804
+git rev-parse HEAD                    # f612d804...
 ```
 
 🔴 **TO'XTASH:** ff-merge yiqilsa — TEGMANG, hech narsa qilinmagan.
@@ -346,12 +350,26 @@ faylning boshidagi «ma'lumot yo'qoladi» bloki AVVAL o'qiladi.
 |---|---|---|
 | lokal gate | 2026-08-29 23:0x | ✅ typecheck 10/10 · lint 0 xato · api 9934/9934 · web 339/339 |
 | lokal commit + push | 2026-08-29 23:1x | ✅ `b43a7e27`, `46aee11f` → `mirfayz` |
-| E0 · o'lchov | | ⏳ |
-| E1 · zaxira | | ⏳ |
-| E2 · ff-merge | | ⏳ |
-| E3 · 5 migratsiya | | ⏳ |
-| E4 · rol ruxsatlari | | ⏳ |
-| E5 · build | | ⏳ |
-| E6 · flip | | ⏳ |
-| E7 · verify | | ⏳ |
-| E8 · smoke | | ⏳ |
+| E0 · o'lchov | 20:25 | ✅ HEAD `cbc14723` · RAM 6.6 GB bo'sh (11 GB dan) · disk 16 GB · `.next` 1.5 GB, `.next-old` 2.0 GB · dirty fayllar deltada YO'Q (to'qnashuv xavfi nol) |
+| E1 · zaxira | 20:27 | ✅ `/root/sherset_v2-pre-deploy-20260830.dump` · 9 026 837 bayt · **259 `TABLE DATA`** — 2-kecha bazasi bilan aynan bir xil |
+| E2 · ff-merge | 20:41 | ✅ `cbc14723 → f612d804` (sof ff, 38 commit) |
+| E3 · 5 migratsiya | 20:41–20:43 | ✅ beshtasi ham `Script executed successfully` + `migrate resolve`. Bazadan tasdiqlandi: `_prisma_migrations` da 5/5 `finished_at` to'la · `stock_pieces` 17 ustun / **0 qator** · 9 ta yangi ustun (`products.piece_tracked` yagona `NOT NULL`, qolgani nullable) |
+| E3.5 · `prisma generate` | 20:43 | ✅ 46.4 s |
+| E4 · rol ruxsatlari | 20:43 | ✅ `topup-role-permissions.ts`: PASS 1 — 2376 qator, PASS 2 — 2 yangi. Bazada **`piecetracking` 26 qator** |
+| E5 · build | 20:51–21:10 | ✅ `BUILD-TUGADI RC=0`, ~19 daqiqa. `.next-new` 1.7 GB, `BUILD_ID LpEjL2oe3OzDdILjUmbWr`. Butun build davomida jonli sayt **200** qaytardi (mustaqil o'lchandi) |
+| E6 · flip | 21:18:23–21:18:35 | ✅ `.next` → `.next-old2`, `.next-new` → `.next` · `BUILD_ID yF8gtOuGsaPOJBmY_9nvq → LpEjL2oe3OzDdILjUmbWr` · pm2 web+api restart, ikkalasi `online` |
+| E7 · verify | 21:20 | ✅ **11/11 sahifa 200** (yangi `/omborchi/bolaklar` + `/omborchi/hal-qilinmagan` ham) · `warehouse-state.ts` **`EXIT=0`, 0 xato, 5 ogohlantirish** — oldindan hisoblangan kesimga **aynan mos** · **POS yeta olmaydigan qoldiq = 0** · flip'dan keyin API/web jurnalida yangi xato YO'Q |
+| E7.3 · Q6 jonli verify (DRY) | 21:30 | ✅ **6/6 band `OK`** — Q1/A1/Q4 migratsiyalari bazada, A2/A3 maydonlari API javobida, undirish reyestrida 105 kassa cheki qatori (Q5 backfill'idan 0 — u hali yuritilmagan). **2026-08-26 dan beri birinchi marta yuritildi** |
+| E8 · smoke | | ⏳ **EGASIDA** — UI ishi (11-bo'limga qarang) |
+
+### 14.1 · Ijro paytida o'lchangan ikki tuzoq
+
+1. **Posh-SSH kanali UZOQ buyruqda osilib qoladi.** `pg_dump` serverda 2
+   daqiqada tugadi, klient esa 10+ daqiqa kutdi. ⇒ har uzoq qadam
+   `setsid nohup … > /root/<teg>.log` bilan DETACHED yuritildi va log
+   qisqa ulanishlar bilan o'qildi.
+2. **SSH TASODIFIY uziladi** («An established connection was aborted by the
+   server» — autentifikatsiya o'tadi, kanal o'ladi). Ketma-ket 3–4 urinish
+   yiqilib keyingisi o'tadi. ⇒ qayta-urinish o'rami yozildi (marker + 15·n s
+   kutish). Bu xotiradagi «SSH uziladi, jarayon davom etaveradi» tuzog'ining
+   aynan o'zi.
