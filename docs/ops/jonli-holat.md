@@ -264,6 +264,20 @@ Reja va to'liq retsept: `docs/plans/2026-08-25-kassa-qarzi-undirish-reyestri.md`
 > oqimi va K-oqimi (bayroq → rulon → kesim) egasining UI ishi ⇒ fazalar
 > «QISMAN» bo'lib qoladi.
 
+> 🔴 **2026-08-30 da o'lchangan — ESKI DA'VO YIQILDI: `restock_tasks` endi 0 EMAS.**
+> Hujjatlarda (1-kecha va 2026-08-29 kecha rejasining B3 bandi) «`restock_tasks`
+> jonlida 0 qator — G2 zanjiri hech qachon yurmagan» deb yozilgan edi. Bugungi
+> o'lchov: **18 topshiriq / 58 qator** — `2026-08-27` da 5, `08-28` da 1,
+> `08-29` da 12. Holati: **9 `done` + 9 `cancelled`**, `new`/`in_progress`
+> **0 ta** ⇒ **qotib qolgan topshiriq YO'Q**.
+> Hammasi bitta bajaruvchiga biriktirilgan — `885fb467…` («Admin User»), ya'ni
+> `sklad_keepers` dagi vaqtinchalik yechim ishlayapti.
+> ⚠️ **Lekin bu Blok B ni YOPMAYDI:** jonlida hamon **8 rol** va ularning
+> ichida `warehouse_manager` ham, `storekeeper` ham YO'Q (`employee_roles`:
+> Kassir 8, Administrator 2, AccountOwner 1, B2B/B2G 1, PointOfSale 1, qolgani
+> 0). Ya'ni yig'ish oqimi ADMIN huquqi bilan yuryapti va «oddiy omborchida
+> `/omborchi/kontrol` → 403» assimetriyasi hamon sinalmagan.
+
 > Yangi qator qo'shganda: sana, nima, kim/nima bilan, va reyestr (1-bo'lim JSON +
 > 2-bo'lim jadval) yangilanganini belgilang.
 
