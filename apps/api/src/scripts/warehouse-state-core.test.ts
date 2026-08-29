@@ -535,7 +535,20 @@ describe('haqiqiy reyestr fayli (docs/ops/jonli-holat.md)', () => {
     const here = dirname(fileURLToPath(import.meta.url));
     const path = join(here, '..', '..', '..', '..', 'docs', 'ops', 'jonli-holat.md');
     const registry = parseRegistry(readFileSync(path, 'utf8'));
-    expect(registry.split).toBe('qaytarilgan');
+    // 🔴 `qisman`, `qaytarilgan` EMAS (2026-08-27 haqiqati). Reyestr fayli
+    // `58771056` da yangilangan, bu yerdagi qiymat esa u bilan birga ko'chmagan
+    // — gate shu sababli 1-kechadan beri qizil turgan edi.
+    //
+    // NEGA `qisman`: BRAK ombori («Ombor 99») yaratilgach uning O'Z 27
+    // yacheykasi (`99-…`) o'z omboriga MOS bo'ldi, haqiqiy omborlarning 974
+    // yacheykasi esa hamon `Taqsimlanmagan` da (mos EMAS). Skript bu ikkisini
+    // ajratmaydi ⇒ umumiy holat «qaytarilgan» dan «qisman» ga o'tdi.
+    // 🟢 HAQIQIY split hamon QAYTARILGAN — to'liq izoh reyestr faylining
+    // o'zida («`split` nega «qisman»» bloki).
+    //
+    // 🔜 E5 vazifasi bajarilib BRAK ombori split hisobidan CHIQARILSA, bu
+    // qiymat yana `qaytarilgan` bo'ladi — o'shanda shu qator ham qaytariladi.
+    expect(registry.split).toBe('qisman');
     expect(registry.posSessionStore).toBe('Taqsimlanmagan');
     expect(registry.allowUnreachableQty).toBe('0');
     // E5 — reyestrdagi POS ombori KASKADDA bo'lishi SHART (ilgari «boshi
