@@ -189,6 +189,14 @@ xizmat qilaveradi. Migratsiya additiv bo'lgani uchun bazada ham muammo yo'q.
 
 ## 8. D6 · 🔴 FLIP — yagona uzilish nuqtasi (soniyalar)
 
+> 🔄 **TUZATISH (ijro paytida, `ecosystem.v2.config.cjs` o'qilgach):** quyidagi
+> `NEXT_DISTDIR` env yo'li **ikkinchi navbatga** tushirildi, **katalog
+> almashtirish** esa BIRINCHI bo'ldi. Sabab: pm2 v2 konfiguratsiyasida
+> `NEXT_DISTDIR` yo'q ⇒ env faqat `--update-env` bilan yashaydi va server
+> qayta yuklansa yoki `pm2 resurrect` bo'lsa **jimgina eski build'ga qaytadi**
+> — nosozlik signalisiz sinf (IS-5 naqshi). Katalog almashtirilsa `.next` doim
+> joriy bo'ladi. **Ijroda 8.2 dagi yo'l ishlatildi.**
+
 **Oldin:** kassirlarga «joriy chekni yakunlang, ~1 daqiqa yangi boshlamang».
 
     cd /var/www/sherset-v2
@@ -287,17 +295,41 @@ yo'qolmaydi** (lokal dev bazada zond bilan o'lchangan: `777000 → 777000`).
 
 ## 12. Jurnal
 
+> Vaqtlar server soatida (**CEST**). Server CEST da, biznes esa `Asia/Tashkent`
+> da (pm2 `TZ`) — farq +3 soat. Ya'ni deploy Toshkent vaqti bilan ~08:50–09:23.
+
 | Qadam | Vaqt | Natija |
 |---|---|---|
-| D0 · o'lchov (HEAD/RAM/disk/pm2) | | |
-| D1 · B — rol + xodim | | |
-| D2 · zaxira | | |
-| D3 · ff-merge | | |
-| D4 · migratsiya | | |
-| D5 · build (.next-new) | | |
-| D6 · flip (restart) | | |
-| D7 · verify (1 xato + 6 ogohlantirish) | | |
-| D8 · smoke (A2, A1-qoralama, avans) | | |
+| D0 · o'lchov (HEAD/RAM/disk/pm2) | 05:50 | ✅ HEAD `61780120` · RAM 6.9 GB bo'sh (11 GB dan) · disk 18 GB · 7 untracked fayl, deltadagi 18 yangi fayl bilan **to'qnashmadi** · web = `next start -p 3011` |
+| D1 · B — rol + xodim | — | ⏳ **BAJARILMADI** — UI ishi, egasida |
+| D2 · zaxira | 05:54 | ✅ `/root/sherset_v2-pre-deploy-20260829.dump` · 8.4 MB — **hajmiga emas, TOC ga qarab** tekshirildi: 259 ta `TABLE DATA`. Kichikligi sababi o'lchandi: `attachments` = 1733 MB / 1828 MB, uning ma'lumoti ataylab chiqarilgan |
+| D3 · ff-merge | 05:58 | ✅ `61780120 → cbc14723` (branch boshi EMAS — unda 3-kecha kodi bor) |
+| D4 · migratsiya | 06:01:17 | ✅ `20260825220000_drawer_cash_in_kind` · bazadan tasdiqlandi: `kind varchar(20) NOT NULL DEFAULT 'other'` + 2 indeks + `_prisma_migrations` yozuvi. **Kunduzgi tekshiruv:** `retail_drawer_cash_in` da atigi **1 qator / 16 kB** ⇒ `CREATE INDEX` kassani bloklamadi |
+| D4.5 · `prisma generate` | 06:03 | ✅ 46.7 s |
+| D5 · build (.next-new) | 06:01→06:15:58 | ✅ `BUILD_RC=0`, ~14 daqiqa (`.next/cache` yo'q edi ⇒ **sovuq** build). Butun shu vaqt jonli sayt **200** qaytardi |
+| D6 · flip (restart) | ~06:20 | ✅ `.next` ↔ `.next-new` almashtirildi (`BUILD_ID` `8lKAgDTC…` → `yF8gtOuG…`), `pm2 restart` web+api. Eski build **`.next-old`** da |
+| D7 · verify | 06:22–06:25 | ✅ 9/9 sahifa **200** · pm2 ikkalasi `online`, sikl yo'q · API `06:22:48` «Nest application successfully started» · `warehouse-state.ts` **EXIT=2, aynan 1 `xato` + 6 `ogohlantirish`** (oldindan hisoblangan kesimga **aynan mos**) · **POS yeta olmaydigan qoldiq = 0** · flip'dan keyin web xatolari **0** · haqiqiy kassir so'rovi `GET /api/v1/retail-sales` → 200 (136 ms) |
+| D8 · smoke (A2, A1-qoralama, avans) | — | ⏳ **BAJARILMADI** — UI ishi, egasida |
+
+### 12.1 · Kuzatilgan, lekin deploy'ga aloqasi YO'Q
+
+- **`_prisma_migrations` da `20260802180000_manager_daily_kpi` ning `finished_at`
+  BO'SH** — eskidan qolgan tugallanmagan migratsiya. Bizga xalaqit bermadi
+  (biz `db execute` + `migrate resolve` ishlatdik), lekin kimdir
+  `deploy/deploy-smart.sh` ni yurgizsa uning `prisma migrate deploy` qadami
+  **aynan shunga urilib yiqiladi**. Alohida hal qilinsin.
+- **API xato logida takrorlanuvchi `Error: TIMEOUT`** — `telegram@2.26.22`
+  `_updateLoop` (HR/Telegram moduli), deploy'dan oldin ham bor edi.
+- **Web xato logida `Failed to find Server Action`** — 00:50 dagi, ya'ni
+  flip'dan OLDIN. Lekin bu xato **eski tab ochiq turganda** chiqadi ⇒
+  deploy paytida ochiq bo'lgan kassir oynalari bir marta **yangilanishi**
+  (Ctrl+R) kerak.
+- **`Ombor 02` skriptda «tasdiq kerak (G4 yo'q!)»** deb ko'rinadi (`posPriority=2`).
+  Hozir zararsiz — ombor bo'sh (0 qoldiq) va `POS yeta olmaydigan qoldiq` = 0.
+  Bu `jonli-holat.md` dagi **R1 xavfi**, M1 hal qiladi.
+- **pm2 da `sherset-api` / `sherset-web` hamon `online`** — xotirada eski
+  instansiya «to'liq o'chirilgan» deb yozilgan. Tekshirilsin (bizga tegishli emas,
+  biz faqat `sherset-v2-*` ga tegdik).
 
 ---
 

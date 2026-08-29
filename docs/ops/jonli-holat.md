@@ -224,6 +224,22 @@ Reja va to'liq retsept: `docs/plans/2026-08-25-kassa-qarzi-undirish-reyestri.md`
 | 2026-08-26 20:02–20:12 | **1-kecha deploy'i** `83027bc2 → 61780120` (37 commit, 6 migratsiya): G1–G6 + Q1–Q3 + H2 + H5 kodi. Ombor TUZILMASI o'zgarmadi | deploy operatori, qo'lda ff-merge | ✅ (tuzilma o'zgarmagani qayd etildi) |
 | 2026-08-27 ~01:15 | **BRAK ombori yaratildi** — «Ombor 99» (`d4b4ff85`), `__brakStore=true`, POS prioriteti YO'Q, 27 yacheyka (`99-01-*`) | deploy operatori; ombor qatori — jonli `BEGIN…ROLLBACK` DRY, so'ng `COMMIT`; yacheykalar — `create-cells.ts --store "Ombor 99" --ombor 99 --stelaj 1:3x9` (DRY → `--apply --allow-remote`) | ✅ |
 | 2026-08-27 ~01:20 | **`sklad_keepers` to'ldirildi** — sklad 1, 2, 3 → «Admin User» (`885fb467`, Administrator). Omborchi vazifasi vaqtincha unga yuklandi (jonlida ombor xodimi yo'q) | deploy operatori, jonli `BEGIN…ROLLBACK` DRY, so'ng `COMMIT` (`ON CONFLICT DO NOTHING`) | ✅ (ombor tuzilmasiga tegmaydi) |
+| 2026-08-27 05:32–05:37 | **Ombor 03, 04, 05, 06, 07 yaratildi** (`__cellInventory=true`, `__posPriority` YO'Q, yacheykasiz, qoldiq 0) ⇒ jonlida 9 ombor | egasi, UI orqali | ❌ **YO'Q** — reyestrda hamon 4 ombor; `warehouse-state.ts` ularni `reyestrda-yoq` (ogohlantirish) deb ko'rsatadi. Reyestrga kiritish **M1** ning ishi (M1.3) |
+| **2026-08-29 05:50–06:23** | 🔴 **2-kecha deploy'i KUNDUZI bajarildi** (egasi qarori — savdo ochiq, 5 ta smena ishlab turgan holda): `61780120 → cbc14723`, 14 commit, **1 migratsiya** `20260825220000_drawer_cash_in_kind` (additiv: `retail_drawer_cash_in.kind` + 2 indeks). Chiqdi: A1/A2/A3 avans oqimi + G1 tuzatishi + yacheykadan «Chiqarish». **Ombor TUZILMASI o'zgarmadi.** | Claude, SSH orqali; zaxira `/root/sherset_v2-pre-deploy-20260829.dump` (TOC: 259 `TABLE DATA`); build **`.next-new`** ichiga (jonli `.next` tegilmagan) → katalog almashtirish → `pm2 restart`; eski build **`.next-old`** da saqlanmoqda | ✅ (tuzilma o'zgarmagani qayd etildi) |
+
+> **2026-08-29 deploy'ining o'lchangan izi** (qoida 8 + 13):
+> `warehouse-state.ts` deploy'dan KEYIN — `EXIT=2`, **aynan 1 ta `xato`**
+> (`split-holati`: kutilgan «qaytarilgan», jonlida «qisman») + **6 ta
+> `ogohlantirish`** (`reyestrda-yoq`: Ombor 03–07 va 99). Bu kesim deploy'dan
+> OLDIN skript kodidan hisoblab qo'yilgan edi va **aynan mos tushdi**.
+> 🟢 **«POS yeta olmaydigan qoldiq» = 0.** Jami yacheyka 1089, ombor qoldiq
+> 50 506 981,03, kaskad `1:Taqsimlanmagan → 2:Ombor 02`, POS smena ombori
+> «Taqsimlanmagan» — **POS SOTADI**.
+> Texnik verify: 9/9 sahifa 200 · API `06:22:48` da toza ko'tarildi · flip'dan
+> keyin web xatolari **0** · haqiqiy kassir so'rovi `GET /api/v1/retail-sales`
+> → **200** (136 ms, Electron desktop klient).
+> 🔴 **Qoida 13 smoke'i HALI TO'LIQ EMAS** — yacheyka sanash, ko'chirish va
+> A1–A3 avans oqimi jonlida sinalmagan ⇒ fazalar «QISMAN» bo'lib qoladi.
 
 > Yangi qator qo'shganda: sana, nima, kim/nima bilan, va reyestr (1-bo'lim JSON +
 > 2-bo'lim jadval) yangilanganini belgilang.
