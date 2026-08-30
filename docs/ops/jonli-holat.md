@@ -242,6 +242,17 @@ Reja va to'liq retsept: `docs/plans/2026-08-25-kassa-qarzi-undirish-reyestri.md`
 > 🔴 **Qoida 13 smoke'i HALI TO'LIQ EMAS** — yacheyka sanash, ko'chirish va
 > A1–A3 avans oqimi jonlida sinalmagan ⇒ fazalar «QISMAN» bo'lib qoladi.
 
+| **2026-08-30 ~00:1x** | 🟢 **B1 BAJARILDI — ombor rollari yaratildi**: «Katta omborchi» (`848479f8`, shablon `warehouse_manager`) va «Omborchi» (`10ce71bf`, shablon `storekeeper`) ⇒ jonlida endi **10 rol**. Assimetriya o'lchandi va TO'G'RI: `retailcontrol` / `returnacceptance` / `warehousenumbering` / `supply` — faqat KATTA omborchida; `storecell` — ikkalasida. `maskedByOverride` 0. | Claude, `ops-b1-ombor-rollari.ts --apply` (UI bosadigan `POST /roles` + `POST /roles/:id/apply-template` marshrutlari, SQL YO'Q) | — (ombor tuzilmasiga tegmaydi) |
+
+> 🔴 **B2 NEGA HAMON OCHIQ — sabab TEXNIK EMAS, KADR (2026-08-30 o'lchovi).**
+> Jonlida **13 xodim**, va admin bo'lmaganlarning HAMMASI kassir:
+> `Kassir 8 · Administrator 2 · AccountOwner 1 · B2B/B2G 1 · PointOfSale 1`.
+> Rejaning qattiq qoidasi — **kassirni omborchi QILMANG** (`markReady` da
+> `assigneeId === userId` bo'lsa chek `ready` ga o'tmay QOTIB QOLADI, 1-kechada
+> o'lchangan) ⇒ «Omborchi» rolini biriktiradigan odam UMUMAN YO'Q.
+> **Keyingi qadam:** haqiqiy ombor xodimi uchun yangi xodim kartasi ochilsin,
+> so'ng rol biriktirilsin. Undan oldin B3 zanjirlari ham sinalmaydi.
+
 > **2026-08-30 (3-kecha) deploy'ining o'lchangan izi** (qoida 8 + 13):
 > `warehouse-state.ts` deploy'dan KEYIN — **`EXIT=0`**, **0 ta `xato`**,
 > **5 ta `ogohlantirish`** (`reyestrda-yoq`: Ombor 03, 04, 05, 06, 07).
