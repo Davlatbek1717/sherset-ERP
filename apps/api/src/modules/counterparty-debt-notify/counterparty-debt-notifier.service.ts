@@ -485,7 +485,11 @@ export class CounterpartyDebtNotifier {
       // `BigInt` ni qaysi wire-tipda yuborishiga tayanmaydi (ba'zi
       // versiyalarda `numeric` bo'lib ketadi va `pg_advisory_xact_lock`
       // uchun mos overload topilmasdi).
-      await tx.$queryRaw`SELECT pg_advisory_xact_lock(${lockKey.toString()}::bigint)`;
+      //
+      // `$executeRaw` (queryRaw EMAS): funksiya `void` qaytaradi, `$queryRaw`
+      // void ustunni deserializatsiya qila olmay YIQILADI — 2026-08-30 prodda
+      // shu sabab birorta ham mijoz-xabar ketmadi.
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(${lockKey.toString()}::bigint)`;
       const existing = await tx.hrTelegramOutbox.findFirst({
         where: {
           accountId: payload.accountId,

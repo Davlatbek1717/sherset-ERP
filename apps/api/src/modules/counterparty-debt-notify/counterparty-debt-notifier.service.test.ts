@@ -100,9 +100,11 @@ function makePrismaFull(
     debtPayment: { findFirst: docFind },
     organization: { findFirst: vi.fn(async () => opts.organization ?? null) },
   };
-  client.$queryRaw = vi.fn(async (_s: TemplateStringsArray, ...values: unknown[]) => {
+  // $executeRaw: jonli kod qulfni shu bilan oladi (pg_advisory_xact_lock
+  // `void` qaytargani uchun $queryRaw yaramaydi — 2026-08-30 prod regressiyasi).
+  client.$executeRaw = vi.fn(async (_s: TemplateStringsArray, ...values: unknown[]) => {
     advisoryLocks.push(values);
-    return [];
+    return 0;
   });
   client.$transaction = vi.fn(async (fn: (tx: unknown) => Promise<unknown>) => fn(client));
   return {
@@ -663,7 +665,7 @@ describe('CounterpartyDebtNotifier', () => {
  *
  * Quyidagi double Postgres semantikasini HALOL modellaydi: `findFirst`
  * `await` bilan YIELD qiladi (ya'ni ikki oqim haqiqatan bir-birining orasiga
- * tusha oladi), `$queryRaw` esa kalit bo'yicha NAVBAT tutadi va qulf
+ * tusha oladi), `$executeRaw` esa kalit bo'yicha NAVBAT tutadi va qulf
  * tranzaksiya tugaganda bo'shaydi.
  *
  * NON-VACUOUS: qulf hech nima qilmasa (eski kod yo'li) `findFirst` ning
@@ -731,9 +733,9 @@ function makeRacyPrisma() {
       try {
         return await fn({
           ...base,
-          $queryRaw: async (_s: TemplateStringsArray, ...values: unknown[]) => {
+          $executeRaw: async (_s: TemplateStringsArray, ...values: unknown[]) => {
             await acquire(String(values[0]), owned);
-            return [];
+            return 0;
           },
         });
       } finally {
