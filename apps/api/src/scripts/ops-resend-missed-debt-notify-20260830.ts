@@ -23,7 +23,13 @@ import { dirname, join } from 'node:path';
 const envPath = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '.env');
 for (const line of readFileSync(envPath, 'utf8').split('\n')) {
   const m = line.match(/^([A-Z0-9_]+)=(.*)$/);
-  if (m && process.env[m[1]] === undefined) process.env[m[1]] = m[2];
+  if (m && process.env[m[1]] === undefined) {
+    let v = m[2].trim();
+    if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) {
+      v = v.slice(1, -1);
+    }
+    process.env[m[1]] = v;
+  }
 }
 
 const { PrismaService } = await import('../prisma/prisma.service.js');
