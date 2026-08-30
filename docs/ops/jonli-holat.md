@@ -244,7 +244,29 @@ Reja va to'liq retsept: `docs/plans/2026-08-25-kassa-qarzi-undirish-reyestri.md`
 
 | **2026-08-30 ~00:1x** | 🟢 **B1 BAJARILDI — ombor rollari yaratildi**: «Katta omborchi» (`848479f8`, shablon `warehouse_manager`) va «Omborchi» (`10ce71bf`, shablon `storekeeper`) ⇒ jonlida endi **10 rol**. Assimetriya o'lchandi va TO'G'RI: `retailcontrol` / `returnacceptance` / `warehousenumbering` / `supply` — faqat KATTA omborchida; `storecell` — ikkalasida. `maskedByOverride` 0. | Claude, `ops-b1-ombor-rollari.ts --apply` (UI bosadigan `POST /roles` + `POST /roles/:id/apply-template` marshrutlari, SQL YO'Q) | — (ombor tuzilmasiga tegmaydi) |
 
-> 🔴 **B2 NEGA HAMON OCHIQ — sabab TEXNIK EMAS, KADR (2026-08-30 o'lchovi).**
+| **2026-08-30 ~01:0x** | 🟢 **B2 BAJARILDI — ombor rollari xodimlarga biriktirildi** (egasi tanlovi): **Muxriddin** `dade79a1` → `Kassir + Katta omborchi` (kassir roli ATAYLAB saqlandi — u ba'zida kassada o'tiradi), **Ilhom** `0deb373d` → `Administrator + Omborchi`. Ikkalasi ham QO'SHIMCHA: `PUT /roles/employee/:id` REPLACE-SET bo'lgani uchun mavjud rol ham qayta yuborildi, aks holda jimgina o'chirilardi. | Claude, `ops-b2-ombor-xodimlari.ts --apply` | — (ombor tuzilmasiga tegmaydi) |
+
+> 🟢 **B2 YOPILDI (2026-08-30) — «kassirni omborchi qilmang» tuzog'i KODDAN aniqlandi.**
+> Muxriddin kassir bo'la turib «Katta omborchi» qilindi. Bu XAVFSIZ, va sabab
+> hujjatdan emas, koddan o'qildi: `markReady`
+> (`retail-sale.service.ts:4121`) chaqiruvchida shu chek uchun `picking`
+> topshirig'i bormi deb qaraydi (`assigneeId = userId`) — bor bo'lsa «tayyor»
+> chekni `ready` ga o'tkazmaydi. **Lekin `assigneeId` ROLDAN emas,
+> `sklad_keepers` DAN keladi** (`:4080` → `keeper.employeeId`). Muxriddin ham,
+> Ilhom ham `sklad_keepers` da YO'Q ⇒ tuzoq otilmaydi.
+>
+> 🔴 **AYNAN SHU SABABDAN ULARGA TOPSHIRIQ HAM TUSHMAYDI.** `sklad_keepers`
+> hamon **sklad 1, 2, 3 → «Admin User»**. Ya'ni Muxriddin va Ilhom ekran va
+> huquqni oldi, lekin yig'ish navbati o'zgarmadi. Buni ko'chirish — **M4**
+> ning ishi va o'z smoke'ini talab qiladi.
+>
+> ⚠️ **Ikki halol chegara:** (1) Ilhom `Administrator` bo'lib qolgani uchun
+> undagi «omborchida `/omborchi/kontrol` → 403» sinovi MA'NOSIZ — 403
+> assimetriyasini isbotlash uchun ADMIN BO'LMAGAN omborchi kerak;
+> (2) Muxriddin ham kassir, ham katta omborchi ⇒ o'z chekini o'zi kontrol qila
+> oladi — texnik nosozlik emas, JARAYON masalasi, egasi bilib tanladi.
+>
+> Eski qayd (endi tarixiy): 🔴 **B2 nega OCHIQ edi — sabab KADR (o'lchov).**
 > Jonlida **13 xodim**, va admin bo'lmaganlarning HAMMASI kassir:
 > `Kassir 8 · Administrator 2 · AccountOwner 1 · B2B/B2G 1 · PointOfSale 1`.
 > Rejaning qattiq qoidasi — **kassirni omborchi QILMANG** (`markReady` da
