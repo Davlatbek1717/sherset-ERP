@@ -23,13 +23,18 @@ ketardi va bu aynan IS-7 muammosini qaytarardi.
 
 ```json
 {
-  "split": "qisman",
+  "split": "bajarilgan",
   "posSessionStore": "Taqsimlanmagan",
   "allowUnreachableQty": "0",
   "stores": [
-    { "name": "Taqsimlanmagan", "posPriority": 1, "brak": false, "unassignedSource": false, "posFront": false },
-    { "name": "Ombor 01", "posPriority": null, "brak": false, "posFront": false },
-    { "name": "Ombor 02", "posPriority": 2, "brak": false, "posFront": false },
+    { "name": "Ombor 07", "posPriority": 1, "brak": false, "posFront": false },
+    { "name": "Ombor 01", "posPriority": 2, "brak": false, "posFront": false },
+    { "name": "Ombor 02", "posPriority": 3, "brak": false, "posFront": false },
+    { "name": "Ombor 03", "posPriority": 4, "brak": false, "posFront": false },
+    { "name": "Ombor 04", "posPriority": 5, "brak": false, "posFront": false },
+    { "name": "Ombor 05", "posPriority": 6, "brak": false, "posFront": false },
+    { "name": "Ombor 06", "posPriority": 7, "brak": false, "posFront": false },
+    { "name": "Taqsimlanmagan", "posPriority": 8, "brak": false, "unassignedSource": false, "posFront": false },
     { "name": "Ombor 99", "posPriority": null, "brak": true, "posFront": false }
   ]
 }
@@ -43,14 +48,13 @@ ketardi va bu aynan IS-7 muammosini qaytarardi.
 | `posSessionStore` | Kassir smenalari ochiladigan ombor NOMI. **U POS kaskadida bo'lishi SHART** (`posPriority` bor va BRAK emas) — aks holda undagi qoldiq sotilmay qoladi |
 | `allowUnreachableQty` | Ruxsat etilgan «POS yeta olmaydigan qoldiq». Normal qiymat `"0"` |
 
-> ⚠️ **`split` nega «qisman» (2026-08-27):** BRAK ombori («Ombor 99») yaratilgach
-> uning **o'z** 27 yacheykasi (`99-…`) o'z omboriga MOS bo'ldi, haqiqiy omborlarning
-> 974 yacheykasi esa hamon `Taqsimlanmagan` da (mos EMAS). Skript bu ikkisini
-> ajratmaydi, shuning uchun umumiy holat «qaytarilgan» dan «qisman» ga o'tdi.
-> **Haqiqiy split hamon QAYTARILGAN** — kutilayotgan kesim: `mos 27` (faqat BRAK),
-> `mos emas 974`. Bu raqamlardan chetlanish — HAQIQIY o'zgarish belgisi.
-> 🔜 **E5 uchun vazifa:** split holati hisobidan BRAK ombori CHIQARILSIN (u
-> ta'rifi bo'yicha o'z yacheykalariga ega va split'ga aloqasi yo'q).
+> 🟢 **`split` «bajarilgan» (2026-08-31):** egasining qarori bilan KUNDUZI
+> (savdo ochiq holda) `warehouse-split.ts --apply` yuritildi — 1 244 yacheyka
+> (01: 604 · 02: 450 · 03: 1 · 04: 1 · 07: 188) va 512 916 dona qoldiq o'z
+> omborlariga ko'chdi. `warehouse-state.ts`: **mos 1 271, mos emas 0, POS yeta
+> olmaydigan qoldiq 0, EXIT=0**. Batafsil — jurnal (4-bo'lim, 2026-08-31).
+> Tarix: 2026-08-27 da holat «qisman» edi (faqat BRAKning 27 yacheykasi mos),
+> 2026-08-30 da 974 → 1 243 o'sish o'lchangan (269 yangi yacheyka, jurnalsiz).
 | `stores[].posPriority` | `Store.attributes.__posPriority`. `null` = kaskadda EMAS deb kutiladi |
 | `stores[].brak` | `__brakStore` (G3). BRAK omboridagi qoldiq yetuvchanlik hisobiga KIRMAYDI; prioritet qo'yilgan bo'lsa ham kaskadga kirmaydi |
 | `stores[].unassignedSource` | `__unassignedSource` (F7 hovuz belgisi) |
@@ -73,32 +77,63 @@ ketardi va bu aynan IS-7 muammosini qaytarardi.
 
 ## 2. Kutilayotgan holat — izohlar bilan
 
-**Oxirgi o'lchov: 2026-08-24** (hodisa rejasi 5-bo'limi + o'sha kungi jonli o'zgarishlar
-jurnali). ⚠️ Quyidagi raqamlar shu sanadagi o'lchov; **ular reyestrning qismi EMAS**
+**Oxirgi o'lchov: 2026-08-31 ~09:55 UTC** (split bajarilgan kun, `warehouse-state.ts`).
+⚠️ Quyidagi raqamlar shu sanadagi o'lchov; **ular reyestrning qismi EMAS**
 (skript raqamlarni tekshirmaydi — u tuzilma va yetuvchanlikni tekshiradi), lekin
 o'zgarganda shu yerga yoziladi.
 
 | Store | id (qisqa) | Roli | Yacheyka | POS prioriteti | Qoldiq (dona) |
 |---|---|---|---|---|---|
-| **Taqsimlanmagan** | `968f9da2` | hisob-kitob hovuzi + AYNI PAYTDA kassa ombori | **974** | **1** (kaskad boshi) | ≈52,5 mln |
-| Ombor 01 | `7400bf94` | fizik ombor (hozircha bo'sh) | 0 | yo'q | 0 |
-| Ombor 02 | `01662dbe` | fizik ombor (hozircha bo'sh) | 0 | 2 | 0 |
+| **Ombor 07** | `02016d74` | fizik ombor — **kassaga eng yaqin** | 188 | **1** (kaskad boshi) | 0 |
+| Ombor 01 | `7400bf94` | fizik ombor | 604 | 2 | 56 424 (yacheykada 26 450) |
+| Ombor 02 | `01662dbe` | fizik ombor | 450 | 3 | 693 675 (yacheykada 483 675) |
+| Ombor 03 | `1e5df878` | fizik ombor | 1 | 4 | 0 |
+| Ombor 04 | `b628f0d0` | fizik ombor | 1 | 5 | 2 728 (hammasi yacheykada) |
+| Ombor 05 | `75878ad6` | fizik ombor (yacheykasiz) | 0 | 6 | 0 |
+| Ombor 06 | `ed80b5ce` | fizik ombor (yacheykasiz) | 0 | 7 | 0 |
+| **Taqsimlanmagan** | `968f9da2` | hisob-kitob hovuzi + AYNI PAYTDA kassa ombori | **0** | **8** (ENG OXIRIDA) | ≈49,74 mln (H5 soxta qoldiq, yacheykasiz) |
 | **Ombor 99** | `d4b4ff85` | **BRAK ombori** (vozvratdagi brak tovar) | **27** | yo'q (ataylab) | 0 |
+
+> ⚠️ Ombor 01/02 dagi yacheykasiz qism (29 974 + 210 000) — 2026-08-30 dagi
+> QO'LDA «Оприходование» sinov kirimlari («bakteriya lampa 60 cm», 10 000/200 000
+> lik yaxlit sonlar). POS ularga yetadi, uzilish yo'q; soxta bo'lsa hisobdan
+> chiqarish — egasining qarori (H5 tozalash yo'li bilan).
 
 **Nega hozir shunday (vaqtinchalik holat):**
 
-- **Split QAYTARILGAN.** 2026-08-23 da bajarilgan split kassani 46 daqiqa to'xtatgan
-  va 2026-08-24 06:46 da qaytarilgan. Maqsad-arxitektura (har fizik ombor alohida
-  `Store`) o'z kuchida — unga qaytish **H4** fazasida, S1 savoliga javob olingach.
-- **Hamma yacheyka bitta omborda** (`Taqsimlanmagan`). Sabab: kassa faqat kaskadning
-  BIRINCHI omboridan avtomatik ayiradi; boshqa omborga tushgan tovar sotilmay qoladi
-  (G4 tasdiq oqimi hali qurilmagan). Yacheykalarni bo'lish — H4 ning ishi.
-- **`Ombor 02` da `posPriority = 2` qolgan** — bu **R1 xavfi** (hodisa rejasi
-  5-bo'lim). Hozir zararsiz (ombor bo'sh), lekin u yerga tovar tushsa POS yeta
-  olmaydi. **H6/1-band uni olib tashlaydi.** Olib tashlangach yuqoridagi JSON'da
-  `"posPriority": null` bo'ladi.
-- **`Ombor 01` da prioritet yo'q** — **R4 xavfi**, o'sha sabab bilan (bo'sh, shuning
-  uchun hozir zararsiz).
+- 🟢 **SPLIT BAJARILDI (2026-08-31).** Har yacheyka o'z omborida, «Taqsimlanmagan»
+  endi faqat yacheykasiz hovuz (≈49,74 mln soxta qoldiq + smena ombori). 2026-08-23
+  hodisasi takrorlanmadi, chunki M1 prioritetlari OLDIN qo'yilgan edi — jonli
+  cheklar split'dan 5 daqiqa o'tib Ombor 01/02 yacheykalaridan to'g'ri ayirdi.
+  Tarix: 2026-08-23 dagi birinchi split kassani 46 daqiqa to'xtatgan va
+  2026-08-24 06:46 da qaytarilgan edi.
+- ✅ **R1 va R4 xavflari YOPILDI (2026-08-30, M1).** Ilgari `Ombor 02` da tasodifiy
+  `posPriority = 2` turardi, `Ombor 01` va `Ombor 03…07` da esa prioritet umuman
+  yo'q edi — ya'ni o'sha omborlarga tovar tushsa POS unga yeta olmasdi. Endi
+  **to'qqizala ombor kanonik kaskadda** (07 → 01 → 02 → 03 → 04 → 05 → 06 →
+  Taqsimlanmagan), BRAK esa ataylab tashqarida. Tovar joylashtirilishidan OLDIN
+  qo'yildi — bu M1 ning butun maqsadi edi.
+- **Kaskad boshi endi `Ombor 07`** (kassaga eng yaqin, egasining S-M1 javobi).
+  `Taqsimlanmagan` ENG OXIRIGA tushdi: u hovuz, ombor emas. Split'dan (08-31)
+  keyin bu tartib to'liq ishlayapti: yacheykali qoldiq 01/02/04 da, ajratmalar
+  o'sha yacheykalardan; «Taqsimlanmagan» faqat yacheykasiz (soxta) qoldiqni
+  qoplaydi — u H5 tozalashi bilan kamayadi.
+  ⚠️ Yacheykasi bor tovarda ham **bironta yacheyka so'ralgan miqdorni yolg'iz
+  qoplamasa** taqsimot hozircha yacheykasiz qoldiqqa qochadi (2-holat,
+  `smallestCovering`) — bu «yacheyka kamaymayapti» shikoyatining ildizi,
+  tuzatish kodda rejalashtirilgan (2026-08-31 tahlili).
+- ⚠️ **VOZVRAT ENDI «Ombor 07» GA TUSHADI — ATAYLAB, lekin BUGUNDAN KUCHGA KIRDI.**
+  `refund()` qaytgan tovarni `refundCascade[0]` ga yozadi
+  (`retail-sale.service.ts:2389–2390`) — bu **F6/Q1 ning ongli qarori**: «mijoz
+  tovarni jismonan do'konga olib keladi ⇒ u kassaga eng yaqin omborga kiradi».
+  M1 gacha xulq ko'rinmasdi, chunki `cascade[0]` = «Taqsimlanmagan» edi; M1 dan
+  keyin `cascade[0]` = **«Ombor 07»** ⇒ har vozvrat qoldiqni o'sha yerga yozadi.
+  2026-08-30 smoke'ida jonlida o'lchandi. **Yangi qaror KERAK EMAS** (mexanizm
+  `posFront`/M7 ga aloqador emas — u TAQSIMOT tartibini o'zgartiradi, vozvrat
+  omborini emas). **Jami qoldiq to'g'ri, POS yetadi** ⇒ uzilish yo'q.
+  🔜 **Amaliy oqibat:** «Ombor 07» da endi 188 yacheyka bor (08-31 split'i
+  bilan keldi), lekin vozvrat baribir **yacheykasiz** tushadi — omborchi uni
+  qo'lda joylashtirishi kerak, aks holda shu yacheykasiz qator o'sib boradi.
 - **`__unassignedSource` hech qayerda yoqilmagan** — F7 hovuz belgisi hali
   ishlatilmayapti; `Taqsimlanmagan` amalda hovuz VAZIFASINI bajaradi, lekin belgisi
   yo'q. H4 da aniqlashtiriladi.
@@ -162,7 +197,53 @@ tegmaydi ⇒ «Σ tarkib === miqdor» sharti buziladi va K5 ning kiritish oqimi
 (`warehouse-split.ts`) ham bloklanadi. To'liq talab:
 `docs/plans/2026-08-24-split-kassa-hodisasi.md` → H4 → «T1» bandi.
 
-## 3.2. Kassa qarzi backfill'i (Q5) — 🔴 HALI YUGURTIRILMAGAN
+## 3.2. Kassa qarzi backfill'i (Q5) — ✅ YUGURTIRILDI 2026-08-31
+
+> **2026-08-31 ~13:10–14:30 CEST, KUNDUZI** — egasining «vaqt bo'yicha cheklov
+> yo'q, hozir jonlida yugurtir» ko'rsatmasi bilan (qoida 13 oynasidan ongli
+> chekinish). Ijro: Claude, SSH (kalit) orqali. O'lchovlar:
+>
+> - **DRY:** 567 qarzga chek → **282 qator / 1 001 380 725 so'm / 133
+>   kontragent** (88 tasida reyestrdan tashqari qarz yo'q; already-registered
+>   77 · cap-exhausted 24 · fully-returned 1 chek o'tkazildi).
+> - **APPLY uch bosqichda:** `RUN=20260831-01` kanareyka «aki taksi» 1 qator
+>   (`QRZ-2026-00891`) → `RUN=20260831-02` `LIMIT=10` → `RUN=20260831-03`
+>   qolgan 271. **Jami 282 — DRY bilan aynan.** Rollback shu RUN yorliqlari
+>   bilan tayyor turadi.
+> - **Balans tegilmadi:** kanareyka balansi bir tiyin o'zgarmadi; jarayon
+>   oynasida `counterparty_balance_entries` ga backfill'dan **0 yozuv** (4
+>   yozuv bor edi — hammasi jonli savdoning o'zi). `recompute` oldin/keyin:
+>   `changed: 0`, cross-check shovqini **759 → 759** (aynan teng).
+> - **`warehouse-state`** oldin/keyin: POS yeta olmaydigan qoldiq **0/0**;
+>   yagona `[xato] split-holati` Q5 dan OLDIN ham bor edi (2-bo'limdagi
+>   bugungi ombor-split bandi, reyestr JSON hali «qisman» deydi).
+> - **Qoida 13 smoke** (`ops-m1-live-smoke.ts --live`): 7/8 — yagona «xato»
+>   vozvratning `cascade[0]` ga tushishi (ma'lum ATAYLAB xulq), siljishni
+>   skript o'zi «Перемещение» bilan qaytardi, farq 0. 🔴 **OGOHLANTIRISH:
+>   `--restore-stray` endi XAVFLI** — split'dan keyin u Ombor 01–07 dagi
+>   QONUNIY qoldiqni «hovuzga qaytarish» deb taklif qiladi; APPLY QILINMASIN.
+> - **UI tasdiq (Playwright, faqat o'qish):** `/menejer/undirish` →
+>   Manba=«Kassa cheki» → **426 qarz**, «Kassadan: 200» chip, qatorlarda chek
+>   raqami havolasi; kanareyka ro'yxatda ko'rindi.
+> - **FIFO 2+ qarzli to'lov xabari HAQIQIY savdoda tasdiqlandi:** 13:21:10 da
+>   «Aziz jiyan» 2 367 000 so'm to'ladi, to'lov 2 qarzga bo'lindi
+>   (`QRZ-2026-00389` 850 000 + `QRZ-2026-00890` 1 517 000 — ikkinchisi 22.08
+>   dagi eski chek `ТРН-2026-01151` niki, bitta `batch_id`), outbox'da **BITTA** yig'ma
+>   xabar «2 367 000 so'm … Hisob teng» `sent` bo'ldi — `b43a7e27` ishlayapti.
+> - **Q6 jonli verify:** qamrov **6/6 OK** (reyestrda 451 kassa qatori, 282
+>   tasi Q5 belgisi bilan). `--live` zanjiri skript nuqsonida yiqildi —
+>   `post()` endi `expectedSumMinor` ni MAJBURIY talab qiladi, skript esa
+>   yubormasdi (tuzatildi, shu commitda). Qayta yugurishda QARZ zanjiri to'liq
+>   yurdi (0 → 1000 → 800 → −200); AVANS zanjiri «faqat smenani ochgan kassir»
+>   cheklovida to'xtadi — kunduzi begona smenada yurmaydi, **ochiq band**
+>   (kecha oynasida smena egasi tokeni bilan). Sinov izlari TO'LIQ tozalandi:
+>   `ТРН-2026-02474` cancelled, `ТРН-2026-02478` refunded, 200 so'm to'lov
+>   reverse (kassa daftari ham), `QRZ-2026-01174` soft-delete, balans 0.
+>
+> Eslatma cron'i **2026-09-14 dan** zinapoya bo'yicha ochila boshlaydi (har
+> 50 qatorda +1 kun) — operator navbatining to'lishi KUTILGAN xulq.
+
+### Asl retsept (tarix uchun, yugurtirishdan oldingi matn)
 
 > **Nega bu yerda tursa-yu, jurnalda qator yo'q.** Qoida 14 jonli holatga
 > TEGILGANDA jurnalga qator yozishni talab qiladi. Q5 backfill'i jonlida
@@ -227,6 +308,11 @@ Reja va to'liq retsept: `docs/plans/2026-08-25-kassa-qarzi-undirish-reyestri.md`
 | 2026-08-27 05:32–05:37 | **Ombor 03, 04, 05, 06, 07 yaratildi** (`__cellInventory=true`, `__posPriority` YO'Q, yacheykasiz, qoldiq 0) ⇒ jonlida 9 ombor | egasi, UI orqali | ❌ **YO'Q** — reyestrda hamon 4 ombor; `warehouse-state.ts` ularni `reyestrda-yoq` (ogohlantirish) deb ko'rsatadi. Reyestrga kiritish **M1** ning ishi (M1.3) |
 | **2026-08-29 05:50–06:23** | 🔴 **2-kecha deploy'i KUNDUZI bajarildi** (egasi qarori — savdo ochiq, 5 ta smena ishlab turgan holda): `61780120 → cbc14723`, 14 commit, **1 migratsiya** `20260825220000_drawer_cash_in_kind` (additiv: `retail_drawer_cash_in.kind` + 2 indeks). Chiqdi: A1/A2/A3 avans oqimi + G1 tuzatishi + yacheykadan «Chiqarish». **Ombor TUZILMASI o'zgarmadi.** | Claude, SSH orqali; zaxira `/root/sherset_v2-pre-deploy-20260829.dump` (TOC: 259 `TABLE DATA`); build **`.next-new`** ichiga (jonli `.next` tegilmagan) → katalog almashtirish → `pm2 restart`; eski build **`.next-old`** da saqlanmoqda | ✅ (tuzilma o'zgarmagani qayd etildi) |
 | **2026-08-29 20:25–21:31** | 🟢 **3-kecha deploy'i KECHKI OYNADA bajarildi** (savdo YO'Q): `cbc14723 → f612d804`, 38 commit, **5 migratsiya** (`stock_piece_registry`, `company_settings_sale_debt_term`, `stock_piece_cut`, `stock_piece_intake`, `piece_tracking_decision` — hammasi additiv). Chiqdi: **K1–K6** (bo'lak reyestri) + **Q4–Q6** + **E5** + qarz xabari tuzatishi. `topup-role-permissions.ts` yuritildi ⇒ `piecetracking` 26 qator. **Ombor TUZILMASI o'zgarmadi.** | Claude, Posh-SSH orqali; zaxira `/root/sherset_v2-pre-deploy-20260830.dump` (259 `TABLE DATA`); build `.next-new` ichiga → katalog almashtirish (`.next-old2`) → `pm2 restart` | ✅ **reyestrning O'ZI shu deploy bilan serverga yetib bordi** (JSON hamon 4 ombor — Ombor 03–07 M1 ning ishi) |
+| **2026-08-30 07:15** | 🟢 **M1.2 — POS KASKAD PRIORITETLARI QO'YILDI** (kanonik jadval, reja 4-bo'lim): `Ombor 07=1` · `01=2` · `02=3` · `03=4` · `04=5` · `05=6` · `06=7` · `Taqsimlanmagan=8` (1 dan 8 ga tushdi) · `Ombor 99` (BRAK) ATAYLAB tegilmadi. **Faqat `stores.attributes` — qoldiqqa, hujjatga, yacheykaga BIR BAYT ham tegilmadi.** Oldshart o'lchandi: Ombor 01–07 da qoldiq **0** ⇒ M1.0 to'xtash sharti ishga tushmadi. Xulq o'zgarmasligi kutiladi (bo'sh ombor ⇒ hissasi 0) | Claude, paramiko/SFTP orqali; qaytarish nuqtasi `/root/m1-stores-before-20260830.txt` (9 qator); DRY jonli `BEGIN → oldinga → zond → qaytarish → zond → ROLLBACK` bilan **ikkala yo'nalish** sinaldi (qaytarish zondi asl holatni AYNAN tikladi); skriptlar `/root/m1-apply.sql` + `/root/m1-rollback.sql` | ✅ (JSON + 2-bo'lim jadvali + shu qator) |
+| **2026-08-30 08:05–08:40** | 🟢 **M1.5 — QOIDA 13 SMOKE'i BAJARILDI** (`ops-m1-live-smoke.ts --live`, HTTP orqali, izini o'zi tozalaydi). Uchala band: **(1) SOTUV** — chek → post (qoldiq aynan −1) → vozvrat (jami AYNAN tiklandi); ajratma **«Taqsimlanmagan» dan** olindi, bo'sh «Ombor 07» hech nima TORTMADI ✅ M1 ning asosiy sharti jonlida isbotlandi; **(2) SANASH** — yacheyka `02-02-03-42` bo'yicha chernovik ochildi, `position-meta` qoldiqni (22 700) to'g'ri ko'rsatdi, chernovik o'chirildi; **(3) KO'CHIRISH** — `02-02-03-42` → `01-04-01-105` 1 dona, ombor jamisi o'zgarmadi, teskari ko'chirish yacheyka kesimini tikladi. `warehouse-state.ts` o'zgarishdan OLDIN va KEYIN: **EXIT=0, «POS yeta olmaydigan qoldiq: 0»**. ⚠️ **Yo'l-yo'lakay o'lchandi: vozvrat tovarni `cascade[0]` («Ombor 07») ga qaytaradi** — bu F6/Q1 ning ATAYLAB qilingan xulqi (`retail-sale.service.ts:2389`), M1 uni ko'rinadigan qildi; yangi qaror kerak emas, lekin «Ombor 07» da yacheyka yo'qligi (M3) 2-bo'limga yozildi. Smoke siljishni «Перемещение» bilan qaytardi, jonli taqsimot AYNAN tiklandi (Ombor 07 = 0) | Claude (avtomatik, HTTP+Prisma). Sinov hujjatlari: `ТРН-2026-02224` (cancelled), `…02225 / …02227 / …02229` (refunded) + qaytarish «Перемещение» hujjatlari — hammasi `description` da «M1 jonli smoke» belgisi bilan | ✅ (2-bo'lim + shu qator) |
+| **2026-08-31 09:46 UTC** | 🟢 **OMBOR-SPLIT BAJARILDI — KUNDUZI, EGASINING QARORI BILAN** (qoida 12 dan ongli chekinish; egasi «qoidani shu safar e'tiborsiz qoldiramiz» dedi). `warehouse-split.ts --apply`: **1 244 yacheyka + 512 916 dona** o'z omborlariga ko'chdi — Ombor 01: 604 yach./26 470 dona (docId `8a64665f`) · 02: 450/483 718 (`0d00b341`) · 03: 1/0 (`15825f60`) · 04: 1/2 728 (`15c5cc22`) · 07: 188/0 (`de06fcec`); Taqsimlanmagan'da 14 bo'sh zona o'chirildi. **V0 (5 123 assortiment jami/qiymat/rezerv o'zgarmadi) + V1/V2/V3 + idempotentlik — hammasi OK.** Oldshart o'lchovlari: barcha prefikslar mavjud prioritetli omborlarga mos (yangi Store yaratilmadi), rezerv-yacheyka kesishuvi 0, anomaliya 0. Keyin `warehouse-state.ts`: **split «bajarilgan» (mos 1 271, mos emas 0), POS yeta olmaydigan qoldiq 0, EXIT=0**. Qoida 13 smoke (`ops-m1-live-smoke.ts --live`): **7/8** — sotuv post qoldiqni aynan −1 qildi va **ajratma yacheykali omborlardan** olindi, cancel jamini aynan tikladi, sanash va ko'chirish stok-neytral; yagona «xato» — vozvrat `cascade[0]` (Ombor 07) ga tushishi, bu ATAYLAB xulq (M1 hisobotida ham xuddi shunday). Jonli isbot: 09:51 dagi haqiqiy cheklar Ombor 01 (−21) va Ombor 02 (−43) **yacheykalaridan** ayirdi | Claude, SSH (kalit) orqali; apply'ni egasi o'z terminalidan ishga tushirdi (auto-rejim klassifikatori yozuvni bloklagani uchun); zaxira `/root/sherset_v2-pre-split-20260831.dump` (260 `TABLE DATA`); log `/root/split-apply-20260831.log`; qaytarish yo'li: `warehouse-split-revert.ts --from "Ombor NN" --apply --allow-remote` (ombor-ma-ombor) | ✅ (JSON `split: bajarilgan` + 2-bo'lim jadvali + shu qator) |
+
+| **2026-08-31 ~13:10–14:30** | 🟢 **Q5 BACKFILL YUGURTIRILDI (kunduzi, egasi ruxsati bilan)** — `RUN=20260831-01` (kanareyka «aki taksi», 1 qator `QRZ-2026-00891`) · `-02` (`LIMIT=10`) · `-03` (271) = **282 qator / 1 001 380 725 so'm reyestrga** (`ops-q5-backfill-sale-debts.ts`), DRY bilan aynan mos. Balans/kassa TEGILMADI (balans jurnaliga 0 yozuv, `recompute` `changed:0`, shovqin 759→759). Ombor TUZILMASIGA tegilmagan (`warehouse-state` POS-yeta-olmaydigan 0/0). Qoida 13 smoke 7/8 (yagona «xato» — ma'lum vozvrat-cascade[0] xulqi, iz qaytarildi). UI: undirishda Manba=«Kassa cheki» 426 qarz. FIFO 2+ qarz xabari HAQIQIY savdoda tasdiqlandi (13:21, bitta yig'ma xabar). Q6 `--live` skript nuqsoni topilib tuzatildi (`expectedSumMinor`), sinov izlari to'liq tozalandi. Tafsilot: §3.2 | Claude, SSH (kalit); rollback: `RUN=<yorliq>` bilan `ops-q5-backfill-rollback.ts` | ✅ (tuzilma o'zgarmagani qayd etildi; §3.2 yangilandi) |
 
 > **2026-08-29 deploy'ining o'lchangan izi** (qoida 8 + 13):
 > `warehouse-state.ts` deploy'dan KEYIN — `EXIT=2`, **aynan 1 ta `xato`**

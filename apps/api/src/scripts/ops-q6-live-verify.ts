@@ -135,6 +135,11 @@ async function expectPostRejected(
         debtAmountMinor: '0',
         prepayAmountMinor: opts.prepayMinor.toString(),
         agentId: opts.agentId,
+        // 🔴 expectedSumMinor MAJBURIY (post() dagi mijoz-sanity, E5 dan keyin).
+        // Usiz 400 «expectedSumMinor must be a non-negative integer» keladi va
+        // expect400 NOTO'G'RI sababdan yashil bo'lardi — invariant 5 ning 400
+        // i aynan AVANS chegarasidan kelishi kerak, shu maydon to'g'ri ketadi.
+        expectedSumMinor: opts.priceMinor.toString(),
       }),
     );
   } finally {
@@ -371,6 +376,10 @@ async function postSale(
     debtAmountMinor: (opts.debtMinor ?? 0n).toString(),
     prepayAmountMinor: (opts.prepayMinor ?? 0n).toString(),
     agentId: opts.agentId,
+    // 1 dona × narx ⇒ chek jamisi aynan shu (server bazadagi summa bilan
+    // qayta tekshiradi). Maydon majburiy — 2026-08-31 jonli yugurishda usiz
+    // post() 400 berdi va --live zanjiri UMUMAN yurmagan edi.
+    expectedSumMinor: opts.priceMinor.toString(),
   });
   return { id: draft.id as string, posted };
 }
