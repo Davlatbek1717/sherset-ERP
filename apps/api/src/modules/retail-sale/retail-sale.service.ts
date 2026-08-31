@@ -559,6 +559,9 @@ export class RetailSaleService {
                 code: true,
                 uom: true,
                 buyPrice: true,
+                // Tannarx valyutasi — dollarda kelgan tovarni POS «$… ≈ …сум»
+                // (joriy kurs) ko'rinishida ko'rsatadi (2026-09-01, egasi).
+                buyPriceCurrency: true,
                 salePrices: true,
               },
             },

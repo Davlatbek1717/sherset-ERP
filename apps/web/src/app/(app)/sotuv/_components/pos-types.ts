@@ -37,6 +37,16 @@ export interface CartLine {
   wholesaleMinor: bigint | null;
   basePriceMinor: bigint | null;
   /**
+   * Tannarx ASL valyutasi va summasi — tovar dollarda kelgan holat
+   * (2026-09-01, egasi): qator oynasidagi «Tannarx: ***» ochilganda
+   * «$12,50 ≈ 160 000,00 сум» ko'rinishi uchun. `costMinor` bunda JORIY kurs
+   * bilan bazaga o'girilgan qiymat (kursi noma'lum bo'lsa NULL — «10 dollar =
+   * 10 so'm» taqiqi); bu ikki maydon esa faqat baza valyutasidan FARQLI
+   * tannarxda to'ldiriladi, oddiy so'mlik tovarda NULL.
+   */
+  costCurrency?: string | null;
+  costOriginalMinor?: bigint | null;
+  /**
    * K3 — «Bo'lak hisobi yuritilsin» (`Product.pieceTracked`): kabel, sim,
    * shlang. Tovar kartochkasidan savatga qo'shilganda ko'chadi va qator
    * oynasida bo'lak panelini ochadi. Bayroq o'chiq (yoki yo'q) bo'lsa POS

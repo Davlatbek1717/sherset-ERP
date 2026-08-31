@@ -45,6 +45,8 @@ interface ChekDetailPosition {
     code: string | null;
     /** Savatga nusxalashda narx-pol/foyda uchun (server `findById` yuboradi). */
     buyPrice?: string | null;
+    /** Tannarx valyutasi — dollarda kelgan tovar «$… ≈ …» bo'lib ko'rinsin. */
+    buyPriceCurrency?: string | null;
     salePrices?: Array<{ priceTypeId: string; value: string }> | null;
   };
 }

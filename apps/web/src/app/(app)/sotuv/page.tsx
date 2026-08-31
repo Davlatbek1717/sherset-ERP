@@ -67,6 +67,7 @@ import {
   resolveDefaultSalePrice,
   resolveDefaultSalePriceOrZero,
   resolveWholesaleSalePrice,
+  toBaseMinor,
   useCurrencyRates,
   usePriceTypeIds,
 } from '@/lib/sale-price';
@@ -611,6 +612,7 @@ function SalesScreen({
         name: string;
         code: string | null;
         buyPrice: string | null;
+        buyPriceCurrency?: string | null;
         salePrices?: Array<{ priceTypeId: string; value: string }> | null;
       };
     }>;
@@ -749,14 +751,30 @@ function SalesScreen({
   const cardPrices = useCallback(
     (
       buyPrice: string | null | undefined,
+      buyPriceCurrency: string | null | undefined,
       salePrices: ProductRow['salePrices'],
-    ): Pick<CartLine, 'costMinor' | 'wholesaleMinor' | 'basePriceMinor'> => ({
-      costMinor: toMinorOrNull(buyPrice),
-      wholesaleMinor: toMinorOrNull(
-        resolveWholesaleSalePrice(salePrices, wholesalePriceTypeId, rates),
-      ),
-      basePriceMinor: toMinorOrNull(resolveDefaultSalePrice(salePrices, defaultPriceTypeId, rates)),
-    }),
+    ): Pick<
+      CartLine,
+      'costMinor' | 'wholesaleMinor' | 'basePriceMinor' | 'costCurrency' | 'costOriginalMinor'
+    > => {
+      // Dollarda kelgan tovar (2026-09-01, egasi): tannarx sotuv narxlari
+      // bilan BIR XIL shartnomada JORIY kurs orqali bazaga o'giriladi
+      // (`toBaseMinor`: kursi noma'lum → null, xom son EMAS). Asl summa +
+      // valyuta alohida olib yuriladi — qator oynasi «$… ≈ …сум» ko'rsatadi.
+      const foreign =
+        buyPriceCurrency != null && rates.base != null && buyPriceCurrency !== rates.base;
+      return {
+        costMinor: toMinorOrNull(toBaseMinor(buyPrice ?? undefined, buyPriceCurrency, rates)),
+        costCurrency: foreign ? buyPriceCurrency : null,
+        costOriginalMinor: foreign ? toMinorOrNull(buyPrice) : null,
+        wholesaleMinor: toMinorOrNull(
+          resolveWholesaleSalePrice(salePrices, wholesalePriceTypeId, rates),
+        ),
+        basePriceMinor: toMinorOrNull(
+          resolveDefaultSalePrice(salePrices, defaultPriceTypeId, rates),
+        ),
+      };
+    },
     // `rates` — kurslar asinxron keladi; usiz muzlatilgan callback valyutali
     // narxni butun smena davomida «yo'q» deb o'qirdi.
     [defaultPriceTypeId, wholesalePriceTypeId, rates],
@@ -797,7 +815,7 @@ function SalesScreen({
             // (`GET /products` qatorida keladi). Faqat shu tovarlarda qator
             // oynasida bo'lak paneli ochiladi.
             pieceTracked: product.pieceTracked === true,
-            ...cardPrices(product.buyPrice, product.salePrices),
+            ...cardPrices(product.buyPrice, product.buyPriceCurrency, product.salePrices),
           },
         ];
       });
@@ -913,7 +931,11 @@ function SalesScreen({
           // baribir o'zgartirgani ochyapti).
           priceMinor: BigInt(p.priceMinor),
           priceStr: (Number(p.priceMinor) / 100).toString(),
-          ...cardPrices(p.product.buyPrice ?? null, (p.product.salePrices ?? []) as never),
+          ...cardPrices(
+            p.product.buyPrice ?? null,
+            p.product.buyPriceCurrency ?? null,
+            (p.product.salePrices ?? []) as never,
+          ),
         })),
       );
       setDiscountPct(0);
@@ -1139,7 +1161,11 @@ function SalesScreen({
         const d = await api.get<SaleDetail>(`/retail-sales/${saleId}`);
         setCart(
           d.positions.map((p) => {
-            const live = cardPrices(p.product.buyPrice, p.product.salePrices);
+            const live = cardPrices(
+              p.product.buyPrice,
+              p.product.buyPriceCurrency,
+              p.product.salePrices,
+            );
             return {
               productId: p.product.id,
               productName: p.product.name,
@@ -1155,6 +1181,10 @@ function SalesScreen({
               costMinor: toMinorOrNull(p.costMinor) ?? live.costMinor,
               basePriceMinor: toMinorOrNull(p.basePriceMinor) ?? live.basePriceMinor,
               wholesaleMinor: live.wholesaleMinor,
+              // Dollarda kelgan tovarning asl tannarxi — «$… ≈ …» ko'rinishi
+              // uchun kartochkadan (muzlatilgan costMinor bunga ta'sir qilmaydi).
+              costCurrency: live.costCurrency,
+              costOriginalMinor: live.costOriginalMinor,
             };
           }),
         );

@@ -56,8 +56,15 @@ describe('/sotuv savat foydasi', () => {
     // `cardPrices` — yagona o'qish nuqtasi; u ham qo'shishda, ham «Tayyor»
     // chekni savatga tortishda ishlatiladi.
     expect(src).toContain('resolveWholesaleSalePrice(');
-    expect(src).toContain('cardPrices(product.buyPrice, product.salePrices)');
-    expect(src).toContain('cardPrices(p.product.buyPrice, p.product.salePrices)');
+    // 2026-09-01: tannarx valyutasi ham kartochkadan o'qiladi — dollarda
+    // kelgan tovar joriy kurs bilan so'mga o'girilib ko'rsatiladi.
+    // Regex — formatter chaqiruvni ko'p qatorga o'rashi mumkin (bo'shliq erkin).
+    expect(src).toMatch(
+      /cardPrices\(\s*product\.buyPrice,\s*product\.buyPriceCurrency,\s*product\.salePrices,?\s*\)/,
+    );
+    expect(src).toMatch(
+      /cardPrices\(\s*p\.product\.buyPrice,\s*p\.product\.buyPriceCurrency,\s*p\.product\.salePrices,?\s*\)/,
+    );
   });
 
   it('formulalar umumiy paketdan keladi, sahifada qayta yozilmaydi', () => {
