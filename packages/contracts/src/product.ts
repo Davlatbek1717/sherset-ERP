@@ -57,6 +57,12 @@ export const PosProductRowSchema = z.object({
   code: z.string().nullable(),
   /** `BigInt?` column → string or null on the wire. */
   buyPrice: MinorAmount.nullable().optional(),
+  /**
+   * Tannarx valyutasi (`Product.buyPriceCurrency`, ISO-4217). `null`/yo'q =
+   * baza valyutasi (UZS). Dollarda kelgan tovarda POS tannarxni JORIY kurs
+   * bilan so'mga o'girib ko'rsatadi (savat qatori oynasidagi «Tannarx: ***»).
+   */
+  buyPriceCurrency: z.string().length(3).nullable().optional(),
   salePrices: z.array(SalePriceEntrySchema).nullable().optional(),
   stock: ProductStockSchema.nullable().optional(),
   /**

@@ -11,9 +11,15 @@
  * (2026-08-11, jonli monoblok sinovidan keyin): mijoz kassir yoniga kelganda
  * «Tan: 14 375» va «Foyda: +5 525 (27,8%)» yozuvlari ochiq ko'rinib qolardi.
  *
- * Yagona manba: savat qatori, savat footeri va qator tahrir oynasi — uchalasi
- * ham shu bayroqni o'qiydi. Ilgari bu uch joy mustaqil yozilgan edi va biri
- * o'zgarsa qolgani jimgina eskirardi (repo'ning ma'lum bug-klassi).
+ * Yagona manba: savat qatori va savat footeri shu bayroqni o'qiydi. Ilgari bu
+ * joylar mustaqil yozilgan edi va biri o'zgarsa qolgani jimgina eskirardi
+ * (repo'ning ma'lum bug-klassi).
+ *
+ * ⚠️ 2026-09-01 (egasi): QATOR TAHRIR OYNASI endi bu bayroqdan CHIQDI — unda
+ * tannarx «Tannarx: ***» ko'rinishida doim bor: raqam sukutda yulduzcha ostida
+ * yopiq (mijoz ko'zi himoyasi saqlanadi), kassir yulduzchani bosgandagina
+ * ochiladi; dollarda kelgan tovarda joriy kursdagi so'm ekvivalenti bilan
+ * (`cart-line-edit-modal.tsx`).
  *
  * 🔴 Hisob-kitob ATAYLAB o'chirilmadi (faqat render to'sildi). Sabablari:
  *   1. ZARAR / «optomdan past» ogohlantirishlari — kassirning yagona nazorati —

@@ -20,7 +20,6 @@ import { PieceOfferPanel } from '@/components/pos/piece-offer-panel';
 import { isShersetShell } from '@/lib/pos-device';
 import { cartLineRevenueMinor, normalizeQtyDecimal } from '@/lib/pos/cart-math';
 import { parseAmountToMinor } from '@/lib/pos/parse-amount';
-import { SHOW_MARGIN_ON_SCREEN } from '@/lib/pos/ui-flags';
 import { classifyPrice, priceFloorMinor } from '@moysklad/money';
 import type { CurrencyCode } from '@moysklad/money/currencies';
 import { formatMoney, noAccidentalClose } from '@moysklad/ui';
@@ -46,6 +45,13 @@ export interface CartLineEditTarget {
   costMinor: bigint | null;
   wholesaleMinor: bigint | null;
   basePriceMinor: bigint | null;
+  /**
+   * Tannarx ASL valyutasi/summasi — tovar dollarda kelgan holat (2026-09-01):
+   * «Tannarx: ***» ochilganda «$12,50 ≈ 160 000,00 сум» chiqadi. `costMinor`
+   * bunda joriy kurs bilan bazaga o'girilgani (kursi noma'lum → NULL).
+   */
+  costCurrency?: string | null;
+  costOriginalMinor?: bigint | null;
   availableStock?: number;
   /**
    * K3 — «Bo'lak hisobi yuritilsin» (`Product.pieceTracked`): kabel, sim,
@@ -134,6 +140,14 @@ export function CartLineEditModal({
   }, []);
 
   /**
+   * Tannarx OCHIQMI (2026-09-01, egasi): sukutda «***» — raqam mijoz ko'zi
+   * oldida turmaydi (P02/2026-08-13 niyati saqlanadi), yulduzchaga bosilganda
+   * ochiladi, yana bosilsa yopiladi. Qator almashganda QAYTA yashiriladi —
+   * bir tovarda ochilgani keyingisiga «meros» bo'lib qolmasin.
+   */
+  const [showCost, setShowCost] = useState(false);
+
+  /**
    * Boshqa qatorga o'tilganda (yoki oyna qayta ochilganda) maydonlar qayta
    * yuklanadi — React'ning «prop o'zgarganda holatni to'g'rilash» naqshi
    * (`useEffect` EMAS: effekt bir render kechikadi va oyna bir kadrga eski
@@ -148,6 +162,7 @@ export function CartLineEditModal({
     setPieceLengths(line.pieceLengths);
     setActiveField('qty');
     setReplaceNext(true);
+    setShowCost(false);
   }
   // Yopilganda «yuklangan» belgisi tozalanadi — aks holda AYNI qator qayta
   // ochilganda saqlanmagan eski tahrir qaytib chiqardi.
@@ -353,15 +368,34 @@ export function CartLineEditModal({
                 </span>
               </div>
               <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
-                {/* Tan narx — ekranda KO'RSATILMAYDI (`lib/pos/ui-flags.ts`).
-                    Oyna savat qatori bilan BIR XIL siyosatga bo'ysunadi: aks
-                    holda raqam savatdan yashirilib, oynada ochiq qolardi. */}
-                {SHOW_MARGIN_ON_SCREEN && (
+                {/* Tannarx — «***» ostida (2026-09-01, egasi): raqam sukutda
+                    YOPIQ (mijoz ko'zi oldidagi ekran — P02 niyati saqlanadi),
+                    yulduzchaga bosilgandagina ochiladi. Dollarda kelgan
+                    tovarda asl summa + joriy kursdagi so'm ekvivalenti chiqadi
+                    («$12,50 ≈ 160 000,00 сум»); kursi noma'lum bo'lsa so'm
+                    o'rnida «—» (xom son «10 dollar = 10 so'm» bo'lib
+                    ko'rinmasin). Eski `SHOW_MARGIN_ON_SCREEN` sharti shu
+                    qaror bilan bekor bo'ldi — bayroq savat QATORIDA amal
+                    qilishda davom etadi. */}
+                {(line.costMinor != null || line.costOriginalMinor != null) && (
                   <span data-test-id="pos-line-edit-cost" className="text-[var(--ms-text-muted)]">
                     {t('cart_cost')}:{' '}
-                    <span className="tabular-nums">
-                      {line.costMinor != null ? formatMoney(line.costMinor) : '—'}
-                    </span>
+                    <button
+                      type="button"
+                      data-test-id="pos-line-edit-cost-toggle"
+                      onClick={() => setShowCost((v) => !v)}
+                      className="font-semibold tabular-nums underline decoration-dotted underline-offset-2"
+                    >
+                      {showCost
+                        ? line.costOriginalMinor != null && line.costCurrency
+                          ? `${formatMoney(line.costOriginalMinor, line.costCurrency)} ≈ ${
+                              line.costMinor != null ? formatMoney(line.costMinor) : '—'
+                            }`
+                          : line.costMinor != null
+                            ? formatMoney(line.costMinor)
+                            : '—'
+                        : '***'}
+                    </button>
                   </span>
                 )}
                 {line.wholesaleMinor != null && (

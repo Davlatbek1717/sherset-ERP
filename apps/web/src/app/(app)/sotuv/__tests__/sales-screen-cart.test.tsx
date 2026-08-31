@@ -487,7 +487,10 @@ describe('SalesScreen — marja ekranda ko‘rsatilmaydi', () => {
     expect(screen.queryByText(/Foyda/)).not.toBeInTheDocument();
   });
 
-  it('tahrir oynasida ham tan narx ko‘rsatilmaydi (savat bilan bir siyosat)', async () => {
+  it('tahrir oynasida tannarx «***» ostida — raqam sukutda YOPIQ, bosilganda ochiladi (2026-09-01)', async () => {
+    // Egasining yangi qarori (2026-09-01): oynada «Tannarx: ***» doim turadi —
+    // optom yozuvi oldida — lekin RAQAM yulduzcha bosilgunicha chiqmaydi.
+    // Mijoz ko'zi himoyasi (2026-08-11/13) shu maska bilan saqlanadi.
     const user = userEvent.setup();
     renderWithProviders(<SotuvPage />);
 
@@ -495,8 +498,13 @@ describe('SalesScreen — marja ekranda ko‘rsatilmaydi', () => {
     await user.click(within(line).getByTestId('sotuv-cart-price-edit'));
     const modal = await screen.findByTestId('pos-line-edit');
 
-    expect(within(modal).queryByTestId('pos-line-edit-cost')).not.toBeInTheDocument();
-    expect(norm(modal.textContent)).not.toContain('Tan:');
+    const cost = within(modal).getByTestId('pos-line-edit-cost');
+    expect(norm(cost.textContent)).toContain('***');
+    // Tan narx raqami (kartochkada 6 000) sukutda KO'RINMAYDI.
+    expect(norm(cost.textContent)).not.toContain('6 000');
+
+    await user.click(within(modal).getByTestId('pos-line-edit-cost-toggle'));
+    expect(norm(within(modal).getByTestId('pos-line-edit-cost').textContent)).toContain('6 000,00');
   });
 });
 

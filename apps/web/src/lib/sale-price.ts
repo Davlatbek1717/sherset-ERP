@@ -62,8 +62,13 @@ export interface CurrencyRates {
  *   • kursi NOMA'LUM → `null`. Xom sonni qaytarish «10 dollar = 10 so'm»
  *     xatosini qayta tug'diradi, shuning uchun bunday narx KO'RSATILMAYDI —
  *     loyihaning «kursi yo'q pul jamiga qo'shilmaydi» shartnomasi bilan bir xil.
+ *
+ * EKSPORT — POS savat qatori tannarxni (`Product.buyPrice` +
+ * `buyPriceCurrency`) AYNI shu shartnoma bilan o'giradi («Tannarx: ***»,
+ * 2026-09-01): sotuv narxi va tannarx ikki xil formula bilan o'girilsa,
+ * band-tasma (zarar/optomdan past) o'z-o'ziga zid raqamlarga qarab qolardi.
  */
-function toBaseMinor(
+export function toBaseMinor(
   value: string | undefined,
   currencyCode: string | null | undefined,
   rates: CurrencyRates | undefined,

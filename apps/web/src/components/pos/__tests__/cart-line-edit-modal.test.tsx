@@ -339,6 +339,70 @@ describe('Savat qatori tahrir oynasi — narx cheklovi OLIB TASHLANGAN (2026-08-
   });
 });
 
+/**
+ * TANNARX «***» OSTIDA — egasining qarori (2026-09-01): optom yozuvi oldida
+ * «Tannarx: ***» turadi, raqam yulduzcha bosilgandagina ochiladi (yana
+ * bosilsa yopiladi). Mijoz ko'zi himoyasi (2026-08-11/13) maska bilan
+ * saqlanadi. Dollarda kelgan tovarda asl summa + joriy kursdagi so'm
+ * ekvivalenti chiqadi; kursi noma'lum bo'lsa so'm o'rnida «—».
+ */
+describe('Savat qatori tahrir oynasi — tannarx «***» ostida (2026-09-01)', () => {
+  it('sukutda «***» — tan narx raqami YOPIQ', () => {
+    open();
+    const cost = screen.getByTestId('pos-line-edit-cost');
+    expect(norm(cost.textContent)).toContain('Tannarx');
+    expect(norm(cost.textContent)).toContain('***');
+    expect(norm(cost.textContent)).not.toContain('6 000');
+  });
+
+  it('yulduzcha bosilganda ochiladi, yana bosilsa yopiladi', async () => {
+    const user = userEvent.setup();
+    open();
+
+    await user.click(screen.getByTestId('pos-line-edit-cost-toggle'));
+    expect(norm(screen.getByTestId('pos-line-edit-cost').textContent)).toContain('6 000,00');
+
+    await user.click(screen.getByTestId('pos-line-edit-cost-toggle'));
+    expect(norm(screen.getByTestId('pos-line-edit-cost').textContent)).toContain('***');
+  });
+
+  it('dollarda kelgan tovar — asl summa + joriy kursdagi so‘m ekvivalenti', async () => {
+    const user = userEvent.setup();
+    // $50 tannarx, kurs 12 000 → 600 000 so'm (costMinor allaqachon o'girilgan
+    // holda keladi — `cardPrices` shartnomasi).
+    open({ costMinor: 600_000_00n, costCurrency: 'USD', costOriginalMinor: 5_000n });
+
+    await user.click(screen.getByTestId('pos-line-edit-cost-toggle'));
+    const text = norm(screen.getByTestId('pos-line-edit-cost').textContent);
+    expect(text).toContain('50,00 USD');
+    expect(text).toContain('≈');
+    expect(text).toContain('600 000,00');
+  });
+
+  it('kursi noma‘lum valyuta — so‘m o‘rnida «—», xom son EMAS', async () => {
+    const user = userEvent.setup();
+    open({ costMinor: null, costCurrency: 'USD', costOriginalMinor: 5_000n });
+
+    await user.click(screen.getByTestId('pos-line-edit-cost-toggle'));
+    const text = norm(screen.getByTestId('pos-line-edit-cost').textContent);
+    expect(text).toContain('50,00 USD');
+    expect(text).toContain('—');
+  });
+
+  it('tan narx UMUMAN yo‘q qatorda «Tannarx» qatori chizilmaydi', () => {
+    open({ costMinor: null, costOriginalMinor: null });
+    expect(screen.queryByTestId('pos-line-edit-cost')).not.toBeInTheDocument();
+  });
+
+  it('qulflangan (readOnly) savatda ham maskali tannarx ochiladi', async () => {
+    const user = userEvent.setup();
+    open({}, { readOnly: true });
+
+    await user.click(screen.getByTestId('pos-line-edit-cost-toggle'));
+    expect(norm(screen.getByTestId('pos-line-edit-cost').textContent)).toContain('6 000,00');
+  });
+});
+
 describe('Savat qatori tahrir oynasi — qulflangan savat (zakaz)', () => {
   it('🔴 faqat ko‘rish: Saqlash, O‘chirish va numpad YO‘Q', () => {
     open({}, { readOnly: true });
