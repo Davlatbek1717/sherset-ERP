@@ -67,6 +67,7 @@ export default function PrintDebtPaymentPage() {
         orgPhone={model.orgPhone}
         sellerName={model.sellerName}
         buyerName={model.buyerName}
+        buyerPhone={model.buyerPhone}
         comment={null}
         positions={positions}
         totalMinor={sale.sumMinor}

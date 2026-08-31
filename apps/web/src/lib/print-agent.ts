@@ -514,6 +514,8 @@ export function buildReceiptText(sale: ReceiptSale): string {
   // ── Rekvizitlar ──
   push(L, `${RECEIPT_LABELS.seller}: ${m.sellerName}`);
   push(L, `${RECEIPT_LABELS.buyer}: ${m.buyerName}`);
+  // Kontragent telefoni (2026-08-31, egasi) — kartochkada bo'lsagina chiqadi.
+  if (m.buyerPhone) push(L, `${RECEIPT_LABELS.phone}: ${m.buyerPhone}`);
   // Izoh bo'sh bo'lsa qator UMUMAN chizilmaydi (2026-08-19): ilgari har
   // chekda bo'sh «Izoh:» chiqib turardi va qog'oz ham, o'qish ham behuda edi.
   if (m.comment.trim()) push(L, `${RECEIPT_LABELS.comment}: ${m.comment}`);
@@ -629,6 +631,7 @@ ${m.orgPhone ? `<div class="h">${e(m.orgPhone)}</div>` : ''}
 <div class="req">
 <div>${e(RECEIPT_LABELS.seller)}: ${e(m.sellerName)}</div>
 <div>${e(RECEIPT_LABELS.buyer)}: ${e(m.buyerName)}</div>
+${m.buyerPhone ? `<div>${e(RECEIPT_LABELS.phone)}: ${e(m.buyerPhone)}</div>` : ''}
 ${m.comment.trim() ? `<div>${e(RECEIPT_LABELS.comment)}: ${e(m.comment)}</div>` : ''}
 </div>
 <table>

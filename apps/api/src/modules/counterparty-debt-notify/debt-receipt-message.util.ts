@@ -48,6 +48,20 @@ export function uomLabel(uom?: string | null): string {
   return UOM_MAP[raw] ?? UOM_MAP[raw.toLowerCase()] ?? raw;
 }
 
+/**
+ * Erkin matnni GramJS MarkdownV2 parseridan himoya qiladi.
+ *
+ * `-` juftligi kursivga aylanadi — ZWSP bu yerda YORDAM BERMAYDI (regex
+ * `-(.*?)-` baribir juftlikni topadi), shuning uchun defis ko'rinishi
+ * aynan bir xil bo'lgan U+2011 (bo'linmas defis) bilan almashtiriladi.
+ * Juft belgilagichlar (`__`, `||`, ``` ``` ```) va `[matn](url)` esa
+ * ZWSP (U+200B) bilan uziladi.
+ */
+const ZERO_WIDTH_SPACE = '​';
+export function mdSafeText(s: string): string {
+  return s.replace(/-/g, '‑').replace(/[*_~`|[\]]/g, (c) => c + ZERO_WIDTH_SPACE);
+}
+
 /** Absolyut summa → «1 434 000 so'm». Manfiy ishora HECH QACHON chiqmaydi. */
 function fmtAmount(minor: bigint, currency: string): string {
   const abs = minor < 0n ? -minor : minor;
@@ -86,7 +100,7 @@ export interface DebtReceiptDoc {
 
 export interface DebtReceiptContext {
   orgName?: string | null;
-  /** Mijoz nomi — xom holida (MTProto oddiy matn yuboradi, escape kerak emas). */
+  /** Mijoz nomi — buildDebtReceiptMessages ichida mdSafeText bilan ekranlanadi. */
   name: string;
   currency: string;
   generatedAt: Date | string;
@@ -102,11 +116,13 @@ const SEP = '━━━━━━━━━━━━━━━━━━';
 
 /** Yakuniy saldo qatori — yo'nalish SO'Z bilan (manfiy son mijozga hech nima demaydi). */
 function totalLine(balanceMinor: bigint, currency: string): string {
-  if (balanceMinor > 0n) return `💰 Jami qarzingiz: ${fmtAmount(balanceMinor, currency)}`;
+  // Yakuniy saldo *qalin* (egasi, 2026-08-31) — xabar MarkdownV2 bilan ketadi
+  // (`debt.receipt` → `format: 'markdown-v2'`, mtproto-worker.service.ts).
+  if (balanceMinor > 0n) return `💰 *Jami qarzingiz: ${fmtAmount(balanceMinor, currency)}*`;
   if (balanceMinor < 0n) {
-    return `💰 Sizga qarzimiz: ${fmtAmount(balanceMinor, currency)} — tez orada to'lanadi`;
+    return `💰 *Sizga qarzimiz: ${fmtAmount(balanceMinor, currency)}* — tez orada to'lanadi`;
   }
-  return "💰 Hisob teng — qarzingiz yo'q";
+  return "💰 *Hisob teng — qarzingiz yo'q*";
 }
 
 /**
@@ -142,13 +158,14 @@ function docHead(doc: DebtReceiptDoc): { icon: string; title: string } {
 function docBlock(doc: DebtReceiptDoc, currency: string): string[] {
   const { icon, title } = docHead(doc);
   const date = fmtDate(doc.moment);
-  const num = (doc.docNumber || '').trim();
+  // Hujjat raqami defisli (№ТРН-2026-…) — MarkdownV2 kursiv-juftligidan himoya.
+  const num = mdSafeText((doc.docNumber || '').trim());
   const lines: string[] = [];
   lines.push(`${icon} ${title}${num ? ` №${num}` : ''}${date ? ` · ${date}` : ''}`);
 
   for (const it of doc.items ?? []) {
     const u = uomLabel(it.uom);
-    lines.push(`   • ${it.name} — ${it.quantity}${u ? ` ${u}` : ''}`);
+    lines.push(`   • ${mdSafeText(it.name)} — ${it.quantity}${u ? ` ${mdSafeText(u)}` : ''}`);
   }
 
   // Summa qatori: savdoda «Jami summa» (qog'oz chekdagi so'z), to'lovda «To'lov».
@@ -173,10 +190,11 @@ function docBlock(doc: DebtReceiptDoc, currency: string): string[] {
 export function buildDebtReceiptMessages(ctx: DebtReceiptContext): string[] {
   const org = (ctx.orgName || '').trim();
   const head: string[] = [];
-  if (org) head.push(org.toUpperCase());
+  if (org) head.push(mdSafeText(org.toUpperCase()));
   head.push(`🧾 HISOB-KITOB CHEKI · ${fmtDate(ctx.generatedAt)}`);
   head.push('');
-  head.push(`Hurmatli ${ctx.name}!`);
+  // Kontragent ismi *qalin* (egasi, 2026-08-31); erkin matn — mdSafeText.
+  head.push(`Hurmatli *${mdSafeText(ctx.name)}*!`);
   head.push('Bugungi holatga ko`ra hisobingiz:'.replace('`', "'"));
   head.push('');
   // Eng katta raqam YUQORIDA — telefon xabar oldindan ko'rinishida shu chiqadi.

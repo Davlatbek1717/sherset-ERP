@@ -282,7 +282,7 @@ export class PublicationService {
         cardAmountMinor: true,
         changeMinor: true,
         description: true,
-        agent: { select: { id: true, name: true, legalTitle: true } },
+        agent: { select: { id: true, name: true, legalTitle: true, phone: true } },
         payments: {
           select: {
             method: true,
@@ -325,7 +325,13 @@ export class PublicationService {
         changeMinor: String(sale.changeMinor),
         description: sale.description,
         agent: sale.agent
-          ? { id: sale.agent.id, name: sale.agent.name, legalTitle: sale.agent.legalTitle }
+          ? {
+              id: sale.agent.id,
+              name: sale.agent.name,
+              legalTitle: sale.agent.legalTitle,
+              // Kontragent telefoni — chekdagi «Telefon:» qatori (2026-08-31).
+              phone: sale.agent.phone,
+            }
           : null,
         payments: sale.payments.map((p) => ({
           method: p.method,

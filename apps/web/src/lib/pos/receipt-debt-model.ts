@@ -69,7 +69,12 @@ export function debtReceiptToSaleInput(r: DebtReceiptPayload): ReceiptSaleInput 
     changeMinor: '0',
     description: null,
     agent: r.counterparty
-      ? { id: r.counterparty.id, name: r.counterparty.name, legalTitle: null }
+      ? {
+          id: r.counterparty.id,
+          name: r.counterparty.name,
+          legalTitle: null,
+          phone: r.counterparty.phone,
+        }
       : null,
     // «Sizning qarzingiz» — to'lovdan KEYINGI qoldiq. Chek moliyaviy hujjat:
     // qiymat server chekidan olinadi, qayta so'ralmaydi (reprint'da ham AYNI).

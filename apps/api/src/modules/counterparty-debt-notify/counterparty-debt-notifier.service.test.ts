@@ -309,7 +309,7 @@ describe('CounterpartyDebtNotifier', () => {
       expect(outboxCreate).toHaveBeenCalledTimes(1);
       const data = lastOutboxData(outboxCreate);
       expect(data.toPhone).toBe('+998901112233');
-      expect(data.messageText).toContain("💰 Jami qarzingiz: 50 000 so'm");
+      expect(data.messageText).toContain("💰 *Jami qarzingiz: 50 000 so'm*");
       expect(data.sourceEventType).toBe('debt.counterparty_notify');
       expect(data.sourceDocId).toBe('inv-1');
       expect(data.status).toBe('pending');
@@ -326,7 +326,7 @@ describe('CounterpartyDebtNotifier', () => {
         newBalanceMinor: -2_000_000n,
       });
       expect(lastOutboxData(outboxCreate).messageText).toContain(
-        "💰 Sizga qarzimiz: 20 000 so'm — tez orada to'lanadi",
+        "💰 *Sizga qarzimiz: 20 000 so'm* — tez orada to'lanadi",
       );
     });
 
@@ -342,7 +342,7 @@ describe('CounterpartyDebtNotifier', () => {
       });
       const text = lastOutboxData(outboxCreate).messageText;
       expect(text).toContain("✅ To'lovingiz qabul qilindi: 20 000 so'm");
-      expect(text).toContain("💰 Qolgan qarzingiz: 30 000 so'm");
+      expect(text).toContain("💰 *Qolgan qarzingiz: 30 000 so'm*");
     });
 
     it('owner AND counterparty both enqueue for one event', async () => {
@@ -404,7 +404,7 @@ describe('CounterpartyDebtNotifier', () => {
         docType: 'retailsale',
         docId: 'rs-1',
       });
-      expect(lastOutboxData(outboxCreate).messageText).toContain('№CHK-2026-00042');
+      expect(lastOutboxData(outboxCreate).messageText).toContain('№CHK‑2026‑00042');
       expect(lastOutboxData(outboxCreate).messageText).toContain('16.08.2026');
     });
 
@@ -420,7 +420,7 @@ describe('CounterpartyDebtNotifier', () => {
         docType: 'debt',
         docId: 'debt-1',
       });
-      expect(lastOutboxData(outboxCreate).messageText).toContain('№QRZ-2026-00007');
+      expect(lastOutboxData(outboxCreate).messageText).toContain('№QRZ‑2026‑00007');
       expect(lastOutboxData(outboxCreate).messageText).toContain('16.08.2026');
     });
 

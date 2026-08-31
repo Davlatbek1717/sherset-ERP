@@ -3,6 +3,7 @@ import {
   type CounterpartyMessageContext,
   ITEM_HARD_CAP,
   buildCounterpartyMessage,
+  mdSafeText,
 } from './counterparty-message.util.js';
 
 const base: CounterpartyMessageContext = {
@@ -17,7 +18,7 @@ describe('buildCounterpartyMessage — counterparty report (delta + total)', () 
   it('invoiceOut → sale report; total says they owe us', () => {
     const t = buildCounterpartyMessage({ ...base, source: 'invoiceOut' });
     expect(t).toBe(
-      "Hurmatli Akme,\n📄 Sotuv\n🛒 Qarzga qo'shildi: +10 000 so'm\n━━━━━━━━━━━━\n💰 Jami qarzingiz: 50 000 so'm",
+      "Hurmatli *Akme*,\n📄 Sotuv\n🛒 Qarzga qo'shildi: +10 000 so'm\n━━━━━━━━━━━━\n💰 *Jami qarzingiz: 50 000 so'm*",
     );
   });
 
@@ -29,7 +30,7 @@ describe('buildCounterpartyMessage — counterparty report (delta + total)', () 
       newBalanceMinor: 3_000_000n,
     });
     expect(t).toContain("✅ To'lovingiz qabul qilindi: 20 000 so'm");
-    expect(t).toContain("💰 Qolgan qarzingiz: 30 000 so'm");
+    expect(t).toContain("💰 *Qolgan qarzingiz: 30 000 so'm*");
   });
 
   it('paymentIn acknowledged even at zero balance', () => {
@@ -51,14 +52,14 @@ describe('buildCounterpartyMessage — counterparty report (delta + total)', () 
 
   it('positive balance (non-payment) → they-owe-us total', () => {
     expect(buildCounterpartyMessage({ ...base, source: 'invoiceOut' })).toContain(
-      '💰 Jami qarzingiz:',
+      '💰 *Jami qarzingiz:',
     );
   });
 
   it('negative balance (non-payment) → we-owe-them total', () => {
     expect(
       buildCounterpartyMessage({ ...base, source: 'paymentOut', newBalanceMinor: -1_000_000n }),
-    ).toContain("💰 Sizga qarzimiz: 10 000 so'm — tez orada to'lanadi");
+    ).toContain("💰 *Sizga qarzimiz: 10 000 so'm* — tez orada to'lanadi");
   });
 
   it('non-payment change landing on zero → null', () => {
@@ -74,7 +75,7 @@ describe('buildCounterpartyMessage — counterparty report (delta + total)', () 
       docNumber: 'СЧ-2026-00123',
       docMoment: new Date('2026-07-25T10:00:00Z'),
     });
-    expect(t).toContain('📄 Sotuv — 25.07.2026, №СЧ-2026-00123');
+    expect(t).toContain('📄 Sotuv — 25.07.2026, №СЧ‑2026‑00123');
   });
 
   it('unknown source → null', () => {
@@ -103,7 +104,7 @@ describe('kassa oqimi — yangi manba turlari', () => {
     });
     expect(t).toContain('📄 Kassa savdosi');
     expect(t).toContain("🛒 Qarzga qo'shildi: +10 000 so'm");
-    expect(t).toContain("💰 Jami qarzingiz: 50 000 so'm");
+    expect(t).toContain("💰 *Jami qarzingiz: 50 000 so'm*");
   });
 
   it("debtpayment, delta<0 → qarz to'lovi, qoldiq ko'rsatiladi", () => {
@@ -115,7 +116,7 @@ describe('kassa oqimi — yangi manba turlari', () => {
     });
     expect(t).toContain("📄 Qarz to'lovi");
     expect(t).toContain("✅ To'lovingiz qabul qilindi: 20 000 so'm");
-    expect(t).toContain("💰 Qolgan qarzingiz: 30 000 so'm");
+    expect(t).toContain("💰 *Qolgan qarzingiz: 30 000 so'm*");
   });
 
   it('debtpayment qarzni NOLGA tushirsa ham xabar beriladi', () => {
@@ -126,7 +127,7 @@ describe('kassa oqimi — yangi manba turlari', () => {
       newBalanceMinor: 0n,
     });
     expect(t).not.toBeNull();
-    expect(t).toContain("💰 Hisob teng — qarzingiz yo'q");
+    expect(t).toContain("💰 *Hisob teng — qarzingiz yo'q*");
   });
 
   it("debt, delta>0 → qo'lda ochilgan qarz", () => {
@@ -149,7 +150,7 @@ describe('kassa oqimi — yangi manba turlari', () => {
     });
     expect(t).toContain('📄 Qaytarish');
     expect(t).toContain("↩️ Qarzingizdan ayirildi: 10 000 so'm");
-    expect(t).toContain("💰 Qolgan qarzingiz: 40 000 so'm");
+    expect(t).toContain("💰 *Qolgan qarzingiz: 40 000 so'm*");
   });
 
   it('TUZATISH nolga tushsa ham xabar beriladi (jim qolmaydi)', () => {
@@ -160,7 +161,7 @@ describe('kassa oqimi — yangi manba turlari', () => {
       newBalanceMinor: 0n,
     });
     expect(t).not.toBeNull();
-    expect(t).toContain("💰 Hisob teng — qarzingiz yo'q");
+    expect(t).toContain("💰 *Hisob teng — qarzingiz yo'q*");
   });
 });
 
@@ -178,7 +179,7 @@ describe('chek mazmuni — do`kon nomi, tovarlar, to`lov taqsimoti, havola', () 
   it('do`kon nomi eng tepada, mijoz nomidan oldin', () => {
     const t = buildCounterpartyMessage(sale) as string;
     expect(t.split('\n')[0]).toBe("SHERSET ELEKTRO TOVAR DO'KONI");
-    expect(t.split('\n')[1]).toBe('Hurmatli Akme,');
+    expect(t.split('\n')[1]).toBe('Hurmatli *Akme*,');
   });
 
   it('🔴 chekdagi HAMMA tur chiqadi (egasi, 2026-08-16)', () => {
@@ -268,7 +269,7 @@ describe('chek mazmuni — do`kon nomi, tovarlar, to`lov taqsimoti, havola', () 
     expect(t).not.toContain('🧾');
     expect(t).not.toContain('•');
     expect(t).not.toContain("💵 To'landi");
-    expect(t.split('\n')[0]).toBe('Hurmatli Akme,');
+    expect(t.split('\n')[0]).toBe('Hurmatli *Akme*,');
   });
 
   it('MINUS balans mijozga hech qachon ko`rsatilmaydi', () => {
@@ -277,14 +278,66 @@ describe('chek mazmuni — do`kon nomi, tovarlar, to`lov taqsimoti, havola', () 
       newBalanceMinor: -690_899_400n,
     }) as string;
     expect(t).not.toContain('-6 908 994');
-    expect(t).toContain('💰 Sizga qarzimiz: 6 908 994 so`m'.replace(/`/g, "'"));
+    expect(t).toContain('💰 *Sizga qarzimiz: 6 908 994 so`m*'.replace(/`/g, "'"));
   });
 });
 
-describe("mavjud matnlar o'zgarmadi (regressiya qulfi)", () => {
-  it('invoiceOut aynan eski satr', () => {
+describe('matn shakli qulfi (regressiya)', () => {
+  it('invoiceOut aynan kutilgan satr (ism va jami qarz *qalin*)', () => {
     expect(buildCounterpartyMessage({ ...base, source: 'invoiceOut' })).toBe(
-      "Hurmatli Akme,\n📄 Sotuv\n🛒 Qarzga qo'shildi: +10 000 so'm\n━━━━━━━━━━━━\n💰 Jami qarzingiz: 50 000 so'm",
+      "Hurmatli *Akme*,\n📄 Sotuv\n🛒 Qarzga qo'shildi: +10 000 so'm\n━━━━━━━━━━━━\n💰 *Jami qarzingiz: 50 000 so'm*",
     );
+  });
+});
+
+/**
+ * 2026-08-31: bu xabar oilasi worker'da MarkdownV2 bilan ketishi ANIQLANDI
+ * (`debt.counterparty_notify` → `format: 'markdown-v2'`). Jonlida
+ * `№ТРН-2026-…` dagi defislar kursiv-juftlik deb yutilib buzuq chiqqan edi.
+ * Endi erkin matn `mdSafeText` dan o'tadi, ism/jami esa ataylab *qalin*.
+ */
+describe('MarkdownV2 xavfsizligi (mdSafeText)', () => {
+  it("🔴 hujjat raqamidagi defis kursivga aylanib YUTILMAYDI (jonli bug')", () => {
+    const t = buildCounterpartyMessage({
+      ...base,
+      source: 'retailsale',
+      docNumber: 'ТРН-2026-01992',
+    }) as string;
+    // Oddiy defis qolmaydi (U+2011 bilan almashgan) — parser juftlik topa olmaydi.
+    expect(t).not.toContain('ТРН-2026-01992');
+    expect(t).toContain('№ТРН‑2026‑01992');
+  });
+
+  it('kontragent nomidagi belgilagichlar xabarni buzmaydi', () => {
+    const t = buildCounterpartyMessage({
+      ...base,
+      name: 'Karim-aka *VIP*',
+      source: 'retailsale',
+    }) as string;
+    // Ism baribir *qalin* qavsda, lekin ichidagi `*` ZWSP bilan uzilgan,
+    // `-` esa U+2011 — parser ism ichida juftlik topa olmaydi.
+    expect(t).toContain(`Hurmatli *${mdSafeText('Karim-aka *VIP*')}*,`);
+    // Oddiy defis U+2011 ga almashgan, har `*` dan keyin ZWSP (U+200B) turadi.
+    expect(mdSafeText('Karim-aka *VIP*')).toBe('Karim‑aka *​VIP*​');
+  });
+
+  it('tovar nomidagi defis ham zararsizlantiriladi', () => {
+    const t = buildCounterpartyMessage({
+      ...base,
+      source: 'retailsale',
+      items: [{ name: 'Kabel AVVG 3x16-1x10', quantity: '47', uom: 'м' }],
+    }) as string;
+    expect(t).toContain('Kabel AVVG 3x16‑1x10');
+    expect(t).not.toContain('3x16-1x10');
+  });
+
+  it('havola (receiptUrl) EKRANLANMAYDI — link butun qoladi', () => {
+    const t = buildCounterpartyMessage({
+      ...base,
+      source: 'retailsale',
+      receiptUrl: 'https://erp.sherset.uz/p/PTuxYXtju4Iv',
+    }) as string;
+    expect(t).toContain('🧾 Chek: https://erp.sherset.uz/p/PTuxYXtju4Iv');
+    expect(t).not.toContain('​https');
   });
 });

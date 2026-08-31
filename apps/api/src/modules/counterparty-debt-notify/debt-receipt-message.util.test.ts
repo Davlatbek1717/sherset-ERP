@@ -67,13 +67,13 @@ describe('buildDebtReceiptMessages — tuzilma', () => {
     const t = one(CTX);
     expect(t.startsWith('SHERSET ELEKTRO TOVARLAR\n')).toBe(true);
     expect(t).toContain('🧾 HISOB-KITOB CHEKI · 16.08.2026');
-    expect(t).toContain('Hurmatli Mir Obit aka!');
+    expect(t).toContain('Hurmatli *Mir Obit aka*!');
   });
 
   it('🔴 jami qarz YUQORIDA ham chiqadi (xabar oldindan ko`rinishi uchun)', () => {
     const t = one(CTX);
-    const first = t.indexOf('💰 Jami qarzingiz: 26 957 000');
-    const last = t.lastIndexOf('💰 Jami qarzingiz: 26 957 000');
+    const first = t.indexOf('💰 *Jami qarzingiz: 26 957 000');
+    const last = t.lastIndexOf('💰 *Jami qarzingiz: 26 957 000');
     expect(first).toBeGreaterThan(0);
     // Ikki marta — biri sarlavhadan keyin, ikkinchisi yakunda.
     expect(last).toBeGreaterThan(first);
@@ -87,7 +87,8 @@ describe('buildDebtReceiptMessages — tuzilma', () => {
 
   it('har chek: sarlavha + tovarlar + jami summa', () => {
     const t = one(CTX);
-    expect(t).toContain('📄 Savdo cheki №ТРН-2026-00144 · 16.08.2026');
+    // Hujjat raqamidagi defis U+2011 ga almashadi (MarkdownV2 kursiv-himoya).
+    expect(t).toContain('📄 Savdo cheki №ТРН‑2026‑00144 · 16.08.2026');
     expect(t).toContain('   • Vera vkl 1x — 3 dona');
     expect(t).toContain('   • veral roz 1x — 1 m');
     expect(t).toContain("   Jami summa: 1 434 000 so'm");
@@ -129,7 +130,7 @@ describe('buildDebtReceiptMessages — hujjat turlari', () => {
       finalBalanceMinor: 2490300000n,
     });
     expect(t).toContain('✅ To`lov qabul qilindi'.replace('`', "'"));
-    expect(t).toContain('QT-2026-00007');
+    expect(t).toContain('QT‑2026‑00007');
     // Manfiy son KO'RSATILMAYDI — yo'nalish so'zda.
     expect(t).not.toContain('-500 000');
     expect(t).toContain("To'lovlaringiz: 500 000 so'm");
@@ -149,7 +150,7 @@ describe('buildDebtReceiptMessages — hujjat turlari', () => {
       ],
       finalBalanceMinor: 2520300000n,
     });
-    expect(t).toContain('↩️ Qaytarish №ТРН-2026-00150');
+    expect(t).toContain('↩️ Qaytarish №ТРН‑2026‑00150');
   });
 
   it('noma`lum tur ham qatorni YO`QOTMAYDI (turning o`zi yorliq bo`ladi)', () => {
@@ -165,7 +166,7 @@ describe('buildDebtReceiptMessages — hujjat turlari', () => {
       ],
       finalBalanceMinor: 2550300000n,
     });
-    expect(t).toContain('X-1');
+    expect(t).toContain('X‑1');
   });
 });
 

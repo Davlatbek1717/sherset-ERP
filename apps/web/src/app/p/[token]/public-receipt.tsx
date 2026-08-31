@@ -48,6 +48,11 @@ export function PublicReceipt({ sale }: { sale: PublicReceiptSale }) {
         <div>
           <span className="text-slate-400">{RECEIPT_LABELS.buyer}:</span> {m.buyerName}
         </div>
+        {m.buyerPhone && (
+          <div>
+            <span className="text-slate-400">{RECEIPT_LABELS.phone}:</span> {m.buyerPhone}
+          </div>
+        )}
         {m.comment && (
           <div>
             <span className="text-slate-400">{RECEIPT_LABELS.comment}:</span> {m.comment}

@@ -211,6 +211,19 @@ describe('chek shabloni — uchala renderer bir xil bloklarni chiqaradi', () => 
     expect(buildReceiptHtml(noComment)).not.toContain('Izoh');
   });
 
+  // 2026-08-31 (egasi): chekda KONTRAGENT raqami ham chiqsin — «Telefon:»
+  // qatori «Xaridor»dan keyin, ikkala matnli renderer'da birdek.
+  it('kontragent telefoni bor bo`lsa «Telefon» qatori chiqadi, yo`q bo`lsa chiqmaydi', () => {
+    const withPhone = SALE({
+      agent: { id: 'cp-1', name: 'Alisher aka', legalTitle: null, phone: '+998901234567' },
+    }) as never;
+    expect(flat(buildReceiptText(withPhone))).toContain('Telefon: +998901234567');
+    expect(buildReceiptHtml(withPhone)).toContain('Telefon: +998901234567');
+    // agent: null (MIXED) — qator umuman yo'q.
+    expect(buildReceiptText(MIXED as never)).not.toContain('Telefon:');
+    expect(buildReceiptHtml(MIXED as never)).not.toContain('Telefon:');
+  });
+
   it('eski «JAMI»/«Xarid uchun rahmat!» matnlari qaytib kelmaydi', () => {
     const txt = buildReceiptText(MIXED as never);
     expect(txt).not.toContain('Xarid uchun rahmat!');

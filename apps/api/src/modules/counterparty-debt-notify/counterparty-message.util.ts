@@ -2,20 +2,35 @@ import type { CounterpartyBalanceChangeSource } from '../hr/hr-shared/hr-events.
 import { formatMinor } from '../hr/hr-telegram-bridge/template-render.util.js';
 // O'lchov birligi tarjimasi — «hisob-kitob cheki» bilan YAGONA manba: mijoz
 // avtomatik xabarda «3 dona», hisobotda «3 шт» ko'rmasin.
-import { uomLabel } from './debt-receipt-message.util.js';
+import { mdSafeText, uomLabel } from './debt-receipt-message.util.js';
 
 /**
  * Pure, Telegram-free message builder for the COUNTERPARTY-facing debt/payment
  * notices. Unlike {@link ./debt-notify.util.ts} (owner, Markdown), these are
- * addressed to the counterparty themselves and delivered plain-text over the
- * MTProto outbox (admin account → the counterparty's chat). No Markdown: the
- * MTProto worker sends plain text, so we neither escape nor style the name.
+ * addressed to the counterparty themselves and delivered over the MTProto
+ * outbox (admin account → the counterparty's chat).
+ *
+ * 🔴 BU XABARLAR MarkdownV2 BILAN YUBORILADI (2026-08-31 da aniqlangan):
+ * `sourceEventType` = `debt.counterparty_notify` bo'lgani uchun
+ * `mtproto-worker.service.ts` ularni `format: 'markdown-v2'` bilan jo'natadi
+ * (GramJS `MarkdownV2Parser`). Ilgari bu fayl «plain text» deb yozilgan va
+ * hech narsa ekranlanmasdi — natijada jonlida `№ТРН-2026-…` dagi defislar
+ * KURSIV belgisi (`-…-`) deb yutilib, raqam buzuq ko'rinardi. Endi:
+ *   · barcha erkin matn (nom, hujjat raqami, tovar nomi…) `mdSafeText` dan
+ *     o'tadi — defis ko'rinishi bir xil U+2011 ga almashadi, qolgan
+ *     belgilagichlar ZWSP bilan uziladi;
+ *   · kontragent NOMI va yakuniy QARZ qatori ataylab *qalin* (egasi, 2026-08-31);
+ *   · havola (receiptUrl) ekranlanMAYDI — ichiga belgi qo'shilsa link sinadi
+ *     (token alfaviti endi markdown-xavfsiz, `receipt-link.util.ts`).
  *
  * Format redesign (2026-07-25, owner request «aniqroq hisobot»): a compact
  * receipt/report — document title + date + number, how much THIS operation
  * moved (added to the debt / paid), and the resulting total. Date + number come
  * from the source document; when unavailable those header parts are omitted.
  */
+
+// Qayta-eksport: bu modul iste'molchilari (test, notifier) uchun bitta manba.
+export { mdSafeText } from './debt-receipt-message.util.js';
 
 /** Render a signed tiyin amount as an absolute so'm/currency string. */
 function fmtAmount(minor: bigint, currency: string): string {
@@ -38,7 +53,7 @@ function fmtDate(m?: Date | string | null): string {
 }
 
 export interface CounterpartyMessageContext {
-  /** Counterparty display name (raw; used verbatim — plain text). */
+  /** Counterparty display name (xabar ichida mdSafeText bilan ekranlanadi, *qalin* chiqadi). */
   name: string;
   /** ISO-3 currency of the moved balance row. */
   currency: string;
@@ -115,14 +130,18 @@ function cpHead(
   }
 }
 
-/** Resulting-total line from the counterparty's own perspective. */
+/**
+ * Resulting-total line from the counterparty's own perspective.
+ * Qarz/qoldiq qatori *qalin* (egasi, 2026-08-31) — MarkdownV2 worker'da
+ * `Api.MessageEntityBold` ga aylanadi; summa raqamlarida belgilagich yo'q.
+ */
 function cpTotal(newBalanceMinor: bigint, currency: string, isPayment: boolean): string {
   const amt = fmtAmount(newBalanceMinor, currency);
   if (newBalanceMinor > 0n) {
-    return `💰 ${isPayment ? 'Qolgan qarzingiz' : 'Jami qarzingiz'}: ${amt}`;
+    return `💰 *${isPayment ? 'Qolgan qarzingiz' : 'Jami qarzingiz'}: ${amt}*`;
   }
-  if (newBalanceMinor < 0n) return `💰 Sizga qarzimiz: ${amt} — tez orada to'lanadi`;
-  return "💰 Hisob teng — qarzingiz yo'q";
+  if (newBalanceMinor < 0n) return `💰 *Sizga qarzimiz: ${amt}* — tez orada to'lanadi`;
+  return "💰 *Hisob teng — qarzingiz yo'q*";
 }
 
 /**
@@ -145,13 +164,15 @@ export function buildCounterpartyMessage(ctx: CounterpartyMessageContext): strin
   if (!isPayment && !isCorrection && ctx.newBalanceMinor === 0n) return null;
 
   const date = fmtDate(ctx.docMoment);
-  const num = (ctx.docNumber || '').trim();
+  // Hujjat raqami (№ТРН-2026-…) defisli — mdSafeText kursiv-yutilishdan saqlaydi.
+  const num = mdSafeText((ctx.docNumber || '').trim());
 
   const lines: string[] = [];
   // Do'kon nomi — brend sarlavhasi (egasining namunasidagi kabi).
-  const org = (ctx.orgName || '').trim();
+  const org = mdSafeText((ctx.orgName || '').trim());
   if (org) lines.push(org);
-  lines.push(`Hurmatli ${ctx.name},`);
+  // Kontragent ismi *qalin* (egasi, 2026-08-31).
+  lines.push(`Hurmatli *${mdSafeText(ctx.name)}*,`);
   let hdr = `📄 ${head.title}`;
   if (date) hdr += ` — ${date}`;
   if (num) hdr += `, №${num}`;
@@ -164,7 +185,8 @@ export function buildCounterpartyMessage(ctx: CounterpartyMessageContext): strin
   const items = ctx.items ?? [];
   for (const it of items.slice(0, ITEM_HARD_CAP)) {
     const uom = uomLabel(it.uom);
-    lines.push(`   • ${it.name} — ${it.quantity}${uom ? ` ${uom}` : ''}`);
+    // Tovar nomi erkin matn (defis/yulduzcha bo'lishi mumkin) — ekranlanadi.
+    lines.push(`   • ${mdSafeText(it.name)} — ${it.quantity}${uom ? ` ${mdSafeText(uom)}` : ''}`);
   }
   if (items.length > ITEM_HARD_CAP) {
     lines.push(`   • va yana ${items.length - ITEM_HARD_CAP} tur`);

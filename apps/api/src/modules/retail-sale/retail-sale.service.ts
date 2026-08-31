@@ -528,7 +528,8 @@ export class RetailSaleService {
             organization: { select: { id: true, name: true, legalTitle: true, phone: true } },
           },
         },
-        agent: { select: { id: true, name: true, legalTitle: true } },
+        // `phone` — chekdagi «Telefon:» qatori (kontragent raqami, 2026-08-31).
+        agent: { select: { id: true, name: true, legalTitle: true, phone: true } },
         refundedFrom: { select: { id: true, name: true } },
         // Kassa TZ §6.1 — chekning to'lov qatlami. Uchala chek renderer'i
         // (ESC/POS matn · Electron HTML · `/print/retail-sale` React) endi

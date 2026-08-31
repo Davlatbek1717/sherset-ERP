@@ -63,6 +63,7 @@ describe('yorliqlar i18n bilan bir xil (ikki manba ajralib ketmasin)', () => {
     ['date', 'date'],
     ['seller', 'chek_seller'],
     ['buyer', 'chek_buyer'],
+    ['phone', 'chek_phone'],
     ['comment', 'chek_comment'],
     ['colName', 'chek_col_name'],
     ['colUom', 'chek_col_uom'],
@@ -108,6 +109,18 @@ describe('buildReceiptModel — namunadagi maydonlar', () => {
 
   it('kontragentsiz chekda xaridor bo`sh emas, tire', () => {
     expect(buildReceiptModel(SALE({ agent: null })).buyerName).toBe('—');
+  });
+
+  // 2026-08-31 (egasi): chekda kontragent raqami chiqsin — «Telefon:» qatori.
+  it('kontragent telefoni: bor bo`lsa modelda, yo`q/bo`sh bo`lsa null', () => {
+    const withPhone = SALE({
+      agent: { name: '1покупатель', legalTitle: null, phone: '+998901234567' },
+    });
+    expect(buildReceiptModel(withPhone).buyerPhone).toBe('+998901234567');
+    expect(buildReceiptModel(SALE()).buyerPhone).toBeNull();
+    expect(buildReceiptModel(SALE({ agent: null })).buyerPhone).toBeNull();
+    const blank = SALE({ agent: { name: 'x', legalTitle: null, phone: '   ' } });
+    expect(buildReceiptModel(blank).buyerPhone).toBeNull();
   });
 
   it('qatorlar: №, nom, o`lchov birligi, soni, narxi, summa', () => {

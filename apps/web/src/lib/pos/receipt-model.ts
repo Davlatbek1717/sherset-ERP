@@ -54,6 +54,8 @@ export const RECEIPT_LABELS = {
   date: 'Sana',
   seller: 'Sotuvchi',
   buyer: 'Xaridor',
+  /** Kontragent telefoni (2026-08-31, egasi): «Xaridor» ostidagi qator. */
+  phone: 'Telefon',
   comment: 'Izoh',
   colName: 'Nomi',
   colUom: "O'lch. birligi",
@@ -88,8 +90,11 @@ export interface ReceiptSaleInput {
   cardAmountMinor: string;
   changeMinor: string;
   description: string | null;
-  /** `id` chop-nuqtada qarz so'rovi uchun kerak (P05) — eski chaqiruvchilarda yo'q bo'lishi mumkin. */
-  agent: { id?: string; name: string; legalTitle: string | null } | null;
+  /**
+   * `id` chop-nuqtada qarz so'rovi uchun kerak (P05) — eski chaqiruvchilarda yo'q bo'lishi mumkin.
+   * `phone` (2026-08-31, egasi): chekda «Telefon:» qatori — yo'q/bo'sh bo'lsa qator chizilmaydi.
+   */
+  agent: { id?: string; name: string; legalTitle: string | null; phone?: string | null } | null;
   /**
    * P05 — chekdan KEYINGI qarz qoldig'i (`/debts/pos/summary` → payableMinor;
    * kam to'lov qarzi post()'da balansga allaqachon yozilgan). Chop-nuqta
@@ -142,6 +147,8 @@ export interface ReceiptModel {
   dateLabel: string;
   sellerName: string;
   buyerName: string;
+  /** Kontragent telefoni — null bo'lsa «Telefon:» qatori chizilmaydi. */
+  buyerPhone: string | null;
   comment: string;
   rows: ReceiptRow[];
   subtotal: string;
@@ -269,6 +276,7 @@ export function buildReceiptModel(sale: ReceiptSaleInput): ReceiptModel {
     dateLabel: fmtReceiptDate(sale.moment),
     sellerName: sale.session.cashier.name,
     buyerName: sale.agent ? (sale.agent.legalTitle ?? sale.agent.name) : '—',
+    buyerPhone: sale.agent?.phone?.trim() || null,
     comment: sale.description ?? '',
     rows,
     subtotal: fmtSom(grossMinor),

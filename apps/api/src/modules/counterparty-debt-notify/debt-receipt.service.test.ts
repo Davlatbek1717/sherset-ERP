@@ -96,10 +96,10 @@ describe('DebtReceiptService.preview — NOJO`YA TA`SIRSIZ', () => {
     const { svc } = makeService();
     const [text] = (await svc.preview('acc-1', 'cp-1')).messages;
     expect(text).toContain('📌 Oldingi qoldiq: 25 403 000');
-    expect(text).toContain('📄 Savdo cheki №ТРН-2026-00144');
+    expect(text).toContain('📄 Savdo cheki №ТРН‑2026‑00144');
     // `opening` qatori hujjatlar ro'yxatida TAKRORLANMAYDI.
     expect(text?.match(/📄|📌/g) ?? []).toHaveLength(2);
-    expect(text).toContain('💰 Jami qarzingiz: 26 837 000');
+    expect(text).toContain('💰 *Jami qarzingiz: 26 837 000');
   });
 
   it('hujjat soni `opening` ni sanamaydi', async () => {

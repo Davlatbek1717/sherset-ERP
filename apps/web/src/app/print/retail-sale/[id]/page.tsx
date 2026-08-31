@@ -51,7 +51,7 @@ interface RetailSaleDetail {
   cardAmountMinor: string;
   changeMinor: string;
   description: string | null;
-  agent: { id: string; name: string; legalTitle: string | null } | null;
+  agent: { id: string; name: string; legalTitle: string | null; phone: string | null } | null;
   session: {
     cashDesk: { name: string; currency: string };
     cashier: { name: string };
@@ -123,6 +123,7 @@ export default function PrintRetailSalePage() {
         orgPhone={model.orgPhone}
         sellerName={model.sellerName}
         buyerName={model.buyerName}
+        buyerPhone={model.buyerPhone}
         comment={data.description}
         positions={positions}
         totalMinor={data.sumMinor}

@@ -25,6 +25,19 @@ export interface ReceiptLinkClient {
   };
 }
 
+/**
+ * 12 belgilik base62 token (≈71 bit). Alfavitda `-`/`_` YO'Q — havola
+ * MarkdownV2 xabar ichida buzilmaydi (izoh pastda, `token:` yonida).
+ * Modulo-baias 256 % 62 tufayli arzimas (kriptografik kalit emas, havola).
+ */
+const TOKEN_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+export function shortToken(): string {
+  const bytes = randomBytes(12);
+  let out = '';
+  for (const b of bytes) out += TOKEN_ALPHABET[b % 62];
+  return out;
+}
+
 /** Ochiq havola bazasi — sozlanmagan bo'lsa havola UMUMAN yaratilmaydi. */
 export function receiptLinkBase(): string | null {
   const base = (process.env.PUBLIC_APP_URL ?? '').trim().replace(/\/+$/, '');
@@ -75,11 +88,13 @@ export async function ensureReceiptLink(
         ownerId: sale.ownerId,
         targetType: 'retailsale',
         targetId: docId,
-        // Qisqa token (12 belgi ≈ 72 bit) — mijoz telefonda ko'radigan
+        // Qisqa token (12 belgi ≈ 71 bit) — mijoz telefonda ko'radigan
         // havola qisqa va ishonchli ko'rinsin. Taxmin qilish imkonsiz
-        // (12 belgi base64url = 64^12), umumiy `Publication` tokeni esa
-        // 43 belgiligicha qoladi — u odamga ko'rsatilmaydi.
-        token: randomBytes(9).toString('base64url'),
+        // (62^12), umumiy `Publication` tokeni esa 43 belgiligicha qoladi.
+        // 🔴 base62 (base64url EMAS, 2026-08-31): xabar MarkdownV2 bilan
+        // ketadi va tokendagi `-`/`_` juftligi kursiv/tagchiziq belgisi
+        // sifatida yutilib, havolani sindirishi mumkin edi.
+        token: shortToken(),
         description: 'Kassa cheki (avtomatik)',
         expiresAt,
       },
