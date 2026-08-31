@@ -137,6 +137,15 @@ export const PostRetailSaleSchema = z
       .regex(/^\d+$/, 'debtAmountMinor must be a non-negative integer')
       .default('0'),
     /**
+     * Hisob raqamidan (bank o'tkazmasi, 2026-08-31). Pul yashiqqa TUSHMAYDI
+     * va qaytim chegarasiga kirmaydi (`retail-tenders.ts` — ACCOUNT).
+     * `.default('0')` — eski chaqiruvchilar buzilmasin.
+     */
+    accountAmountMinor: z.coerce
+      .string()
+      .regex(/^\d+$/, 'accountAmountMinor must be a non-negative integer')
+      .default('0'),
+    /**
      * A2 (2026-08-25) — mijozning AVANSIDAN qoplanadigan ulush (kassa
      * valyutasi, minor). `.default('0')` ⇒ avansdan foydalanmaydigan
      * chaqiruvchilar (moysklad-compat, eski POS, testlar) buzilmaydi.

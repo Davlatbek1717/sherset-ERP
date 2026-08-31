@@ -1414,6 +1414,8 @@ function SalesScreen({
       cashAmountMinor: bigint;
       cardAmountMinor: bigint;
       terminalAmountMinor: bigint;
+      /** Hisob raqamidan (bank o'tkazmasi) — yashiqqa tushmaydi. */
+      accountAmountMinor: bigint;
       debtAmountMinor: bigint;
       cashUsdAmountMinor: bigint;
       /** A2 — mijozning avansidan qoplanadigan ulush. */
@@ -1427,6 +1429,11 @@ function SalesScreen({
         cardAmountMinor: payment.cardAmountMinor.toString(),
         terminalAmountMinor: payment.terminalAmountMinor.toString(),
         debtAmountMinor: payment.debtAmountMinor.toString(),
+        // Hisob raqamidan — FAQAT noldan katta bo'lganda qo'shiladi (sxemada
+        // `.default('0')`, eski payload shakli o'zgarmaydi — avans bilan AYNI).
+        ...(payment.accountAmountMinor > 0n
+          ? { accountAmountMinor: payment.accountAmountMinor.toString() }
+          : {}),
         // A2 — avans ulushi FAQAT noldan katta bo'lganda qo'shiladi. Sxemada
         // `.default('0')`, ya'ni payload shakli eski klientlar uchun
         // o'zgarmaydi (dollar maydonlaridagi bilan AYNI qaror).

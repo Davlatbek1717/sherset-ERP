@@ -43,6 +43,13 @@ export const TENDER = {
    */
   terminal: 'TERMINAL',
   /**
+   * Hisob raqamidan (bank o'tkazmasi, 2026-08-31 — egasi so'radi: undirish
+   * modulida `account` usuli bor edi, kassada esa yo'q). Pul bank hisobiga
+   * tushadi, YASHIQQA EMAS — `legacyTotals` da karta/terminal bilan bir
+   * qatorda «naqd emas» hisobiga kiradi va qaytim undan berilmaydi.
+   */
+  account: 'ACCOUNT',
+  /**
    * A2 (2026-08-25) — MIJOZNING AVANSIDAN to'lov. Pul kassa yashig'iga
    * KIRMAYDI: u allaqachon kirgan (A1 — `RetailDrawerCashIn`,
    * `kind='customer_prepay'`) va mijozning balansida MANFIY bo'lib turibdi.
@@ -67,6 +74,11 @@ export interface TenderInput {
   cashMinor: bigint;
   cardMinor: bigint;
   terminalMinor: bigint;
+  /**
+   * Hisob raqamidan (bank o'tkazmasi). Ixtiyoriy: uzatmagan chaqiruvchi
+   * uchun 0 — mavjud xulq bir bayt ham o'zgarmaydi (prepay bilan bir naqsh).
+   */
+  accountMinor?: bigint;
   /** Qarzga qoldirilgan qism — pul EMAS, mijoz balansiga yoziladi. */
   debtMinor: bigint;
   /**
@@ -166,6 +178,7 @@ export type TenderResult =
 export function computeTenders(i: TenderInput): TenderResult {
   const cashUsdMinor = i.cashUsdMinor ?? 0n;
   const prepayMinor = i.prepayMinor ?? 0n;
+  const accountMinor = i.accountMinor ?? 0n;
   if (
     i.cashMinor < 0n ||
     i.cardMinor < 0n ||
@@ -173,7 +186,8 @@ export function computeTenders(i: TenderInput): TenderResult {
     i.debtMinor < 0n ||
     i.totalMinor < 0n ||
     cashUsdMinor < 0n ||
-    prepayMinor < 0n
+    prepayMinor < 0n ||
+    accountMinor < 0n
   ) {
     return { ok: false, reason: 'negative-input' };
   }
@@ -188,7 +202,9 @@ export function computeTenders(i: TenderInput): TenderResult {
   const usdBase =
     cashUsdMinor > 0n && usdRateE8 != null ? usdBaseMinor(cashUsdMinor, usdRateE8) : 0n;
 
-  const paidMinor = i.cashMinor + usdBase + i.cardMinor + i.terminalMinor;
+  // ACCOUNT — haqiqiy pul (bankka tushadi), shuning uchun `paidMinor` ichida;
+  // lekin u NAQD EMAS: qaytim chegarasiga (`cashLikeMinor`) KIRMAYDI.
+  const paidMinor = i.cashMinor + usdBase + i.cardMinor + i.terminalMinor + accountMinor;
 
   // 🔴 A2 — AVANS QAYTIM BERMAYDI (invariant 5 ning tender tomondagi shakli).
   //
@@ -269,6 +285,8 @@ function linesOf(i: TenderInput, usdBase: bigint): TenderLine[] {
   }
   if (i.cardMinor > 0n) out.push({ method: TENDER.card, amountMinor: i.cardMinor });
   if (i.terminalMinor > 0n) out.push({ method: TENDER.terminal, amountMinor: i.terminalMinor });
+  if ((i.accountMinor ?? 0n) > 0n)
+    out.push({ method: TENDER.account, amountMinor: i.accountMinor as bigint });
   // A2 — avans qatori QARZDAN OLDIN: chekda «avansdan» to'langan qism
   // to'lovlar orasida, qarz esa doim oxirida (kassir odatlangan tartib).
   if ((i.prepayMinor ?? 0n) > 0n)
@@ -301,7 +319,13 @@ export function legacyTotals(lines: ReadonlyArray<TenderLine>): {
   let cardAmountMinor = 0n;
   for (const l of lines) {
     if (l.method === TENDER.cashUzs) cashAmountMinor += l.amountMinor;
-    else if (l.method === TENDER.card || l.method === TENDER.terminal) {
+    else if (
+      l.method === TENDER.card ||
+      l.method === TENDER.terminal ||
+      // ACCOUNT ham bank orqali keladigan naqdsiz pul — eski hisobotlar uchun
+      // «naqd emas» degani muhim, kanal emas (terminal bilan bir xil qaror).
+      l.method === TENDER.account
+    ) {
       cardAmountMinor += l.amountMinor;
     }
     // ⚠️ A2 — `PREPAY` bu yerga TUSHMAYDI va tushmasligi SHART. Bu ikki ustunni

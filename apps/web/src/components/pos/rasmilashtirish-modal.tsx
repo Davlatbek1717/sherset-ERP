@@ -9,7 +9,7 @@ import type { CurrencyCode } from '@moysklad/money/currencies';
 import { Input, formatMoney, noAccidentalClose } from '@moysklad/ui';
 import * as Dialog from '@radix-ui/react-dialog';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { Banknote, CreditCard, DollarSign, Monitor, Wallet, X } from 'lucide-react';
+import { Banknote, CreditCard, DollarSign, Landmark, Monitor, Wallet, X } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useCallback, useEffect, useState } from 'react';
 
@@ -34,6 +34,8 @@ interface ConfirmParams {
   cashAmountMinor: bigint;
   cardAmountMinor: bigint;
   terminalAmountMinor: bigint;
+  /** Hisob raqamidan (bank o'tkazmasi) — yashiqqa tushmaydi, qaytim bermaydi. */
+  accountAmountMinor: bigint;
   debtAmountMinor: bigint;
   /** MK31 — mijoz bergan dollar naqd, SENTDA. */
   cashUsdAmountMinor: bigint;
@@ -73,7 +75,7 @@ interface Props {
 
 const NUMPAD_KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '000', '0', '⌫'];
 
-type ActiveField = 'cash' | 'cashUsd' | 'card' | 'terminal' | 'prepay';
+type ActiveField = 'cash' | 'cashUsd' | 'card' | 'terminal' | 'account' | 'prepay';
 
 /** `GET /debts/pos/summary/:id` javobining bu oyna o'qiydigan qismi. */
 interface PosDebtSummaryRow {
@@ -104,6 +106,14 @@ const FIELD_COLORS: Record<ActiveField, { border: string; bg: string; icon: stri
       bg: 'bg-purple-50',
       icon: 'bg-purple-500',
       dot: 'bg-purple-500',
+    },
+    // Hisob raqamidan — bank-oilasi (ko'k/binafsha) ichida ALOHIDA rang:
+    // kassir «bu pul bankka boradi, yashiqqa emas» ekanini bir qarashda ko'rsin.
+    account: {
+      border: 'border-indigo-400',
+      bg: 'bg-indigo-50',
+      icon: 'bg-indigo-500',
+      dot: 'bg-indigo-500',
     },
     // A2 — avans ATAYLAB amber: kassir bir qarashda «bu pul emas, mijozning
     // bizdagi krediti» ekanini ajratsin (naqd — yashil, bank — ko'k/binafsha).
@@ -168,6 +178,7 @@ export function RasmiyashtirishModal({
   const [cashUsdInput, setCashUsdInput] = useState('');
   const [cardInput, setCardInput] = useState('');
   const [terminalInput, setTerminalInput] = useState('');
+  const [accountInput, setAccountInput] = useState('');
   const [prepayInput, setPrepayInput] = useState('');
   const [activeField, setActiveField] = useState<ActiveField>('cash');
 
@@ -233,10 +244,12 @@ export function RasmiyashtirishModal({
     usdRateE8 != null && cashUsdMinor > 0n ? convertByRateE8(cashUsdMinor, usdRateE8) : 0n;
   const cardMinor = parseAmountToMinor(cardInput, currency);
   const terminalMinor = parseAmountToMinor(terminalInput, currency);
+  const accountMinor = parseAmountToMinor(accountInput, currency);
   // A2 — avans maydoni bloklangan bo'lsa qiymat 0 (dollar bilan AYNI naqsh):
   // mijozni almashtirgan kassir eski summani jimgina yuborib qo'ymasin.
   const prepayMinor = prepayBlocked ? 0n : parseAmountToMinor(prepayInput, currency);
-  const totalPaid = cashMinor + cashUsdBaseMinor + cardMinor + terminalMinor + prepayMinor;
+  const totalPaid =
+    cashMinor + cashUsdBaseMinor + cardMinor + terminalMinor + accountMinor + prepayMinor;
   const debtMinor = totalPaid < sumMinor ? sumMinor - totalPaid : 0n;
   const change = totalPaid > sumMinor ? totalPaid - sumMinor : 0n;
 
@@ -249,7 +262,7 @@ export function RasmiyashtirishModal({
   //     (`retail-tenders.ts` → `prepay-overpaid`).
   const prepayExceedsAvailable = prepayMinor > prepayAvailableMinor;
   const prepayRoomMinor = (() => {
-    const others = cashMinor + cashUsdBaseMinor + cardMinor + terminalMinor;
+    const others = cashMinor + cashUsdBaseMinor + cardMinor + terminalMinor + accountMinor;
     return sumMinor > others ? sumMinor - others : 0n;
   })();
   const prepayExceedsRoom = prepayMinor > prepayRoomMinor;
@@ -303,6 +316,7 @@ export function RasmiyashtirishModal({
     setCashUsdInput('');
     setCardInput('');
     setTerminalInput('');
+    setAccountInput('');
     setPrepayInput('');
     setActiveField('cash');
   }, []);
@@ -329,6 +343,7 @@ export function RasmiyashtirishModal({
     cashUsd: setCashUsdInput,
     card: setCardInput,
     terminal: setTerminalInput,
+    account: setAccountInput,
     prepay: setPrepayInput,
   };
   const setActive = SETTERS[activeField];
@@ -337,6 +352,7 @@ export function RasmiyashtirishModal({
     cashUsd: cashUsdInput,
     card: cardInput,
     terminal: terminalInput,
+    account: accountInput,
     prepay: prepayInput,
   };
 
@@ -360,6 +376,7 @@ export function RasmiyashtirishModal({
       (activeField === 'cashUsd' ? 0n : cashUsdBaseMinor) +
       (activeField === 'card' ? 0n : cardMinor) +
       (activeField === 'terminal' ? 0n : terminalMinor) +
+      (activeField === 'account' ? 0n : accountMinor) +
       (activeField === 'prepay' ? 0n : prepayMinor);
     const left = sumMinor > others ? sumMinor - others : 0n;
     // A2 — avansda «Aniq» = min(chek qoldig'i, mavjud avans). Faqat
@@ -391,6 +408,7 @@ export function RasmiyashtirishModal({
       cashAmountMinor: cashMinor,
       cardAmountMinor: cardMinor,
       terminalAmountMinor: terminalMinor,
+      accountAmountMinor: accountMinor,
       debtAmountMinor: debtMinor,
       cashUsdAmountMinor: cashUsdMinor,
       prepayAmountMinor: prepayMinor,
@@ -408,6 +426,7 @@ export function RasmiyashtirishModal({
     cashUsd: t('field_cash_usd'),
     card: t('field_card'),
     terminal: t('field_terminal'),
+    account: t('field_account'),
     prepay: t('field_prepay'),
   };
 
@@ -789,6 +808,41 @@ export function RasmiyashtirishModal({
                     </div>
                     {activeField === 'terminal' && (
                       <div className="h-2 w-2 shrink-0 rounded-full bg-purple-500" />
+                    )}
+                  </button>
+
+                  {/* Hisob raqamidan (2026-08-31) — bank o'tkazmasi. Pul
+                      yashiqqa tushmaydi; qaytim ham undan berilmaydi
+                      (server: `retail-tenders.ts` ACCOUNT). */}
+                  <button
+                    type="button"
+                    data-test-id="pos-tender-account"
+                    onClick={() => setActiveField('account')}
+                    className={`flex items-center gap-3 rounded-xl border-2 p-3 text-left transition-all ${
+                      activeField === 'account'
+                        ? 'border-indigo-400 bg-indigo-50'
+                        : 'border-[var(--ms-border)] bg-[var(--ms-bg-app)] hover:border-indigo-200'
+                    }`}
+                  >
+                    <div
+                      className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${activeField === 'account' ? 'bg-indigo-500' : 'bg-[var(--ms-bg-input)]'}`}
+                    >
+                      <Landmark
+                        className={`h-4 w-4 ${activeField === 'account' ? 'text-white' : 'text-[var(--ms-text-muted)]'}`}
+                      />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="text-[10px] font-semibold uppercase tracking-wide text-[var(--ms-text-muted)]">
+                        {t('account')}
+                      </div>
+                      <div
+                        className={`font-bold tabular-nums leading-tight text-sm ${accountMinor > 0n ? 'text-[var(--ms-text-primary)]' : 'text-[var(--ms-text-muted)]'}`}
+                      >
+                        {accountMinor > 0n ? formatMoney(accountMinor) : '—'}
+                      </div>
+                    </div>
+                    {activeField === 'account' && (
+                      <div className="h-2 w-2 shrink-0 rounded-full bg-indigo-500" />
                     )}
                   </button>
 

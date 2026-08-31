@@ -74,6 +74,24 @@ describe('debtCashDeskDeltas — what counts as drawer cash', () => {
     ).toEqual([]);
   });
 
+  it("card ⇒ nothing (2026-08-31 — kassadagi karta o'tkazmasi ham bankka boradi)", () => {
+    expect(
+      debtCashDeskDeltas(
+        { ...BASE, method: 'card' },
+        { sign: 1n, documentId: 'b', deskCurrency: 'UZS' },
+      ),
+    ).toEqual([]);
+  });
+
+  it('account ⇒ nothing (hisob raqam — bank o‘tkazmasi, tortmaga tushmaydi)', () => {
+    expect(
+      debtCashDeskDeltas(
+        { ...BASE, method: 'account' },
+        { sign: 1n, documentId: 'b', deskCurrency: 'UZS' },
+      ),
+    ).toEqual([]);
+  });
+
   it('cash with NO desk ⇒ nothing (operator logged what the client claims to have paid)', () => {
     expect(
       debtCashDeskDeltas(

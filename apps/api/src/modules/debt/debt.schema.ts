@@ -455,7 +455,13 @@ export const PosDebtPaymentSchema = z
      * farq to'g'ridan-to'g'ri qarz qoldig'ida qolardi.
      */
     amountMinor: moneyMinor,
-    method: z.enum(['cash', 'terminal']).default('cash'),
+    /**
+     * 2026-08-31 (egasi): kassada ham `card` (kartaga o'tkazma — sotuvdagi
+     * KARTA bilan bir kanal) va `account` (hisob raqam — undirish modulidagi
+     * qiymat bilan AYNAN bir xil DB qiymati) qabul qilinadi. Yashiq daftariga
+     * baribir FAQAT `cash` tushadi (`debt-cash-ledger.ts` predikati).
+     */
+    method: z.enum(['cash', 'terminal', 'card', 'account']).default('cash'),
     /** To'lov valyutasi. Faqat kassa oqimi bor ikkitasi (`MarkCallSchema` bilan bir xil). */
     currency: PaymentCurrencySchema.default('UZS'),
     /**
@@ -515,6 +521,15 @@ export const PosDebtPaymentSchema = z
     message:
       'Dollar naqd to‘lovi uchun ochiq smena majburiy: dollar pul daftariga tushmaydi va faqat smena hisobida yuritiladi',
     path: ['retailShiftId'],
+  })
+  // Yangi kanallar (karta/hisob raqam, 2026-08-31) — bank o'tkazmasi, DOIM
+  // so'mda (undirishdagi click/account qoidasi bilan bir xil: «faqat so'mda
+  // bo'ladi»; mijoz kartochkasining KARTA/CLICK bo'limi ham `account`
+  // qatorlarini so'm deb o'qiydi). ⚠️ `terminal` ATAYLAB tegilmagan — uning
+  // USD-shartnomasi eski va testda qulflangan (`debt.schema.test.ts`).
+  .refine((v) => !(v.method === 'card' || v.method === 'account') || v.currency !== 'USD', {
+    message: 'Karta/hisob raqam to‘lovi faqat so‘mda — dollar naqd qabul qilinadi',
+    path: ['method'],
   });
 export type PosDebtPaymentInput = z.infer<typeof PosDebtPaymentSchema>;
 

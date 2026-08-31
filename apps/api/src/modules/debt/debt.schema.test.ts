@@ -621,4 +621,32 @@ describe("PosDebtPaymentSchema — F6 USD qarz to'lovi", () => {
       expect(PosDebtPaymentSchema.parse({ ...noShift, method: 'cash' }).currency).toBe('UZS');
     });
   });
+
+  /**
+   * 2026-08-31 — kassada KARTA va HISOB RAQAM (egasi so'radi: sotuvda karta
+   * bor edi, qarz to'lovida yo'q; hisob raqam esa faqat undirish modulida).
+   * DB qiymati `account` undirishdagi bilan AYNAN bir xil — mijoz
+   * kartochkasining KARTA/CLICK bo'limi ikkala manbani bitta ko'radi.
+   */
+  describe('karta / hisob raqam (2026-08-31)', () => {
+    it("KARTA so'mda QABUL QILINADI", () => {
+      expect(PosDebtPaymentSchema.parse({ ...base, method: 'card' }).method).toBe('card');
+    });
+
+    it("HISOB RAQAM so'mda QABUL QILINADI", () => {
+      expect(PosDebtPaymentSchema.parse({ ...base, method: 'account' }).method).toBe('account');
+    });
+
+    it('🔴 KARTA/HISOB dollar bilan RAD etiladi (bank o‘tkazmasi faqat so‘mda)', () => {
+      const usd = { ...base, currency: 'USD', exchangeRate: '1280000000000' };
+      expect(() => PosDebtPaymentSchema.parse({ ...usd, method: 'card' })).toThrow(/so‘mda/);
+      expect(() => PosDebtPaymentSchema.parse({ ...usd, method: 'account' })).toThrow(/so‘mda/);
+    });
+
+    it("undirishning 'card_screenshot' qiymati KASSA endpointida o'tmaydi", () => {
+      // Click — chek rasmi bilan keladigan OFIS oqimi; kassada uning o'rnini
+      // `card` bosadi. Ikkala lug'at aralashib ketmasin.
+      expect(() => PosDebtPaymentSchema.parse({ ...base, method: 'card_screenshot' })).toThrow();
+    });
+  });
 });

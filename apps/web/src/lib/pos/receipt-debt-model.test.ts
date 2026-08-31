@@ -141,6 +141,16 @@ describe('debtReceiptToSaleInput — tovar-chek modeliga o‘tish', () => {
     expect(m.payments).toEqual([{ label: 'Terminal', value: '80 000', note: null }]);
   });
 
+  it('karta to‘lovi «Karta» qatori bilan (2026-08-31 — kassada karta ochildi)', () => {
+    const m = buildReceiptModel(debtReceiptToSaleInput(RECEIPT({ method: 'card' })));
+    expect(m.payments).toEqual([{ label: 'Karta', value: '80 000', note: null }]);
+  });
+
+  it('hisob raqamidan to‘lovi «Hisob raqamidan» qatori bilan', () => {
+    const m = buildReceiptModel(debtReceiptToSaleInput(RECEIPT({ method: 'account' })));
+    expect(m.payments).toEqual([{ label: 'Hisob raqamidan', value: '80 000', note: null }]);
+  });
+
   it('dollar to‘lovida ASL summa + MUZLATILGAN kurs + so‘m ekvivalenti', () => {
     const m = buildReceiptModel(
       debtReceiptToSaleInput(

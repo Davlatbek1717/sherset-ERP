@@ -47,8 +47,15 @@ export function debtReceiptToSaleInput(r: DebtReceiptPayload): ReceiptSaleInput 
   // orqali chiziladi, shu yerda faqat kanal tanlanadi. USD'da kurs yo'q buzuq
   // qatorda `receiptPaymentLines` foreign'ni o'zi tushiradi — chek yo'qolmaydi.
   const isUsd = r.currency !== 'UZS';
+  // Naqdsiz kanallar (2026-08-31: karta va hisob raqam ham) — chekda o'z
+  // nomi bilan; ular DOIM so'mda (server sxemasi USD+naqdsizni rad etadi).
+  const NONCASH: Record<string, string> = {
+    terminal: 'TERMINAL',
+    card: 'CARD',
+    account: 'ACCOUNT',
+  };
   const payment: ReceiptPaymentRow = {
-    method: r.method === 'terminal' ? 'TERMINAL' : isUsd ? 'CASH_USD' : 'CASH_UZS',
+    method: NONCASH[r.method] ?? (isUsd ? 'CASH_USD' : 'CASH_UZS'),
     amountMinor: isUsd ? (r.originalMinor ?? r.paidMinor) : r.paidMinor,
     currency: isUsd ? r.currency : 'UZS',
     rateMinor: isUsd ? r.exchangeRate : null,

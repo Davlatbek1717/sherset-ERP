@@ -73,6 +73,7 @@ export function useZReceiptLabels(): ZReceiptLabels {
         CASH_USD: tt('CASH_USD'),
         CARD: tt('CARD'),
         TERMINAL: tt('TERMINAL'),
+        ACCOUNT: tt('ACCOUNT'),
         DEBT: tt('DEBT'),
       },
     }),

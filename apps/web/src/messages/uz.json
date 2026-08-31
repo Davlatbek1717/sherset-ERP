@@ -6240,6 +6240,7 @@
         "shift_no": "Smena",
         "summary": "XULOSA",
         "tender": {
+          "ACCOUNT": "Hisob raqamidan",
           "CARD": "Karta",
           "CASH_USD": "Naqd ($)",
           "CASH_UZS": "Naqd (so'm)",
@@ -9287,6 +9288,7 @@
     "pos": {
       "add": "Qo'shish",
       "amount": "Summa",
+      "account": "Hisob raqamidan",
       "card": "Karta",
       "cash": "Naqd",
       "cash_out_error": "Hujjat yozilmadi",
@@ -9389,6 +9391,7 @@
       "enter_amount": "To'lov summasini kiriting",
       "exact_amount": "Aniq summa",
       "exact_paid": "Aniq to'landi",
+      "field_account": "Hisob raqamidan summa",
       "field_card": "Karta miqdori",
       "field_cash": "Naqd miqdori",
       "field_cash_usd": "Dollar miqdori ($)",

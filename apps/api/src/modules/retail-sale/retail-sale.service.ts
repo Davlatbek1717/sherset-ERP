@@ -826,6 +826,8 @@ export class RetailSaleService {
     const cashAmount = BigInt(parsed.cashAmountMinor);
     const cardAmount = BigInt(parsed.cardAmountMinor);
     const terminalAmount = BigInt(parsed.terminalAmountMinor);
+    // Hisob raqamidan (bank o'tkazmasi) — yashiqqa tushmaydi, qaytim bermaydi.
+    const accountAmount = BigInt(parsed.accountAmountMinor);
     const debtAmount = BigInt(parsed.debtAmountMinor);
     const total = sale.sumMinor;
 
@@ -845,6 +847,7 @@ export class RetailSaleService {
       cashMinor: cashAmount,
       cardMinor: cardAmount,
       terminalMinor: terminalAmount,
+      accountMinor: accountAmount,
       debtMinor: debtAmount,
       totalMinor: total,
       cashUsdMinor: cashUsdAmount,

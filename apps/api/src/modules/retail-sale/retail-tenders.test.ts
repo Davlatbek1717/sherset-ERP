@@ -69,6 +69,49 @@ describe('computeTenders — to`rt tur', () => {
   });
 });
 
+describe('computeTenders — HISOB RAQAMIDAN (ACCOUNT, 2026-08-31)', () => {
+  it('hisob raqamidan to`liq to`lov QABUL QILINADI va o`z qatorini oladi', () => {
+    const r = computeTenders({ ...base, accountMinor: TOTAL });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.paidMinor).toBe(TOTAL);
+    expect(r.changeMinor).toBe(0n);
+    expect(r.lines).toEqual([{ method: TENDER.account, amountMinor: TOTAL }]);
+  });
+
+  it('aralash: naqd + hisob — qator tartibi naqd→hisob', () => {
+    const r = computeTenders({ ...base, cashMinor: 40_000n, accountMinor: 60_000n });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.lines.map((l) => l.method)).toEqual([TENDER.cashUzs, TENDER.account]);
+  });
+
+  it('HISOB ortiqcha o`tkazilsa BLOKLANADI — qaytim faqat naqddan (§6.2)', () => {
+    const r = computeTenders({ ...base, accountMinor: 120_000n });
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.reason).toBe('change-exceeds-cash');
+  });
+
+  it('manfiy hisob summasi rad etiladi', () => {
+    const r = computeTenders({ ...base, cashMinor: TOTAL, accountMinor: -1n });
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.reason).toBe('negative-input');
+  });
+
+  it('legacyTotals: ACCOUNT «naqd emas» ustuniga tushadi, naqdga EMAS', () => {
+    // Aks holda smenaning kutilgan naqdi bankka ketgan pulga oshib,
+    // kassirga soxta kamomad yozilardi (PREPAY/CASH_USD saboqlari sinfi).
+    const r = computeTenders({ ...base, cashMinor: 30_000n, accountMinor: 70_000n });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    const legacy = legacyTotals(r.lines);
+    expect(legacy.cashAmountMinor).toBe(30_000n);
+    expect(legacy.cardAmountMinor).toBe(70_000n);
+  });
+});
+
 describe('computeTenders — qaytim faqat naqddan (TZ §6.2)', () => {
   it('naqd ortiqcha berilsa qaytim hisoblanadi', () => {
     const r = computeTenders({ ...base, cashMinor: 120_000n });

@@ -11,8 +11,8 @@ import type { MoneyDelta } from '../money/money.service.js';
  * kiritilib qaytarilmagan (yoki umuman kirmagan pul chiqarilgan) summa.
  *
  * QOIDA: yashiqqa FAQAT naqd tushadi va FAQAT kassa ko'rsatilgan bo'lsa.
- *  - `terminal` / `card_screenshot` / `account` — pul bankka/ekvayerga boradi,
- *    tortmaga emas;
+ *  - `terminal` / `card` / `card_screenshot` / `account` — pul bankka/
+ *    ekvayerga boradi, tortmaga emas;
  *  - kassasiz naqd — operator qo'ng'iroqda «to'ladi» deb qayd etgan holat:
  *    kreditlanadigan jismoniy yashiq yo'q.
  */

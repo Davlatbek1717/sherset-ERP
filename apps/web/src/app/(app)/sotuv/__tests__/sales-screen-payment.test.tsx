@@ -260,6 +260,27 @@ describe('RasmiyashtirishModal — aralash to‘lov', () => {
     });
   });
 
+  it('naqd + HISOB RAQAMIDAN aralash — `accountAmountMinor` alohida yuboriladi (2026-08-31)', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<SotuvPage />);
+    const dialog = await openPaymentModal(user);
+
+    await typeAmount(user, '10000');
+    await user.click(within(dialog).getByRole('button', { name: /Hisob raqamidan/ }));
+    await typeAmount(user, '8000');
+
+    await user.click(within(dialog).getByRole('button', { name: /Rasmilashtirish/ }));
+    await waitFor(() => expect(api.post).toHaveBeenCalled());
+    expect(api.post).toHaveBeenCalledWith('/retail-sales/s-1/post', {
+      cashAmountMinor: '1000000',
+      cardAmountMinor: '0',
+      terminalAmountMinor: '0',
+      debtAmountMinor: '0',
+      accountAmountMinor: '800000',
+      expectedSumMinor: '1800000',
+    });
+  });
+
   it('«Aniq summa» tugmasi QOLGAN summani qo‘yadi (allaqachon kiritilganini hisobga olib)', async () => {
     const user = userEvent.setup();
     renderWithProviders(<SotuvPage />);

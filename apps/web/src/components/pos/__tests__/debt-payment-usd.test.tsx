@@ -236,27 +236,14 @@ describe('Qarz to`lovi oynasi — dollar (F6)', () => {
 });
 
 describe('Qarz to`lovi oynasi — USD × to`lov turi', () => {
-  it('USD tanlanganda TERMINAL bloklanadi (dollar terminal orqali kelmaydi)', async () => {
+  it('«Naqd USD» kanali serverga method:cash + currency:USD bo`lib ketadi', async () => {
+    // 2026-08-31 redizayn: valyuta alohida qator EMAS — «Naqd USD» sotuvdagi
+    // kabi kanal-kartochka. Dollar TERMINAL/KARTA/HISOB orqali kelmaydi:
+    // u kanallar tanlansa to'lov avtomatik so'mga o'tadi (quyidagi test).
     const user = userEvent.setup();
     openDialog();
     await pickCustomer(user);
 
-    await user.click(screen.getByTestId('debt-pay-currency-usd'));
-    expect(screen.getByTestId('debt-pay-method-terminal')).toBeDisabled();
-
-    await typeAmount(user, '100');
-    await user.click(screen.getByTestId('debt-pay-confirm'));
-
-    await waitFor(() => expect(vi.mocked(api.post)).toHaveBeenCalledTimes(1));
-    expect(vi.mocked(api.post).mock.calls[0]?.[1]).toMatchObject({ method: 'cash' });
-  });
-
-  it('terminal tanlab turib USD ga o`tilsa — usul NAQDga qaytadi', async () => {
-    const user = userEvent.setup();
-    openDialog();
-    await pickCustomer(user);
-
-    await user.click(screen.getByTestId('debt-pay-method-terminal'));
     await user.click(screen.getByTestId('debt-pay-currency-usd'));
     await typeAmount(user, '100');
     await user.click(screen.getByTestId('debt-pay-confirm'));
@@ -266,5 +253,58 @@ describe('Qarz to`lovi oynasi — USD × to`lov turi', () => {
       method: 'cash',
       currency: 'USD',
     });
+  });
+
+  it('USD dan TERMINALga o`tilsa — to`lov SO`M bo`lib ketadi (summa tozalanadi)', async () => {
+    const user = userEvent.setup();
+    openDialog();
+    await pickCustomer(user);
+
+    await user.click(screen.getByTestId('debt-pay-currency-usd'));
+    await typeAmount(user, '100');
+    await user.click(screen.getByTestId('debt-pay-method-terminal'));
+    // Valyuta almashdi (sent≠tiyin) — summa tozalanadi, kassir qayta teradi.
+    expect(screen.getByTestId('debt-pay-amount').textContent?.trim()).toBe('0');
+
+    await typeAmount(user, '5000');
+    await user.click(screen.getByTestId('debt-pay-confirm'));
+
+    await waitFor(() => expect(vi.mocked(api.post)).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(api.post).mock.calls[0]?.[1]).toMatchObject({
+      method: 'terminal',
+      currency: 'UZS',
+      amountMinor: '500000',
+    });
+  });
+});
+
+describe('Qarz to`lovi oynasi — yangi kanallar (2026-08-31)', () => {
+  it.each([
+    ['debt-pay-method-card', 'card'],
+    ['debt-pay-method-account', 'account'],
+  ] as const)('%s kanali serverga method:%s bo`lib ketadi (so`mda)', async (testId, method) => {
+    const user = userEvent.setup();
+    openDialog();
+    await pickCustomer(user);
+
+    await user.click(screen.getByTestId(testId));
+    await typeAmount(user, '5000');
+    await user.click(screen.getByTestId('debt-pay-confirm'));
+
+    await waitFor(() => expect(vi.mocked(api.post)).toHaveBeenCalledTimes(1));
+    const body = vi.mocked(api.post).mock.calls[0]?.[1] as Record<string, unknown>;
+    expect(body).toMatchObject({ method, currency: 'UZS', amountMinor: '500000' });
+    // Naqdsiz kanal kurs olib ketmaydi.
+    expect(body.exchangeRate ?? null).toBeNull();
+  });
+
+  it('so`m-kanallar orasida almashganda kiritilgan summa SAQLANADI', async () => {
+    const user = userEvent.setup();
+    openDialog();
+    await pickCustomer(user);
+
+    await typeAmount(user, '5000');
+    await user.click(screen.getByTestId('debt-pay-method-card'));
+    expect(screen.getByTestId('debt-pay-amount').textContent ?? '').toMatch(/5\D?000/);
   });
 });
