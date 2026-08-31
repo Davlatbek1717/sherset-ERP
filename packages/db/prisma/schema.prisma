@@ -1143,6 +1143,12 @@ model StoreCell {
   name      String   @db.VarChar(255)
   barcode   String?  @db.VarChar(255)
   sortOrder Int      @default(0) @map("sort_order")
+  /// «Vitrina» (egasi, 2026-08-31) — ko'rsatish uchun qo'yilgan tovar yacheykasi.
+  /// POS avto-taqsimoti bunday yacheykani ENG OXIRGI navbatda ishlatadi: reja
+  /// avval vitrinasiz quriladi, faqat boshqa hech bir manba (oddiy yacheykalar +
+  /// yacheykasiz qoldiq, BARCHA omborlarda) yetmagandagina vitrinadan olinadi.
+  /// Sanash/ko'chirish/kirim oqimlariga ta'sir qilmaydi.
+  vitrina   Boolean  @default(false)
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz()
 

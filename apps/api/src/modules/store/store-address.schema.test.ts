@@ -98,6 +98,17 @@ describe('UpdateCellSchema — tri-state zoneId', () => {
     expect(r.success).toBe(true);
     if (r.success) expect(r.data.zoneId).toBe(UUID);
   });
+
+  // «Vitrina» (2026-08-31): undefined = tegilmaydi, boolean = belgi.
+  it('vitrina — omitted ⇒ undefined, boolean o‘tadi, string RAD', () => {
+    const omitted = UpdateCellSchema.safeParse({});
+    expect(omitted.success).toBe(true);
+    if (omitted.success) expect(omitted.data.vitrina).toBeUndefined();
+    const on = UpdateCellSchema.safeParse({ vitrina: true });
+    expect(on.success).toBe(true);
+    if (on.success) expect(on.data.vitrina).toBe(true);
+    expect(UpdateCellSchema.safeParse({ vitrina: 'ha' }).success).toBe(false);
+  });
 });
 
 describe('CellBarcodeLookupSchema', () => {

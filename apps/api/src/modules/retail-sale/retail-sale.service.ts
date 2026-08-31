@@ -3572,13 +3572,14 @@ export class RetailSaleService {
               cellId: true,
               assortmentId: true,
               qty: true,
-              cell: { select: { name: true } },
+              // `vitrina` — taqsimotda oxirgi chora (retail-allocation VITRINA izohi).
+              cell: { select: { name: true, vitrina: true } },
             },
           });
 
     const cellsByProduct = new Map<
       string,
-      Array<{ storeId: string; cellId: string; cellName: string; qty: string }>
+      Array<{ storeId: string; cellId: string; cellName: string; qty: string; vitrina: boolean }>
     >();
     for (const r of cellRows) {
       const list = cellsByProduct.get(r.assortmentId) ?? [];
@@ -3587,6 +3588,7 @@ export class RetailSaleService {
         cellId: r.cellId,
         cellName: r.cell?.name ?? '',
         qty: r.qty.toString(),
+        vitrina: r.cell?.vitrina === true,
       });
       cellsByProduct.set(r.assortmentId, list);
     }

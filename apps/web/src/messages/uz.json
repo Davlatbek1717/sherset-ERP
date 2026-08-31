@@ -5786,6 +5786,8 @@
         "barcode_placeholder": "Shtrixkod",
         "generate_barcode": "Shtrix-kodni avtomatik yaratish",
         "print_label": "Etiketka chop etish",
+        "vitrina": "Vitrina",
+        "vitrina_hint": "Vitrina yacheyka: kassa bundan faqat tovar boshqa hech qayerda qolmaganda oladi",
         "status_free": "Bo'sh",
         "status_occupied": "Band",
         "contents_title": "Yacheyka ichidagilar",

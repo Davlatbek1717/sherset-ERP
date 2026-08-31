@@ -41,6 +41,8 @@ export const CreateCellSchema = z.object({
   // «Штрихкод» — optional scan code.
   barcode: optionalText(255),
   sortOrder,
+  // «Vitrina» (2026-08-31) — POS taqsimotida oxirgi chora bo'ladigan yacheyka.
+  vitrina: z.boolean().optional(),
 });
 export type CreateCellInput = z.infer<typeof CreateCellSchema>;
 
@@ -51,6 +53,8 @@ export const UpdateCellSchema = z.object({
   zoneId: uuid.nullish(),
   barcode: optionalText(255),
   sortOrder,
+  // «Vitrina» — undefined = tegilmaydi, true/false = belgi qo'yish/olish.
+  vitrina: z.boolean().optional(),
 });
 export type UpdateCellInput = z.infer<typeof UpdateCellSchema>;
 

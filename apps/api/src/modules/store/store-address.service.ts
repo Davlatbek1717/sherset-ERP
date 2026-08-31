@@ -905,6 +905,7 @@ export class StoreAddressService {
           name: data.name,
           barcode: data.barcode ?? null,
           sortOrder: data.sortOrder ?? 0,
+          vitrina: data.vitrina ?? false,
         },
       });
     } catch (e) {
@@ -1056,6 +1057,7 @@ export class StoreAddressService {
     if (data.name !== undefined) patch.name = data.name;
     if (data.barcode !== undefined) patch.barcode = data.barcode;
     if (data.sortOrder !== undefined) patch.sortOrder = data.sortOrder;
+    if (data.vitrina !== undefined) patch.vitrina = data.vitrina;
     if (data.zoneId !== undefined) {
       patch.zone = data.zoneId === null ? { disconnect: true } : { connect: { id: data.zoneId } };
     }

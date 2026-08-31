@@ -62,6 +62,8 @@ interface Cell {
   barcode: string | null;
   sortOrder: number;
   occupied: boolean;
+  /** «Vitrina» (2026-08-31) — POS taqsimotida oxirgi chora bo'ladigan yacheyka. */
+  vitrina: boolean;
 }
 interface AddressStorage {
   zones: Zone[];
@@ -769,6 +771,7 @@ export function AddressStorageSection({
       name?: string;
       zoneId?: string | null;
       barcode?: string | null;
+      vitrina?: boolean;
     }) => {
       const { id, ...body } = v;
       return api.patch(`/admin/stores/${storeId}/cells/${id}`, body);
@@ -832,6 +835,7 @@ export function AddressStorageSection({
       barcode: c.barcode,
       sortOrder: 0,
       occupied: false,
+      vitrina: false,
       pending: true,
     })),
   ];
@@ -1291,25 +1295,50 @@ export function AddressStorageSection({
                       )}
                     </td>
                     <td className={CELL_TD}>
-                      {c.occupied && serverMode && !c.pending ? (
-                        // Occupied → clickable: opens the per-product contents modal
-                        // (a cell can hold SEVERAL products, each with its own qty).
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setContentsCell({ id: c.id, name: c.name });
-                          }}
-                          className="text-[var(--ms-text-brand)] hover:underline"
-                          data-test-id={`cell-contents-${c.id}`}
-                        >
-                          {t('status_occupied')}
-                        </button>
-                      ) : c.occupied ? (
-                        t('status_occupied')
-                      ) : (
-                        t('status_free')
-                      )}
+                      <span className="flex items-center gap-1.5">
+                        {c.occupied && serverMode && !c.pending ? (
+                          // Occupied → clickable: opens the per-product contents modal
+                          // (a cell can hold SEVERAL products, each with its own qty).
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setContentsCell({ id: c.id, name: c.name });
+                            }}
+                            className="text-[var(--ms-text-brand)] hover:underline"
+                            data-test-id={`cell-contents-${c.id}`}
+                          >
+                            {t('status_occupied')}
+                          </button>
+                        ) : c.occupied ? (
+                          t('status_occupied')
+                        ) : (
+                          t('status_free')
+                        )}
+                        {/* «Vitrina» (egasi, 2026-08-31) — bosish bilan belgi
+                            qo'yiladi/olinadi. Vitrina yacheykadan POS faqat tovar
+                            boshqa hech qayerda qolmaganda ayiradi
+                            (retail-allocation VITRINA izohi). */}
+                        {serverMode && !c.pending && (
+                          <button
+                            type="button"
+                            aria-pressed={c.vitrina}
+                            title={t('vitrina_hint')}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              patchCell.mutate({ id: c.id, vitrina: !c.vitrina });
+                            }}
+                            className={
+                              c.vitrina
+                                ? 'shrink-0 rounded-full border border-[var(--ms-border-focus)] bg-[var(--ms-text-brand)] px-2 py-0.5 text-[11px] text-white'
+                                : 'shrink-0 rounded-full border border-[var(--ms-border-default)] px-2 py-0.5 text-[11px] text-[var(--ms-text-muted)] opacity-60 hover:opacity-100'
+                            }
+                            data-test-id={`cell-vitrina-${c.id}`}
+                          >
+                            {t('vitrina')}
+                          </button>
+                        )}
+                      </span>
                     </td>
                     <td className={CELL_TD}>
                       {isEdit ? (

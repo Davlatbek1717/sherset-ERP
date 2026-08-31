@@ -5786,6 +5786,8 @@
         "barcode_placeholder": "Штрихкод",
         "generate_barcode": "Сгенерировать штрихкод",
         "print_label": "Печать этикетки",
+        "vitrina": "Витрина",
+        "vitrina_hint": "Витринная ячейка: касса берёт отсюда только когда товара больше нигде нет",
         "status_free": "Свободна",
         "status_occupied": "Занята",
         "contents_title": "Содержимое ячейки",

@@ -53,6 +53,7 @@ function input(over: Partial<AllocationInput> & { requested?: string } = {}): Al
     cellsByProduct: over.cellsByProduct ?? new Map(),
     availableByProduct: over.availableByProduct ?? new Map(),
     fallbackStoreId: over.fallbackStoreId ?? null,
+    pieceTracked: over.pieceTracked,
   };
 }
 
@@ -166,17 +167,24 @@ describe('2-holat — yolg‘iz qoplaydigan ENG KICHIK manba (bitta yurish)', ()
     expect(r.rules[0]?.rule).toBe('single');
   });
 
-  it('bitta yacheyka yetmasa-yu ombor yacheykasiz qoldig‘i yetsa — u ham nomzod', () => {
+  it('bitta yacheyka yetmasa — hovuz g‘olib EMAS: yacheyka bo‘shatilib, qolgani hovuzdan (2026-08-31)', () => {
+    // ⚠️ XULQ O'ZGARGAN («18% sizish» tuzatishi): ilgari yacheykasiz qoldiq
+    // (400) «yolg'iz qoplagani» uchun butun 100 tani olardi va sanalgan
+    // yacheykadagi 30 muzlab qolardi. Endi yacheykasi BOR tovarda 2-holat
+    // hovuzga o'tmaydi — 3-holat yacheykani avval bo'shatadi.
     const r = allocateForSale(
       input({
         cellsByProduct: new Map([[P, [cell(S01, '01-01-01-01', '30')]]]),
         availableByProduct: new Map([[P, avail([S07, '10'], [S01, '400'])]]),
       }),
     );
-    expect(r.allocations).toHaveLength(1);
-    expect(r.allocations[0]?.storeId).toBe(S01);
-    expect(r.allocations[0]?.cellId).toBeNull();
-    expect(r.rules[0]?.rule).toBe('single');
+    // 07 posFront — bo'linishda ENG OXIRGI; S01 (30+70) o'zi qoplagani uchun
+    // 07 ga umuman tegilmaydi.
+    expect(r.allocations.map((a) => [a.storeId, a.cellName, a.qty])).toEqual([
+      [S01, '01-01-01-01', '30'],
+      [S01, null, '70'],
+    ]);
+    expect(r.rules[0]?.rule).toBe('split');
   });
 
   it('🔴 REAL yacheyka kattaroq bo‘lsa ham yacheykasizdan afzal', () => {
@@ -672,5 +680,169 @@ describe('xabar matni — sabab bo`yicha', () => {
     ]);
     expect(msg).toContain('p2 — 4 ta');
     expect(msg).toContain('p1 — 180');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 2026-08-31 — «18% sizish» tuzatishi: yacheykali tovarda hovuz g'olib emas
+// ---------------------------------------------------------------------------
+
+describe('18% sizish tuzatishi — yacheykalar hovuzdan oldin bo‘lib olinadi', () => {
+  it('D-holat: yacheykalar 5+4, hovuz 10000, kerak 6 — yacheykalardan bo‘linadi', () => {
+    const r = allocateForSale(
+      input({
+        requested: '6',
+        cellsByProduct: new Map([[P, [cell(S01, 'A', '5'), cell(S01, 'B', '4')]]]),
+        availableByProduct: new Map([[P, avail([S01, '10000'])]]),
+      }),
+    );
+    expect(r.allocations.map((a) => [a.cellName, a.qty])).toEqual([
+      ['A', '5'],
+      ['B', '1'],
+    ]);
+    expect(r.shortfalls).toEqual([]);
+  });
+
+  it('yacheyka 4, hovuz 10000, kerak 6 — avval yacheyka bo‘shaydi, qolgani hovuzdan', () => {
+    const r = allocateForSale(
+      input({
+        requested: '6',
+        cellsByProduct: new Map([[P, [cell(S01, 'A', '4')]]]),
+        availableByProduct: new Map([[P, avail([S01, '10000'])]]),
+      }),
+    );
+    expect(r.allocations.map((a) => [a.cellName, a.qty])).toEqual([
+      ['A', '4'],
+      [null, '2'],
+    ]);
+  });
+
+  it('yacheykasiz (sanalmagan) tovar: hovuz avvalgidek yolg‘iz manba (rule=single)', () => {
+    const r = allocateForSale(
+      input({
+        requested: '6',
+        availableByProduct: new Map([[P, avail([S01, '10000'])]]),
+      }),
+    );
+    expect(r.allocations).toHaveLength(1);
+    expect(r.allocations[0]?.cellId).toBeNull();
+    expect(r.rules[0]?.rule).toBe('single');
+  });
+
+  it('bitta yacheyka yolg‘iz qoplasa — avvalgidek o‘sha yacheyka (rule=single)', () => {
+    const r = allocateForSale(
+      input({
+        requested: '6',
+        cellsByProduct: new Map([[P, [cell(S01, 'A', '12')]]]),
+        availableByProduct: new Map([[P, avail([S01, '10000'])]]),
+      }),
+    );
+    expect(r.allocations.map((a) => [a.cellName, a.qty])).toEqual([['A', '6']]);
+    expect(r.rules[0]?.rule).toBe('single');
+  });
+
+  it('K3 bo‘linadigan tovar: hovuz hamon yolg‘iz manba bo‘la oladi (regressiya yo‘q)', () => {
+    const r = allocateForSale(
+      input({
+        requested: '6',
+        cellsByProduct: new Map([[P, [cell(S01, 'A', '5'), cell(S01, 'B', '4')]]]),
+        availableByProduct: new Map([[P, avail([S01, '10000'])]]),
+        pieceTracked: new Set([P]),
+      }),
+    );
+    // Bo'lish taqiqlangan: hovuz (yacheykasiz qoldiq) yolg'iz qoplaydi.
+    expect(r.allocations).toHaveLength(1);
+    expect(r.allocations[0]?.cellId).toBeNull();
+    expect(r.shortfalls).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 2026-08-31 — VITRINA: faqat oxirgi chora
+// ---------------------------------------------------------------------------
+
+function vitrinaCell(storeId: string, cellName: string, qty: string): AllocCell {
+  return { storeId, cellId: `c-${cellName}`, cellName, qty, vitrina: true };
+}
+
+describe('vitrina — «faqat hech qayerda qolmasa sotiladi»', () => {
+  it('oddiy yacheyka yetarli bo‘lsa vitrina TEGILMAYDI', () => {
+    const r = allocateForSale(
+      input({
+        requested: '6',
+        cellsByProduct: new Map([[P, [vitrinaCell(S07, 'VIT', '50'), cell(S01, 'A', '10')]]]),
+        availableByProduct: new Map([[P, avail([S07, '50'], [S01, '10'])]]),
+      }),
+    );
+    expect(r.allocations.map((a) => [a.cellName, a.qty])).toEqual([['A', '6']]);
+  });
+
+  it('hovuz (yacheykasiz qoldiq) ham vitrinadan afzal', () => {
+    const r = allocateForSale(
+      input({
+        requested: '6',
+        cellsByProduct: new Map([[P, [vitrinaCell(S01, 'VIT', '50')]]]),
+        availableByProduct: new Map([[P, avail([S01, '50'], [S02, '100'])]]),
+      }),
+    );
+    // S02 ning yacheykasiz 100 tasi yolg'iz qoplaydi — vitrina qo'l urilmaydi.
+    expect(r.allocations).toHaveLength(1);
+    expect(r.allocations[0]?.storeId).toBe(S02);
+    expect(r.allocations[0]?.cellId).toBeNull();
+  });
+
+  it('boshqa hech narsa qolmaganda vitrinadan olinadi', () => {
+    const r = allocateForSale(
+      input({
+        requested: '6',
+        cellsByProduct: new Map([[P, [vitrinaCell(S01, 'VIT', '50')]]]),
+        availableByProduct: new Map([[P, avail([S01, '50'])]]),
+      }),
+    );
+    expect(r.allocations.map((a) => [a.cellName, a.qty])).toEqual([['VIT', '6']]);
+    expect(r.shortfalls).toEqual([]);
+  });
+
+  it('bo‘linishda vitrina MUTLAQ OXIRGI: oddiy yacheyka + hovuz + vitrina', () => {
+    const r = allocateForSale(
+      input({
+        requested: '10',
+        cellsByProduct: new Map([[P, [cell(S01, 'A', '4'), vitrinaCell(S01, 'VIT', '50')]]]),
+        availableByProduct: new Map([[P, avail([S01, '57'])]]),
+      }),
+    );
+    // A(4) → hovuz(57−4−50=3) → vitrina(3 qoldi).
+    expect(r.allocations.map((a) => [a.cellName, a.qty])).toEqual([
+      ['A', '4'],
+      [null, '3'],
+      ['VIT', '3'],
+    ]);
+  });
+
+  it('front (07) da ham vitrina 1-holatda qatnashmaydi', () => {
+    const r = allocateForSale(
+      input({
+        requested: '6',
+        cellsByProduct: new Map([[P, [vitrinaCell(S07, 'VIT', '50')]]]),
+        availableByProduct: new Map([[P, avail([S07, '50'], [S01, '100'])]]),
+      }),
+    );
+    // 07 ning yagona manbasi vitrina ⇒ 1-holat o'tmaydi, S01 hovuzi oladi.
+    expect(r.allocations).toHaveLength(1);
+    expect(r.allocations[0]?.storeId).toBe(S01);
+  });
+
+  it('K3 bo‘linadigan tovar: vitrina faqat boshqa yolg‘iz manba yo‘q bo‘lsa', () => {
+    const r = allocateForSale(
+      input({
+        requested: '40',
+        cellsByProduct: new Map([[P, [cell(S01, 'A', '10'), vitrinaCell(S01, 'VIT', '45')]]]),
+        availableByProduct: new Map([[P, avail([S01, '55'])]]),
+        pieceTracked: new Set([P]),
+      }),
+    );
+    // A(10) yetmaydi, hovuz (55−10−45=0) yo'q ⇒ yagona yolg'iz manba — vitrina 45.
+    expect(r.allocations.map((a) => [a.cellName, a.qty])).toEqual([['VIT', '40']]);
+    expect(r.shortfalls).toEqual([]);
   });
 });
