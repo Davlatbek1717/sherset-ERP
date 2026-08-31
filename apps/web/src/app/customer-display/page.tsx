@@ -201,18 +201,39 @@ export default function CustomerDisplayPage() {
 
   return (
     <div
-      className="cfd-theme grid h-screen w-screen place-items-center overflow-hidden"
+      className="cfd-theme relative h-screen w-screen overflow-hidden"
       style={{ background: 'var(--cfd-bg)' }}
     >
-      {/* Maket 1920×1080 uchun aniq piksellarda chizilgan. Sahna shu o'lchamda
-          quriladi va ekranga MOSLASHTIRILADI — 4K televizorda CSS pikseli
-          kichrayib, 54px raqam zaldan o'qilmay qolmasligi uchun. */}
+      {/* Maket 1920×1080 uchun ANIQ piksellarda chizilgan. Sahna shu o'lchamda
+          quriladi va ekranga moslashtiriladi — shunda Windows masshtabi 100%,
+          125% yoki 150% bo'lishidan qat'i nazar dizayn devorda BIR XIL fizik
+          o'lchamda chiqadi.
+
+          🔴 JOYLASHTIRISH — bu yerda 2026-09-01 da REGRESSIYA bo'lgan, takrorlanmasin:
+          `transform: scale()` elementning LAYOUT o'lchamini o'zgartirmaydi —
+          u brauzer uchun hamon 1920×1080 joy egallaydi. Shuning uchun ilgari
+          ishlatilgan `grid place-items-center` uni markazlashtira OLMAGAN
+          (grid konteynerdan katta elementni `(0,0)` ga qo'yadi), va sukutdagi
+          `transform-origin: 960px 540px` vizual qutini o'ngga-pastga surib
+          yuborgan. Natijada 1536×864 ekranda (1920×1080 @ 125%) dizaynning
+          ~24% i ekrandan tashqarida qolgan — jonli televizorda o'ng tomon
+          va past kesilgan.
+
+          To'g'ri yo'l: `absolute` + `left/top: 50%` layout qutisining CHAP-YUQORI
+          burchagini viewport markaziga qo'yadi, `translate(-50%, -50%)` esa uni
+          O'Z (masshtablanmagan) yarim o'lchamiga qaytaradi. Natija matematik
+          jihatdan har doim markazda: quti [W/2 − 960s, W/2 + 960s] oralig'ida. */}
       <div
-        className="flex shrink-0 flex-col overflow-hidden"
+        className="flex flex-col overflow-hidden"
         style={{
+          position: 'absolute',
+          left: '50%',
+          top: '50%',
           width: STAGE_W,
           height: STAGE_H,
-          transform: `scale(${scale})`,
+          transform: `translate(-50%, -50%) scale(${scale ?? 1})`,
+          // O'lchanmaguncha ko'rsatilmaydi — sababi `useFitScale` izohida.
+          visibility: scale === null ? 'hidden' : 'visible',
           background: 'var(--cfd-bg)',
         }}
       >
@@ -251,8 +272,18 @@ export default function CustomerDisplayPage() {
  * ochilsa) CSS pikseli o'zgaradi va maketdagi o'lchamlar mos kelmay qoladi.
  * `scale` bilan sahna butunicha cho'ziladi/qisqaradi — nisbatlar saqlanadi.
  */
-function useFitScale(): number {
-  const [scale, setScale] = useState(1);
+function useFitScale(): number | null {
+  // 🔴 Boshlang'ich `null` — «hali o'lchanmagan». Sabab: sahifa serverda ham
+  // chiziladi va o'sha yerda oyna o'lchami NOMA'LUM. Ilgari boshlang'ich `1`
+  // edi va natijada har yuklanishda bir kadr davomida sahna to'liq 1920×1080
+  // o'lchamda — ya'ni ekrandan chiqib ketgan holda — ko'rinardi: biz endigina
+  // tuzatgan nuqsonning aynan o'zi, faqat qisqa muddat.
+  //
+  // `null` bo'lganda sahna `visibility: hidden` bilan chiziladi. Bu server va
+  // brauzerning BIRINCHI render'ini bir xil qiladi (gidratatsiya nomuvofiqligi
+  // yo'q) va mijoz buzuq kadrni umuman ko'rmaydi — fon ko'rinadi, keyin
+  // to'g'ri o'lchamdagi sahna paydo bo'ladi.
+  const [scale, setScale] = useState<number | null>(null);
   useEffect(() => {
     const fit = () => setScale(Math.min(window.innerWidth / STAGE_W, window.innerHeight / STAGE_H));
     fit();
