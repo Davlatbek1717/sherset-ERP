@@ -535,20 +535,12 @@ describe('haqiqiy reyestr fayli (docs/ops/jonli-holat.md)', () => {
     const here = dirname(fileURLToPath(import.meta.url));
     const path = join(here, '..', '..', '..', '..', 'docs', 'ops', 'jonli-holat.md');
     const registry = parseRegistry(readFileSync(path, 'utf8'));
-    // 🔴 `qisman`, `qaytarilgan` EMAS (2026-08-27 haqiqati). Reyestr fayli
-    // `58771056` da yangilangan, bu yerdagi qiymat esa u bilan birga ko'chmagan
-    // — gate shu sababli 1-kechadan beri qizil turgan edi.
-    //
-    // NEGA `qisman`: BRAK ombori («Ombor 99») yaratilgach uning O'Z 27
-    // yacheykasi (`99-…`) o'z omboriga MOS bo'ldi, haqiqiy omborlarning 974
-    // yacheykasi esa hamon `Taqsimlanmagan` da (mos EMAS). Skript bu ikkisini
-    // ajratmaydi ⇒ umumiy holat «qaytarilgan» dan «qisman» ga o'tdi.
-    // 🟢 HAQIQIY split hamon QAYTARILGAN — to'liq izoh reyestr faylining
-    // o'zida («`split` nega «qisman»» bloki).
-    //
-    // 🔜 E5 vazifasi bajarilib BRAK ombori split hisobidan CHIQARILSA, bu
-    // qiymat yana `qaytarilgan` bo'ladi — o'shanda shu qator ham qaytariladi.
-    expect(registry.split).toBe('qisman');
+    // 🟢 `bajarilgan` (2026-08-31): ombor-split egasining qarori bilan jonlida
+    // yuritildi — 1 244 yacheyka o'z omborlariga ko'chdi, `warehouse-state.ts`
+    // o'lchovi: mos 1 271, mos emas 0, POS yeta olmaydigan qoldiq 0. To'liq iz
+    // reyestr jurnalida (2026-08-31 qatori). Bu qiymat o'zgarsa jonli holat ham
+    // o'zgargan bo'lishi SHART — gate aynan shuni qulflaydi.
+    expect(registry.split).toBe('bajarilgan');
     expect(registry.posSessionStore).toBe('Taqsimlanmagan');
     expect(registry.allowUnreachableQty).toBe('0');
     // E5 — reyestrdagi POS ombori KASKADDA bo'lishi SHART (ilgari «boshi
@@ -557,5 +549,51 @@ describe('haqiqiy reyestr fayli (docs/ops/jonli-holat.md)', () => {
     const posStore = registry.stores.find((s) => s.name === registry.posSessionStore);
     expect(posStore?.posPriority).not.toBeNull();
     expect(posStore?.posPriority).not.toBeUndefined();
+  });
+
+  /**
+   * M1 (2026-08-30) — KANONIK KASKAD reyestrda QULFLANADI.
+   *
+   * Tartib egasining S-M1 javobi: «Ombor 07 kassaga eng yaqin, qolganlari
+   * raqam bo'yicha», `Taqsimlanmagan` esa ENG OXIRIDA (u hovuz, ombor emas).
+   * Bu ro'yxat o'zgarsa jonli kaskad ham o'zgargan bo'lishi SHART — aks holda
+   * `warehouse-state.ts` jonlida `prioritet` xatosi beradi va chiqish kodi 2.
+   */
+  it('M1 — kanonik kaskad tartibi va BRAK ning kaskaddan tashqarida qolishi', async () => {
+    const { readFileSync } = await import('node:fs');
+    const { fileURLToPath } = await import('node:url');
+    const { dirname, join } = await import('node:path');
+    const here = dirname(fileURLToPath(import.meta.url));
+    const path = join(here, '..', '..', '..', '..', 'docs', 'ops', 'jonli-holat.md');
+    const registry = parseRegistry(readFileSync(path, 'utf8'));
+
+    const kaskad = registry.stores
+      .filter((s) => s.posPriority != null)
+      .sort((a, b) => (a.posPriority as number) - (b.posPriority as number))
+      .map((s) => s.name);
+    expect(kaskad).toEqual([
+      'Ombor 07',
+      'Ombor 01',
+      'Ombor 02',
+      'Ombor 03',
+      'Ombor 04',
+      'Ombor 05',
+      'Ombor 06',
+      'Taqsimlanmagan',
+    ]);
+
+    // Prioritetlar 1…8 — bo'shliqsiz va TAKRORSIZ. Takror bo'lsa kaskad
+    // «teng prioritet» shoxiga tushib nom bo'yicha tartiblanardi va egasining
+    // «eng yaqin ombor» qarori jimgina buzilardi.
+    const pp = registry.stores
+      .map((s) => s.posPriority)
+      .filter((p): p is number => p != null)
+      .sort((a, b) => a - b);
+    expect(pp).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+
+    // BRAK — kaskaddan TASHQARIDA (G3): reyestrda prioriteti YO'Q.
+    const brak = registry.stores.find((s) => s.brak === true);
+    expect(brak?.name).toBe('Ombor 99');
+    expect(brak?.posPriority ?? null).toBeNull();
   });
 });

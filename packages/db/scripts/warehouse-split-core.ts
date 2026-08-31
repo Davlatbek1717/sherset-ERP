@@ -405,3 +405,140 @@ export function buildSplitPlan(input: {
     anomalies,
   };
 }
+
+// ---------------------------------------------------------------------------
+// POS-yetuvchanlik qo'riqchisi (M-reja M6, vazifa 1)
+// ---------------------------------------------------------------------------
+
+/**
+ * 🔴 NEGA BU BOR (2026-08-23 hodisasi, `docs/plans/2026-08-24-split-kassa-hodisasi.md`).
+ *
+ * Split yacheykani va uning qoldig'ini kod prefiksi bo'yicha «Ombor NN» ga
+ * ko'chiradi. Kassa esa tovarni FAQAT `__posPriority` bor va BRAK bo'lmagan
+ * omborlardan ko'radi (`retail-allocation.resolveAllocStores`). Ya'ni qoldiq
+ * prioritetsiz omborga tushsa — kassir ekranda sonni ko'rib turib chekni
+ * YOPOLMAYDI. 2026-08-23 da aynan shu bo'lgan: 273 tovar «Ombor 02» ga ketgan,
+ * ertasi kuni savdo 46 daqiqa to'xtagan.
+ *
+ * UCHTA yo'l bilan tushib qolish mumkin — uchalasi ham shu yerda ushlanadi:
+ *   1. `yangi-ombor`   — ombor hali yo'q. `warehouse-split.ts` uni
+ *      `prisma.store.create` bilan `attributes` SIZ yaratadi ⇒ prioritetsiz
+ *      tug'iladi. (Aynan shu «mina» edi.)
+ *   2. `prioritet-yoq` — ombor bor, lekin `__posPriority` qo'yilmagan.
+ *   3. `brak-ombori`   — nomi mos keldi-yu, u BRAK ombori (`__brakStore`).
+ *      Masalan `99-…` prefiksli yacheyka «Ombor 99» ga tushadi va BRAK kaskadga
+ *      ATAYLAB kirmaydi ⇒ qoldiq sotilmay qoladi.
+ *
+ * Sof funksiya: Prisma yo'q. Chaqiruvchi `Store.attributes` ni o'zi o'qib beradi.
+ */
+export type UnreachableReason = 'yangi-ombor' | 'prioritet-yoq' | 'brak-ombori';
+
+export interface UnreachableRow {
+  warehouseNo: string;
+  storeName: string;
+  reason: UnreachableReason;
+  /** Shu omborga ko'chadigan Σ qty (imzoli Decimal string). */
+  qty: string;
+  cells: number;
+}
+
+export interface ReachabilityReport {
+  rows: UnreachableRow[];
+  /** Σ qty barcha yetib bo'lmaydigan omborlar bo'yicha. `'0'` ⇒ split xavfsiz. */
+  totalQty: string;
+  /** Qoldiqsiz bo'lsa ham prioritetsiz tug'iladigan omborlar (kelajak tuzog'i). */
+  emptyButUnreachable: string[];
+}
+
+/** Maqsad ombor holati — CLI `Store.attributes` dan o'qib beradi. */
+export interface TargetStoreState {
+  posPriority: number | null;
+  isBrak: boolean;
+}
+
+/**
+ * Split rejasidan «POS yeta olmaydigan qoldiq» ni hisoblaydi.
+ *
+ * `targetStores` — ombor NOMI bo'yicha (`storeNameFor(no)`), chunki
+ * `warehouse-split.ts` maqsadni aynan nom bilan qidiradi. Xaritada yo'q nom =
+ * yaratiladigan yangi ombor.
+ */
+export function checkPosReachability(
+  plan: SplitPlan,
+  targetStores: ReadonlyMap<string, TargetStoreState>,
+): ReachabilityReport {
+  const qtyByNo = new Map<string, bigint>();
+  for (const q of plan.qtyMoves)
+    qtyByNo.set(q.warehouseNo, (qtyByNo.get(q.warehouseNo) ?? 0n) + parseDecimalScaled(q.qty));
+  const cellsByNo = new Map<string, number>();
+  for (const m of plan.cellMoves)
+    cellsByNo.set(m.warehouseNo, (cellsByNo.get(m.warehouseNo) ?? 0) + 1);
+
+  const rows: UnreachableRow[] = [];
+  const emptyButUnreachable: string[] = [];
+  let totalMicro = 0n;
+
+  for (const no of [...cellsByNo.keys()].sort()) {
+    const storeName = storeNameFor(no);
+    const state = targetStores.get(storeName);
+    let reason: UnreachableReason | null = null;
+    if (!state) reason = 'yangi-ombor';
+    else if (state.isBrak) reason = 'brak-ombori';
+    else if (state.posPriority === null) reason = 'prioritet-yoq';
+    if (!reason) continue;
+
+    const micro = qtyByNo.get(no) ?? 0n;
+    if (micro === 0n) {
+      // Qoldiq ko'chmasa bugun uzilish yo'q — lekin ombor prioritetsiz tug'iladi
+      // va unga tushgan BIRINCHI tovar sotilmay qoladi. Jim o'tkazib bo'lmaydi.
+      emptyButUnreachable.push(storeName);
+      continue;
+    }
+    totalMicro += micro;
+    rows.push({
+      warehouseNo: no,
+      storeName,
+      reason,
+      qty: formatDecimalScaled(micro),
+      cells: cellsByNo.get(no) ?? 0,
+    });
+  }
+
+  return { rows, totalQty: formatDecimalScaled(totalMicro), emptyButUnreachable };
+}
+
+// ---------------------------------------------------------------------------
+// Bosqichma-bosqich split (M-reja M6, vazifa 2)
+// ---------------------------------------------------------------------------
+
+/**
+ * Rejani BITTA (yoki bir nechta) ombor bilan cheklaydi.
+ *
+ * 🔴 NEGA. M6 «bir kechada BITTA ombor» deb talab qiladi: 2026-08-23 da
+ * hammasi bir zarbada ko'chirilgan va nosozlik ertasi kuni, savdo boshlangach
+ * ma'lum bo'lgan. Bitta ombor ko'chsa — smoke ham, qaytarish ham bitta
+ * `warehouse-split-revert.ts --from "Ombor NN"` bilan cheklanadi va ta'sir
+ * doirasi kichik qoladi.
+ *
+ * `sourceStoreIds` ham QAYTA hisoblanadi (faqat qolgan ko'chishlar manbalari) —
+ * aks holda CLI tegilmagan omborni ham «Taqsimlanmagan» deb qayta nomlash /
+ * zona tozalash nomzodiga qo'shib yuborardi.
+ */
+export function filterPlanTo(plan: SplitPlan, onlyNos: ReadonlySet<string>): SplitPlan {
+  if (onlyNos.size === 0) return plan;
+  const cellMoves = plan.cellMoves.filter((m) => onlyNos.has(m.warehouseNo));
+  const qtyMoves = plan.qtyMoves.filter((m) => onlyNos.has(m.warehouseNo));
+  return {
+    warehousesNeeded: plan.warehousesNeeded.filter((no) => onlyNos.has(no)),
+    cellMoves,
+    qtyMoves,
+    sourceStoreIds: [...new Set(cellMoves.map((m) => m.fromStoreId))].sort(),
+    summary: plan.summary.filter((s) => onlyNos.has(s.warehouseNo)),
+    anomalies: plan.anomalies,
+  };
+}
+
+/** Rejadagi ombor raqamlari (tartiblangan) — `--only` uchun ko'rsatma. */
+export function warehouseNosIn(plan: SplitPlan): string[] {
+  return [...new Set(plan.cellMoves.map((m) => m.warehouseNo))].sort();
+}

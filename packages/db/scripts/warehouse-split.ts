@@ -18,6 +18,12 @@ import { randomUUID } from 'node:crypto';
  *   npx tsx scripts/warehouse-split.ts --apply     # yozadi (faqat localhost)
  *   npx tsx scripts/warehouse-split.ts --verify    # invariant tekshiruvlar
  *   ... --apply --allow-remote                     # F5: jonli bazada, ONGLI ravishda
+ *   ... --only 01                                  # M6/2: bir kechada BITTA ombor
+ *   ... --i-know-what-i-am-doing                   # M6/1 qo'riqchisini chetlab o'tish
+ *
+ * 🔴 M6/1 QO'RIQCHI: `--apply` split'dan keyin kassa YETA OLMAYDIGAN qoldiq
+ * qolsa RAD ETILADI (prioritetsiz yangi ombor · `__posPriority` yo'q ombor ·
+ * BRAK ombori). Hisobot DRY-RUN da ham chiqadi.
  *
  * Idempotent: ikkinchi yugurishda reja bo'sh (yacheykalar allaqachon o'z
  * omborida) — hech qanday yozuv bo'lmaydi.
@@ -27,12 +33,17 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Prisma, PrismaClient } from '../src/generated/index.js';
 import {
+  type ReachabilityReport,
   type SplitPlan,
+  type TargetStoreState,
   UNALLOCATED_STORE_NAME,
   buildSplitPlan,
+  checkPosReachability,
+  filterPlanTo,
   formatDecimalScaled,
   parseDecimalScaled,
   storeNameFor,
+  warehouseNosIn,
 } from './warehouse-split-core.js';
 
 // ---------------------------------------------------------------------------
@@ -63,10 +74,28 @@ function dbHost(url: string): string {
   }
 }
 
-const args = new Set(process.argv.slice(2));
+const argv = process.argv.slice(2);
+const args = new Set(argv);
 const APPLY = args.has('--apply');
+/**
+ * M6/2 — «bir kechada BITTA ombor». `--only 01` yoki `--only 01,02`
+ * (takrorlanishi ham mumkin). Bo'sh = HAMMASI (eski xulq bayt-baytga).
+ */
+const ONLY = new Set(
+  argv
+    .flatMap((a, i) => (a === '--only' ? (argv[i + 1] ?? '').split(',') : []))
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .map((s) => s.padStart(2, '0')),
+);
 const VERIFY_ONLY = args.has('--verify');
 const ALLOW_REMOTE = args.has('--allow-remote');
+/**
+ * M6/1 — POS-yetuvchanlik qo'riqchisini ONGLI ravishda chetlab o'tish.
+ * Bu flagsiz «split'dan keyin kassa yeta olmaydigan qoldiq» topilsa `--apply`
+ * RAD ETILADI (2026-08-23 hodisasining takrorlanishini shu to'sib turadi).
+ */
+const FORCE_UNREACHABLE = args.has('--i-know-what-i-am-doing');
 
 loadEnv();
 const DB_URL = process.env.DATABASE_URL;
@@ -106,6 +135,8 @@ async function readAccountData(accountId: string) {
         ownerId: true,
         groupId: true,
         code: true,
+        // M6/1 — `__posPriority` / `__brakStore` qo'riqchi uchun (pastda).
+        attributes: true,
       },
     }),
     prisma.storeCell.findMany({
@@ -205,6 +236,61 @@ function printPlan(accountId: string, plan: SplitPlan, storeNames: Map<string, s
     console.log(`Anomaliyalar (${plan.anomalies.length}):`);
     for (const a of plan.anomalies) console.log(`  [${a.kind}] ${a.detail}`);
   }
+}
+
+// ---------------------------------------------------------------------------
+// M6/1 — POS-yetuvchanlik qo'riqchisi
+// ---------------------------------------------------------------------------
+
+/**
+ * `Store.attributes` → maqsad ombor holati (ombor NOMI bo'yicha).
+ *
+ * Kalitlar `apps/api` dagi `readPosPriority` / `readBrakStore` bilan AYNI
+ * qat'iylikda o'qiladi — aks holda qo'riqchi kassadan boshqa javob berardi va
+ * «yashil» chiqib turib savdoni to'xtatgan bo'lardi.
+ */
+function targetStoreStates(
+  stores: Awaited<ReturnType<typeof readAccountData>>['stores'],
+): Map<string, TargetStoreState> {
+  const out = new Map<string, TargetStoreState>();
+  for (const s of stores) {
+    if (s.archived) continue;
+    const attrs =
+      s.attributes && typeof s.attributes === 'object' && !Array.isArray(s.attributes)
+        ? (s.attributes as Record<string, unknown>)
+        : {};
+    const pp = attrs.__posPriority;
+    out.set(s.name, {
+      posPriority: typeof pp === 'number' && Number.isInteger(pp) && pp > 0 ? pp : null,
+      isBrak: attrs.__brakStore === true,
+    });
+  }
+  return out;
+}
+
+/** Qo'riqchi hisoboti. `false` qaytsa `--apply` davom etmasligi kerak. */
+function printReachability(report: ReachabilityReport): boolean {
+  if (report.emptyButUnreachable.length > 0) {
+    console.log(
+      `\n⚠ Prioritetsiz tug‘iladigan (hozircha qoldiqsiz) ombor: ${report.emptyButUnreachable.join(
+        ', ',
+      )} — unga tushgan BIRINCHI tovar sotilmaydi.`,
+    );
+  }
+  if (report.rows.length === 0) {
+    console.log('\nPOS yeta olmaydigan qoldiq: 0 — split kassa uchun xavfsiz.');
+    return true;
+  }
+  console.log(`\n🔴 SPLIT’DAN KEYIN POS YETA OLMAYDIGAN QOLDIQ: ${report.totalQty} dona`);
+  for (const r of report.rows) {
+    console.log(`  ${r.storeName}: ${r.qty} dona, ${r.cells} yacheyka — sabab: ${r.reason}`);
+  }
+  console.log(
+    '  Kassa faqat `__posPriority` bor va BRAK bo‘lmagan omborni ko‘radi\n' +
+      '  (retail-allocation.resolveAllocStores). 2026-08-23 da aynan shu savdoni 46 daqiqa to‘xtatgan.\n' +
+      '  DAVO: o‘sha omborni UI da yarating/oching, POS prioritetini qo‘ying, so‘ng skriptni QAYTA yuriting.',
+  );
+  return false;
 }
 
 // ---------------------------------------------------------------------------
@@ -540,14 +626,38 @@ async function main(): Promise<void> {
     }
 
     const data = await readAccountData(accountId);
-    const plan = buildSplitPlan(data);
+    const fullPlan = buildSplitPlan(data);
+    // M6/2 — «bir kechada BITTA ombor». `--only` siz xulq o'zgarmaydi.
+    const plan = filterPlanTo(fullPlan, ONLY);
+    if (ONLY.size > 0) {
+      console.log(
+        `\n--only: ${[...ONLY].sort().map(storeNameFor).join(', ')} ` +
+          `(rejadagi hammasi: ${warehouseNosIn(fullPlan).map(storeNameFor).join(', ') || '—'})`,
+      );
+    }
     const storeNames = new Map(data.stores.map((s) => [s.id, s.name]));
     printPlan(accountId, plan, storeNames);
+
+    // M6/1 — qo'riqchi DRY-RUN da ham chiqadi: reja ko'rilayotgan paytda
+    // «bu split kassani to'xtatadimi?» degan savol javobsiz qolmasin.
+    const reachable = printReachability(checkPosReachability(plan, targetStoreStates(data.stores)));
 
     if (!APPLY) continue;
     if (plan.cellMoves.length === 0) {
       console.log('APPLY: qiladigan ish yo‘q (no-op).');
       continue;
+    }
+    if (!reachable && !FORCE_UNREACHABLE) {
+      console.error(
+        '\nAPPLY RAD ETILDI: split qoldiqni kassa yeta olmaydigan omborga ko‘chirardi.\n' +
+          'Omborga POS prioriteti qo‘yilgach qayta yuriting, yoki oqibatini bilib turib\n' +
+          '--i-know-what-i-am-doing flagini qo‘shing.',
+      );
+      allOk = false;
+      continue;
+    }
+    if (!reachable) {
+      console.log('⚠ --i-know-what-i-am-doing: qo‘riqchi ONGLI ravishda chetlab o‘tildi.');
     }
 
     const before = await snapshotTotals(accountId);
@@ -557,7 +667,9 @@ async function main(): Promise<void> {
     if (!(await verify(accountId))) allOk = false;
 
     // Idempotentlik isboti: qayta qurilgan reja bo'sh bo'lishi shart.
-    const again = buildSplitPlan(await readAccountData(accountId));
+    // `--only` da faqat KO'CHIRILGAN omborlar bo'yicha — tegilmagan omborlar
+    // rejada qolishi TABIIY (ular keyingi kecha ko'chadi).
+    const again = filterPlanTo(buildSplitPlan(await readAccountData(accountId)), ONLY);
     const idem = again.cellMoves.length === 0 && again.qtyMoves.length === 0;
     console.log(`Idempotentlik (qayta reja bo‘sh): ${idem ? 'OK' : 'XATO'}`);
     if (!idem) allOk = false;

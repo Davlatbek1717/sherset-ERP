@@ -1,13 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import {
   type CellRow,
+  type SplitPlan,
   type StockByCellRow,
   type StockRow,
   type StoreRow,
+  type TargetStoreState,
   UNALLOCATED_STORE_NAME,
   buildSplitPlan,
+  checkPosReachability,
+  filterPlanTo,
   parseCellCode,
   storeNameFor,
+  warehouseNosIn,
 } from '../../../../packages/db/scripts/warehouse-split-core.js';
 
 /**
@@ -229,5 +234,152 @@ describe('nomlash', () => {
   it('Store nomi «Ombor NN», taqsimlanmagan nom barqaror', () => {
     expect(storeNameFor('03')).toBe('Ombor 03');
     expect(UNALLOCATED_STORE_NAME).toBe('Taqsimlanmagan');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// M6/1 — POS-yetuvchanlik qo'riqchisi
+// ---------------------------------------------------------------------------
+
+describe('checkPosReachability — split kassani to‘xtatib qo‘yadimi?', () => {
+  const plan = (rows: Array<{ no: string; qty: string }>): SplitPlan => ({
+    warehousesNeeded: [],
+    cellMoves: rows.map((r, i) => ({
+      cellId: `c${i}`,
+      cellName: `${r.no}-01-01-01`,
+      fromStoreId: SRC,
+      warehouseNo: r.no,
+      zoneName: '01',
+    })),
+    qtyMoves: rows.map((r, i) => ({
+      cellId: `c${i}`,
+      cellName: `${r.no}-01-01-01`,
+      fromStoreId: SRC,
+      warehouseNo: r.no,
+      assortmentKind: 'product',
+      assortmentId: 'p1',
+      qty: r.qty,
+      costMinor: 0n,
+    })),
+    sourceStoreIds: [SRC],
+    summary: [],
+    anomalies: [],
+  });
+
+  const ok = (pp: number): TargetStoreState => ({ posPriority: pp, isBrak: false });
+
+  it('prioritetli omborlarga ko‘chsa — yeta olmaydigan qoldiq 0', () => {
+    const r = checkPosReachability(plan([{ no: '01', qty: '10' }]), new Map([['Ombor 01', ok(2)]]));
+    expect(r.rows).toEqual([]);
+    expect(r.totalQty).toBe('0');
+  });
+
+  it('🔴 ombor hali YO‘Q — skript uni prioritetsiz yaratardi (2026-08-23 minasi)', () => {
+    const r = checkPosReachability(plan([{ no: '08', qty: '11000' }]), new Map());
+    expect(r.rows).toEqual([
+      { warehouseNo: '08', storeName: 'Ombor 08', reason: 'yangi-ombor', qty: '11000', cells: 1 },
+    ]);
+    expect(r.totalQty).toBe('11000');
+  });
+
+  it('🔴 ombor bor, lekin __posPriority yo‘q', () => {
+    const r = checkPosReachability(
+      plan([{ no: '03', qty: '5' }]),
+      new Map([['Ombor 03', { posPriority: null, isBrak: false }]]),
+    );
+    expect(r.rows[0]?.reason).toBe('prioritet-yoq');
+    expect(r.totalQty).toBe('5');
+  });
+
+  it('🔴 `99-` prefiksli yacheyka BRAK omboriga tushadi — kaskadga ataylab kirmaydi', () => {
+    const r = checkPosReachability(
+      plan([{ no: '99', qty: '7' }]),
+      new Map([['Ombor 99', { posPriority: null, isBrak: true }]]),
+    );
+    expect(r.rows[0]?.reason).toBe('brak-ombori');
+  });
+
+  it('qoldiqsiz prioritetsiz ombor — RAD ETMAYDI, lekin ogohlantiradi', () => {
+    const r = checkPosReachability(plan([{ no: '08', qty: '0' }]), new Map());
+    expect(r.rows).toEqual([]);
+    expect(r.totalQty).toBe('0');
+    expect(r.emptyButUnreachable).toEqual(['Ombor 08']);
+  });
+
+  it('aralash: faqat yetib bo‘lmaydiganlar yig‘iladi', () => {
+    const r = checkPosReachability(
+      plan([
+        { no: '01', qty: '100' },
+        { no: '08', qty: '20' },
+        { no: '99', qty: '3' },
+      ]),
+      new Map([
+        ['Ombor 01', ok(2)],
+        ['Ombor 99', { posPriority: null, isBrak: true }],
+      ]),
+    );
+    expect(r.rows.map((x) => x.warehouseNo)).toEqual(['08', '99']);
+    expect(r.totalQty).toBe('23');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// M6/2 — bosqichma-bosqich split (`--only`)
+// ---------------------------------------------------------------------------
+
+describe('filterPlanTo — bir kechada BITTA ombor', () => {
+  const cells: CellRow[] = [
+    { id: 'a', storeId: SRC, name: '01-01-01-01', zoneId: null },
+    { id: 'b', storeId: SRC, name: '02-01-01-01', zoneId: null },
+    { id: 'c', storeId: SRC, name: '03-01-01-01', zoneId: null },
+  ];
+  const sbc: StockByCellRow[] = cells.map((c) => ({
+    storeId: SRC,
+    cellId: c.id,
+    assortmentKind: 'product',
+    assortmentId: 'p1',
+    qty: '10',
+  }));
+  const stk: StockRow[] = [
+    {
+      storeId: SRC,
+      assortmentKind: 'product',
+      assortmentId: 'p1',
+      qty: '30',
+      costBalanceMinor: 0n,
+    },
+  ];
+  const full = () => buildSplitPlan({ cells, stores: stores(), stockByCell: sbc, stocks: stk });
+
+  it('bo‘sh to‘plam — reja O‘ZGARMAYDI (eski xulq)', () => {
+    const p = full();
+    expect(filterPlanTo(p, new Set())).toBe(p);
+  });
+
+  it('bitta ombor tanlansa faqat o‘sha ko‘chadi', () => {
+    const p = filterPlanTo(full(), new Set(['02']));
+    expect(warehouseNosIn(p)).toEqual(['02']);
+    expect(p.qtyMoves).toHaveLength(1);
+    expect(p.summary.map((s) => s.warehouseNo)).toEqual(['02']);
+  });
+
+  it('bir nechta ombor tanlansa hammasi qoladi', () => {
+    expect(warehouseNosIn(filterPlanTo(full(), new Set(['01', '03'])))).toEqual(['01', '03']);
+  });
+
+  it('sourceStoreIds qolgan ko‘chishlardan QAYTA hisoblanadi', () => {
+    const p = filterPlanTo(full(), new Set(['01']));
+    expect(p.sourceStoreIds).toEqual([SRC]);
+    expect(filterPlanTo(full(), new Set(['77'])).sourceStoreIds).toEqual([]);
+  });
+
+  it('rejada yo‘q ombor tanlansa — bo‘sh reja (no-op), xato emas', () => {
+    const p = filterPlanTo(full(), new Set(['77']));
+    expect(p.cellMoves).toEqual([]);
+    expect(p.qtyMoves).toEqual([]);
+  });
+
+  it('warehouseNosIn to‘liq rejadagi omborlarni tartibda beradi', () => {
+    expect(warehouseNosIn(full())).toEqual(['01', '02', '03']);
   });
 });
