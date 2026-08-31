@@ -1593,6 +1593,21 @@
     "unconfirm": "← Tasdiqlashni olish"
   },
   "pages": {
+    "customer_display": {
+      "cart_empty": "Xaridlaringiz shu yerda ko'rinadi",
+      "cart_title": "SIZNING XARIDINGIZ",
+      "discount": "Chegirma",
+      "in_queue": "navbatda",
+      "items_count": "{count, plural, other {# ta mahsulot}}",
+      "photo_soon": "mahsulot foto",
+      "queue_picking": "Yig'ilyapti",
+      "queue_ready": "Tayyor",
+      "queue_title": "BUYURTMALAR NAVBATI",
+      "som": "so'm",
+      "tagline": "Elektr mollari",
+      "total": "To'lov",
+      "welcome": "Xush kelibsiz!"
+    },
     "pickLists": {
       "col_agent": "Kontragent",
       "col_datetime": "Sana va vaqt",

@@ -1593,6 +1593,21 @@
     "unconfirm": "← Снять проведение"
   },
   "pages": {
+    "customer_display": {
+      "cart_empty": "Ваши покупки появятся здесь",
+      "cart_title": "ВАША ПОКУПКА",
+      "discount": "Скидка",
+      "in_queue": "в очереди",
+      "items_count": "{count, plural, one {# товар} few {# товара} many {# товаров} other {# товара}}",
+      "photo_soon": "фото товара",
+      "queue_picking": "Собирается",
+      "queue_ready": "Готово",
+      "queue_title": "ОЧЕРЕДЬ ЗАКАЗОВ",
+      "som": "сум",
+      "tagline": "Электротовары",
+      "total": "К оплате",
+      "welcome": "Добро пожаловать!"
+    },
     "pickLists": {
       "col_agent": "Контрагент",
       "col_datetime": "Дата и время",

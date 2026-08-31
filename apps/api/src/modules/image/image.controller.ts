@@ -26,7 +26,15 @@ export class ImageController {
 
   /** GET /products/:productId/images */
   @Get('products/:productId/images')
-  @RequirePermission({ entity: 'attachment', action: 'view' })
+  // 🔴 `attachment:view` EMAS, `product:view`. Mahsulot rasmi — mahsulot
+  // ma'lumoti; umumiy biriktirma emas. Ilgari bu yerda `attachment:view`
+  // turardi va mijoz-ekran (`customer-display/page.tsx`) rasmni HECH QACHON
+  // ko'rsatolmasdi: kassa rollarida (`Kassir`, `PointOfSale` — 9 xodim) u
+  // ruxsat yo'q, `fetchMainImageUrl` esa 403 ni `return null` bilan JIM
+  // yutardi. Ruxsatni kassirga berish yechim EMAS edi: o'sha bayroq bir
+  // qatorda `GET /attachments/all` — butun akkaunt fayl arxivini (Telegram
+  // suhbat rasmlari, ovozli xabarlar, qarz kvitansiyalari) ochib yuborardi.
+  @RequirePermission({ entity: 'product', action: 'view' })
   async list(@CurrentUser() user: AuthenticatedUser, @Param('productId') productId: string) {
     return this.svc.listForProduct(user.accountId, productId);
   }
@@ -47,7 +55,10 @@ export class ImageController {
    * Content-Type. Used as <img src=...> in the web UI.
    */
   @Get('images/:imageId/raw')
-  @RequirePermission({ entity: 'attachment', action: 'view' })
+  // `product:view` — sabab yuqorida (`list`). Yozish yo'llari (`create`,
+  // `update`, `delete`) ataylab `attachment:*` da QOLDIRILDI: ular kim rasm
+  // yuklashini belgilaydi va bu o'zgarish faqat O'QISHNI ochadi.
+  @RequirePermission({ entity: 'product', action: 'view' })
   @Header('Cache-Control', 'private, max-age=300')
   async raw(
     @CurrentUser() user: AuthenticatedUser,

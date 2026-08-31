@@ -1,0 +1,147 @@
+/**
+ * Mijoz-ekran (CFD) tema qatlami — `pos-theme.css` bilan bir xil naqsh:
+ * faqat `.cfd-theme` ildizi ostida amal qiladi, global `--ms-*` va `--pos-*`
+ * tokenlarga TEGMAYDI.
+ *
+ * Palitra va o'lchamlar egasining dizayn maketidan olingan
+ * (`Kassa Ekrani v2.dc.html`, 2026-09-01). Maket 1920×1080 uchun ANIQ
+ * piksellarda chizilgan — shuning uchun sahifa `.cfd-stage` ichida shu
+ * o'lchamda quriladi va ekranga moslab masshtablanadi (page.tsx `useFitScale`).
+ * Sabab: televizor 4K bo'lsa CSS pikseli ikki barobar kichrayadi va 54px
+ * raqam zaldan o'qilmay qolardi.
+ *
+ * ── Nega TO'Q fon ───────────────────────────────────────────────────────────
+ * Ekran katta, yaltiroq televizorda, yoritilgan savdo zalida turadi (egasining
+ * 2026-08-31 dagi jonli surati). Oq fon shift chiroqlarini ko'zgu qilib
+ * qaytaradi va 2 metrdan kontrast yo'qoladi.
+ */
+.cfd-theme {
+  /* Fon — maketdagi diagonal gradient */
+  --cfd-bg: linear-gradient(160deg, #0d1726 0%, #0a1220 55%, #080f1b 100%);
+  --cfd-bg-right: linear-gradient(200deg, #0b1424 0%, #080f1b 100%);
+  --cfd-topbar-bg: rgba(255, 255, 255, 0.02);
+  --cfd-hairline: rgba(255, 255, 255, 0.07);
+  --cfd-rule: rgba(255, 255, 255, 0.08);
+  --cfd-row-line: rgba(255, 255, 255, 0.05);
+
+  /* SHERSET ko'ki (`--pos-brand` bilan bir xil) va uning ochiq aksenti */
+  --cfd-brand: #1e5aa8;
+  --cfd-accent: #7fb2ec;
+
+  /* Matn darajalari */
+  --cfd-ink: #eef3fa;
+  --cfd-ink-soft: #dbe6f5;
+  --cfd-muted: #8fa5c2;
+  --cfd-dim: #5f748f;
+  --cfd-legend: #6f87a8;
+
+  /* TAYYOR — to'ldirilgan yashil karta (zaldan ko'rinishi uchun) */
+  --cfd-ready-from: #31de83;
+  --cfd-ready-to: #1fbf6b;
+  --cfd-ready-ink: #04220f;
+  --cfd-ready-ink-soft: #0b3a24;
+
+  /* YIG'ILYAPTI — to'q karta + sariq chiroq */
+  --cfd-work-card: #13233c;
+  --cfd-work-lamp: #f0b429;
+
+  /* To'lov bloki */
+  --cfd-pay-from: #2467c1;
+  --cfd-pay-to: #1a4e93;
+  --cfd-pay-sub: #cfe2fa;
+  --cfd-pay-discount: #a7f5cc;
+
+  /* Mahsulot rasmi uchun quti */
+  --cfd-media-box: radial-gradient(130% 130% at 28% 18%, #17314f 0%, #0e1c31 58%, #0a1424 100%);
+}
+
+/**
+ * TAYYOR kartasi — ekranning YAGONA e'tibor tortadigan harakati.
+ *
+ * Sabab (cheklov, bezak emas): mijoz zalda yurgan bo'ladi va ekranga tikilib
+ * turmaydi. Buyurtma tayyor bo'lgan LAHZA periferik ko'rish bilan ilinishi
+ * kerak. Qolgan hamma narsa qimirlamaydi.
+ */
+@keyframes cfd-ready-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(46, 213, 120, 0.5);
+  }
+  50% {
+    box-shadow: 0 0 0 26px rgba(46, 213, 120, 0);
+  }
+}
+
+/** Yig'ilayotgan buyurtmaning sariq chirog'i — sekin nafas oladi. */
+@keyframes cfd-lamp-glow {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/** Karusel progressi — keyingi mahsulotgacha qancha qolgani. */
+@keyframes cfd-rotate-bar {
+  from {
+    width: 0%;
+  }
+  to {
+    width: 100%;
+  }
+}
+
+.cfd-ready-pulse {
+  animation: cfd-ready-pulse 2.6s ease-in-out infinite;
+}
+.cfd-lamp-glow {
+  animation: cfd-lamp-glow 1.8s ease-in-out infinite;
+}
+.cfd-rotate-bar {
+  animation: cfd-rotate-bar var(--cfd-rotate-dur, 5s) linear infinite;
+}
+
+/* Harakatni kamaytirish so'ralgan bo'lsa — holat KO'RINADI, lekin qimirlamaydi. */
+@media (prefers-reduced-motion: reduce) {
+  .cfd-ready-pulse,
+  .cfd-lamp-glow,
+  .cfd-rotate-bar {
+    animation: none;
+  }
+  .cfd-rotate-bar {
+    width: 100%;
+  }
+}
+
+/**
+ * Savat sig'magan qatorlar — sekin yuqoriga suriladi va qaytadi
+ * (`alternate`). Mijoz-ekranda skroll qiladigan odam yo'q: bu animatsiyasiz
+ * sig'magan qator boshqa hech qachon ko'rinmasdi.
+ *
+ * Masofa qator sonidan hisoblanadi (`page.tsx` → `--cfd-scroll-d`), boshida
+ * va oxirida pauza bor (0–12% va 88–100%) — mijoz o'qishga ulgursin.
+ */
+@keyframes cfd-cart-scroll {
+  0%,
+  12% {
+    transform: translateY(0);
+  }
+  88%,
+  100% {
+    transform: translateY(var(--cfd-scroll-d, 0));
+  }
+}
+
+.cfd-cart-scroll {
+  display: flex;
+  flex-direction: column;
+  animation: cfd-cart-scroll 11s ease-in-out infinite alternate;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cfd-cart-scroll {
+    animation: none;
+  }
+}

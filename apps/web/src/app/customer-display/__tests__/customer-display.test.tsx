@@ -1,0 +1,102 @@
+import { screen } from '@testing-library/react';
+import { describe, expect, it } from 'vitest';
+import ruMessages from '../../../messages/ru.json' with { type: 'json' };
+import uzMessages from '../../../messages/uz.json' with { type: 'json' };
+import { renderWithProviders as render } from '../../../test-utils';
+import { QueuePanel, splitDocNo } from '../page';
+
+/**
+ * Mijoz-ekran navbati (2026-09-01, egasining talabi).
+ *
+ * Bu testlar ikki narsani QULFLAYDI — ikkalasi ham egasining aniq qarori va
+ * ikkalasi ham jimgina buzilishi mumkin:
+ *
+ *   1. Navbat kartasida SUMMA ko'rsatilmaydi. Ekran zalda turadi; yonidagi
+ *      odam kimning qancha pul sarflaganini ko'rmasligi kerak. Kassirning
+ *      `navbat-mode.tsx` ekranida summa BOR — kimdir «bir xil qilaylik» deb
+ *      uni bu yerga ko'chirib qo'yishi oson.
+ *   2. TAYYOR kartalar YIG'ILAYOTGANlardan oldin turadi. Mijoz ekranga aynan
+ *      «tayyormi?» degan savol bilan qaraydi; tartib teskari bo'lsa u o'z
+ *      buyurtmasini ro'yxat oxiridan qidiradi.
+ */
+
+const PICKING = [
+  { id: 'p1', name: 'TRN-2026-02494' },
+  { id: 'p2', name: 'TRN-2026-02496' },
+];
+const READY = [{ id: 'r1', name: 'TRN-2026-02491' }];
+
+describe('splitDocNo — chek raqamini ajratish', () => {
+  it("oxirgi bo'g'inni «dum» qilib ajratadi", () => {
+    expect(splitDocNo('TRN-2026-02494')).toEqual({ prefix: 'TRN-2026-', tail: '02494' });
+  });
+
+  it("ajratgich yo'q bo'lsa butun satr dum bo'lib qoladi", () => {
+    // Hech narsa YO'QOLMASLIGI kerak — raqam mijozning yagona identifikatori.
+    expect(splitDocNo('02494')).toEqual({ prefix: '', tail: '02494' });
+  });
+
+  it("chiziq oxirida bo'lsa ham satr yo'qolmaydi", () => {
+    expect(splitDocNo('TRN-')).toEqual({ prefix: '', tail: 'TRN-' });
+  });
+});
+
+describe('QueuePanel', () => {
+  it("navbat bo'sh bo'lsa umuman chizilmaydi", () => {
+    // Bo'sh sarlavha ham, ajratuvchi chiziq ham qolmasligi kerak — savat
+    // butun balandlikni olsin. (Konteynerning o'zi bo'sh EMAS: `render`
+    // toast/confirm provider'larini ham chizadi — shuning uchun tekshiruv
+    // panelning O'Z elementlari bo'yicha.)
+    render(<QueuePanel picking={[]} ready={[]} />);
+    expect(screen.queryAllByTestId('cfd-queue-card')).toHaveLength(0);
+    expect(screen.queryByText(uzMessages.pages.customer_display.queue_title)).toBeNull();
+  });
+
+  it('tayyor va yig’ilayotgan buyurtmalarni ko’rsatadi', () => {
+    render(<QueuePanel picking={PICKING} ready={READY} />);
+    const cards = screen.getAllByTestId('cfd-queue-card');
+    expect(cards).toHaveLength(3);
+  });
+
+  it('TAYYOR kartalar birinchi turadi', () => {
+    render(<QueuePanel picking={PICKING} ready={READY} />);
+    const states = screen.getAllByTestId('cfd-queue-card').map((el) => el.dataset.state);
+    expect(states).toEqual(['ready', 'picking', 'picking']);
+  });
+
+  it('🔴 kartada SUMMA ko’rsatilmaydi', () => {
+    render(<QueuePanel picking={PICKING} ready={READY} />);
+    for (const card of screen.getAllByTestId('cfd-queue-card')) {
+      const text = card.textContent ?? '';
+      // Pul birligi yoki ming-ajratgichli raqam = summa sizib chiqqan.
+      expect(text).not.toMatch(/so'm|сум|UZS/i);
+      expect(text).not.toMatch(/\d[\s ]\d{3}/);
+    }
+  });
+});
+
+describe('i18n — mijoz-ekran kalitlari', () => {
+  // Ekran ikki tilda ishlaydi (egasi: «tilni kassir tanlaydi»). Kalit bir
+  // tilda yetishmasa next-intl render paytida otiladi va mijoz-ekran OQ
+  // bo'lib qoladi — shuning uchun ikkala bandl ham tekshiriladi.
+  const KEYS = [
+    'cart_empty',
+    'discount',
+    'items_count',
+    'queue_picking',
+    'queue_ready',
+    'queue_title',
+    'total',
+    'welcome',
+  ];
+
+  it.each([
+    ['uz', uzMessages.pages.customer_display],
+    ['ru', ruMessages.pages.customer_display],
+  ] as const)('%s bandlida barcha kalitlar bor', (lang, ns) => {
+    const bag: Record<string, string> = ns;
+    for (const key of KEYS) {
+      expect(bag[key], `${lang}: ${key}`).toBeTruthy();
+    }
+  });
+});
