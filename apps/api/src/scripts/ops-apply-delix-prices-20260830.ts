@@ -19,18 +19,21 @@
  * DRY-RUN sukut; yozish faqat `--apply` bilan. Idempotent: ikkinchi yugurish 0.
  */
 import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const here = dirname(fileURLToPath(import.meta.url));
 for (const line of readFileSync(join(here, '..', '..', '.env'), 'utf8').split('\n')) {
-  const m = line.match(/^([A-Z0-9_]+)=(.*)$/);
-  if (m && process.env[m[1]] === undefined) {
-    let v = m[2].trim();
+  const m = /^([A-Z0-9_]+)=(.*)$/.exec(line);
+  // noUncheckedIndexedAccess: guruhlar regexda majburiy — bu faqat torayish.
+  const key = m?.[1];
+  const rawVal = m?.[2];
+  if (key !== undefined && rawVal !== undefined && process.env[key] === undefined) {
+    let v = rawVal.trim();
     if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) {
       v = v.slice(1, -1);
     }
-    process.env[m[1]] = v;
+    process.env[key] = v;
   }
 }
 
@@ -65,7 +68,9 @@ const tierValue = (list: SalePrice[], id: string): bigint | null => {
 
 async function main() {
   const apply = process.argv.includes('--apply');
-  const rows: FileRow[] = JSON.parse(readFileSync(join(here, 'delix-narxlar-20260830.json'), 'utf8'));
+  const rows: FileRow[] = JSON.parse(
+    readFileSync(join(here, 'delix-narxlar-20260830.json'), 'utf8'),
+  );
 
   const types = await prisma.priceType.findMany({ select: { id: true, name: true } });
   const retailType = types.find((t) => t.name === 'Розничная цена')?.id;
@@ -101,9 +106,9 @@ async function main() {
     }
     stats.matched++;
 
-    let prices = (Array.isArray(p.salePrices) ? (p.salePrices as unknown as SalePrice[]) : []).filter(
-      (x) => x && typeof x.priceTypeId === 'string',
-    );
+    let prices = (
+      Array.isArray(p.salePrices) ? (p.salePrices as unknown as SalePrice[]) : []
+    ).filter((x) => x && typeof x.priceTypeId === 'string');
     let changed = false;
 
     if (r.retail && r.retail > 0) {
@@ -155,9 +160,16 @@ async function main() {
   }
 
   console.log(`Rejim: ${apply ? '🔴 APPLY' : 'DRY-RUN'}`);
-  console.log(`Fayl qatori: ${rows.length} · mos: ${stats.matched} · topilmadi: ${stats.notFound.length} · nom farqi: ${stats.nameMismatch.length}`);
-  console.log(`O'zgargan tovar: ${updated} (chakana ${stats.retail} · optom ${stats.opt} · tan ${stats.buy}, shundan valyuta USD→UZS tuzatildi ${stats.curFixed}) · o'zgarishsiz: ${stats.unchanged}`);
-  console.log(`0/bo'sh tufayli tegilmagan narx kataklari: ${stats.zeroSkipped.length}`, stats.zeroSkipped.join(', ') || '');
+  console.log(
+    `Fayl qatori: ${rows.length} · mos: ${stats.matched} · topilmadi: ${stats.notFound.length} · nom farqi: ${stats.nameMismatch.length}`,
+  );
+  console.log(
+    `O'zgargan tovar: ${updated} (chakana ${stats.retail} · optom ${stats.opt} · tan ${stats.buy}, shundan valyuta USD→UZS tuzatildi ${stats.curFixed}) · o'zgarishsiz: ${stats.unchanged}`,
+  );
+  console.log(
+    `0/bo'sh tufayli tegilmagan narx kataklari: ${stats.zeroSkipped.length}`,
+    stats.zeroSkipped.join(', ') || '',
+  );
   for (const s of stats.notFound) console.log('  TOPILMADI:', s);
   for (const s of stats.nameMismatch) console.log('  NOM FARQI:', s);
   await prisma.$disconnect();

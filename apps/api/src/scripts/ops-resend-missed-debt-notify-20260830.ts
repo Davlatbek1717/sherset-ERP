@@ -16,19 +16,22 @@
  *   tekshiradi, notifier'ning enqueueOnce'i ham).
  */
 import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 // apps/api/.env ni import'lardan OLDIN yuklaymiz (DATABASE_URL, DEBT_NOTIFY_*).
 const envPath = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '.env');
 for (const line of readFileSync(envPath, 'utf8').split('\n')) {
-  const m = line.match(/^([A-Z0-9_]+)=(.*)$/);
-  if (m && process.env[m[1]] === undefined) {
-    let v = m[2].trim();
+  const m = /^([A-Z0-9_]+)=(.*)$/.exec(line);
+  // noUncheckedIndexedAccess: guruhlar regexda majburiy — bu faqat torayish.
+  const key = m?.[1];
+  const rawVal = m?.[2];
+  if (key !== undefined && rawVal !== undefined && process.env[key] === undefined) {
+    let v = rawVal.trim();
     if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) {
       v = v.slice(1, -1);
     }
-    process.env[m[1]] = v;
+    process.env[key] = v;
   }
 }
 
@@ -87,6 +90,7 @@ async function main() {
   const plan: Plan[] = [];
   for (const group of byDoc.values()) {
     const first = group[0];
+    if (!first) continue; // Map qiymati bo'sh bo'lmaydi — noUncheckedIndexedAccess torayishi.
     const docId = first.docId as string;
     const deltaMinor = group.reduce((s, g) => s + g.deltaMinor, 0n);
     const existing = await prisma.hrTelegramOutbox.findFirst({
@@ -124,7 +128,7 @@ async function main() {
   }
 
   if (!yes) {
-    console.log(`\nREJA rejimi — yuborish uchun --yes bilan qayta ishga tushiring.`);
+    console.log('\nREJA rejimi — yuborish uchun --yes bilan qayta ishga tushiring.');
     await prisma.$disconnect();
     return;
   }
