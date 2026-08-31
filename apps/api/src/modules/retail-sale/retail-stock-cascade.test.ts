@@ -149,6 +149,28 @@ describe('allocateAcrossStores — taqsimot', () => {
     expect(plan.shortfalls).toEqual([]);
   });
 
+  /**
+   * M1 (2026-08-30) — JONLI KASKADNING AYNAN SHAKLI: kaskad boshida YETTITA
+   * bo'sh ombor turadi, butun qoldiq esa ENG OXIRIDAGI hovuzda.
+   *
+   * M1.2 dan oldin hovuz kaskad BOSHI edi; egasi uni oxiriga ko'chirishni
+   * so'radi. Reja 4-bo'limidagi besh o'lchov «xulq o'zgarmaydi» degan edi va
+   * 2026-08-30 dagi jonli smoke buni tasdiqladi (ajratma «Taqsimlanmagan» dan
+   * olindi). Shu qulf o'sha xulqni kodda ushlab turadi: bo'sh ombor kaskad
+   * boshida tursa ham reja QOLDIQ BOR omborga tushadi va shortfall tug'ilmaydi.
+   */
+  it('M1 — kaskad boshidagi 7 ta BO‘SH ombor rejani o‘zgartirmaydi', () => {
+    const bosqlar = ['s07', 's01', 's02', 's03', 's04', 's05', 's06'];
+    const plan = allocateAcrossStores(
+      [{ assortmentId: 'A', requested: '3' }],
+      // Bo'sh omborlarda tovar qatori UMUMAN yo'q (jonlidagi holat).
+      avail([['pool', [['A', '105113']]]]),
+      [...bosqlar, 'pool'],
+    );
+    expect(plan.allocations).toEqual([{ storeId: 'pool', assortmentId: 'A', qty: '3' }]);
+    expect(plan.shortfalls).toEqual([]);
+  });
+
   it('ma’lumoti yo‘q ombor = 0 deb o‘qiladi; nol so‘rov rejaga kirmaydi', () => {
     const plan = allocateAcrossStores(
       [

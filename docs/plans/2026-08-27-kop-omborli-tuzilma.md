@@ -2,7 +2,8 @@
 
 > **Yaratilgan:** 2026-08-27 · **Buyurtmachi:** Ozodbek (egasi) ·
 > **Holat:** **M0 ✅ reja tuzildi** · **S-M1 ✅ javob olindi** ·
-> **M1 boshlashga TAYYOR** · M2…M8 boshlanmagan
+> **M1 ⚠️ QISMAN — jonlida bajarildi 2026-08-30, ertalabki takroriy tekshiruv (javobgar shaxs) qoldi** ·
+> M2…M8 boshlanmagan
 >
 > **Nega bu reja bor:** 2026-08-27 05:32–05:37 da egasi jonlida **Ombor 03,
 > 04, 05, 06, 07** ni yaratdi va yaqin kunlarda ularga tovar joylashtirishni
@@ -822,3 +823,77 @@ Buzilishi mumkin bo'lgan oqim yo'q.
 
 **Keyingi faza:** **M1** — bloklanmagan, alohida sessiyada boshlanadi
 (prompti 6-bo'limda).
+
+---
+
+### M1 — Kaskad sozlamasi va jonli holat reyestri · ⚠️ QISMAN · 2026-08-30
+
+**Kim:** Claude (egasi «hozir bajar» dedi — reja 20:00 oynasidan ONGLI
+chetlashish; savdo ochiq edi, 4 ta smena ishlab turgan). **Commit: YO'Q**
+(branch `yacheyka-inventarizatsiya`, ish daraxtida).
+
+**Nima qilindi:**
+
+| Qadam | Natija |
+|---|---|
+| M1.0 | Oldshart o'lchandi: `Ombor 01…07` da qoldiq **0** ⇒ to'xtash sharti ishga TUSHMADI; 3.1-jadval eskirmagan. Qaytarish nuqtasi `/root/m1-stores-before-20260830.txt` (9 qator) |
+| M1.1 | DRY jonlida: `BEGIN → oldinga → zond → qaytarish → zond → ROLLBACK`. **Ikkala yo'nalish bitta tranzaksiyada sinaldi** — qaytarish zondi asl 9 qatorni AYNAN tikladi (qoida 12 shu bilan bajarildi; alohida lokal dev baza kerak bo'lmadi) |
+| M1.2 | `COMMIT`. Kanonik jadval jonlida: `07=1 · 01=2 · 02=3 · 03=4 · 04=5 · 05=6 · 06=7 · Taqsimlanmagan=8`; `Ombor 99` (BRAK) tegilmadi; `__cellInventory` saqlandi |
+| M1.3 | `docs/ops/jonli-holat.md` — JSON (9 ombor), 2-bo'lim jadvali (9 qator) va jurnal qatori |
+| M1.4 | `warehouse-state.ts` o'zgarishdan OLDIN va KEYIN: **EXIT=0**, «Reyestrga MOS — farq yo'q», **POS yeta olmaydigan qoldiq: 0** |
+| M1.5 | Qoida 13 smoke — pastda |
+| M1.6 | Testlar: `warehouse-state-core.test.ts` (kanonik kaskad + prioritetlar 1…8 takrorsiz + BRAK tashqarida) va `retail-stock-cascade.test.ts` («kaskad boshidagi 7 BO'SH ombor rejani o'zgartirmaydi»). **43/43 yashil** |
+
+**Fayllar:** `packages/db/scripts/m1-pos-priority-apply.sql` ·
+`packages/db/scripts/m1-pos-priority-rollback.sql` ·
+`apps/api/src/scripts/ops-m1-live-smoke.ts` (yangi) ·
+`apps/api/src/scripts/warehouse-state-core.test.ts` ·
+`apps/api/src/modules/retail-sale/retail-stock-cascade.test.ts` ·
+`docs/ops/jonli-holat.md`.
+
+**M1.5 — qoida 13 smoke (uchala band, `ops-m1-live-smoke.ts --live`):**
+
+1. **SOTUV** — chek → post: qoldiq AYNAN −1; **ajratma «Taqsimlanmagan» dan
+   olindi, bo'sh «Ombor 07» hech nima TORTMADI** (M1 ning asosiy sharti
+   jonlida isbotlandi) → vozvrat: jami AYNAN tiklandi.
+2. **SANASH** — yacheyka `02-02-03-42` chernovigi ochildi, `position-meta`
+   qoldiqni (22 700) to'g'ri ko'rsatdi, chernovik o'chirildi.
+3. **KO'CHIRISH** — `02-02-03-42` → `01-04-01-105` 1 dona: ombor jamisi
+   o'zgarmadi, teskari ko'chirish yacheyka kesimini tikladi.
+
+Skript izini O'ZI tozalaydi (`--restore-stray` rejimi ham bor). Sinov
+hujjatlari `description` da «M1 jonli smoke» belgisi bilan qidiriladi.
+
+**Qoida 3 javobi («qaysi oqimni buzishi mumkin?»):** kassa sotuvi/vozvrati
+(`retail-sale.service.ts` kaskadi), taqsimot (`retail-allocation.ts`),
+yacheyka sanash/ko'chirish. Uchalasi ham smoke bilan jonlida o'lchandi —
+buzilish topilmadi.
+
+**⚠️ Yo'l-yo'lakay o'lchangan ikki narsa (ikkalasi ham NUQSON emas):**
+
+1. **Vozvrat tovarni `cascade[0]` ga, ya'ni endi «Ombor 07» ga qaytaradi**
+   (`retail-sale.service.ts:2389–2390`). Bu **F6/Q1 ning ATAYLAB qilingan
+   xulqi** — «mijoz tovarni jismonan do'konga olib keladi ⇒ kassaga eng yaqin
+   omborga kiradi». M1 gacha ko'rinmasdi (`cascade[0]` hovuz edi). **Yangi
+   qaror kerak emas**, va bu **M7/`posFront` bilan bog'liq EMAS** (u TAQSIMOT
+   tartibini belgilaydi, vozvrat omborini emas). Amaliy oqibat: «Ombor 07» da
+   hali yacheyka yo'q (**M3**) ⇒ qaytgan tovar u yerda «yacheykasiz» turadi.
+2. **Yacheykalar soni 974 → 1 243** (269 yangi). Kim/qachon yaratgani
+   jurnalda YOZILMAGAN — qoida 14 buzilgan. Reyestr haqiqatga tenglashtirildi.
+
+**Qabul mezoni — holat:**
+
+- ✅ to'qqizala ombor prioriteti kanonik jadval bilan aynan mos;
+- ✅ «POS yeta olmaydigan qoldiq: 0»;
+- ✅ `jonli-holat.md` — JSON, jadval va jurnal uchalasi yangilangan;
+- ⚠️ qoida 13 smoke **uchala bandi bajarildi**, LEKIN **ertalabki takroriy
+  tekshiruv (savdo boshlanishidan oldin, javobgar shaxs ismi bilan) HALI
+  YO'Q** ⇒ qoida 11 bo'yicha faza **«QISMAN»** bo'lib qoladi.
+
+**Ochiq qolganlar:** ertalabki takroriy tekshiruv · commit · (M7 ning 3-bandi
+ARTIQ KERAK EMAS — `Taqsimlanmagan` ni oxirgi raqamga o'tkazish shu fazada
+bajarildi).
+
+**Keyingi fazaga eslatma:** **M3** (yacheyka raqamlash) endi ilgarigidan
+muhimroq — «Ombor 07» kaskad boshi bo'lgani uchun vozvratlar o'sha yerga
+tusha boshlaydi, yacheykasi esa yo'q.
