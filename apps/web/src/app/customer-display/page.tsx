@@ -33,6 +33,7 @@
 import './cfd-theme.css';
 import { api } from '@/lib/api-client';
 import { getAccessToken, refresh } from '@/lib/auth-store';
+import { CART_DRAFTS_STORAGE_KEY, parseCartDrafts } from '@/lib/pos/cart-drafts';
 import { normalizeQtyDecimal } from '@/lib/pos/cart-math';
 import { scaleMinorByQty } from '@moysklad/money';
 import { ShersetLogo, formatMoney } from '@moysklad/ui';
@@ -115,6 +116,8 @@ const DEMO_PICKING: QueueSale[] = [
   { id: 'd3', name: 'TRN-2026-02490' },
 ];
 const DEMO_READY: QueueSale[] = [{ id: 'd2', name: 'TRN-2026-02494' }];
+/** Demo qoralama — «Otlojit» bosilgan savat (4 daqiqa oldin). */
+const DEMO_PARKED_AGO_MS = 4 * 60_000;
 
 export default function CustomerDisplayPage() {
   // `?demo=1` — brauzerda Electron'siz sinash. Lazy initializer bilan BIR MARTA
@@ -179,6 +182,7 @@ export default function CustomerDisplayPage() {
 
   const lines = payload.lines;
   const { picking, ready, cashDeskName } = useQueue(tokenReady, demo);
+  const parked = useParkedDrafts(demo);
 
   // ── 3. Har mahsulot uchun media'ni bir marta yuklab, keshlab qo'yish ──────
   // (karusel 5s'da almashganda "sekin ochilish" bo'lmasin — oldindan preload.)
@@ -197,7 +201,7 @@ export default function CustomerDisplayPage() {
   }, [lines, media, tokenReady, demo]);
 
   const scale = useFitScale();
-  const hasQueue = picking.length + ready.length > 0;
+  const hasQueue = picking.length + ready.length + parked.length > 0;
 
   return (
     <div
@@ -238,12 +242,17 @@ export default function CustomerDisplayPage() {
         }}
       >
         <TopBar cashDeskName={cashDeskName} />
+        {/* `scale !== null` = mount bo'lgan. Serverda `demo` doim false
+            (window yo'q), brauzerda true bo'lishi mumkin — badge'ni SSR
+            daraxtiga qo'shsak gidratatsiya nomuvofiqligi chiqadi (jonli
+            konsolda ko'rildi, 2026-09-01). */}
+        {demo && scale !== null && <DemoBadge />}
         <div className="flex min-h-0 flex-1">
           <div
             className="box-border flex flex-col gap-9"
             style={{ width: STAGE_W / 2, padding: '44px 56px 48px' }}
           >
-            <QueuePanel picking={picking} ready={ready} />
+            <QueuePanel picking={picking} ready={ready} parked={parked} />
             <CartPanel lines={lines} hasQueue={hasQueue} />
             <PaymentPanel lines={lines} discountPct={payload.discountPct} />
           </div>
@@ -291,6 +300,56 @@ function useFitScale(): number | null {
     return () => window.removeEventListener('resize', fit);
   }, []);
   return scale;
+}
+
+/**
+ * «Otlojit» (qoralama) qilingan savatlar — kassir oynasining
+ * `localStorage['sherset.pos.drafts']` yozuvidan O'QILADI.
+ *
+ * 🔴 Nega localStorage: qoralama serverga UMUMAN bormaydi (POS uni faqat
+ * localStorage'da saqlaydi — `sotuv/page.tsx` parkCart), ya'ni navbat
+ * so'rovlari uni ko'ra olmaydi — 2026-09-01 da egasi aynan shundan yiqilgan
+ * («otlojit qildim, ekranda chiqmadi»). Electron mijoz-oynasi kassir oynasi
+ * bilan BIR XIL partition'da (`main.js` — ataylab, umumiy cookie uchun) va
+ * brauzer yo'lida ham ikkala tab bir origin — ya'ni localStorage IKKALASIGA
+ * UMUMIY. Shu tufayli bu yo'l bugungi qobiqda (v1.9.0) yangi .exe'siz
+ * ishlaydi; IPC payload'iga maydon qo'shish esa yangi .exe talab qilardi
+ * (`normalizeCart` oq ro'yxati — fayl boshidagi izoh).
+ *
+ * Yangilanish: `storage` hodisasi (boshqa oyna yozganda darhol) + har
+ * QUEUE_POLL_MS zaxira o'qish. `parseCartDrafts` fail-safe — buzuq JSON
+ * hech qachon otmaydi (`cart-drafts.test.ts`).
+ */
+function useParkedDrafts(demo: boolean): number[] {
+  const [parked, setParked] = useState<number[]>([]);
+  useEffect(() => {
+    if (demo) {
+      setParked([Date.now() - DEMO_PARKED_AGO_MS]);
+      return;
+    }
+    const read = () => {
+      try {
+        setParked(
+          parseCartDrafts(window.localStorage.getItem(CART_DRAFTS_STORAGE_KEY)).map(
+            (d) => d.createdAt,
+          ),
+        );
+      } catch {
+        setParked([]); // localStorage o'qilmasa — bu qism jim bo'sh qoladi
+      }
+    };
+    read();
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === CART_DRAFTS_STORAGE_KEY) read();
+    };
+    window.addEventListener('storage', onStorage);
+    const iv = setInterval(read, QUEUE_POLL_MS);
+    return () => {
+      window.removeEventListener('storage', onStorage);
+      clearInterval(iv);
+    };
+  }, [demo]);
+  return parked;
 }
 
 /**
@@ -406,7 +465,7 @@ function TopBar({ cashDeskName }: { cashDeskName: string | null }) {
       }}
     >
       <div className="flex items-center" style={{ gap: 20 }}>
-        <ShersetLogo variant="white" height={34} />
+        <ShersetLogo height={34} />
         <div
           style={{
             fontSize: 24,
@@ -424,7 +483,7 @@ function TopBar({ cashDeskName }: { cashDeskName: string | null }) {
             <div style={{ fontSize: 26, fontWeight: 500, color: 'var(--cfd-muted)' }}>
               {cashDeskName}
             </div>
-            <div style={{ width: 1, height: 34, background: 'rgba(255,255,255,0.12)' }} />
+            <div style={{ width: 1, height: 34, background: 'var(--cfd-hairline)' }} />
           </>
         )}
         <div
@@ -479,11 +538,26 @@ function SectionHead({ label, right }: { label: string; right?: React.ReactNode 
  * Summa ATAYLAB ko'rsatilmaydi (egasi, 2026-09-01): yonidagi odam kimning
  * qancha pul sarflaganini ko'rmasligi kerak. Faqat raqam va holat.
  */
-export function QueuePanel({ picking, ready }: { picking: QueueSale[]; ready: QueueSale[] }) {
+export function QueuePanel({
+  picking,
+  ready,
+  parked,
+}: {
+  picking: QueueSale[];
+  ready: QueueSale[];
+  /** «Otlojit» qilingan savatlarning park VAQTI (epoch ms) — `useParkedDrafts`. */
+  parked: number[];
+}) {
   const t = useTranslations('pages.customer_display');
-  const cards = [
-    ...ready.map((sale) => ({ sale, done: true })),
-    ...picking.map((sale) => ({ sale, done: false })),
+  const locale = useLocale();
+  type Card =
+    | { kind: 'sale'; key: string; sale: QueueSale; done: boolean }
+    | { kind: 'hold'; key: string; at: number };
+  const cards: Card[] = [
+    ...ready.map((sale) => ({ kind: 'sale' as const, key: sale.id, sale, done: true })),
+    ...picking.map((sale) => ({ kind: 'sale' as const, key: sale.id, sale, done: false })),
+    // Qoralamalar OXIRIDA: ular hali omborga ham yuborilmagan.
+    ...parked.map((at) => ({ kind: 'hold' as const, key: `hold-${at}`, at })),
   ];
   if (cards.length === 0) return null; // navbat bo'sh — chiziq ham chizilmaydi
 
@@ -494,14 +568,18 @@ export function QueuePanel({ picking, ready }: { picking: QueueSale[]; ready: Qu
     <div className="flex flex-col" style={{ gap: 16 }}>
       <SectionHead label={t('queue_title')} />
       <div className="grid" style={{ gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
-        {shown.map(({ sale, done }) => (
-          <QueueCard key={sale.id} sale={sale} done={done} />
-        ))}
+        {shown.map((c) =>
+          c.kind === 'sale' ? (
+            <QueueCard key={c.key} sale={c.sale} done={c.done} />
+          ) : (
+            <HoldCard key={c.key} at={c.at} locale={locale} />
+          ),
+        )}
         {rest > 0 && (
           <div
             className="flex flex-col items-center justify-center"
             style={{
-              border: '2px dashed rgba(255,255,255,0.15)',
+              border: '2px dashed var(--cfd-hairline)',
               borderRadius: 20,
               gap: 2,
             }}
@@ -589,7 +667,7 @@ function QueueCard({ sale, done }: { sale: QueueSale; done: boolean }) {
       className="flex flex-col"
       style={{
         background: 'var(--cfd-work-card)',
-        border: '1px solid rgba(255,255,255,0.08)',
+        border: '1px solid var(--cfd-work-border)',
         borderRadius: 20,
         padding: '18px 20px 16px',
         gap: 6,
@@ -614,8 +692,64 @@ function QueueCard({ sale, done }: { sale: QueueSale; done: boolean }) {
           className="cfd-lamp-glow inline-block"
           style={{ width: 14, height: 14, borderRadius: '50%', background: 'var(--cfd-work-lamp)' }}
         />
-        <span style={{ fontSize: 28, fontWeight: 600, color: '#b9c8dd' }}>
+        <span style={{ fontSize: 28, fontWeight: 600, color: 'var(--cfd-work-ink)' }}>
           {t('queue_picking')}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * «Otlojit» qilingan savat kartasi. Identifikatori — PARK VAQTI: qoralamada
+ * chek raqami YO'Q (u serverga bormagan), POS chipida ham kassir uni vaqt
+ * bo'yicha taniydi — mijoz-ekran o'sha tilda gaplashadi.
+ */
+function HoldCard({ at, locale }: { at: number; locale: string }) {
+  const t = useTranslations('pages.customer_display');
+  const time = new Date(at).toLocaleTimeString(locale === 'ru' ? 'ru-RU' : 'uz-UZ', {
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+  return (
+    <div
+      data-test-id="cfd-queue-card"
+      data-state="hold"
+      className="flex flex-col"
+      style={{
+        background: 'var(--cfd-hold-card)',
+        border: '1px solid var(--cfd-hold-border)',
+        borderRadius: 20,
+        padding: '18px 20px 16px',
+        gap: 6,
+      }}
+    >
+      <div
+        className="tabular-nums"
+        style={{
+          fontSize: 58,
+          fontWeight: 800,
+          color: 'var(--cfd-dim)',
+          lineHeight: 1,
+          whiteSpace: 'nowrap',
+        }}
+      >
+        {time}
+      </div>
+      <div className="flex items-center" style={{ gap: 10 }}>
+        <span
+          aria-hidden="true"
+          className="inline-block"
+          style={{
+            width: 14,
+            height: 14,
+            borderRadius: '50%',
+            background: 'var(--cfd-hold-ink)',
+            opacity: 0.5,
+          }}
+        />
+        <span style={{ fontSize: 28, fontWeight: 600, color: 'var(--cfd-hold-ink)' }}>
+          {t('queue_hold')}
         </span>
       </div>
     </div>
@@ -642,8 +776,8 @@ function CartPanel({ lines, hasQueue }: { lines: CartLineDTO[]; hasQueue: boolea
                 fontSize: 25,
                 fontWeight: 600,
                 color: 'var(--cfd-muted)',
-                background: 'rgba(255,255,255,0.05)',
-                border: '1px solid rgba(255,255,255,0.08)',
+                background: 'var(--cfd-hold-card)',
+                border: '1px solid var(--cfd-hairline)',
                 borderRadius: 999,
                 padding: '4px 20px',
               }}
@@ -660,13 +794,13 @@ function CartPanel({ lines, hasQueue }: { lines: CartLineDTO[]; hasQueue: boolea
             <svg width="88" height="88" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path
                 d="M3 4h2l2.4 12.2A2 2 0 0 0 9.36 18H17.6a2 2 0 0 0 1.96-1.6L21 8H6"
-                stroke="#31445f"
+                stroke="#98a2b3"
                 strokeWidth="1.6"
                 strokeLinecap="round"
                 strokeLinejoin="round"
               />
-              <circle cx="10" cy="21" r="1.4" fill="#31445f" />
-              <circle cx="17" cy="21" r="1.4" fill="#31445f" />
+              <circle cx="10" cy="21" r="1.4" fill="#98a2b3" />
+              <circle cx="17" cy="21" r="1.4" fill="#98a2b3" />
             </svg>
             <div
               style={{
@@ -824,12 +958,41 @@ function PaymentPanel({ lines, discountPct }: { lines: CartLineDTO[]; discountPc
 // ─────────────────────────────────────────────────────────────────────────────
 // O'NG YARIM — salomlashuv (savat bo'sh) yoki mahsulot kartasi
 // ─────────────────────────────────────────────────────────────────────────────
+/**
+ * DEMO belgisi. 2026-09-01 chalkashligi: egasi televizorda `?demo=1` sahifasini
+ * ochiq qoldirib, real «otlojit» amalini kutgan — demo esa faqat soxta
+ * ma'lumot ko'rsatadi. Endi demo rejim O'ZINI e'lon qiladi.
+ */
+function DemoBadge() {
+  return (
+    <div
+      style={{
+        position: 'absolute',
+        top: 104,
+        right: 24,
+        zIndex: 10,
+        border: '2px solid #e11d48',
+        color: '#e11d48',
+        borderRadius: 10,
+        padding: '4px 14px',
+        fontSize: 20,
+        fontWeight: 800,
+        letterSpacing: '0.12em',
+      }}
+    >
+      DEMO
+    </div>
+  );
+}
+
 function WelcomePanel() {
   const t = useTranslations('pages.customer_display');
   return (
     <div className="flex flex-col items-center" style={{ gap: 30 }}>
-      <ShersetLogo variant="white" height={104} />
-      <div style={{ fontSize: 34, fontWeight: 500, color: '#7c8ea8', letterSpacing: '0.06em' }}>
+      <ShersetLogo height={104} />
+      <div
+        style={{ fontSize: 34, fontWeight: 500, color: 'var(--cfd-dim)', letterSpacing: '0.06em' }}
+      >
         {t('tagline')}
       </div>
       <div style={{ width: 120, height: 6, borderRadius: 3, background: 'var(--cfd-brand)' }} />
@@ -852,7 +1015,6 @@ function FeaturedPanel({
   lines: CartLineDTO[];
   media: Record<string, Media>;
 }) {
-  const t = useTranslations('pages.customer_display');
   const [index, setIndex] = useState(0);
   const prevLen = useRef(0);
 
@@ -895,21 +1057,19 @@ function FeaturedPanel({
             style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }}
           />
         ) : (
-          <>
-            <ShersetLogo variant="white" height={96} className="opacity-20" />
-            <div
-              style={{
-                position: 'absolute',
-                bottom: 22,
-                right: 26,
-                fontSize: 22,
-                fontWeight: 500,
-                color: '#44597a',
-              }}
-            >
-              {t('photo_soon')}
-            </div>
-          </>
+          // Mahsulotning O'Z videosi/rasmi yo'q — SHERSET brend-roligi aylanadi
+          // (egasi bergan animatsiya, 8s, public/brand/sherset-loop.mp4).
+          // `muted` MAJBURIY: faylda audio yo'lakcha bor — ovozli autoplay
+          // brauzerda bloklanadi, qolaversa uzluksiz aylanayotgan rolik ovozi
+          // do'konda shovqin bo'lardi.
+          <video
+            src="/brand/sherset-loop.mp4"
+            autoPlay
+            muted
+            loop
+            playsInline
+            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+          />
         )}
       </div>
 
@@ -921,8 +1081,8 @@ function FeaturedPanel({
               fontSize: 24,
               fontWeight: 700,
               color: 'var(--cfd-accent)',
-              background: 'rgba(30,90,168,0.25)',
-              border: '1px solid rgba(127,178,236,0.25)',
+              background: 'rgba(30,90,168,0.08)',
+              border: '1px solid rgba(30,90,168,0.25)',
               borderRadius: 999,
               padding: '5px 22px',
             }}
@@ -967,7 +1127,7 @@ function FeaturedPanel({
             width: 280,
             height: 6,
             borderRadius: 3,
-            background: 'rgba(255,255,255,0.08)',
+            background: 'var(--cfd-row-line)',
             overflow: 'hidden',
           }}
         >

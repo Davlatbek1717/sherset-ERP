@@ -172,6 +172,10 @@ scripts/measure-moysklad-*.cjs
 moysklad_backup/
 docs/moysklad-reference/
 *.mp4
+# ISTISNO: mijoz-ekranning brend-roligi — bu reference material EMAS, u
+# `/brand/sherset-loop.mp4` sifatida build bilan birga jonliga KETADI
+# (customer-display/page.tsx, videosi yo'q mahsulot uchun fallback).
+!apps/web/public/brand/sherset-loop.mp4
 
 # Prisma generated client — WHOLE dir (the *.tmp* line above only caught tmp files,
 # which is why it got committed). Regenerated on deploy; never track.

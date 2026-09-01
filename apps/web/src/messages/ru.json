@@ -1600,6 +1600,7 @@
       "in_queue": "в очереди",
       "items_count": "{count, plural, one {# товар} few {# товара} many {# товаров} other {# товара}}",
       "photo_soon": "фото товара",
+      "queue_hold": "Ожидает",
       "queue_picking": "Собирается",
       "queue_ready": "Готово",
       "queue_title": "ОЧЕРЕДЬ ЗАКАЗОВ",

@@ -47,31 +47,59 @@ describe('QueuePanel', () => {
     // butun balandlikni olsin. (Konteynerning o'zi bo'sh EMAS: `render`
     // toast/confirm provider'larini ham chizadi — shuning uchun tekshiruv
     // panelning O'Z elementlari bo'yicha.)
-    render(<QueuePanel picking={[]} ready={[]} />);
+    render(<QueuePanel picking={[]} ready={[]} parked={[]} />);
     expect(screen.queryAllByTestId('cfd-queue-card')).toHaveLength(0);
     expect(screen.queryByText(uzMessages.pages.customer_display.queue_title)).toBeNull();
   });
 
   it('tayyor va yig’ilayotgan buyurtmalarni ko’rsatadi', () => {
-    render(<QueuePanel picking={PICKING} ready={READY} />);
+    render(<QueuePanel picking={PICKING} ready={READY} parked={[]} />);
     const cards = screen.getAllByTestId('cfd-queue-card');
     expect(cards).toHaveLength(3);
   });
 
   it('TAYYOR kartalar birinchi turadi', () => {
-    render(<QueuePanel picking={PICKING} ready={READY} />);
+    render(<QueuePanel picking={PICKING} ready={READY} parked={[]} />);
     const states = screen.getAllByTestId('cfd-queue-card').map((el) => el.dataset.state);
     expect(states).toEqual(['ready', 'picking', 'picking']);
   });
 
   it('🔴 kartada SUMMA ko’rsatilmaydi', () => {
-    render(<QueuePanel picking={PICKING} ready={READY} />);
+    render(<QueuePanel picking={PICKING} ready={READY} parked={[]} />);
     for (const card of screen.getAllByTestId('cfd-queue-card')) {
       const text = card.textContent ?? '';
       // Pul birligi yoki ming-ajratgichli raqam = summa sizib chiqqan.
       expect(text).not.toMatch(/so'm|сум|UZS/i);
       expect(text).not.toMatch(/\d[\s ]\d{3}/);
     }
+  });
+});
+
+describe('QueuePanel — «otlojit» (qoralama) kartalari', () => {
+  // 2026-09-01: egasi «otlojit qildim, ekranda chiqmadi» dedi — qoralama
+  // serverga bormaydi (localStorage'da), navbat so'rovlari uni ko'rmasdi.
+  // Endi parked prop orqali keladi. Bu testlar o'sha xulqni QULFLAYDI.
+  const AT = new Date(2026, 8, 1, 5, 1).getTime(); // 05:01
+
+  it('qoralama kartasi park VAQTI bilan chiqadi', () => {
+    render(<QueuePanel picking={[]} ready={[]} parked={[AT]} />);
+    const cards = screen.getAllByTestId('cfd-queue-card');
+    expect(cards).toHaveLength(1);
+    expect(cards[0]?.dataset.state).toBe('hold');
+    expect(cards[0]?.textContent).toContain('05:01');
+  });
+
+  it("tartib: TAYYOR → yig'ilyapti → qoralama", () => {
+    render(<QueuePanel picking={PICKING} ready={READY} parked={[AT]} />);
+    const states = screen.getAllByTestId('cfd-queue-card').map((el) => el.dataset.state);
+    expect(states).toEqual(['ready', 'picking', 'picking', 'hold']);
+  });
+
+  it('🔴 qoralama kartasida ham SUMMA yo’q', () => {
+    render(<QueuePanel picking={[]} ready={[]} parked={[AT]} />);
+    const text = screen.getAllByTestId('cfd-queue-card')[0]?.textContent ?? '';
+    expect(text).not.toMatch(/so'm|сум|UZS/i);
+    expect(text).not.toMatch(/\d[\s ]\d{3}/);
   });
 });
 
@@ -83,6 +111,7 @@ describe('i18n — mijoz-ekran kalitlari', () => {
     'cart_empty',
     'discount',
     'items_count',
+    'queue_hold',
     'queue_picking',
     'queue_ready',
     'queue_title',

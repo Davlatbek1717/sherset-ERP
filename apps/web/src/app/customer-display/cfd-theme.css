@@ -3,72 +3,76 @@
  * faqat `.cfd-theme` ildizi ostida amal qiladi, global `--ms-*` va `--pos-*`
  * tokenlarga TEGMAYDI.
  *
- * Palitra va o'lchamlar egasining dizayn maketidan olingan
- * (`Kassa Ekrani v2.dc.html`, 2026-09-01). Maket 1920×1080 uchun ANIQ
- * piksellarda chizilgan — shuning uchun sahifa `.cfd-stage` ichida shu
- * o'lchamda quriladi va ekranga moslab masshtablanadi (page.tsx `useFitScale`).
- * Sabab: televizor 4K bo'lsa CSS pikseli ikki barobar kichrayadi va 54px
- * raqam zaldan o'qilmay qolardi.
+ * ── LIGHT MODE (egasining qarori, 2026-09-01) ──────────────────────────────
+ * Birinchi versiya to'q (shchit-uslub) edi — egasi jonli televizorda ko'rib
+ * «orqa fon to'liq OQ bo'lsin» dedi. Bu uning ekrani va uning do'koni; palitra
+ * shunga o'tkazildi. Barcha ranglar SHU faylda — keyin qorong'i variantga
+ * qaytish yoki ikkala rejimni qilish = faqat shu tokenlarni almashtirish.
  *
- * ── Nega TO'Q fon ───────────────────────────────────────────────────────────
- * Ekran katta, yaltiroq televizorda, yoritilgan savdo zalida turadi (egasining
- * 2026-08-31 dagi jonli surati). Oq fon shift chiroqlarini ko'zgu qilib
- * qaytaradi va 2 metrdan kontrast yo'qoladi.
+ * Maket o'lchamlari (1920×1080 sahna) o'zgarmagan — `page.tsx` sahnani
+ * ekranga masshtablaydi (qo'riqchi: tests/e2e/customer-display-fit.spec.ts).
  */
 .cfd-theme {
-  /* Fon — maketdagi diagonal gradient */
-  --cfd-bg: linear-gradient(160deg, #0d1726 0%, #0a1220 55%, #080f1b 100%);
-  --cfd-bg-right: linear-gradient(200deg, #0b1424 0%, #080f1b 100%);
-  --cfd-topbar-bg: rgba(255, 255, 255, 0.02);
-  --cfd-hairline: rgba(255, 255, 255, 0.07);
-  --cfd-rule: rgba(255, 255, 255, 0.08);
-  --cfd-row-line: rgba(255, 255, 255, 0.05);
+  /* Fon — to'liq oq (egasining aniq talabi) */
+  --cfd-bg: #ffffff;
+  --cfd-bg-right: #ffffff;
+  --cfd-topbar-bg: #ffffff;
 
-  /* SHERSET ko'ki (`--pos-brand` bilan bir xil) va uning ochiq aksenti */
+  /* Ajratgichlar — oq fonda soch-chiziqlar ko'k-kulrang */
+  --cfd-hairline: #e3e9f1;
+  --cfd-rule: #e3e9f1;
+  --cfd-row-line: #edf1f7;
+
+  /* SHERSET ko'ki (`--pos-brand` bilan bir xil) — oq fonda aksent ham shu */
   --cfd-brand: #1e5aa8;
-  --cfd-accent: #7fb2ec;
+  --cfd-accent: #2160b4;
 
-  /* Matn darajalari */
-  --cfd-ink: #eef3fa;
-  --cfd-ink-soft: #dbe6f5;
-  --cfd-muted: #8fa5c2;
-  --cfd-dim: #5f748f;
-  --cfd-legend: #6f87a8;
+  /* Matn darajalari — oq fonda to'q */
+  --cfd-ink: #101828;
+  --cfd-ink-soft: #1d2939;
+  --cfd-muted: #475467;
+  --cfd-dim: #667085;
+  --cfd-legend: #667085;
 
-  /* TAYYOR — to'ldirilgan yashil karta (zaldan ko'rinishi uchun) */
-  --cfd-ready-from: #31de83;
-  --cfd-ready-to: #1fbf6b;
+  /* TAYYOR — to'ldirilgan yashil karta (zaldan ko'rinishi uchun, maket) */
+  --cfd-ready-from: #2bd47c;
+  --cfd-ready-to: #17b563;
   --cfd-ready-ink: #04220f;
   --cfd-ready-ink-soft: #0b3a24;
 
-  /* YIG'ILYAPTI — to'q karta + sariq chiroq */
-  --cfd-work-card: #13233c;
-  --cfd-work-lamp: #f0b429;
+  /* YIG'ILYAPTI — och kulrang karta + sariq chiroq */
+  --cfd-work-card: #f2f5f9;
+  --cfd-work-border: #e3e9f1;
+  --cfd-work-lamp: #eb9c0e;
+  --cfd-work-ink: #344054;
 
-  /* To'lov bloki */
+  /* KUTILYAPTI (otlojit qilingan qoralama) — neytral, e'tibor tortmaydi */
+  --cfd-hold-card: #f8fafc;
+  --cfd-hold-border: #e3e9f1;
+  --cfd-hold-ink: #667085;
+
+  /* To'lov bloki — brend ko'k gradient, oq fonda ekranning eng kuchli joyi */
   --cfd-pay-from: #2467c1;
   --cfd-pay-to: #1a4e93;
   --cfd-pay-sub: #cfe2fa;
   --cfd-pay-discount: #a7f5cc;
 
-  /* Mahsulot rasmi uchun quti */
-  --cfd-media-box: radial-gradient(130% 130% at 28% 18%, #17314f 0%, #0e1c31 58%, #0a1424 100%);
+  /* Mahsulot media qutisi — och panel */
+  --cfd-media-box: radial-gradient(130% 130% at 28% 18%, #f3f7fc 0%, #e9eff7 58%, #e3ebf5 100%);
 }
 
 /**
  * TAYYOR kartasi — ekranning YAGONA e'tibor tortadigan harakati.
- *
- * Sabab (cheklov, bezak emas): mijoz zalda yurgan bo'ladi va ekranga tikilib
- * turmaydi. Buyurtma tayyor bo'lgan LAHZA periferik ko'rish bilan ilinishi
- * kerak. Qolgan hamma narsa qimirlamaydi.
+ * Mijoz zalda yurgan bo'ladi; «tayyor» lahzasi periferik ko'rish bilan
+ * ilinishi kerak. Qolgan hamma narsa qimirlamaydi.
  */
 @keyframes cfd-ready-pulse {
   0%,
   100% {
-    box-shadow: 0 0 0 0 rgba(46, 213, 120, 0.5);
+    box-shadow: 0 0 0 0 rgba(23, 181, 99, 0.45);
   }
   50% {
-    box-shadow: 0 0 0 26px rgba(46, 213, 120, 0);
+    box-shadow: 0 0 0 26px rgba(23, 181, 99, 0);
   }
 }
 
