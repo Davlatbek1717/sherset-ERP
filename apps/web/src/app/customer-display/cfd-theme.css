@@ -57,6 +57,12 @@
   --cfd-pay-sub: #cfe2fa;
   --cfd-pay-discount: #a7f5cc;
 
+  /* Klassik displey-shrift (egasi: «qalin emas, zamonaviy emas — klassik»).
+     Georgia — har Windows/macOS da bor, tashqi yuklama YO'Q (kassa PC'si
+     internetsiz shrift kutmasin). Raqamlari old-style (pastga tushadi) —
+     bu ham klassik ko'rinishning bir qismi. */
+  --cfd-font-display: Georgia, "Times New Roman", Times, serif;
+
   /* Mahsulot media qutisi — och panel */
   --cfd-media-box: radial-gradient(130% 130% at 28% 18%, #f3f7fc 0%, #e9eff7 58%, #e3ebf5 100%);
 }

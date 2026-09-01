@@ -256,12 +256,12 @@ export default function CustomerDisplayPage() {
             <CartPanel lines={lines} hasQueue={hasQueue} />
             <PaymentPanel lines={lines} discountPct={payload.discountPct} />
           </div>
+          {/* Padding YO'Q — video chetlarigacha to'ladi (egasi: «yarmiga
+              to'liq, ajralib turmasin»). Ichki bloklar o'z joyini o'zi oladi. */}
           <div
-            className="box-border flex flex-col items-center justify-center"
+            className="box-border flex flex-col"
             style={{
               width: STAGE_W / 2,
-              padding: '56px 64px',
-              gap: 34,
               background: 'var(--cfd-bg-right)',
               borderLeft: '1px solid var(--cfd-hairline)',
             }}
@@ -988,7 +988,7 @@ function DemoBadge() {
 function WelcomePanel() {
   const t = useTranslations('pages.customer_display');
   return (
-    <div className="flex flex-col items-center" style={{ gap: 30 }}>
+    <div className="flex w-full flex-1 flex-col items-center justify-center" style={{ gap: 30 }}>
       <ShersetLogo height={104} />
       <div
         style={{ fontSize: 34, fontWeight: 500, color: 'var(--cfd-dim)', letterSpacing: '0.06em' }}
@@ -996,7 +996,14 @@ function WelcomePanel() {
         {t('tagline')}
       </div>
       <div style={{ width: 120, height: 6, borderRadius: 3, background: 'var(--cfd-brand)' }} />
-      <div style={{ fontSize: 54, fontWeight: 700, color: 'var(--cfd-ink-soft)' }}>
+      <div
+        style={{
+          fontFamily: 'var(--cfd-font-display)',
+          fontSize: 54,
+          fontWeight: 400,
+          color: 'var(--cfd-ink-soft)',
+        }}
+      >
         {t('welcome')}
       </div>
     </div>
@@ -1038,65 +1045,74 @@ function FeaturedPanel({
 
   return (
     <>
-      <div
-        className="grid place-items-center overflow-hidden"
-        style={{
-          width: 720,
-          height: 460,
-          borderRadius: 28,
-          background: 'var(--cfd-media-box)',
-          border: '1px solid var(--cfd-hairline)',
-          position: 'relative',
-        }}
-      >
+      {/* MEDIA — chetlarigacha to'ladi, RAMKASIZ (egasi: «video ajralib
+          turmasin, yarmiga to'liq»). Video `cover` bilan butun maydonni
+          egallaydi; pastdagi oq gradient uni sahifaga SINGDIRADI — video
+          foni bilan sahifa foni orasida chegara ko'rinmaydi. */}
+      <div className="relative w-full min-h-0 flex-1 overflow-hidden">
         {med?.imageUrl ? (
           <img
             key={current.productId}
             src={med.imageUrl}
             alt={current.name}
-            style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }}
+            style={{
+              position: 'absolute',
+              inset: 0,
+              width: '100%',
+              height: '100%',
+              objectFit: 'contain',
+              padding: 32,
+              boxSizing: 'border-box',
+            }}
           />
         ) : (
-          // Mahsulotning O'Z videosi/rasmi yo'q — SHERSET brend-roligi aylanadi
+          // Mahsulotning O'Z videosi/rasmi yo'q — SHERSET brend-roligi
           // (egasi bergan animatsiya, 8s, public/brand/sherset-loop.mp4).
           // `muted` MAJBURIY: faylda audio yo'lakcha bor — ovozli autoplay
-          // brauzerda bloklanadi, qolaversa uzluksiz aylanayotgan rolik ovozi
-          // do'konda shovqin bo'lardi.
+          // brauzerda bloklanadi, qolaversa uzluksiz aylanayotgan rolik
+          // ovozi do'konda shovqin bo'lardi.
           <video
             src="/brand/sherset-loop.mp4"
             autoPlay
             muted
             loop
             playsInline
-            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+            style={{
+              position: 'absolute',
+              inset: 0,
+              width: '100%',
+              height: '100%',
+              objectFit: 'cover',
+            }}
           />
         )}
+        <div
+          aria-hidden="true"
+          style={{
+            position: 'absolute',
+            left: 0,
+            right: 0,
+            bottom: 0,
+            height: 140,
+            background: 'linear-gradient(to bottom, rgba(255,255,255,0), var(--cfd-bg))',
+            pointerEvents: 'none',
+          }}
+        />
       </div>
 
-      <div className="flex flex-col items-center" style={{ gap: 14, maxWidth: 790 }}>
-        {lines.length > 1 && (
-          <div
-            className="tabular-nums"
-            style={{
-              fontSize: 24,
-              fontWeight: 700,
-              color: 'var(--cfd-accent)',
-              background: 'rgba(30,90,168,0.08)',
-              border: '1px solid rgba(30,90,168,0.25)',
-              borderRadius: 999,
-              padding: '5px 22px',
-            }}
-          >
-            {index + 1} / {lines.length}
-          </div>
-        )}
+      {/* Nom + narx — KLASSIK serif (egasi: «qalin emas, zamonaviy emas»). */}
+      <div
+        className="flex w-full flex-col items-center"
+        style={{ padding: '0 64px 36px', gap: 10 }}
+      >
         <div
           style={{
-            fontSize: 62,
-            fontWeight: 800,
+            fontFamily: 'var(--cfd-font-display)',
+            fontSize: 58,
+            fontWeight: 400,
             color: 'var(--cfd-ink)',
             textAlign: 'center',
-            lineHeight: 1.15,
+            lineHeight: 1.12,
           }}
         >
           {current.name}
@@ -1104,8 +1120,10 @@ function FeaturedPanel({
         {med?.description && (
           <div
             style={{
-              fontSize: 33,
-              fontWeight: 500,
+              fontFamily: 'var(--cfd-font-display)',
+              fontSize: 27,
+              fontWeight: 400,
+              fontStyle: 'italic',
               color: 'var(--cfd-muted)',
               textAlign: 'center',
             }}
@@ -1114,38 +1132,50 @@ function FeaturedPanel({
           </div>
         )}
         <div
-          className="tabular-nums"
-          style={{ fontSize: 46, fontWeight: 800, color: 'var(--cfd-accent)', marginTop: 6 }}
+          style={{
+            fontFamily: 'var(--cfd-font-display)',
+            fontSize: 44,
+            fontWeight: 400,
+            color: 'var(--cfd-accent)',
+            marginTop: 4,
+          }}
         >
           {formatMoney(BigInt(current.priceMinor))}
         </div>
-      </div>
-
-      {lines.length > 1 && (
-        <div
-          style={{
-            width: 280,
-            height: 6,
-            borderRadius: 3,
-            background: 'var(--cfd-row-line)',
-            overflow: 'hidden',
-          }}
-        >
-          {/* `key` — indeks o'zgarganda chiziq boshidan qayta yuguradi. */}
-          <div
-            key={index}
-            className="cfd-rotate-bar"
-            style={
-              {
-                height: '100%',
+        {lines.length > 1 && (
+          <div className="flex items-center" style={{ gap: 16, marginTop: 8 }}>
+            <div
+              className="tabular-nums"
+              style={{ fontSize: 21, fontWeight: 600, color: 'var(--cfd-dim)' }}
+            >
+              {index + 1} / {lines.length}
+            </div>
+            <div
+              style={{
+                width: 220,
+                height: 5,
                 borderRadius: 3,
-                background: 'var(--cfd-accent)',
-                '--cfd-rotate-dur': `${CAROUSEL_MS}ms`,
-              } as React.CSSProperties
-            }
-          />
-        </div>
-      )}
+                background: 'var(--cfd-row-line)',
+                overflow: 'hidden',
+              }}
+            >
+              {/* `key` — indeks o'zgarganda chiziq boshidan qayta yuguradi. */}
+              <div
+                key={index}
+                className="cfd-rotate-bar"
+                style={
+                  {
+                    height: '100%',
+                    borderRadius: 3,
+                    background: 'var(--cfd-accent)',
+                    '--cfd-rotate-dur': `${CAROUSEL_MS}ms`,
+                  } as React.CSSProperties
+                }
+              />
+            </div>
+          </div>
+        )}
+      </div>
     </>
   );
 }
