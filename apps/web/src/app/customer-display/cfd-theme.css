@@ -155,3 +155,45 @@
     animation: none;
   }
 }
+
+/**
+ * Media krossfeyd (2026-09-01, egasi: «yangilanib olayapti» — mahsulot
+ * qo'shilganda media keskin almashib oq chaqnash ko'rinardi).
+ *
+ * Qoida: yangi qatlam TAYYOR bo'lgachgina (birinchi kadr yuklangach)
+ * ko'rinadi, eski qatlam ostida turadi va krossfeyd tugagach olib
+ * tashlanadi — ekranda hech qachon bo'sh/oq holat bo'lmaydi.
+ */
+.cfd-media-layer {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  transition: opacity 0.45s ease;
+}
+.cfd-media-layer.is-on {
+  opacity: 1;
+}
+
+/** Nom/narx bloki — media bilan birga yumshoq kirib keladi. */
+@keyframes cfd-info-fade {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.cfd-info-fade {
+  animation: cfd-info-fade 0.35s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cfd-media-layer {
+    transition: none;
+  }
+  .cfd-info-fade {
+    animation: none;
+  }
+}

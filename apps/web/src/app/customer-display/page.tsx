@@ -1011,9 +1011,21 @@ function WelcomePanel() {
 }
 
 /**
- * Mahsulot kartasi — savatdagi tovarlar `CAROUSEL_MS` da bir almashadi.
- * Pastdagi progress-chiziq keyingi almashuvgacha qancha qolganini ko'rsatadi
- * (maket): mijoz ekran «qotib qolgan» deb o'ylamaydi.
+ * Mahsulot kartasi — savatdagi tovarlar birma-bir ko'rsatiladi.
+ *
+ * MEDIA USTUVORLIGI (har mahsulot uchun): O'Z videosi -> rasm -> brend-rolik
+ * (`MediaLayer` zanjiri). Video konvensiya bilan so'raladi:
+ * /media/videos/<productId>.mp4 — 404 kelsa 'no' deb keshlanadi.
+ *
+ * KROSSFEYD (egasi, 2026-09-01: «yangilanib olayapti» — media keskin almashib
+ * oq chaqnash ko'rinardi): yangi mahsulotga o'tishda ESKI media ekranda
+ * QOLADI, yangisi orqada yuklanadi va birinchi kadri tayyor bo'lgachgina
+ * ustiga yumshoq chiqadi (`.cfd-media-layer`). Ekranda hech qachon bo'sh/oq
+ * holat bo'lmaydi. Qatlamlar soni doim <= 2 (eski + yangi).
+ *
+ * ALMASHISH: mahsulot videosi bo'lsa — `ended` (10s video 5s da KESILMAYDI),
+ * bo'lmasa CAROUSEL_MS. Har ikkala holatda himoya-taymer bor — video qotib
+ * qolsa ham ekran qotmaydi.
  */
 function FeaturedPanel({
   lines,
@@ -1025,14 +1037,11 @@ function FeaturedPanel({
   const [index, setIndex] = useState(0);
   const prevLen = useRef(0);
 
-  // Mahsulotning O'Z videosi bor-yo'qligi: 'yes' | 'no' | undefined (urinilyapti).
-  // Video konvensiya bo'yicha so'raladi: /media/videos/<productId>.mp4 —
-  // DB'da jadval YO'Q (ataylab: nginx statikasi + fayl nomi = productId,
-  // keyin ProductMedia jadvali kelganda import shu katalogni skanerlaydi).
-  // 404 kelsa 'no' deb eslab qolamiz — qayta urinilmaydi.
+  // Mahsulot videosi holati (umumiy kesh): 'yes' | 'no' | undefined=urinilyapti.
   const [videoState, setVideoState] = useState<Record<string, 'yes' | 'no'>>({});
-  // Video davomiyligi (ms) — progress chiziq va himoya-taymer uchun.
   const [videoDur, setVideoDur] = useState<Record<string, number>>({});
+  // «Birinchi kadr tayyor» belgisi — krossfeyd faqat shunga qaraydi.
+  const [layerReady, setLayerReady] = useState<Record<string, boolean>>({});
 
   // Yangi mahsulot qo'shilsa — darhol o'shani ko'rsat (mijoz o'zi olganini ko'rsin).
   useEffect(() => {
@@ -1046,18 +1055,40 @@ function FeaturedPanel({
   const curId = current?.productId ?? '';
   const curVideo = videoState[curId];
 
-  // ── Almashish taymeri ──────────────────────────────────────────────────────
-  // Mahsulot videosi O'YNAYOTGANDA navbatdagi mahsulotga 'ended' o'tkazadi
-  // (video o'z davomiyligicha to'liq ko'rinadi — 10s video 5s da KESILMAYDI).
-  // Taymer bu holatda faqat HIMOYA (video qotib qolsa ekran ham qotmasin):
-  // davomiylik + 5s. Rasm/logo-rolik uchun odatiy CAROUSEL_MS.
+  // ── Qatlamlar to'plami: [eski, yangi] — eng ko'pi 2 ta ────────────────────
+  const [stack, setStack] = useState<string[]>([]);
+  useEffect(() => {
+    if (!curId) return;
+    setStack((s) => (s[s.length - 1] === curId ? s : [...s.slice(-1), curId]));
+  }, [curId]);
+
+  // Yangi qatlam ko'ringach eskisini (krossfeyd tugagach) olib tashlaymiz.
+  // O'chirilgan qatlamning `ready` belgisi ham tozalanadi — o'sha mahsulot
+  // aylanib qaytganda krossfeyd yana to'g'ri ishlashi uchun.
+  useEffect(() => {
+    const top = stack[stack.length - 1];
+    if (stack.length < 2 || !top || !layerReady[top]) return;
+    const old = stack[0];
+    const t = setTimeout(() => {
+      setStack((s) => s.slice(-1));
+      setLayerReady((m) => {
+        if (old === undefined || old === top) return m;
+        const n = { ...m };
+        delete n[old];
+        return n;
+      });
+    }, 500);
+    return () => clearTimeout(t);
+  }, [stack, layerReady]);
+
+  // ── Almashish taymeri (himoya bilan) ───────────────────────────────────────
   useEffect(() => {
     if (lines.length <= 1) return;
     const dwell =
       curVideo === 'yes'
         ? (videoDur[curId] ?? 15_000) + 5_000
         : curVideo === undefined
-          ? 10_000 // urinish: LAN'da 404/metadata bir zumda keladi, bu faqat himoya
+          ? 10_000 // urinish bosqichi: LAN'da 404/metadata bir zumda keladi
           : CAROUSEL_MS;
     const id = setTimeout(() => setIndex((i) => (i + 1) % lines.length), dwell);
     return () => clearTimeout(id);
@@ -1065,83 +1096,30 @@ function FeaturedPanel({
 
   if (!current) return null;
   const med = media[current.productId];
+  const lineName = new Map(lines.map((l) => [l.productId, l.name] as const));
 
   return (
     <>
-      {/* MEDIA — chetlarigacha to'ladi, RAMKASIZ (egasi: «video ajralib
-          turmasin, yarmiga to'liq»). Video `cover` bilan butun maydonni
-          egallaydi; pastdagi oq gradient uni sahifaga SINGDIRADI — video
-          foni bilan sahifa foni orasida chegara ko'rinmaydi. */}
-      <div className="relative w-full min-h-0 flex-1 overflow-hidden">
-        {curVideo !== 'no' ? (
-          // 1-ustuvorlik: mahsulotning O'Z videosi. `key` — mahsulot almashganda
-          // element qayta yaratiladi (eski src qolib ketmasin). Xato (404) →
-          // 'no' → rasm yoki brend-rolikka tushadi. Ovoz siyosati brend-rolik
-          // bilan bir xil: muted (do'konda shovqin + autoplay bloklanadi).
-          <video
-            key={current.productId}
-            src={`/media/videos/${current.productId}.mp4`}
-            autoPlay
-            muted
-            playsInline
-            onLoadedMetadata={(e) => {
-              const el = e.currentTarget;
-              setVideoState((m) => ({ ...m, [el.dataset.pid ?? '']: 'yes' }));
-              setVideoDur((m) => ({
-                ...m,
-                [el.dataset.pid ?? '']: Math.round(el.duration * 1000),
-              }));
+      {/* MEDIA — chetlarigacha, RAMKASIZ. Qatlamlar krossfeyd bilan almashadi. */}
+      <div className="relative min-h-0 w-full flex-1 overflow-hidden">
+        {stack.map((pid) => (
+          <MediaLayer
+            key={pid}
+            pid={pid}
+            name={lineName.get(pid) ?? ''}
+            imageUrl={media[pid]?.imageUrl ?? null}
+            state={videoState[pid]}
+            on={!!layerReady[pid]}
+            active={pid === curId}
+            onReady={() => setLayerReady((m) => (m[pid] ? m : { ...m, [pid]: true }))}
+            onVideoMeta={(durMs) => {
+              setVideoState((m) => (m[pid] === 'yes' ? m : { ...m, [pid]: 'yes' }));
+              setVideoDur((m) => (m[pid] ? m : { ...m, [pid]: durMs }));
             }}
-            onError={(e) => {
-              const pid = e.currentTarget.dataset.pid ?? '';
-              setVideoState((m) => ({ ...m, [pid]: 'no' }));
-            }}
+            onVideoError={() => setVideoState((m) => ({ ...m, [pid]: 'no' }))}
             onEnded={() => setIndex((i) => (i + 1) % Math.max(1, lines.length))}
-            data-pid={current.productId}
-            style={{
-              position: 'absolute',
-              inset: 0,
-              width: '100%',
-              height: '100%',
-              objectFit: 'cover',
-            }}
           />
-        ) : med?.imageUrl ? (
-          <img
-            key={current.productId}
-            src={med.imageUrl}
-            alt={current.name}
-            style={{
-              position: 'absolute',
-              inset: 0,
-              width: '100%',
-              height: '100%',
-              objectFit: 'contain',
-              padding: 32,
-              boxSizing: 'border-box',
-            }}
-          />
-        ) : (
-          // Mahsulotning O'Z videosi/rasmi yo'q — SHERSET brend-roligi
-          // (egasi bergan animatsiya, 8s, public/brand/sherset-loop.mp4).
-          // `muted` MAJBURIY: faylda audio yo'lakcha bor — ovozli autoplay
-          // brauzerda bloklanadi, qolaversa uzluksiz aylanayotgan rolik
-          // ovozi do'konda shovqin bo'lardi.
-          <video
-            src="/brand/sherset-loop.mp4"
-            autoPlay
-            muted
-            loop
-            playsInline
-            style={{
-              position: 'absolute',
-              inset: 0,
-              width: '100%',
-              height: '100%',
-              objectFit: 'cover',
-            }}
-          />
-        )}
+        ))}
         <div
           aria-hidden="true"
           style={{
@@ -1156,9 +1134,10 @@ function FeaturedPanel({
         />
       </div>
 
-      {/* Nom + narx — KLASSIK serif (egasi: «qalin emas, zamonaviy emas»). */}
+      {/* Nom + narx — KLASSIK serif; media bilan birga yumshoq kirib keladi. */}
       <div
-        className="flex w-full flex-col items-center"
+        key={curId}
+        className="cfd-info-fade flex w-full flex-col items-center"
         style={{ padding: '0 64px 36px', gap: 10 }}
       >
         <div
@@ -1233,6 +1212,81 @@ function FeaturedPanel({
         )}
       </div>
     </>
+  );
+}
+
+/**
+ * Bitta mahsulotning media zanjiri: video urinish -> rasm -> brend-rolik.
+ * `onReady` — birinchi ko'rsatiladigan kadr tayyor (krossfeyd signali).
+ * `active` — faqat ustki (joriy) qatlamning `ended` hodisasi karuselni suradi:
+ * eski qatlam krossfeyd payti tugab qolsa indeks sakramasin.
+ */
+function MediaLayer({
+  pid,
+  name,
+  imageUrl,
+  state,
+  on,
+  active,
+  onReady,
+  onVideoMeta,
+  onVideoError,
+  onEnded,
+}: {
+  pid: string;
+  name: string;
+  imageUrl: string | null;
+  state: 'yes' | 'no' | undefined;
+  on: boolean;
+  active: boolean;
+  onReady: () => void;
+  onVideoMeta: (durMs: number) => void;
+  onVideoError: () => void;
+  onEnded: () => void;
+}) {
+  const fill = {
+    position: 'absolute',
+    inset: 0,
+    width: '100%',
+    height: '100%',
+  } as const;
+  return (
+    <div className={`cfd-media-layer${on ? ' is-on' : ''}`}>
+      {state !== 'no' ? (
+        // Ovoz siyosati: muted — avtomatik ijro ovoz bilan bloklanadi,
+        // do'konda uzluksiz ovoz esa shovqin.
+        <video
+          src={`/media/videos/${pid}.mp4`}
+          autoPlay
+          muted
+          playsInline
+          onLoadedMetadata={(e) => onVideoMeta(Math.round(e.currentTarget.duration * 1000))}
+          onLoadedData={onReady}
+          onError={onVideoError}
+          onEnded={() => {
+            if (active) onEnded();
+          }}
+          style={{ ...fill, objectFit: 'cover' }}
+        />
+      ) : imageUrl ? (
+        <img
+          src={imageUrl}
+          alt={name}
+          onLoad={onReady}
+          style={{ ...fill, objectFit: 'contain', padding: 32, boxSizing: 'border-box' }}
+        />
+      ) : (
+        <video
+          src="/brand/sherset-loop.mp4"
+          autoPlay
+          muted
+          loop
+          playsInline
+          onLoadedData={onReady}
+          style={{ ...fill, objectFit: 'cover' }}
+        />
+      )}
+    </div>
   );
 }
 
