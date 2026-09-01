@@ -1025,6 +1025,15 @@ function FeaturedPanel({
   const [index, setIndex] = useState(0);
   const prevLen = useRef(0);
 
+  // Mahsulotning O'Z videosi bor-yo'qligi: 'yes' | 'no' | undefined (urinilyapti).
+  // Video konvensiya bo'yicha so'raladi: /media/videos/<productId>.mp4 —
+  // DB'da jadval YO'Q (ataylab: nginx statikasi + fayl nomi = productId,
+  // keyin ProductMedia jadvali kelganda import shu katalogni skanerlaydi).
+  // 404 kelsa 'no' deb eslab qolamiz — qayta urinilmaydi.
+  const [videoState, setVideoState] = useState<Record<string, 'yes' | 'no'>>({});
+  // Video davomiyligi (ms) — progress chiziq va himoya-taymer uchun.
+  const [videoDur, setVideoDur] = useState<Record<string, number>>({});
+
   // Yangi mahsulot qo'shilsa — darhol o'shani ko'rsat (mijoz o'zi olganini ko'rsin).
   useEffect(() => {
     if (lines.length > prevLen.current) setIndex(lines.length - 1);
@@ -1033,13 +1042,27 @@ function FeaturedPanel({
     prevLen.current = lines.length;
   }, [lines.length, index]);
 
+  const current = lines[Math.min(index, lines.length - 1)];
+  const curId = current?.productId ?? '';
+  const curVideo = videoState[curId];
+
+  // ── Almashish taymeri ──────────────────────────────────────────────────────
+  // Mahsulot videosi O'YNAYOTGANDA navbatdagi mahsulotga 'ended' o'tkazadi
+  // (video o'z davomiyligicha to'liq ko'rinadi — 10s video 5s da KESILMAYDI).
+  // Taymer bu holatda faqat HIMOYA (video qotib qolsa ekran ham qotmasin):
+  // davomiylik + 5s. Rasm/logo-rolik uchun odatiy CAROUSEL_MS.
   useEffect(() => {
     if (lines.length <= 1) return;
-    const id = setInterval(() => setIndex((i) => (i + 1) % lines.length), CAROUSEL_MS);
-    return () => clearInterval(id);
-  }, [lines.length]);
+    const dwell =
+      curVideo === 'yes'
+        ? (videoDur[curId] ?? 15_000) + 5_000
+        : curVideo === undefined
+          ? 10_000 // urinish: LAN'da 404/metadata bir zumda keladi, bu faqat himoya
+          : CAROUSEL_MS;
+    const id = setTimeout(() => setIndex((i) => (i + 1) % lines.length), dwell);
+    return () => clearTimeout(id);
+  }, [lines.length, index, curId, curVideo, videoDur]);
 
-  const current = lines[Math.min(index, lines.length - 1)];
   if (!current) return null;
   const med = media[current.productId];
 
@@ -1050,7 +1073,40 @@ function FeaturedPanel({
           egallaydi; pastdagi oq gradient uni sahifaga SINGDIRADI — video
           foni bilan sahifa foni orasida chegara ko'rinmaydi. */}
       <div className="relative w-full min-h-0 flex-1 overflow-hidden">
-        {med?.imageUrl ? (
+        {curVideo !== 'no' ? (
+          // 1-ustuvorlik: mahsulotning O'Z videosi. `key` — mahsulot almashganda
+          // element qayta yaratiladi (eski src qolib ketmasin). Xato (404) →
+          // 'no' → rasm yoki brend-rolikka tushadi. Ovoz siyosati brend-rolik
+          // bilan bir xil: muted (do'konda shovqin + autoplay bloklanadi).
+          <video
+            key={current.productId}
+            src={`/media/videos/${current.productId}.mp4`}
+            autoPlay
+            muted
+            playsInline
+            onLoadedMetadata={(e) => {
+              const el = e.currentTarget;
+              setVideoState((m) => ({ ...m, [el.dataset.pid ?? '']: 'yes' }));
+              setVideoDur((m) => ({
+                ...m,
+                [el.dataset.pid ?? '']: Math.round(el.duration * 1000),
+              }));
+            }}
+            onError={(e) => {
+              const pid = e.currentTarget.dataset.pid ?? '';
+              setVideoState((m) => ({ ...m, [pid]: 'no' }));
+            }}
+            onEnded={() => setIndex((i) => (i + 1) % Math.max(1, lines.length))}
+            data-pid={current.productId}
+            style={{
+              position: 'absolute',
+              inset: 0,
+              width: '100%',
+              height: '100%',
+              objectFit: 'cover',
+            }}
+          />
+        ) : med?.imageUrl ? (
           <img
             key={current.productId}
             src={med.imageUrl}
@@ -1168,7 +1224,7 @@ function FeaturedPanel({
                     height: '100%',
                     borderRadius: 3,
                     background: 'var(--cfd-accent)',
-                    '--cfd-rotate-dur': `${CAROUSEL_MS}ms`,
+                    '--cfd-rotate-dur': `${curVideo === 'yes' ? (videoDur[curId] ?? CAROUSEL_MS) : CAROUSEL_MS}ms`,
                   } as React.CSSProperties
                 }
               />
